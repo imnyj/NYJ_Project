@@ -1,0 +1,45 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# --- venv ---
+.venv/
+venv/
+env/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- paper-ai output (runtime only) ---
+output/.cache/
+output/sessions/
+output/snapshots/
+output/upgrade_log/
+output/annotations/
+output/drafts/
+output/figures/
+output/code/
+output/final/
+output/companion_sessions/
+output/paper-ai.log
+output/*.log
+
+# --- Qwen local state (private, per-user) ---
+memory/qwen_profile/
+memory/qwen_facts.md
+
+# --- Environment ---
+.env
+.env.local
+.env.salt
+
+# --- OS ---
+.DS_Store
+Thumbs.db

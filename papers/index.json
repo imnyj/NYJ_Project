@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "papers": {
+    "paper3": {
+      "created_at": 1777519412.1033247,
+      "last_accessed": 1778032874.327241,
+      "note": ""
+    },
+    "paper1": {
+      "created_at": 1777520823.2301261,
+      "last_accessed": 1778046584.8283772,
+      "note": ""
+    },
+    "paper2": {
+      "created_at": 1777525462.2404306,
+      "last_accessed": 1778032738.0378366,
+      "note": ""
+    },
+    "paper4": {
+      "created_at": 1778207276.518746,
+      "last_accessed": 1778575921.0175357,
+      "note": ""
+    }
+  }
+}

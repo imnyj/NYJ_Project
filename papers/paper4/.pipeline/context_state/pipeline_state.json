@@ -1,0 +1,200 @@
+{
+  "topic": "AI-driven Layer-2 (MAC) protocol for vehicular IoT — lightweight model focus, IEEE IoT-J submission",
+  "phases": {
+    "librarian": {
+      "status": "done",
+      "updated": "2026-05-08T11:43:41",
+      "note": "47편 채택 (T1=33, T2=7, T3=7). 12편 제외/보류 (predatory 4건, off-topic 3건, arXiv 1건, duplicate 1건, 기타 3건). AI-MAC 10편으로 직접 경쟁 논문 충분. 다음: Idea 단계."
+    },
+    "idea": {
+      "status": "done",
+      "updated": "2026-05-08T12:15:47",
+      "note": "GO 판정. Candidate #2 (TinyMLP-based AI-DCC for ETSI CAM beacon) 확정. Librarian noveltyx-check NOVEL 90%. Idea Feasibility Q1~Q5 모두 통과. idea_spec.md 18.6KB 완성."
+    },
+    "experimenter": {
+      "status": "running",
+      "updated": "2026-05-12T17:30",
+      "note": "D2-1~D2-5 ALL PASS. 4 baselines × 3 seeds × urban_grid 데이터 확보 (main_combined_urban.csv). AoI 321.96~501.41ms, CBR 0.41~0.62. seed CV<2% — 결정성 우수. 다음: E1(시각화) + E2(validator) + E4(Proposed 구현) 결정 대기.",
+      "stages_done": [
+        "design",
+        "implement"
+      ],
+      "retry_count": 1
+    },
+    "reviewer": {
+      "status": "running",
+      "updated": "2026-05-13T08:55",
+      "note": "Proofreader 1차 패스 완료 (Commander 직접 수행, Reviewer agent 30s timeout fallback). final/main.tex 생성 (1239 lines). LaTeX 무결성 PASS (cite 0 missing, ref 0 missing, begin/end balanced), IEEE 스타일 PASS, AI 상투어 0건, 과장 부사 0건. Pending 섹션 유지. E4 완료 후 재교정 예정.",
+      "modes_done": [
+        "validator",
+        "proofreader"
+      ]
+    },
+    "writer": {
+      "status": "running",
+      "updated": "2026-05-12T18:30",
+      "note": "Partial draft v1 완료 — 1207 lines, 66KB. §I~IV 완성, §V baseline-only 결과+Pending 항목 명시, §VI Conclusion, thebibliography 47 bibitems. 인용 무결성 PASS, begin/end PASS. 다음: E4 (Proposed TinyMLP-AI-DCC 구현) → 결과 도착 후 §V 확장 + ablation/sensitivity.",
+      "sections_done": [
+        "skeleton",
+        "abstract",
+        "keywords",
+        "introduction",
+        "related_work",
+        "network_model",
+        "proposed_scheme",
+        "performance_evaluation_partial",
+        "conclusion",
+        "bibliography"
+      ]
+    }
+  },
+  "outputs": [
+    "/home/imnyj/papers/paper4/paper/references/references.json",
+    "/home/imnyj/papers/paper4/paper/references/bibitem.tex",
+    "/home/imnyj/papers/paper4/paper/idea/idea_spec.md",
+    "/home/imnyj/papers/paper4/paper/experiment/experiment_spec.json",
+    "/home/imnyj/papers/paper4/RUNBOOK.md",
+    "/home/imnyj/papers/paper4/paper/draft/main.tex"
+  ],
+  "target_journal": "IEEE Internet of Things Journal",
+  "simulators_available": [
+    "libsumo",
+    "SumoNetSim (user-built)"
+  ],
+  "selected_idea": {
+    "id": "candidate_2_tinymlp_beacon_dcc",
+    "title": "TinyMLP-based Joint Beacon Rate and Power Control for ETSI CAM Vehicular IoT",
+    "core_contributions": [
+      "C1 Protocol Design (ETSI-compliant AI-DCC)",
+      "C2 AoI-CBR Joint Optimization via Behavior Cloning",
+      "C3 MCU Deployment Feasibility (<2k params, <1ms inference)"
+    ],
+    "novelty_confidence": 0.9,
+    "feasibility_window_weeks": 12
+  },
+  "user_directives_log": [
+    {
+      "timestamp": "2026-05-08T12:39",
+      "directive": "1) idea 확정 (시뮬결과로 검토)  2) BL-B → Simplified Adaptive 단순화  3) sensitivity analysis 도출 + 결과 저장",
+      "applied_in": [
+        "idea_spec.md §10 Update Patch",
+        "experiment_spec.json (Phase 2-alpha + BL-B description)"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T13:25",
+      "directive": "1) 워크플로우를 작은 부분으로 쪼개어 구현  2) SUMO 시나리오는 SumoNetSim1.1.5 표준 채택 (RSU_RANGE=800m, V2V=200m, NUM_BLOCKS=3 for 시뮬 효율, EDGE_LENGTH=2400m)",
+      "applied_in": [
+        "experiment_spec.json phases[0].scenario (Phase 2-alpha urban_grid)",
+        "experiment_spec.json phases[1].scenarios (Phase 2 main urban_grid + highway)",
+        "experiment_spec.json phases[0].sweeps SA1~SA4 (seeds 5→3, SA3/SA4 values 재정의 per §10.2)",
+        "experimenter_memory.md"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T13:37",
+      "directive": "a안 진행. 시뮬레이션은 큰 틀→작은 틀→세분화로 분해, Coder가 작은 부분만 구현하게 하여 환각 차단",
+      "applied_in": [
+        "annotations/agent_notes.md (L1~L3 WBS, 위임 규칙 R1~R5)",
+        "context_state/decision_log.md"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T13:46",
+      "directive": "그대로 진행하되, 완료된 명령어들을 MD에 따로 정리. 사용자가 직접 실행할 예정.",
+      "applied_in": [
+        "/home/imnyj/papers/paper4/RUNBOOK.md (신설, 사용자 직접 실행용 명령 누적)",
+        "context_state/pipeline_state.json (note 갱신)"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T22:35",
+      "directive": "명령 6 결과 보고: runtime_sec<1, n_cam_events>700, CBR_mean<0.02 (모두 비정상)",
+      "applied_in": [
+        "RUNBOOK.md (명령 6 결과 표 + 진단 섹션 append)",
+        "commander_memory.md (root cause 확정 기록)",
+        "pipeline_state.json (experimenter.retry_count++, note 갱신)"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T22:41",
+      "directive": "해당 libsumo 관련 파일들을 활용하여 시뮬레이션을 구현 및 실행하도록 해.",
+      "applied_in": [
+        "sim/sim_engine.py L1-B-3 patch (SUMOCFG_PATH 상수 + libsumo.start -c)",
+        "sim/sim_engine.py.bak_L1B3 백업",
+        "code_tracker/changelog.md L1-B-3 항목",
+        "brain/experimenter_memory.md L1-B-3 완료 기록"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T22:52",
+      "directive": "ABC 순서로 진행",
+      "applied_in": [
+        "ABC-A: Commander가 sim_engine.py L1-B-3 정합성 정적 검증 수행 (validation_report.json PASS)",
+        "ABC-B: 사용자에게 RUNBOOK 명령 2-redo 실행 요청 (BL-A 20대 SimulationRunner full run)",
+        "ABC-C: 사용자에게 RUNBOOK 명령 4-redo 실행 요청 (SA3 cbr_target sweep)",
+        "annotations/validation_history.md L1-B-3-validate 누적"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T23:04",
+      "directive": "runtime_sec=1.5, n_cam_event=13885, CBR_mean=0.3795, AoI_mean=323.252라서 C 시작함.",
+      "applied_in": [
+        "RUNBOOK.md ABC-B 섹션: 결과표 + [x] 완료 체크",
+        "RUNBOOK.md ABC-C 섹션: 🔄 실행 중 표시",
+        "commander_memory.md: ABC-B PASS 판정 + AoI 단위 메모",
+        "user_directives.md: 사용자 보고 누적",
+        "pipeline_state.json (이 파일): experimenter.note 갱신"
+      ]
+    },
+    {
+      "timestamp": "2026-05-08T23:30",
+      "directive": "ABC-C 결과 보고: 7개 cbr_target sweep 결과 정상 분리, 0.55=0.6 raw값 일치 발견",
+      "applied_in": [
+        "RUNBOOK.md ABC-C 완료 섹션 + 해석 테이블 + D1/D2 옵션 제시",
+        "pipeline_state.json experimenter.note 갱신",
+        "commander_memory.md ABC-C PASS 판정 기록 (다음 step)"
+      ]
+    },
+    {
+      "timestamp": "2026-05-11T11:58",
+      "directive": "D2 채택. 1) 더 논문에 적합한 표기 선택 (Commander 결정권 위임) 2) 차량 수 기본값: density=20 또는 absolute≥50 3) RUNBOOK 명령으로 분해해서 사용자 직접 실행",
+      "applied_in": [
+        "RUNBOOK.md (D2 섹션 추가, D2-1~D2-5 명령 분해, 약 5,200자)",
+        "annotations/user_directives.md (해석 + Commander 결정 누적)",
+        "brain/commander_memory.md (D2 채택 + density 표기 선택 근거)",
+        "context_state/pipeline_state.json (이 파일): experimenter.note 갱신, D2 진입 표시"
+      ]
+    },
+    {
+      "timestamp": "2026-05-12T17:30",
+      "directive": "Results.md에 결과를 넣어두었어. 시뮬레이션 결과를 배경으로 이제 작업을 진행해볼까?",
+      "applied_in": [
+        "pipeline_state.json experimenter.stages_done += 'implement', note 갱신",
+        "annotations/user_directives.md 기록",
+        "commander_memory.md D2 완료 + 다음 단계 권고 기록"
+      ]
+    },
+    {
+      "timestamp": "2026-05-12T17:52",
+      "directive": "논문 작업을 이어서 계속 해줘.",
+      "applied_in": [
+        "paper/draft/main.tex 신규 생성 — Writer 3 stage 분할: §I~II / §III~IV / §V partial+§VI+bib",
+        "pipeline_state.json writer.sections_done 누적, status=running (PE 확장 대기)",
+        "brain/writer_memory.md, .pipeline/brain/writer_memory.md 누적 기록"
+      ]
+    },
+    {
+      "timestamp": "2026-05-13T08:41",
+      "directive": "가시 효과는 마지막이야. 논문 작업은 C로 진행하고, 끝나면 E4분해해줘.",
+      "applied_in": [
+        "paper/final/main.tex (Commander 직접 proofreader 1차 패스, 1239 lines)",
+        "RUNBOOK.md (E4 섹션 신설 — E4-1 ~ E4-5 5 sub-leaf 분해)",
+        "annotations/user_directives.md (해석 + 실행 계획)",
+        "brain/commander_memory.md",
+        "pipeline_state.json reviewer.modes_done += 'proofreader'"
+      ]
+    }
+  ],
+  "note": "Proofreader 1차 PASS. E4 (Proposed TinyMLP-AI-DCC) RUNBOOK 분해 완료 (E4-1 ~ E4-5). E4-1 Oracle (USER-RUN, ~30분), E4-2 Train (AGENT/USER), E4-3 Hook (AGENT 필수), E4-4 Proposed main (USER-RUN, ~90분), E4-5 5-way 통합. E1 시각화는 마지막 (사용자 지시)."
+}

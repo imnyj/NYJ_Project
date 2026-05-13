@@ -1,0 +1,17 @@
+재정이형 Affiliation 변경
+오교수님 추가
+
+Contribution에서 오교수님 역할 추가 Funding acquisition, writing – review and editing, validation
+
+사사 변경
+
+et al. 에 성이 아닌 이름으로 쓴 거 수정
+
+Related work에서 Precaching Mob에서 내 논문 하나 삭제 Nam2023
+To cover this outage zone, many researchers have studied the precaching scheme in other vehicles to provide the requested content via V2V communication within the outage zone in CCVN \cite{Wu2013, Bang2020, Nam2022, Ahmed2018, Guo2017}.
+에서 삭제
+To improve the performance in covering the outage zone, many researchers have studied the V2V precaching scheme, which selects more vehicles as the relaying vehicles \cite{Wang2017, Ahmed2018, Guo2017}.
+에서도 삭제
+
+요약에서 다음 문장으로 변경
+In ICVNs, the download delay and traffic overhead on the backhaul links are increased due to the large size of the content requested by vehicle users and the long distance between RSUs.

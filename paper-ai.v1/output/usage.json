@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "started_at": 1777368769.74855,
+  "updated_at": 1778629757.9088721,
+  "lifetime": {
+    "input_tokens": 98025226,
+    "output_tokens": 1761519,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0,
+    "usd_spent": 447.6034510000004,
+    "calls": 2388,
+    "by_model": {
+      "claude-opus-4-7": 1144,
+      "claude-haiku-4-5-20251001": 166,
+      "claude-sonnet-4-6": 1073,
+      "qwen2.5:72b": 5
+    },
+    "by_agent": {
+      "commander": {
+        "input_tokens": 98003527,
+        "output_tokens": 1759967,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost_usd": 447.4561560000004,
+        "calls": 2383
+      }
+    }
+  }
+}

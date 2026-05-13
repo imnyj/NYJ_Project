@@ -1,0 +1,118 @@
+With the development of autonomous driving, the demand for content from passengers in the vehicle will increase when the driver and passengers are guaranteed freedom during their driving time.
+The increased demand for content, coupled with the increased size of each content due to the improved quality of the content and the expanding resolution of the display, will cause a sharp increase in mobile data traffic.
+Existing precaching schemes only focus on reducing the delay to delay-sensitive content, resulting in excessive precaching and increased traffic consumption and congestion.
+delay-tolerant content, which is categorized by considering the delay tolerance characteristics of each content, can be provided only from already cached RSUs to save traffic, and the saved traffic can be used for the seamless provision of delay-sensitive content.
+However, since delay-tolerant content has a tolerable delay time due to the driving time of the requester vehicle and the characteristics of the content, the content provision must be completed in time.
+Therefore, we propose a Delay-Tolerant Precaching (DTP) scheme that minimizes the traffic consumed for the provision of delay-tolerant content by maximally utilizing cached RSUs while ensuring high reliability considering the tolerable delay time.
+% 각 subsection별 contribution 정리 (update, selection 등)
+First, we make full use of cached RSUs to minimize traffic consumption within the tolerable delay time.
+Then, when precaching is required, we consider the burden of each link to prevent traffic congestion.
+Furthermore, we minimize the caching burden of holding the requested content by selecting the nearest RSU among the cached RSUs as the precaching RSU.
+We use ILP to solve this optimization problem, and the abundant traffic and cache storage by the optimization can be used to provide delay-sensitive content smoothly.
+To further improve performance, we update the information used in the optimization.
+Through simulations reflecting various environments, we demonstrate that the proposed scheme minimizes traffic and caching burden while maintaining high reliability.
+
+
+In vehicular networks, the CCN has been pointed to a precise solution because CCNs can distributively solve the content requests from neighboring nodes without accessing the server by caching the provided or forwarded content in the storage of the intermediate nodes.
+In the CCVNs, by caching the requested content on the storage of roadside units (RSUs) and vehicles, delays and consumed traffic are reduced with decreasing accesses to the server even in frequent handovers because the provider doesn't need to be only a content server.
+However, in frequent handovers, the requester vehicle repeats the request for the content to the newly encountered RSU and it causes delays.
+Furthermore, to reduce the delay of repeated requests for newly encountered RSUs by frequent handovers, the requester vehicle's mobility information is predicted and the RSU that the vehicle will encounter precaches the content before the vehicle comes.
+Precached content can be immediately provided to the requester vehicle without access delay when it enters.
+However, most existing precaching schemes in CCVN focus on reducing the delays in the provision of delay-sensitive content (DSC) within the limited capacity of the BS's or RSU's wireless communication resources.
+If the content requests from the vehicles increase over their capacities of wireless communication resources, it can give us a long delay, which is connected to QoS and user safety due to the above problem.
+
+
+
+
+\begin{thebibliography}{00}
+
+\bibitem{b1} G. O. Young, ``Synthetic structure of industrial plastics,'' in \emph{Plastics,} 2\textsuperscript{nd} ed., vol. 3, J. Peters, Ed. New York, NY, USA: McGraw-Hill, 1964, pp. 15--64.
+
+\bibitem{b2} W.-K. Chen, \emph{Linear Networks and Systems.} Belmont, CA, USA: Wadsworth, 1993, pp. 123--135.
+
+\bibitem{b3} J. U. Duncombe, ``Infrared navigation---Part I: An assessment of feasibility,'' \emph{IEEE Trans. Electron Devices}, vol. ED-11, no. 1, pp. 34--39, Jan. 1959, 10.1109/TED.2016.2628402.
+
+\bibitem{b4} E. P. Wigner, ``Theory of traveling-wave optical laser,'' \emph{Phys. Rev}., vol. 134, pp. A635--A646, Dec. 1965.
+
+\bibitem{b5} E. H. Miller, ``A note on reflector arrays,'' \emph{IEEE Trans. Antennas Propagat}., to be published.
+
+\bibitem{b6} E. E. Reber, R. L. Michell, and C. J. Carter, ``Oxygen absorption in the earth's atmosphere,'' Aerospace Corp., Los Angeles, CA, USA, Tech. Rep. TR-0200 (4230-46)-3, Nov. 1988.
+
+\bibitem{b7} J. H. Davis and J. R. Cogdell, ``Calibration program for the 16-foot antenna,'' Elect. Eng. Res. Lab., Univ. Texas, Austin, TX, USA, Tech. Memo. NGL-006-69-3, Nov. 15, 1987.
+
+\bibitem{b8} \emph{Transmission Systems for Communications}, 3\textsuperscript{rd} ed., Western Electric Co., Winston-Salem, NC, USA, 1985, pp. 44--60.
+
+\bibitem{b9} \emph{Motorola Semiconductor Data Manual}, Motorola Semiconductor Products Inc., Phoenix, AZ, USA, 1989.
+
+\bibitem{b10} G. O. Young, ``Synthetic structure of industrial
+plastics,'' in Plastics, vol. 3, Polymers of Hexadromicon, J. Peters,
+Ed., 2\textsuperscript{nd} ed. New York, NY, USA: McGraw-Hill, 1964, pp. 15-64.
+[Online]. Available:
+\underline{http://www.bookref.com}.
+
+\bibitem{b11} \emph{The Founders' Constitution}, Philip B. Kurland
+and Ralph Lerner, eds., Chicago, IL, USA: Univ. Chicago Press, 1987.
+[Online]. Available: \underline{http://press-pubs.uchicago.edu/founders/}
+
+\bibitem{b12} The Terahertz Wave eBook. ZOmega Terahertz Corp., 2014.
+[Online]. Available:
+\underline{http://dl.z-thz.com/eBook/zomega\_ebook\_pdf\_1206\_sr.pdf}. Accessed on: May 19, 2014.
+
+\bibitem{b13} Philip B. Kurland and Ralph Lerner, eds., \emph{The
+Founders' Constitution.} Chicago, IL, USA: Univ. of Chicago Press,
+1987, Accessed on: Feb. 28, 2010, [Online] Available:
+\underline{http://press-pubs.uchicago.edu/founders/}
+
+\bibitem{b14} J. S. Turner, ``New directions in communications,'' \emph{IEEE J. Sel. Areas Commun}., vol. 13, no. 1, pp. 11-23, Jan. 1995.
+
+\bibitem{b15} W. P. Risk, G. S. Kino, and H. J. Shaw, ``Fiber-optic frequency shifter using a surface acoustic wave incident at an oblique angle,'' \emph{Opt. Lett.}, vol. 11, no. 2, pp. 115--117, Feb. 1986.
+
+\bibitem{b16} P. Kopyt \emph{et al., ``}Electric properties of graphene-based conductive layers from DC up to terahertz range,'' \emph{IEEE THz Sci. Technol.,} to be published. DOI: 10.1109/TTHZ.2016.2544142.
+
+\bibitem{b17} PROCESS Corporation, Boston, MA, USA. Intranets:
+Internet technologies deployed behind the firewall for corporate
+productivity. Presented at INET96 Annual Meeting. [Online].
+Available: \underline{http://home.process.com/Intranets/wp2.htp}
+
+\bibitem{b18} R. J. Hijmans and J. van Etten, ``Raster: Geographic analysis and modeling with raster data,'' R Package Version 2.0-12, Jan. 12, 2012. [Online]. Available: \underline {http://CRAN.R-project.org/package=raster} 
+
+\bibitem{b19} Teralyzer. Lytera UG, Kirchhain, Germany [Online].
+Available:
+\underline{http://www.lytera.de/Terahertz\_THz\_Spectroscopy.php?id=home}, Accessed on: Jun. 5, 2014
+
+\bibitem{b20} U.S. House. 102\textsuperscript{nd} Congress, 1\textsuperscript{st} Session. (1991, Jan. 11). \emph{H. Con. Res. 1, Sense of the Congress on Approval of}  \emph{Military Action}. [Online]. Available: LEXIS Library: GENFED File: BILLS
+
+\bibitem{b21} Musical toothbrush with mirror, by L.M.R. Brooks. (1992, May 19). Patent D 326 189 [Online]. Available: NEXIS Library: LEXPAT File: DES
+
+\bibitem{b22} D. B. Payne and J. R. Stern, ``Wavelength-switched pas- sively coupled single-mode optical network,'' in \emph{Proc. IOOC-ECOC,} Boston, MA, USA, 1985, pp. 585--590.
+
+\bibitem{b23} D. Ebehard and E. Voges, ``Digital single sideband detection for interferometric sensors,'' presented at the \emph{2\textsuperscript{nd} Int. Conf. Optical Fiber Sensors,} Stuttgart, Germany, Jan. 2-5, 1984.
+
+\bibitem{b24} G. Brandli and M. Dick, ``Alternating current fed power supply,'' U.S. Patent 4 084 217, Nov. 4, 1978.
+
+\bibitem{b25} J. O. Williams, ``Narrow-band analyzer,'' Ph.D. dissertation, Dept. Elect. Eng., Harvard Univ., Cambridge, MA, USA, 1993.
+
+\bibitem{b26} N. Kawasaki, ``Parametric study of thermal and chemical nonequilibrium nozzle flow,'' M.S. thesis, Dept. Electron. Eng., Osaka Univ., Osaka, Japan, 1993.
+
+\bibitem{b27} A. Harrison, private communication, May 1995.
+
+\bibitem{b28} B. Smith, ``An approach to graphs of linear forms,'' unpublished.
+
+\bibitem{b29} A. Brahms, ``Representation error for real numbers in binary computer arithmetic,'' IEEE Computer Group Repository, Paper R-67-85.
+
+\bibitem{b30} IEEE Criteria for Class IE Electric Systems, IEEE Standard 308, 1969.
+
+\bibitem{b31} Letter Symbols for Quantities, ANSI Standard Y10.5-1968.
+
+\bibitem{b32} R. Fardel, M. Nagel, F. Nuesch, T. Lippert, and A. Wokaun, ``Fabrication of organic light emitting diode pixels by laser-assisted forward transfer,'' \emph{Appl. Phys. Lett.}, vol. 91, no. 6, Aug. 2007, Art. no. 061103.~
+
+\bibitem{b33} J. Zhang and N. Tansu, ``Optical gain and laser characteristics of InGaN quantum wells on ternary InGaN substrates,'' \emph{IEEE Photon. J.}, vol. 5, no. 2, Apr. 2013, Art. no. 2600111
+
+\bibitem{b34} S. Azodolmolky~\emph{et al.}, Experimental demonstration of an impairment aware network planning and operation tool for transparent/translucent optical networks,''~\emph{J. Lightw. Technol.}, vol. 29, no. 4, pp. 439--448, Sep. 2011.
+
+\end{thebibliography}
+
+
+With the increasing development of smart vehicles such as self-driving cars, drivers and passengers have more free time to consume content during their driving time, leading to an increase in mobile data traffic. However, if the traffic demand exceeds the capacity of an RSU, buffering and delays occur, resulting in safety issues for users and degraded QoS for delay-sensitive content such as real-time streaming services and driving assistant applications. To address this issue, we propose a Delay-Tolerable Precaching (DTP) scheme that minimizes traffic consumption for large-sized delay-tolerant content such as SW updates and backup services by maximizing the use of RSUs that already cache the requested content. We first classify delay-tolerant content and delay-sensitive content to precache them for each purpose. Before solving the optimization problem for selecting optimal precaching RSUs, the DMM that is equipped with the content server updates the needed information to improve prediction accuracy. The DMM that manages the updated information selects optimal precaching RSUs by solving the optimization problem through integer linear programming. In this optimization, we prioritize the use of RSUs that already cache the requested delay-tolerant content to minimize traffic consumption for precaching. Additionally, among RSUs that already cache the content, we select near RSUs to minimize the caching burden for holding the content until the requester vehicle enters. Also, among RSUs that don't cache the content, we select RSUs that have abundant resources on backhaul links to minimize traffic congestion. Moreover, considering the tolerable delay time of the requested delay-tolerant content, we guarantee high reliability in providing the delay-tolerant content precaching. These savings in caching storage and traffic can be used to reduce delays for delay-sensitive content. In the simulation of various environments implemented through NS3, the average burden including traffic consumption, traffic congestion, and the caching burden is minimized, and the content delivery success rate, which is an indicator of reliability, is high, proving the performance of the proposed scheme.
+
+% Furthermore, we have highlighted the limitations of the current approach and identified future directions for research. Specifically, we plan to incorporate machine learning-based methods to improve the accuracy of mobility prediction and probability modeling to compensate for prediction errors. These future developments will result in better prediction accuracy, improved performance, and a more robust system for minimizing traffic burden and providing efficient content delivery in vehicular networks. Overall, our work contributes to the ongoing effort to optimize vehicular networks and provide efficient communication and content delivery services to users. The proposed solution has the potential to revolutionize vehicular networks and pave the way for new applications and services that were previously impossible or impractical.

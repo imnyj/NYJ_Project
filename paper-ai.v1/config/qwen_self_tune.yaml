@@ -1,0 +1,51 @@
+# Qwen self-tune policy
+#
+# Edited at runtime only via Commander-approved self-upgrade. Hand edits
+# should be followed by `python -m qwen_companion --verify-config`.
+
+# ---------------- failure policy ----------------
+# safe        — 3 consecutive failures → roll back to backup + 24h cooldown.
+# iterative   — Commander refines failed candidates (max 3 rounds per trigger).
+failure_policy: safe
+
+# ---------------- cooldown ----------------
+cooldown_hours_after_rollback: 24
+max_consecutive_failures: 3
+max_iterative_refinements: 3    # iterative policy only
+
+# ---------------- triggers ----------------
+triggers:
+  # Auto-trigger when the calendar day has rolled over since last_run_ts
+  # AND there is no paper-ai pipeline currently running.
+  daily_auto: true
+
+  # Accept explicit user command: `python -m qwen_companion self-tune`
+  manual: true
+
+  # Let Commander escalate if it sees Qwen misbehaving during paper work.
+  # Commander does NOT tune Qwen itself — it just raises a "please tune
+  # yourself" flag that the next companion run will pick up.
+  commander_escalation: true
+
+# ---------------- change scope ----------------
+# What the self-tuner is allowed to modify in a candidate profile.
+# Anything outside this list is preserved from the current main profile.
+allowed_changes:
+  - prompt                    # system prompt text
+  - config.temperature
+  - config.num_predict_cap    # per-task max_tokens ceiling
+  - config.prompt_style
+  - routing_overrides         # per-task-type option overrides
+
+# Fields the self-tuner must NEVER modify (Commander-only, with
+# additional user approval). The profile store enforces this.
+commander_only_fields:
+  - config.model              # swapping the underlying model
+  - config.base_url
+  - config.timeout_s
+
+# ---------------- safety ----------------
+# After N successful promotions without regression, the backup is
+# refreshed — otherwise backup drifts too far from current and the
+# restore path becomes useless.
+refresh_backup_after_n_promotions: 5

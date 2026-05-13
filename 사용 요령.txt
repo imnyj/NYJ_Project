@@ -1,0 +1,96 @@
+* 가상 환경 세팅
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+
+* 가상 환경 내 필요한 라이브러리 설치
+pip install anthropic PyYAML python-dotenv tenacity tiktoken langgraph langgraph-checkpoint-sqlite paper-qa sqlite-vec sentence-transformers
+pip install FlagEmbedding rank-bm25 grobid-client-python requests networkx eclipse-sumo numpy libsumo sumolib sumo scipy pandas matplotlib
+pip install seaborn Pillow pylatexenc pdf2image pytest pytest-asyncio pytest-cov ruff opencv-python smolagents litellm duckduckgo-search
+
+* 필요 프로그램 설치
+sudo apt install python3-tk
+sudo apt install curl
+
+* 버전 문제 해결
+pip uninstall transformers huggingface-hub smolagents -y
+pip install smolagents "transformers<5.0.0"
+pip install smolagents "huggingface-hub<1.0.0"
+
+* Local Model 설치
+curl -fsSL https://ollama.com/install.sh | sh
+ollama run qwen2.5:72b
+
+* 암호화된 API KEY 얻기
+python encrypt_key.py
+  1) API KEY 복붙
+  2) 비밀번호
+  3) 비밀번호 재확인
+  4) 다음을 복사하여 각 AGENT의 KEY에 맞는 위치에 붙여넣기. ENC:gAAAAABp7...
+
+   API KEY는 총 6개 필요. 신중한 입력을 위해 각각 입력할 것. (같은 API KEY를 암호화한다고 해도 다른 결과가 나옴에 놀라지 말 것. 그래도 복호화하면 같은 결과 나옴.)
+   ANTHROPIC_API_KEY_COMMANDER
+   ANTHROPIC_API_KEY_IDEA
+   ANTHROPIC_API_KEY_LIBRARIAN
+   ANTHROPIC_API_KEY_EXPERIMENTER
+   ANTHROPIC_API_KEY_REVIEWER
+   ANTHROPIC_API_KEY_WRITER
+
+* 첫 시작 및 검증
+ - 암호화된 API KEY 검증 (.env)
+    python -m secrets_tool verify
+ - 기본 검증
+    python commander.py --verify-config
+ - 단발성 검증
+    python commander.py --command "Reply with the word OK and nothing else."
+ - 에이전트 상태 및 상호 소통 검증
+    python commander.py --smoke-test
+
+* 대화 시작
+   python -m monitoring.watchdog --commander-cmd "python commander.py --interactive --autosave 특정주제이름"
+
+   python -m monitoring.watchdog --commander-cmd "python commander.py --interactive --autosave paper1"
+   python -m monitoring.watchdog --commander-cmd "python commander.py --interactive --autosave paper2"
+   python -m monitoring.watchdog --commander-cmd "python commander.py --interactive --autosave paper3"
+   python -m monitoring.watchdog --commander-cmd "python commander.py --interactive --autosave paper4"
+   
+* 원격 접속일 때, 워크스테이션에서는 계속 돌리고 싶다면
+   tmux ls                      # 모든 세션 리스트
+   tmux new -s NAME             # 새 세션 생성
+   tmux attach -t NAME          # 기존 세션 들어가기
+   tmux kill-session -t NAME    # 특정 세션 종료
+   tmux kill-server             # 모든 tmux 한 번에 종료 (조심)
+
+   - tmux 명령어
+   Ctrl-a d                     # detach (세션 그대로 살려두고 나옴)
+   Ctrl-a s                     # 세션 리스트 인터랙티브
+   Ctrl-a c                     # 새 window 생성 (한 세션 안에 여러 탭)
+   Ctrl-a w                     # 모든 window 인터랙티브 리스트
+   Ctrl-a 0, 1, 2, ...          # 숫자로 window 직접 전환
+   Ctrl-a n / Ctrl-a p          # 다음 / 이전 window
+   Ctrl-a ,                     # 현재 window 이름 변경
+   Ctrl-a [                     # 스크롤 모드 진입 (q로 나옴)
+
+* Git 로그인
+   git config --global user.name "John Doe"
+   git config --global user.email johndoe@example.com
+
+* GitHub 명령어
+   git add .
+   git commit -m "2605121642"
+   git push -u origin main --force
+
+* paper2-sim
+nohup python3 -u run_full_simulation.py --phases 2 --device cuda --p2-episodes 500 --resume  > simulation_log.txt 2>&1 & echo $! > simulation.pid
+tail -f simulation_log.txt
+
+* paper3-sim
+[-] nohup python3 -u /home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py --scenario A --output_dir /home/imnyj/papers/paper3/paper/experiment/data/ > /home/imnyj/papers/paper3/paper/experiment/logs/scenario_A.log | grep HEARBEAT
+[ ] nohup python3 -u /home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py --scenario B --output_dir /home/imnyj/papers/paper3/paper/experiment/data/ > /home/imnyj/papers/paper3/paper/experiment/logs/scenario_B.log | grep HEARBEAT
+[ ] nohup python3 -u /home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py --scenario C --output_dir /home/imnyj/papers/paper3/paper/experiment/data/ > /home/imnyj/papers/paper3/paper/experiment/logs/scenario_C.log | grep HEARBEAT
+[ ] nohup python3 -u /home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py --scenario D --output_dir /home/imnyj/papers/paper3/paper/experiment/data/ > /home/imnyj/papers/paper3/paper/experiment/logs/scenario_D.log | grep HEARBEAT
+[ ] nohup python3 -u /home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py --scenario E --output_dir /home/imnyj/papers/paper3/paper/experiment/data/ > /home/imnyj/papers/paper3/paper/experiment/logs/scenario_E.log | grep HEARBEAT
+tail -f /home/imnyj/papers/paper3/paper/experiment/logs/scenario_B.log | grep HEARTBEAT
+tail -f /home/imnyj/papers/paper3/paper/experiment/logs/scenario_C.log | grep HEARTBEAT
+tail -f /home/imnyj/papers/paper3/paper/experiment/logs/scenario_D.log | grep HEARTBEAT
+tail -f /home/imnyj/papers/paper3/paper/experiment/logs/scenario_E.log | grep HEARTBEAT

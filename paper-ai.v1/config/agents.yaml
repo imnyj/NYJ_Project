@@ -1,0 +1,30 @@
+# ============================================================================
+# Six-agent model assignment
+# ============================================================================
+# This file is consumed by `config.py::get_model_id()`.
+# Hot-edits don't take effect mid-run (the parsed YAML is cached).
+# ============================================================================
+
+# Model aliases — change once, propagate everywhere.
+models:
+  opus:    "claude-opus-4-7"               # strongest reasoning
+  sonnet:  "claude-sonnet-4-6"             # balanced workhorse
+  haiku:   "claude-haiku-4-5-20251001"     # cheapest, fast classification
+
+# Per-role model assignment.
+defaults:
+  commander:     opus       # orchestration + dispute resolution
+  idea:          sonnet     # creative novelty analysis
+  librarian:     sonnet     # mostly classification + citation lookup
+  experimenter:  sonnet     # spans design + code + visualization
+  reviewer:      sonnet     # validation + proofreading
+  writer:        sonnet     # long-context LaTeX integration
+
+# ============================================================================
+# Notes for upgrades
+# ============================================================================
+# To swap a single role to a different tier:
+#   defaults.writer: opus
+#
+# To upgrade everyone to a new model family, edit `models:` aliases and
+# leave `defaults:` alone — every agent picks up the new id automatically.

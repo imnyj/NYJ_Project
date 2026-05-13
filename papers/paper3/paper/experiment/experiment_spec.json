@@ -1,0 +1,1063 @@
+{
+  "meta": {
+    "title": "AoI-Guaranteed Robust ILP Precaching in CIoV — Experiment Specification",
+    "target_journal": "IEEE Internet of Things Journal",
+    "stage": "design",
+    "version": "1.0",
+    "created": "2026-04-29",
+    "author_agent": "Experimenter",
+    "based_on": "idea_spec.md (24,934 chars, C1~C4 Contribution Frame)",
+    "simulator_base": "SumoNetSim1.1.6 (libsumo-based)"
+  },
+  "objective": "본 실험 설계는 idea_spec.md의 4개 Contribution(C1~C4)를 IEEE Internet of Things Journal 기준의 실증적 근거로 뒷받침하기 위해 설계되었다. C1(RILP 신규 정식화)은 Scenario A·B에서 제안 알고리즘 RILP 및 Greedy를 6개 베이스라인과 비교하여 동일 시스템 모델 하에서의 성능 우위를 검증한다. C2(NP-hard 증명 + Greedy 근사 bound)는 Scenario B에서 대규모 밀도(density 6~20) 실험을 통해 Greedy 휴리스틱의 확장성과 RILP 대비 90% 이상 성능 유지를 확인한다. C3(AoI-SLA Guarantee Theorem)은 Scenario C(예측오차 sweep)와 Scenario D(τ_max sweep), Scenario E(Γ sweep)를 통해 RILP의 최악 경우 AoI 위반율이 Γ ≤ Γ* 조건에서 실질적으로 0에 수렴함을 실험적으로 보이고, Corollary 1(단조성) 및 Corollary 2(Γ=0 복원)를 수치적으로 확인한다. C4(종합 시뮬레이션 검증)는 5×5 RSU 격자, 통신범위 800m, outage 800m, density 1~20, 예측 오차 0~30%, 10회 반복 실험을 통해 CHR·CDSR·AoI violation rate·PCO·RLBI 5대 지표에서의 전 방위 성능 분석을 제공하며, 베이스라인 대비 제안 방식의 우위를 통계적으로 입증한다.",
+  "global_sumo_parameters": {
+    "simulator": "libsumo (SumoNetSim1.1.6, 8.V2V_Precaching.py 90% reuse)",
+    "rsu_grid": "5x5 (25 RSUs total)",
+    "rsu_comm_range_m": 800,
+    "outage_zone_m": 800,
+    "wave_standard": "802.11p",
+    "content_catalog_size": 100,
+    "content_popularity_distribution": "Zipf (s=0.8)",
+    "cache_capacity_per_vehicle_items": 10,
+    "aoi_threshold_tau_max_default_slots": 5,
+    "aoi_slot_duration_sec": 1,
+    "simulation_runs_per_config": 10,
+    "seed_base": 42,
+    "content_size_uniform_range_MB": [
+      1,
+      5
+    ],
+    "v2i_bandwidth_Mbps": 20,
+    "v2v_bandwidth_Mbps": 10,
+    "scheduling_window_slots": 20,
+    "gamma_default": 2.0,
+    "alpha_greedy": 0.5
+  },
+  "scenarios": [
+    {
+      "id": "A",
+      "name": "Scenario A: 소규모 ILP 정확해 검증",
+      "description": "소규모 density(1~5)에서 RILP 정확해(exact solver)를 실행하여 베이스라인과 최적해 품질 비교. NP-hard 문제의 소규모 가능성 한계 확인 및 C1 정식화 유효성 검증.",
+      "contribution_target": [
+        "C1",
+        "C3"
+      ],
+      "density_range": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "density_default": 5,
+      "prediction_error_pct": [
+        0,
+        10,
+        20,
+        30
+      ],
+      "tau_max_slots": [
+        5
+      ],
+      "gamma_values": [
+        0.0,
+        1.0,
+        2.0,
+        3.0
+      ],
+      "sumo_parameters": {
+        "rsu_grid": "5x5",
+        "comm_range_m": 800,
+        "outage_zone_m": 800,
+        "duration_steps": 1800,
+        "step_length_sec": 1.0,
+        "vehicle_density_per_cell": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "warmup_steps": 300,
+        "random_seed_list": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ]
+      },
+      "algorithms_enabled": [
+        "RILP",
+        "RILP-Greedy",
+        "Nam2023b",
+        "Nam2025",
+        "Youn2026",
+        "V2I-Base",
+        "V2V-Base",
+        "Random-K"
+      ],
+      "solver_config": {
+        "solver": "CBC (PuLP) or Gurobi if available",
+        "time_limit_sec": 300,
+        "mip_gap": 0.01,
+        "big_M": 1000
+      },
+      "metrics": [
+        "CHR",
+        "CDSR",
+        "AoI_violation_rate",
+        "PCO",
+        "RLBI"
+      ],
+      "primary_metric": "AoI_violation_rate",
+      "expected_finding": "RILP achieves near-zero AoI violation rate for Γ≤Γ*; baselines degrade with prediction error",
+      "figure_targets": [
+        "Fig1: AoI violation rate vs. prediction error (density=5) — all algorithms",
+        "Fig2: CHR vs. density (1~5) — RILP vs. baselines"
+      ]
+    },
+    {
+      "id": "B",
+      "name": "Scenario B: 대규모 Greedy 확장성 검증",
+      "description": "density 6~20에서 RILP가 계산 불가(NP-hard)한 규모에서 RILP-Greedy의 확장성을 검증. RILP-Greedy vs. 베이스라인 5종 비교로 C2 근사 bound의 실증 근거 확보.",
+      "contribution_target": [
+        "C2",
+        "C4"
+      ],
+      "density_range": [
+        6,
+        8,
+        10,
+        12,
+        15,
+        20
+      ],
+      "density_default": 10,
+      "prediction_error_pct": [
+        0,
+        10,
+        20,
+        30
+      ],
+      "tau_max_slots": [
+        5
+      ],
+      "gamma_values": [
+        2.0
+      ],
+      "sumo_parameters": {
+        "rsu_grid": "5x5",
+        "comm_range_m": 800,
+        "outage_zone_m": 800,
+        "duration_steps": 3600,
+        "step_length_sec": 1.0,
+        "vehicle_density_per_cell": [
+          6,
+          8,
+          10,
+          12,
+          15,
+          20
+        ],
+        "warmup_steps": 600,
+        "random_seed_list": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ]
+      },
+      "algorithms_enabled": [
+        "RILP-Greedy",
+        "Nam2023b",
+        "Nam2025",
+        "Youn2026",
+        "V2I-Base",
+        "V2V-Base",
+        "Random-K"
+      ],
+      "solver_config": {
+        "greedy_alpha": 0.5,
+        "time_limit_sec_per_scheduling_window": 5
+      },
+      "metrics": [
+        "CHR",
+        "CDSR",
+        "AoI_violation_rate",
+        "PCO",
+        "RLBI"
+      ],
+      "primary_metric": "CHR",
+      "expected_finding": "RILP-Greedy achieves ≥90% of RILP performance with <5% solve time; outperforms all baselines at density≥10",
+      "figure_targets": [
+        "Fig3: CHR vs. density (6~20) — Greedy vs. all baselines",
+        "Fig4: Solve time (ms) vs. density — scalability comparison",
+        "Fig5: AoI violation rate vs. density — Greedy vs. baselines"
+      ]
+    },
+    {
+      "id": "C",
+      "name": "Scenario C: 예측 오차 sweep (Δμ_v 0~30%) — Robustness 검증",
+      "description": "고정 density(5 또는 10)에서 mobility prediction error Δμ_v를 0%~30% sweep하여 C2 Robustness 및 C3 AoI-SLA Theorem 검증. 베이스라인은 prediction error 상승 시 AoI가 폭발적으로 증가하는 반면 RILP는 τ_max 이하 유지됨을 보임.",
+      "contribution_target": [
+        "C2",
+        "C3"
+      ],
+      "density_range": [
+        5,
+        10
+      ],
+      "density_default": 10,
+      "prediction_error_pct": [
+        0,
+        5,
+        10,
+        15,
+        20,
+        25,
+        30
+      ],
+      "tau_max_slots": [
+        5
+      ],
+      "gamma_values": [
+        0.0,
+        1.0,
+        2.0,
+        3.0,
+        4.0
+      ],
+      "sumo_parameters": {
+        "rsu_grid": "5x5",
+        "comm_range_m": 800,
+        "outage_zone_m": 800,
+        "duration_steps": 3600,
+        "step_length_sec": 1.0,
+        "vehicle_density_per_cell": [
+          5,
+          10
+        ],
+        "warmup_steps": 600,
+        "random_seed_list": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ],
+        "prediction_error_model": "Uniform(0, epsilon_max) per vehicle",
+        "epsilon_max_list_pct": [
+          0,
+          5,
+          10,
+          15,
+          20,
+          25,
+          30
+        ]
+      },
+      "algorithms_enabled": [
+        "RILP",
+        "RILP-Greedy",
+        "Nam2023b",
+        "Nam2025",
+        "Youn2026",
+        "V2I-Base",
+        "V2V-Base",
+        "Random-K"
+      ],
+      "metrics": [
+        "CHR",
+        "CDSR",
+        "AoI_violation_rate",
+        "PCO",
+        "RLBI"
+      ],
+      "primary_metric": "AoI_violation_rate",
+      "expected_finding": "RILP AoI violation rate stays ≤ε (near-zero) for Γ≤Γ* across all error levels; baselines show 3x increase at 20% error",
+      "figure_targets": [
+        "Fig6: AoI violation rate vs. prediction error % — RILP vs. all baselines (density=10)",
+        "Fig7: CDSR vs. prediction error % — all algorithms"
+      ]
+    },
+    {
+      "id": "D",
+      "name": "Scenario D: AoI 임계값 τ_max sweep — AoI Guarantee 검증",
+      "description": "고정 density(10), 예측 오차 20%에서 τ_max를 3~10 time slots 범위로 sweep하여 C3 AoI-SLA 임계값 sensitivity 분석. τ_max 증가 시 RILP feasibility 향상 및 AoI violation rate 감소 확인.",
+      "contribution_target": [
+        "C3"
+      ],
+      "density_range": [
+        10
+      ],
+      "density_default": 10,
+      "prediction_error_pct": [
+        20
+      ],
+      "tau_max_slots": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10
+      ],
+      "gamma_values": [
+        2.0
+      ],
+      "sumo_parameters": {
+        "rsu_grid": "5x5",
+        "comm_range_m": 800,
+        "outage_zone_m": 800,
+        "duration_steps": 3600,
+        "step_length_sec": 1.0,
+        "vehicle_density_per_cell": [
+          10
+        ],
+        "warmup_steps": 600,
+        "random_seed_list": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ]
+      },
+      "algorithms_enabled": [
+        "RILP",
+        "RILP-Greedy",
+        "Nam2023b",
+        "Nam2025",
+        "Youn2026",
+        "Random-K"
+      ],
+      "metrics": [
+        "AoI_violation_rate",
+        "CHR",
+        "CDSR",
+        "PCO"
+      ],
+      "primary_metric": "AoI_violation_rate",
+      "expected_finding": "RILP achieves AoI violation rate → 0 at τ_max=Γ* threshold; baselines remain insensitive to τ_max tuning",
+      "figure_targets": [
+        "Fig8: AoI violation rate vs. τ_max (slots) — RILP vs. baselines",
+        "Fig9: CHR vs. τ_max — robustness-performance tradeoff"
+      ]
+    },
+    {
+      "id": "E",
+      "name": "Scenario E: Γ uncertainty budget sweep — Robustness-Performance Tradeoff",
+      "description": "고정 density(10), τ_max=5에서 Γ를 0~5 범위로 sweep하여 C3 Corollary 1(단조성) 및 Corollary 2(Γ=0 복원) 수치 검증. Γ vs. AoI violation rate 곡선으로 Γ* 임계값 실험적 도출.",
+      "contribution_target": [
+        "C1",
+        "C3"
+      ],
+      "density_range": [
+        1,
+        5,
+        10,
+        20
+      ],
+      "density_default": 10,
+      "prediction_error_pct": [
+        0,
+        10,
+        20,
+        30
+      ],
+      "tau_max_slots": [
+        5
+      ],
+      "gamma_values": [
+        0.0,
+        0.5,
+        1.0,
+        1.5,
+        2.0,
+        2.5,
+        3.0,
+        3.5,
+        4.0,
+        4.5,
+        5.0
+      ],
+      "sumo_parameters": {
+        "rsu_grid": "5x5",
+        "comm_range_m": 800,
+        "outage_zone_m": 800,
+        "duration_steps": 3600,
+        "step_length_sec": 1.0,
+        "vehicle_density_per_cell": [
+          1,
+          5,
+          10,
+          20
+        ],
+        "warmup_steps": 600,
+        "random_seed_list": [
+          42,
+          43,
+          44,
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51
+        ]
+      },
+      "algorithms_enabled": [
+        "RILP",
+        "RILP-Greedy"
+      ],
+      "metrics": [
+        "AoI_violation_rate",
+        "CHR",
+        "CDSR",
+        "PCO"
+      ],
+      "primary_metric": "AoI_violation_rate",
+      "expected_finding": "AoI violation rate is monotonically non-decreasing in Γ (Corollary 1); at Γ=0 RILP matches deterministic baseline (Corollary 2); optimal Γ* numerically confirmed",
+      "figure_targets": [
+        "Fig10: Γ vs. AoI violation rate — density ∈ {1,5,10,20}, ε_max=20%",
+        "Fig11: Γ vs. CHR — RILP (robustness-performance tradeoff curve)",
+        "Fig12: Γ* vs. density — empirical Γ* threshold identification"
+      ]
+    }
+  ],
+  "algorithms": {
+    "proposed": [
+      {
+        "id": "RILP",
+        "name": "Robust ILP with Γ-uncertainty (RILP)",
+        "type": "exact_solver",
+        "description": "제안 알고리즘 1: Γ-budgeted uncertainty set 𝒰(Γ)를 포함하는 Robust Integer Linear Program. Bertsimas-Sim 대우(dual counterpart)로 반무한 robust 제약을 유한 LP 제약으로 변환하여 CBC/Gurobi로 최적해 도출.",
+        "contribution": "C1, C3",
+        "formulation_reference": "idea_spec.md Section 4.2 (RILP constraints R1~R8)",
+        "decision_variables": {
+          "x_vc": "Binary: 1 if content c precached to vehicle v",
+          "f_vc": "Integer: delivery time slot for (v,c)",
+          "a_vc": "Real: AoI tracking variable (t_delivery - t_generation)"
+        },
+        "objective": "min max_{δ∈𝒰(Γ)} Σ_{v,c} w_{vc} · z_{vc}(δ) — weighted worst-case AoI violation minimization",
+        "constraints": {
+          "R1": "Robust LET: f_vc ≤ (LET_v − δ_v) · x_vc ∀v,c,δ∈𝒰(Γ)",
+          "R2": "Outage avoidance: f_vc ≥ outage_end(v) · x_vc",
+          "R3": "Cache capacity: Σ_c x_vc · s_c ≤ CAP_v",
+          "R4": "Uncertainty set: Σ_v |δ_v/Δ_v| ≤ Γ, |δ_v| ≤ Δ_v",
+          "R5": "AoI tracking: a_vc = f_vc · Δt − t_gen(c)",
+          "R6": "AoI-SLA big-M: a_vc ≤ τ_max + M·(1−x_vc)",
+          "R7": "Violation slack: z_vc ≥ a_vc − τ_max",
+          "R8": "Integrality: x_vc ∈ {0,1}, f_vc ∈ Z+, a_vc ≥ 0"
+        },
+        "robust_counterpart": {
+          "dual_vars": [
+            "theta_v (≥0)",
+            "phi_v (≥0)"
+          ],
+          "transformed_R1": "f_vc + Γ·θ_v + φ_v ≤ LET_v · x_vc; φ_v ≥ Δ_v·θ_v"
+        },
+        "solver": "PuLP (CBC backend) or Gurobi",
+        "time_limit_sec": 300,
+        "mip_gap": 0.01,
+        "applicable_scenarios": [
+          "A",
+          "C",
+          "D",
+          "E"
+        ],
+        "density_limit_for_exact": 5
+      },
+      {
+        "id": "RILP-Greedy",
+        "name": "AoI-Robust Greedy Heuristic (RILP-Greedy)",
+        "type": "heuristic",
+        "description": "제안 알고리즘 2: LET_robust × pop_c × AoI urgency 기반 탐욕적 휴리스틱. O(|V|·|C|·log(|V||C|)) 시간 복잡도로 RILP 정확해의 ≥90% 성능 목표.",
+        "contribution": "C2, C4",
+        "priority_formula": "priority(v,c) = LET_v_robust × pop_c × (1 + α · AoI_urgency(v,c))",
+        "where": {
+          "LET_v_robust": "LET_v − Γ · Δμ_v (worst-case adjusted LET)",
+          "pop_c": "content popularity (Zipf request frequency)",
+          "AoI_urgency_vc": "max(0, (a_vc_expected − τ_max) / τ_max)",
+          "alpha": 0.5
+        },
+        "algorithm_steps": [
+          "1. Compute LET_v_robust = LET_v − Γ · Δμ_v for all v",
+          "2. Initialize X=∅, rem[v]=CAP_v for all v",
+          "3. Compute priority(v,c) for all feasible (v,c) pairs",
+          "4. Sort (v,c) pairs by priority descending (tie-break: smaller size first)",
+          "5. For each (v,c): if rem[v]≥s_c AND f_vc≤LET_v_robust AND outage OK → add to X",
+          "6. Return X"
+        ],
+        "time_complexity": "O(|V|·|C|·log(|V|·|C|))",
+        "approximation_ratio": "(1 − 1/e) in nominal case (Γ=0), additive O(Γ·ε_max) for robust case",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ]
+      }
+    ],
+    "baselines": [
+      {
+        "id": "Nam2023b",
+        "name": "Set Ranking Deterministic Precaching",
+        "reference": "Nam2023b (IEEE Access 2023)",
+        "type": "deterministic_ILP",
+        "description": "LET 기반 Set Ranking으로 최적 프리캐싱 차량 집합 선택. 예측 오차 없이 결정론적 LET 사용. AoI 추적 없음.",
+        "key_feature": "Deterministic LET-based set ranking; no uncertainty model; no AoI tracking",
+        "implementation_note": "기존 시뮬레이터 코드베이스 재사용 가능; Γ=0 설정으로 RILP formulation에서 AoI 제약 제거한 버전",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      },
+      {
+        "id": "Nam2025",
+        "name": "Storage-Aware ILP (Deterministic)",
+        "reference": "Nam2025 (IEEE Internet of Things Journal 2025)",
+        "type": "deterministic_ILP",
+        "description": "스토리지 관리 제약을 포함하는 결정론적 ILP. CIoV 환경 대상. 불확실성 없음, AoI 공식화 없음.",
+        "key_feature": "Storage-aware deterministic ILP; closest predecessor to proposed RILP",
+        "implementation_note": "Nam2023b에 cache eviction constraint 추가; ILP solver 동일 사용",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      },
+      {
+        "id": "Youn2026",
+        "name": "V2V Relay Deterministic LET Precaching",
+        "reference": "Youn2026 (CIoV 2026)",
+        "type": "deterministic_ILP",
+        "description": "V2V 릴레이 경로를 통한 결정론적 LET 기반 프리캐싱. outage zone 800m 모델 포함. AoI 없음.",
+        "key_feature": "V2V relay with outage zone (800m); deterministic LET; system model source for proposed work",
+        "implementation_note": "기존 8.V2V_Precaching.py 코드 기반; outage zone 800m 파라미터 유지",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      },
+      {
+        "id": "V2I-Base",
+        "name": "V2I Baseline (코드 7번)",
+        "reference": "SumoNetSim1.1.6 existing algorithm 7",
+        "type": "baseline",
+        "description": "RSU → Vehicle 직접 V2I 전송만 사용하는 기본 알고리즘. V2V 릴레이 없음. 프리캐싱 없이 요청 시 전송.",
+        "key_feature": "Pure V2I transmission; no relay; no precaching optimization",
+        "implementation_note": "기존 시뮬레이터 7번 알고리즘 그대로 사용",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C"
+        ]
+      },
+      {
+        "id": "V2V-Base",
+        "name": "V2V Baseline (코드 8번)",
+        "reference": "SumoNetSim1.1.6 existing algorithm 8",
+        "type": "baseline",
+        "description": "V2V 릴레이 기반 기본 알고리즘. 선택 기준 없이 인접 차량을 릴레이로 활용. 최적화 없음.",
+        "key_feature": "V2V relay without optimization; no precaching decision; sanity check lower bound",
+        "implementation_note": "기존 시뮬레이터 8번 알고리즘 그대로 사용",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C"
+        ]
+      },
+      {
+        "id": "Random-K",
+        "name": "Random-K Precaching",
+        "reference": "Sanity check baseline",
+        "type": "random",
+        "description": "K개의 차량-콘텐츠 쌍을 무작위로 선택하여 프리캐싱. K는 RILP 평균 precached item 수와 동일하게 설정 (공정 비교).",
+        "key_feature": "Random selection; sanity check; expected to be dominated by all other algorithms",
+        "implementation_note": "seed=config에 따라 10회 반복 후 평균; K는 각 실험 설정의 평균 RILP 선택 수로 설정",
+        "applicable_scenarios": [
+          "A",
+          "B",
+          "C",
+          "D"
+        ]
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "id": "CHR",
+      "name": "Cache Hit Rate",
+      "description": "전체 콘텐츠 요청 중 캐시에서 서비스된 비율",
+      "formula": "CHR = (콘텐츠 요청 중 캐시 히트 수) / (전체 콘텐츠 요청 수)",
+      "formula_latex": "\\text{CHR} = \\frac{\\sum_{v,c} \\mathbb{1}[x_{v,c}=1 \\land \\text{request}_{v,c}=1]}{\\sum_{v,c} \\mathbb{1}[\\text{request}_{v,c}=1]}",
+      "unit": "ratio [0, 1]",
+      "higher_is_better": true,
+      "contribution_relevance": "C1, C4 — overall precaching effectiveness"
+    },
+    {
+      "id": "CDSR",
+      "name": "Content Delivery Success Rate",
+      "description": "스케줄된 프리캐싱 전송 중 LET 내에 실제 완료된 비율 (전송 성공률)",
+      "formula": "CDSR = (실제 완료된 프리캐싱 전송 수) / (스케줄된 프리캐싱 전송 시도 수)",
+      "formula_latex": "\\text{CDSR} = \\frac{\\sum_{v,c} \\mathbb{1}[x_{v,c}=1 \\land f_{v,c} \\leq \\text{LET}_v(\\delta)]}{\\sum_{v,c} \\mathbb{1}[x_{v,c}=1]}",
+      "unit": "ratio [0, 1]",
+      "higher_is_better": true,
+      "contribution_relevance": "C3, C4 — delivery completion under uncertainty"
+    },
+    {
+      "id": "AoI_violation_rate",
+      "name": "AoI Violation Rate (worst-case AoI > τ_max 위반 비율)",
+      "description": "프리캐싱된 콘텐츠 중 수신 시점의 AoI가 τ_max를 초과하는 비율. C3 AoI-SLA Theorem의 핵심 검증 지표.",
+      "formula": "AoI_viol = (a_{v,c} > τ_max인 (v,c) 쌍 수) / (x_{v,c}=1인 전체 (v,c) 쌍 수)",
+      "formula_latex": "\\text{AoI}_{\\text{viol}} = \\frac{\\sum_{v,c} \\mathbb{1}[x_{v,c}=1 \\land a_{v,c}(\\delta) > \\tau_{\\max}]}{\\sum_{v,c} \\mathbb{1}[x_{v,c}=1]}",
+      "aoi_definition": "a_{v,c} = t_{rx}(v,c) − t_{gen}(c), where t_{rx} = f_{v,c} · Δt",
+      "unit": "ratio [0, 1]",
+      "higher_is_better": false,
+      "contribution_relevance": "C3 (primary) — worst-case AoI guarantee validation; expected near-zero for RILP with Γ≤Γ*",
+      "note": "worst-case: max over 10 simulation runs per config"
+    },
+    {
+      "id": "PCO",
+      "name": "Precaching Communication Overhead",
+      "description": "프리캐싱을 위한 V2I/V2V 전송에 사용된 통신 자원의 총량을 베이스라인(V2I-Base) 대비 정규화한 값",
+      "formula": "PCO = (총 프리캐싱 전송 데이터량 [MB] × 전송 횟수) / (베이스라인 총 전송량)",
+      "formula_latex": "\\text{PCO} = \\frac{\\sum_{v,c} x_{v,c} \\cdot s_c \\cdot \\mathbb{1}[\\text{link active}]}{\\text{Baseline total transmission volume}}",
+      "unit": "normalized ratio (1.0 = baseline level)",
+      "higher_is_better": false,
+      "contribution_relevance": "C4 — robustness cost: RILP expected to have slightly higher PCO than deterministic baselines"
+    },
+    {
+      "id": "RLBI",
+      "name": "Relay Load Balancing Index (Jain's Fairness Index)",
+      "description": "V2V 릴레이 역할을 맡은 차량들 간 릴레이 부하의 공정성 측정. Jain's fairness index 적용.",
+      "formula": "RLBI = (Σ_v L_v)² / (n · Σ_v L_v²)",
+      "formula_latex": "\\text{RLBI} = \\frac{\\left(\\sum_{v \\in \\mathcal{R}} L_v\\right)^2}{|\\mathcal{R}| \\cdot \\sum_{v \\in \\mathcal{R}} L_v^2}",
+      "where": {
+        "L_v": "릴레이 차량 v의 총 전송 데이터량 (MB)",
+        "R": "릴레이로 선택된 차량 집합",
+        "n": "릴레이 차량 수 |R|"
+      },
+      "unit": "ratio [0, 1] (1 = perfect fairness)",
+      "higher_is_better": true,
+      "contribution_relevance": "C4 — relay load balance; RILP expected to distribute load more evenly than deterministic schemes"
+    }
+  ],
+  "output_files": {
+    "naming_convention": "<scenario_id>_<algorithm_id>_<metric_id>.csv or <scenario_id>_comparison_<metric_id>.csv",
+    "base_directory": "/home/imnyj/papers/paper3/paper/experiment/results/",
+    "files": [
+      {
+        "scenario": "A",
+        "filename": "A_comparison_CHR.csv",
+        "description": "Scenario A: CHR vs. density (1~5) for all algorithms",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "CHR_mean",
+          "CHR_std",
+          "CHR_ci95"
+        ]
+      },
+      {
+        "scenario": "A",
+        "filename": "A_comparison_CDSR.csv",
+        "description": "Scenario A: CDSR vs. density (1~5) for all algorithms",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "CDSR_mean",
+          "CDSR_std",
+          "CDSR_ci95"
+        ]
+      },
+      {
+        "scenario": "A",
+        "filename": "A_comparison_AoI_violation_rate.csv",
+        "description": "Scenario A: AoI violation rate vs. density/prediction_error for all algorithms",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "gamma",
+          "algorithm",
+          "AoI_viol_mean",
+          "AoI_viol_worst",
+          "AoI_viol_std"
+        ]
+      },
+      {
+        "scenario": "A",
+        "filename": "A_comparison_PCO.csv",
+        "description": "Scenario A: PCO vs. density for all algorithms",
+        "columns": [
+          "density",
+          "algorithm",
+          "PCO_mean",
+          "PCO_std"
+        ]
+      },
+      {
+        "scenario": "A",
+        "filename": "A_comparison_RLBI.csv",
+        "description": "Scenario A: RLBI vs. density for all algorithms",
+        "columns": [
+          "density",
+          "algorithm",
+          "RLBI_mean",
+          "RLBI_std"
+        ]
+      },
+      {
+        "scenario": "A",
+        "filename": "A_RILP_solve_time.csv",
+        "description": "Scenario A: RILP solver time vs. density",
+        "columns": [
+          "density",
+          "num_vehicles",
+          "num_contents",
+          "solve_time_sec",
+          "mip_gap_final"
+        ]
+      },
+      {
+        "scenario": "B",
+        "filename": "B_comparison_CHR.csv",
+        "description": "Scenario B: CHR vs. density (6~20) for Greedy + baselines",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "CHR_mean",
+          "CHR_std",
+          "CHR_ci95"
+        ]
+      },
+      {
+        "scenario": "B",
+        "filename": "B_comparison_CDSR.csv",
+        "description": "Scenario B: CDSR vs. density (6~20)",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "CDSR_mean",
+          "CDSR_std"
+        ]
+      },
+      {
+        "scenario": "B",
+        "filename": "B_comparison_AoI_violation_rate.csv",
+        "description": "Scenario B: AoI violation rate vs. density for Greedy + baselines",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "AoI_viol_mean",
+          "AoI_viol_worst"
+        ]
+      },
+      {
+        "scenario": "B",
+        "filename": "B_comparison_PCO.csv",
+        "description": "Scenario B: PCO vs. density",
+        "columns": [
+          "density",
+          "algorithm",
+          "PCO_mean",
+          "PCO_std"
+        ]
+      },
+      {
+        "scenario": "B",
+        "filename": "B_comparison_RLBI.csv",
+        "description": "Scenario B: RLBI vs. density",
+        "columns": [
+          "density",
+          "algorithm",
+          "RLBI_mean",
+          "RLBI_std"
+        ]
+      },
+      {
+        "scenario": "B",
+        "filename": "B_greedy_solve_time.csv",
+        "description": "Scenario B: Greedy runtime vs. density (scalability validation)",
+        "columns": [
+          "density",
+          "num_vehicles",
+          "num_contents",
+          "greedy_solve_time_ms"
+        ]
+      },
+      {
+        "scenario": "C",
+        "filename": "C_comparison_AoI_violation_rate.csv",
+        "description": "Scenario C: AoI violation rate vs. prediction_error_pct for all algorithms (density=10)",
+        "columns": [
+          "prediction_error_pct",
+          "density",
+          "algorithm",
+          "gamma",
+          "AoI_viol_mean",
+          "AoI_viol_worst",
+          "AoI_viol_std",
+          "AoI_viol_ci95"
+        ]
+      },
+      {
+        "scenario": "C",
+        "filename": "C_comparison_CHR.csv",
+        "description": "Scenario C: CHR vs. prediction_error_pct",
+        "columns": [
+          "prediction_error_pct",
+          "density",
+          "algorithm",
+          "CHR_mean",
+          "CHR_std"
+        ]
+      },
+      {
+        "scenario": "C",
+        "filename": "C_comparison_CDSR.csv",
+        "description": "Scenario C: CDSR vs. prediction_error_pct",
+        "columns": [
+          "prediction_error_pct",
+          "density",
+          "algorithm",
+          "CDSR_mean",
+          "CDSR_std"
+        ]
+      },
+      {
+        "scenario": "C",
+        "filename": "C_comparison_PCO.csv",
+        "description": "Scenario C: PCO vs. prediction_error_pct",
+        "columns": [
+          "prediction_error_pct",
+          "density",
+          "algorithm",
+          "PCO_mean"
+        ]
+      },
+      {
+        "scenario": "C",
+        "filename": "C_comparison_RLBI.csv",
+        "description": "Scenario C: RLBI vs. prediction_error_pct",
+        "columns": [
+          "prediction_error_pct",
+          "density",
+          "algorithm",
+          "RLBI_mean"
+        ]
+      },
+      {
+        "scenario": "D",
+        "filename": "D_comparison_AoI_violation_rate.csv",
+        "description": "Scenario D: AoI violation rate vs. tau_max for all algorithms (density=10, error=20%)",
+        "columns": [
+          "tau_max_slots",
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "AoI_viol_mean",
+          "AoI_viol_worst",
+          "AoI_viol_std"
+        ]
+      },
+      {
+        "scenario": "D",
+        "filename": "D_comparison_CHR.csv",
+        "description": "Scenario D: CHR vs. tau_max",
+        "columns": [
+          "tau_max_slots",
+          "algorithm",
+          "CHR_mean",
+          "CHR_std"
+        ]
+      },
+      {
+        "scenario": "D",
+        "filename": "D_comparison_CDSR.csv",
+        "description": "Scenario D: CDSR vs. tau_max",
+        "columns": [
+          "tau_max_slots",
+          "algorithm",
+          "CDSR_mean",
+          "CDSR_std"
+        ]
+      },
+      {
+        "scenario": "D",
+        "filename": "D_comparison_PCO.csv",
+        "description": "Scenario D: PCO vs. tau_max",
+        "columns": [
+          "tau_max_slots",
+          "algorithm",
+          "PCO_mean"
+        ]
+      },
+      {
+        "scenario": "E",
+        "filename": "E_RILP_gamma_sweep_AoI_violation_rate.csv",
+        "description": "Scenario E: Γ vs. AoI violation rate for RILP and RILP-Greedy across density levels",
+        "columns": [
+          "gamma",
+          "density",
+          "prediction_error_pct",
+          "algorithm",
+          "AoI_viol_mean",
+          "AoI_viol_worst",
+          "AoI_viol_std"
+        ]
+      },
+      {
+        "scenario": "E",
+        "filename": "E_RILP_gamma_sweep_CHR.csv",
+        "description": "Scenario E: Γ vs. CHR — robustness-performance tradeoff",
+        "columns": [
+          "gamma",
+          "density",
+          "algorithm",
+          "CHR_mean",
+          "CHR_std"
+        ]
+      },
+      {
+        "scenario": "E",
+        "filename": "E_RILP_gamma_star_identification.csv",
+        "description": "Scenario E: Identified Γ* per density level (empirical threshold)",
+        "columns": [
+          "density",
+          "prediction_error_pct",
+          "tau_max",
+          "gamma_star_empirical",
+          "gamma_star_analytical"
+        ]
+      },
+      {
+        "scenario": "E",
+        "filename": "E_RILP_gamma_sweep_CDSR.csv",
+        "description": "Scenario E: Γ vs. CDSR",
+        "columns": [
+          "gamma",
+          "density",
+          "algorithm",
+          "CDSR_mean"
+        ]
+      },
+      {
+        "scenario": "E",
+        "filename": "E_RILP_gamma_sweep_PCO.csv",
+        "description": "Scenario E: Γ vs. PCO (cost of robustness)",
+        "columns": [
+          "gamma",
+          "density",
+          "algorithm",
+          "PCO_mean"
+        ]
+      }
+    ]
+  },
+  "implementation_notes": {
+    "rilp_implementation": {
+      "library": "PuLP (with CBC solver) or gurobipy",
+      "code_structure": [
+        "1. parse_sumo_output(trace_file) → vehicle trajectories",
+        "2. compute_LET(trajectories, comm_range=800) → LET_v per scheduling window",
+        "3. compute_prediction_error(LET_v, epsilon_max) → delta_v samples",
+        "4. build_RILP(V, C, LET, delta, Gamma, tau_max, CAP, pop) → PuLP LpProblem",
+        "5. add_robust_counterpart_constraints(problem, Gamma, delta_max) → Bertsimas-Sim dual",
+        "6. solve_RILP(problem, time_limit=300) → x_vc, f_vc, a_vc",
+        "7. compute_metrics(x_vc, f_vc, a_vc, requests, tau_max) → CHR, CDSR, AoI_viol, PCO, RLBI"
+      ]
+    },
+    "greedy_implementation": {
+      "code_structure": [
+        "1. compute_LET_robust(LET_v, Gamma, delta_v) = LET_v - Gamma * delta_v",
+        "2. compute_priority(v, c, LET_robust, pop, alpha=0.5) = LET_robust * pop * (1 + alpha * AoI_urgency)",
+        "3. greedy_schedule(V, C, priority, CAP, LET_robust, outage_end) → X"
+      ]
+    },
+    "sumo_integration": {
+      "base_file": "8.V2V_Precaching.py (SumoNetSim1.1.6)",
+      "reuse_pct": "90%",
+      "new_components": [
+        "RILP solver module (new file: rilp_solver.py)",
+        "Greedy heuristic module (new file: greedy_precaching.py)",
+        "AoI tracker module (new file: aoi_tracker.py)",
+        "Metric collector module (extended from existing)"
+      ]
+    },
+    "experiment_runner": {
+      "parallelism": "Run each (scenario, density, algorithm, seed) config independently",
+      "recommended_tool": "Python multiprocessing or GNU parallel",
+      "estimated_total_configs": {
+        "A": "5 density × 4 error × 8 algorithms × 10 seeds = 1,600 runs",
+        "B": "6 density × 4 error × 7 algorithms × 10 seeds = 1,680 runs",
+        "C": "7 error × 2 density × 8 algorithms × 10 seeds = 1,120 runs",
+        "D": "7 tau_max × 6 algorithms × 10 seeds = 420 runs",
+        "E": "11 gamma × 4 density × 4 error × 2 algorithms × 10 seeds = 3,520 runs"
+      }
+    }
+  },
+  "validation_checklist": {
+    "C1_validation": [
+      "RILP formulation implemented with all 8 constraints (R1~R8)",
+      "Bertsimas-Sim robust counterpart verified algebraically",
+      "Γ=0 case produces same result as deterministic baselines (regression test)",
+      "Scenario A results show RILP outperforms all baselines on AoI_violation_rate"
+    ],
+    "C2_validation": [
+      "NP-hardness: Scenario B shows RILP solve time exceeds 300s time limit for density≥6",
+      "Greedy achieves ≥90% of RILP CHR in Scenario A (density≤5, comparison possible)",
+      "Greedy solve time <5ms per scheduling window across all densities (Scenario B)",
+      "Greedy scales linearly with |V|×|C| (log-linear due to sort)"
+    ],
+    "C3_validation": [
+      "Scenario C: RILP AoI_violation_rate stays near-zero (≤1%) for Γ≤Γ* across all error levels",
+      "Scenario D: AoI_violation_rate decreases monotonically with τ_max for RILP",
+      "Scenario E: AoI_violation_rate increases monotonically with Γ (Corollary 1 confirmed)",
+      "Scenario E: At Γ=0, RILP matches Nam2023b performance (Corollary 2 confirmed)",
+      "Scenario E: Γ* identified empirically matches analytical formula for single-RSU case"
+    ],
+    "C4_validation": [
+      "All 5 metrics collected for all scenario-algorithm combinations",
+      "10 independent runs per config; mean ± std reported",
+      "95% confidence intervals computed for primary metrics",
+      "Statistical significance test (t-test or Mann-Whitney U) for RILP vs. best baseline"
+    ]
+  }
+}

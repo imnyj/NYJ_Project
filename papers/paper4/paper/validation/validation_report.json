@@ -1,0 +1,40 @@
+{
+  "result": "PASS",
+  "timestamp": "2026-05-08T22:57:16",
+  "leaf_id": "L1-B-3-validate",
+  "scope_file": "sim/sim_engine.py + cross-check sim/etsi_cam_layer.py L97 + sim/sensitivity_runner.py CSV schema",
+  "retry_count": 0,
+  "stage_label": "ABC-A (post-L1-B-3 static integrity check)",
+  "questions": {
+    "Q-V1_SUMOCFG_PATH_usage": {
+      "verdict": "PASS",
+      "evidence": "sim_engine.py L41-42 SUMOCFG_PATH constant absolute path. L347-353 libsumo.start([\"sumo\",\"-c\",SUMOCFG_PATH,\"--step-length\",str(self.STEP_LENGTH),\"--seed\",...,\"--no-warnings\",\"true\",\"--no-step-log\",\"true\",\"--time-to-teleport\",\"-1\",\"--collision.action\",\"warn\"]) — all flags conform to SUMO CLI. directory_list confirms /home/imnyj/SumoNetSim1.1.5/src/sumo/generated.sumocfg (584B) plus generated.{net,rou,add,nod,edg}.xml + rsu.poi.xml all present.",
+      "minor_note": "No file-existence assert before libsumo.start. If path becomes invalid, libsumo will raise — acceptable; not a defect."
+    },
+    "Q-V2_self_route_remnant": {
+      "verdict": "PASS",
+      "evidence": "Function definitions generate_routes (L215) and generate_urban_grid_net (L161) still exist for compatibility, but SimulationRunner.run() L327-353 contains explicit comment '[L1-B-3] Net/route/cfg generation calls removed' and no call sites remain. grep for 'generate_routes(' / 'generate_urban_grid_net(' returns only definition lines, no invocations."
+    },
+    "Q-V3_ETSICAMLayer_AoITracker_integration": {
+      "verdict": "PASS",
+      "evidence": "L337 ETSICAMLayer(method=self.method, method_params=self.method_params) — params propagated. L338-339 AoITracker(comm_range_m=COMM_RANGE_M, eval_start_time=self.warmup_s). Step loop L367-383 collects x,y,speed,heading,accel via libsumo.vehicle.* with try/except guard for vehicles departing during iteration. cbr_prev bootstrapped to 0.0 on first step (L389). L392 cam_layer.step(vehicles_data, sim_time, cbr_prev). Cross-check etsi_cam_layer.py L97: self.params.get('cbr_target', 0.60) — lowercase key matches sensitivity_runner.py L135 method_params={'cbr_target': cbr_target}. Previously fatal key-case bug from L1-A-2 IS FIXED.",
+      "cross_file_dependency": "etsi_cam_layer.py L97 uses lowercase 'cbr_target' (post L1-B-1 patch); sensitivity_runner.py L127-135 emits lowercase 'cbr_target'; agreement confirmed."
+    },
+    "Q-V4_termination_duration": {
+      "verdict": "PASS",
+      "evidence": "L312 STEP_LENGTH=0.1 class const; L348 --step-length=str(0.1) passed to SUMO; L359 sim_time = step * STEP_LENGTH consistent. L357 while-loop terminates on (getMinExpectedNumber()==0) OR (step >= duration_steps). SumoNetSim1.1.5 generated.rou.xml is 49.4KB (high vehicle population, end=360000), so getMinExpectedNumber>0 will hold for entire reasonable duration (cap is duration_steps). L418 metrics accumulated only if sim_time >= warmup_s; warmup default 30.0s, command 2-redo override 5.0s — both work."
+    },
+    "Q-V5_output_schema": {
+      "verdict": "PASS",
+      "evidence": "SimulationRunner.run() returns dict with keys {AoI_mean, CBR_mean, PDR_mean, energy_efficiency, ETSI_compliance, runtime_sec, n_cam_events} (L438-446). sensitivity_runner.py CSV_COLUMNS L50-52 expects identical names; L194-200 maps via metrics.get(...) so missing keys would be None (no KeyError). data output path: sensitivity_runner.DATA_DIR overridden by --data-dir CLI; RUNBOOK 명령 4-redo passes /home/imnyj/papers/paper4/paper/data. CSV file: {sweep_id}_results.csv at L214."
+    }
+  },
+  "issues": [],
+  "summary": "L1-B-3 patch (SumoNetSim1.1.5 asset integration via SUMOCFG_PATH) is statically sound across the full SimulationRunner.run() path, including ETSICAMLayer/AoITracker integration, cross-file cbr_target key-case (now lowercase consistently), termination guard, and output schema compatible with sensitivity_runner.py. Self-run smoke from Experimenter (avg 88 vehicles, n_cam~26k, CBR~0.73 for 300 steps libsumo-only loop) corroborates that the SUMO assets feed sufficient vehicle population to drive non-zero CAM/CBR. No critical/major/minor blockers found.",
+  "data_integrity": {
+    "nan_check": "n/a (no CSV produced in this static check)",
+    "range_check": "n/a",
+    "consistency_check": true
+  },
+  "recommendation": "사용자가 RUNBOOK 명령 2-redo (B단계, SimulationRunner full run, BL-A 20대 30s) 실행 가능. 정상 신호(runtime_sec>=5, n_cam>=1000, CBR>=0.05) 확인되면 명령 4-redo (C단계, SA3 sweep)로 진행. cbr_target 7값에서 AoI/CBR이 분리되는지가 최종 확증 포인트."
+}

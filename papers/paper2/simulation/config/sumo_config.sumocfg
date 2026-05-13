@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<configuration>
+  <input>
+    <net-file value="grid5x5.net.xml"/>
+    <route-files value="vehicles.rou.xml"/>
+  </input>
+  <processing>
+    <step-length value="0.1"/>
+    <collision.action value="warn"/>
+    <time-to-teleport value="300"/>
+  </processing>
+  <time>
+    <begin value="0"/>
+    <end value="600.0"/>
+  </time>
+  <random>
+    <seed value="42"/>
+  </random>
+</configuration>

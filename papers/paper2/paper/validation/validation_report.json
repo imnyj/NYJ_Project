@@ -1,0 +1,190 @@
+{
+  "report_id": "VALIDATION-MAFAC-001",
+  "generated_at": "2026-05-06T11:07:04.845083",
+  "validator": "Reviewer",
+  "result": "FAIL",
+  "phase2_config": {
+    "num_vehicles": 50,
+    "episodes": 500,
+    "episode_duration_s": 300.0,
+    "dt": 0.1,
+    "steps_per_episode": 3000,
+    "batch_size": 256,
+    "user_observation": "110/500 ep at extrapolated 3 months total"
+  },
+  "issues": [
+    {
+      "id": "BUG_001",
+      "title": "mafac_agent.py::_update_torch() — critic next-action 계산 루프 (256× serial forward)",
+      "verdict": "✅ 확정 (CONFIRMED)",
+      "severity": "CRITICAL",
+      "location": "mafac_agent.py, _update_torch(), lines: `for i in range(len(obs)): na, nlp = self.actor.get_action(next_obs_t[i:i+1])`",
+      "description": "batch_size=256인 next_obs를 1×1 forward로 256번 순차 호출. PyTorch 콜 오버헤드(CPU ~0.5ms/call): 256×0.5ms=128ms per update. 배치 forward 1회로 대체 시 ~3ms(CPU) → 약 43× 속도 향상. GPU 환경에서도 256call×0.1ms=26ms vs batch 0.5ms → 51× 향상. 이것이 단독으로 가장 큰 단일 병목임.",
+      "slowdown_estimate": "43x~51x 속도 저하 (이 루프만으로)",
+      "fix": "with torch.no_grad():\n    logits = self.actor(next_obs_t)  # 1회 batch forward\n    next_acts = torch.stack(\n        [torch.distributions.Categorical(logits=lgts).sample() for lgts in logits],\n        dim=1\n    ).cpu().numpy()  # shape (B, 4)"
+    },
+    {
+      "id": "BUG_002",
+      "title": "mafac_agent.py::_update_torch() — actor advantage 계산 내 _onehot_actions 이중 루프",
+      "verdict": "✅ 확정 (CONFIRMED)",
+      "severity": "MAJOR",
+      "location": "mafac_agent.py, _onehot_actions(), lines: `for i, d in enumerate(self.action_dims): for b in range(B):`",
+      "description": "_onehot_actions는 (4 dims × 256 batch) = 1024개 Python 반복문. update당 6회 호출됨(acts_oh 1회 + critic loop에서 4회 + 추가 1회) → update당 6144번 Python 반복. numpy advanced indexing으로 4줄로 대체 가능. 또한 actor 루프 내에서 4개 sub-action마다 critic forward 2회 → update당 총 8+2=10 critic forward call.",
+      "slowdown_estimate": "~5-10x 대비 vectorized (이중 루프 단독); critic forward 8회 → 주요 병목",
+      "fix": "def _onehot_actions(self, acts: np.ndarray) -> np.ndarray:\n    B = acts.shape[0]\n    result = np.zeros((B, sum(self.action_dims)), dtype=np.float32)\n    offset = 0\n    for i, d in enumerate(self.action_dims):\n        clipped = acts[:, i].clip(0, d - 1)\n        result[np.arange(B), offset + clipped] = 1.0\n        offset += d\n    return result"
+    },
+    {
+      "id": "BUG_003",
+      "title": "trainer.py::run_episode() — per-step per-vehicle gradient update (75M updates)",
+      "verdict": "✅ 확정 (CONFIRMED)",
+      "severity": "CRITICAL",
+      "location": "trainer.py, run_episode(), line: `loss_dict = self._update_agents()` (called every step)",
+      "description": "매 env step마다 모든 차량(최대 50대) agent.update() 호출. 50 vehicles × 3000 steps × 500 ep = 75,000,000번 gradient update. 각 update당: 1 actor forward + 8 critic forward(actor loop) + 2 critic forward(critic update) = 11 NN forward passes. 표준 SAC/MARL은 update freq를 줄이거나(N=10~20 step마다 1회) batch update 사용. update_every=10이면 7.5M updates로 10× 감소. 50대 차량 중 1대만 매 step 업데이트해도 50× 감소.",
+      "total_updates": 75000000,
+      "fix": "# 옵션 1: update frequency 도입\nif step_count % update_every == 0:\n    loss_dict = self._update_agents()\n\n# 옵션 2: round-robin per step (1 agent per step)\nagent_to_update = agent_list[step_count % len(agents)]\nagent_to_update.update()"
+    },
+    {
+      "id": "BUG_004",
+      "title": "Per-vehicle 독립 Agent 설계 — 메모리/연산 50배, warm-start 없음",
+      "verdict": "✅ 확정 (CONFIRMED)",
+      "severity": "MAJOR",
+      "location": "trainer.py::_ensure_agents(), mafac_agent.py::MAFACAgent.__init__()",
+      "description": "50대 차량이 각자 독립된 actor+critic+target_critic+optimizer+replay buffer 보유. 총 파라미터: 50 × 196,670 = 9,833,500개 (39.3MB float32). Replay buffer: 50 × 100K × 35 fields × 4B ≈ 700MB. Federated aggregation은 critic만 평균 → actor는 federation 효과 없음(설계 의도이나 단편화). 차량 respawn 시 _ensure_agents()가 agents dict에서 삭제 후 새 agent 생성 → warm start 없음. respawn 주기(30~60s = 300~600 steps) < buffer warmup(256 steps) 이므로 학습 신호 단편화 심각 — 일부 차량은 buffer도 채우기 전에 재생성됨.",
+      "memory_mb": 700,
+      "params_total": 9833500,
+      "fix": "차량 재생성 시 agent 삭제 금지; vid가 사라져도 agent pool 유지. 재등장 시 기존 agent 재사용."
+    },
+    {
+      "id": "BUG_005",
+      "title": "trainer.py::_save_checkpoints() — 첫 5개 agent만 저장, 핵심 상태 미저장",
+      "verdict": "✅ 확정 (CONFIRMED)",
+      "severity": "CRITICAL",
+      "location": "trainer.py, _save_checkpoints(), line: `for vid, agent in list(self.agents.items())[:5]:`",
+      "description": "50대 중 첫 5개 agent만 checkpoint 저장 → 45개 agent 상태 영구 소실. 저장 항목: actor weights, critic weights, lagrange_lambda, total_steps만. 누락 항목: (1) replay buffer (100K samples, 학습 정보의 핵심), (2) optimizer state (Adam momentum, 수렴 궤적 소실), (3) episode_count / total_episodes (재시작 위치 불명), (4) target_critic은 critic에서 재로드하므로 암묵적으로 OK지만 optimizer state 없으면 학습률 스케줄 초기화. load_checkpoint()는 MAFACAgent에 구현되어 있으나 Trainer 어디에서도 호출 안 함.",
+      "fix": "def _save_checkpoints(self, episode: int):\n    ckpt_dir = self.checkpoint_dir / self.algorithm / f'ep{episode:05d}'\n    ckpt_dir.mkdir(parents=True, exist_ok=True)\n    # Save ALL agents\n    for vid, agent in self.agents.items():\n        safe_vid = vid.replace('/', '_')\n        agent.save_checkpoint(str(ckpt_dir / f'{safe_vid}.pt'))\n    # Save trainer state\n    trainer_state = {\n        'episode_count': episode,\n        'reward_history': self.reward_history,\n        'algorithm': self.algorithm,\n    }\n    import torch\n    torch.save(trainer_state, str(ckpt_dir / 'trainer_state.pt'))\n\n# Also: save replay buffer per agent (in agent.save_checkpoint)\n# Add buffer state: ckpt['buffer'] = list(self.buffer._buf)"
+    },
+    {
+      "id": "BUG_006",
+      "title": "run_full_simulation.py Phase 2 — 항상 episode 1부터 시작, resume 불가",
+      "verdict": "✅ 확정 (CONFIRMED)",
+      "severity": "CRITICAL",
+      "location": "run_full_simulation.py, phase2_training(), trainer.train() always starts from ep=1",
+      "description": "phase2_training()은 Trainer를 새로 생성하고 train()을 호출. train()의 루프: `for ep in range(1, self.total_episodes + 1)`. --resume 플래그 없음. checkpoint 로드 로직 없음. 110 episode에서 중단 후 재실행 시 ep=1부터 재시작. 이 버그가 없었다면 사용자는 이미 ep 111~500만 실행하면 됐으나, 현재는 처음부터 다시 해야 함.",
+      "fix": "def phase2_training(logger, episodes=500, seed=42, resume_from=None):\n    trainer = Trainer(...)\n    start_ep = 1\n    if resume_from:\n        ckpt_dir = Path(CHECKPOINT_DIR) / 'MAFAC' / f'ep{resume_from:05d}'\n        if ckpt_dir.exists():\n            for vid_file in ckpt_dir.glob('*.pt'):\n                if 'trainer_state' in vid_file.name:\n                    state = torch.load(vid_file)\n                    trainer.episode_count = state['episode_count']\n                    start_ep = state['episode_count'] + 1\n    trainer.train(start_episode=start_ep)"
+    },
+    {
+      "id": "BUG_007",
+      "title": "mafac_agent.py: log_prob(nlp) 계산 후 미사용 — 낭비 연산",
+      "verdict": "✅ 추가 발견 (NEW)",
+      "severity": "MINOR",
+      "location": "mafac_agent.py, _update_torch(), line: `na, nlp = self.actor.get_action(next_obs_t[i:i+1])`",
+      "description": "get_action()은 내부적으로 categorical.log_prob(a)를 계산하지만 nlp는 next_acts_list에 추가되지 않고 버려짐. 이 log_prob는 SAC의 entropy regularization에 사용되어야 하지만 target_q 계산에 포함되지 않음 → entropy term 누락 의심. 또한 256회 serial call 내에서 매번 log_prob 계산하므로 불필요한 overhead.",
+      "fix": "배치 forward로 대체(BUG_001과 동시 수정) + entropy term 필요 시 target_q에 -alpha*log_pi 추가"
+    },
+    {
+      "id": "BUG_008",
+      "title": "mafac_agent.py: actor advantage 계산 — hybrid action bias",
+      "verdict": "✅ 추가 발견 (NEW)",
+      "severity": "MAJOR",
+      "location": "mafac_agent.py, _update_torch(), actor update loop: `acts_copy = acts.copy()` then `acts_copy[:, i] = a_sample`",
+      "description": "sub-action i에 대한 advantage 계산 시: acts_copy에서 dim i만 current policy에서 샘플링, 나머지 dim j≠i는 replay buffer의 오래된 행동 사용. 이 hybrid action으로 Q-value를 계산하면 편향된 advantage signal 발생. 올바른 factored policy gradient는: 현재 policy에서 모든 dim 샘플링 후 해당 dim의 marginal advantage를 계산해야 함. 현재 구현은 off-policy 편향과 dimension 간 상관관계 무시 문제 동시 발생.",
+      "mathematical_impact": "Actor gradient 편향 → 정책 수렴 불안정, 특히 action dim 간 correlation 높을 때",
+      "fix": "# 모든 sub-action을 current policy에서 샘플링\nwith torch.no_grad():\n    logits_no_grad = self.actor(obs_t)\n    all_samples = [torch.distributions.Categorical(logits=l).sample() for l in logits_no_grad]\n    all_samples_np = torch.stack(all_samples, dim=1).numpy()\n\nfor i, lgts in enumerate(logits):\n    log_p = torch.distributions.Categorical(logits=lgts).log_prob(all_samples[i])\n    acts_onpolicy = all_samples_np.copy()\n    acts_onpolicy_oh = torch.FloatTensor(self._onehot_actions(acts_onpolicy))\n    with torch.no_grad():\n        adv = self.critic(obs_t, acts_onpolicy_oh)  # on-policy Q\n    actor_loss_parts.append(-(log_p * adv.detach()).mean())"
+    },
+    {
+      "id": "BUG_009",
+      "title": "trainer.py::_ensure_agents() — respawn 차량의 agent 삭제로 학습 소실",
+      "verdict": "✅ 추가 발견 (NEW)",
+      "severity": "CRITICAL",
+      "location": "trainer.py, _ensure_agents(), lines: `departed = set(self.agents.keys()) - active; for vid in departed: del self.agents[vid]`",
+      "description": "sumo_env.py의 _respawn_vehicle()은 동일한 vid로 차량을 재삽입하지만, SUMO step 사이에 차량이 잠시 active vehicle list에서 사라질 수 있음. _ensure_agents()는 obs에 없는 vid의 agent를 즉시 삭제. 다음 step에서 같은 vid가 재등장하면 새 MAFACAgent(빈 buffer, 무작위 weights) 생성. 결과: 차량 respawn 주기(30-60s=300-600 step)마다 학습 신호 단절. 50대 × 300 step 주기 → 평균적으로 매 6 step마다 어딘가에서 agent 재생성 발생.",
+      "fix": "# agent pool은 삭제하지 않고 유지; obs에 없으면 action만 skip\n# _ensure_agents()에서:\nfor vid in list(obs.keys()):\n    if vid not in self.agents:\n        self.agents[vid] = make_agent(...)  # 신규 vid만 생성\n# departed agent는 삭제하지 말고 'inactive' 상태로 보존\n# 메모리 관리: episode 종료 시 일정 기간 미등장 vid만 정리"
+    },
+    {
+      "id": "BUG_010",
+      "title": "mafac_agent.py: actor update 시 critic forward 8회 (4 sub-action × 2)",
+      "verdict": "✅ 추가 발견 (NEW)",
+      "severity": "MAJOR",
+      "location": "mafac_agent.py, _update_torch(), actor update loop: `adv = self.critic(...) - self.critic(...)`",
+      "description": "4개 sub-action 각각에 대해 critic forward 2회(수정판 Q - 기준 Q). acts_oh_t에 대한 critic(obs_t, acts_oh_t)은 4번 반복 계산되지만 결과가 동일. per agent update당 총 critic forward: critic update 2회 + actor loop 8회 = 10회. 최적화: baseline Q(obs_t, acts_oh_t)는 loop 밖에서 1회만 계산.",
+      "fix": "# Loop 밖에서 baseline Q 한 번만 계산\nwith torch.no_grad():\n    baseline_q = self.critic(obs_t, acts_oh_t)  # 1회만\n\nfor i, lgts in enumerate(logits):\n    ...\n    with torch.no_grad():\n        q_with_sample = self.critic(obs_t, acts_copy_oh)  # 1회\n        adv = q_with_sample - baseline_q  # cached baseline 사용"
+    },
+    {
+      "id": "BUG_011",
+      "title": "trainer.py::_save_checkpoints() — silent exception suppression",
+      "verdict": "✅ 추가 발견 (NEW)",
+      "severity": "MINOR",
+      "location": "trainer.py, _save_checkpoints(), line: `except Exception as e: pass`",
+      "description": "checkpoint 저장 실패(디스크 풀, 권한 오류 등) 시 에러를 완전히 무시. 사용자는 checkpoint가 저장되지 않았음을 알 수 없어 resume 시도 시 실패.",
+      "fix": "except Exception as e: print(f'[WARNING] Checkpoint save failed at ep {episode}: {e}')"
+    },
+    {
+      "id": "BUG_012",
+      "title": "federated.py: 2단계 집계에서 RSU별 participant 수 불균형 무시",
+      "verdict": "⚠️ 부분맞음 (PARTIAL)",
+      "severity": "MINOR",
+      "location": "federated.py, aggregate_rsu_models(): uniform 1/N averaging across RSUs",
+      "description": "1단계(RSU 내): AoI 역가중 평균 ✅. 2단계(RSU 간): 단순 균등 평균(1/N_rsu). RSU_0에 40대, RSU_1에 10대 차량이 있으면 RSU_0 집계모델과 RSU_1 집계모델을 동등 취급. 올바른 구현: 전체 participant 수 기반 재가중 또는 AoI 합산 기반 가중. 논문 Algorithm 2가 이를 명시하지 않으면 minor; 명시한다면 MAJOR.",
+      "fix": "# participant 수 기반 가중\nweights = {rid: len(rsu_buckets[rid]) for rid in valid_models}\ntotal_w = sum(weights.values())\n# 각 RSU 모델을 participant 비율로 가중 평균"
+    },
+    {
+      "id": "BUG_013",
+      "title": "federated.py: federation 후 target_critic hard reset",
+      "verdict": "⚠️ 부분맞음 (PARTIAL)",
+      "severity": "MINOR",
+      "location": "mafac_agent.py, set_critic_params(): `self.critic_target.load_state_dict(params)`",
+      "description": "federation aggregation 후 set_critic_params()는 critic과 target_critic을 동시에 같은 값으로 설정. 이는 target_critic의 slow-tracking 특성을 제거하고 hard reset. 결과: 다음 10 episodes 동안 Q-value 추정이 갑자기 불안정해질 수 있음. 단, 10 episode마다 federation 후 소프트 업데이트로 곧 안정화 → 영향 제한적.",
+      "fix": "set_critic_params()에서 target_critic은 업데이트 안 하거나 소프트 업데이트 유지"
+    }
+  ],
+  "mathematical_correctness": {
+    "lagrangian_dual_ascent": {
+      "verdict": "✅ CORRECT",
+      "detail": "grad_lambda = mean_cv - constraint_threshold; lambda = max(0, lambda + lr * grad_lambda). 표준 CMDP primal-dual와 일치. threshold=0.65는 sumo_env.py CBR_THRESH와 일치."
+    },
+    "bellman_backup_target_q": {
+      "verdict": "✅ CORRECT (with caveat)",
+      "detail": "target_q = r - lambda*c + gamma*(1-done)*V_target(s'). Lagrangian Bellman backup으로 수학적 정확. 단, V_target(s')에 entropy term(-alpha*log_pi) 없음 → SAC 아닌 plain AC."
+    },
+    "entropy_regularization": {
+      "verdict": "⚠️ MISSING",
+      "detail": "nlp (log_prob) 계산되지만 target_q에 미포함. 논문이 SAC 기반이라면 target_v = Q_target(s',a') - alpha*log_pi(a'|s') 필요. 현재는 entropy 미포함 AC → 탐색 부족 가능성."
+    },
+    "federated_aoi_weighting": {
+      "verdict": "⚠️ PARTIAL",
+      "detail": "within-RSU: w_i = 1/(AoI_i + 1e-6), normalized → 정확. between-RSU: uniform 1/N → participant 수 불균형 무시. 전체 inverse-AoI weighting 정신과 부합하지 않음."
+    },
+    "cv_definition": {
+      "verdict": "✅ CORRECT",
+      "detail": "trainer.py: cv = 1.0 if cbr > 0.65 else 0.0. sumo_env.py: cvr = 1.0 if cbr > CBR_THRESH(=0.65) else 0.0. binary CV 정의 양쪽 파일에서 일관성 있음."
+    },
+    "actor_loss_factored_pg": {
+      "verdict": "⚠️ BIASED",
+      "detail": "for each sub-action i: advantage = Q(s, a_stored_except_i_from_pi) - Q(s, a_stored). dim i만 current policy에서 샘플링, 나머지는 old policy → hybrid action bias. 수학적으로 올바른 factored PG와 다름 → gradient 편향."
+    }
+  },
+  "timing_analysis": {
+    "estimated_time_per_episode": {
+      "formula": "50 agents × N ms/update × 3000 steps",
+      "at_100ms_per_update": "4.17 hours/ep = 2.1 months for 500 ep",
+      "at_200ms_per_update": "8.33 hours/ep = 4.2 months for 500 ep"
+    },
+    "bottleneck_breakdown": {
+      "bug_001_256_loop_dominant": "~128ms/update on CPU (43x vs batch)",
+      "bug_002_onehot_6x": "~3ms/update",
+      "bug_010_critic_8forward": "~40ms/update",
+      "other_overhead": "~10ms/update",
+      "total_per_update_est": "~180ms on CPU (no GPU acceleration)"
+    },
+    "3month_verdict": "PLAUSIBLE. 50 agents × ~100-180ms/update × 3000 steps ≈ 4.2-7.5 hours/episode. 500 episodes × 4.2h = 2,083h = 2.9 months (100ms case) → 3개월 추산은 타당함. BUG_001 단독 수정(batch forward): ~43x update 가속 → ~100ms → ~2.3ms/update → 전체: ~10-20x 가속 (다른 overhead 감안) → 3개월 → 4-9일로 단축 예상.",
+    "expected_speedup_after_fixes": {
+      "BUG_001_batch_forward": "10-20x (dominant bottleneck)",
+      "BUG_002_vectorize_onehot": "1.1-1.5x additional",
+      "BUG_003_update_freq_10": "10x additional (independent)",
+      "BUG_010_cache_baseline_q": "1.5x additional",
+      "combined_conservative": "20-50x total speedup achievable",
+      "3months_to": "1.8-4.5 days"
+    }
+  },
+  "summary": "3개월 추산은 타당하다 (CONFIRMED). 핵심 병목은 BUG_001(256× serial actor forward)과 BUG_003(per-step per-vehicle update, 75M gradient updates)의 복합 효과. BUG_001만 수정해도 update당 약 43x 속도 향상, 전체 학습 시간 10-20x 단축 가능 → 3개월 → 4-9일. BUG_003(update frequency를 10 step마다 1회로 변경)을 추가 적용하면 추가 10x 단축 가능 → 0.5일 이내. 단, 알고리즘 정확성 측면에서: (1) entropy term 누락(log_prob 계산 후 미사용), (2) actor advantage hybrid action bias(BUG_008)는 수렴 안정성에 영향을 주는 설계 결함으로 빠른 수렴을 위해서도 수정이 권고됨. 체크포인트 시스템(BUG_005, BUG_006)은 resume을 완전히 불가능하게 만들며 이것이 사용자의 110/500 episode 상황을 초래한 직접 원인. 즉각 수정 우선순위: BUG_001 > BUG_005+BUG_006 > BUG_003 > BUG_008 > BUG_002+BUG_010."
+}

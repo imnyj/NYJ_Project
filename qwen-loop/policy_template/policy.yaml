@@ -1,0 +1,51 @@
+# qwen-loop 정책 파일
+#
+# 이 파일은 qwen-loop의 모든 권한을 정의합니다.
+# qwen-loop은 이 파일을 절대 수정할 수 없습니다 (디렉토리 밖에 있음).
+# 변경하려면 사람이 직접 편집하세요. 변경 후 chat 재시작 필요.
+#
+# 위치: ~/.config/qwen-loop/policy.yaml
+# 권장: chmod 444 로 읽기 전용 잠그기
+
+version: 1
+
+# qwen-loop 프로젝트 루트의 절대 경로.
+# 이 밖의 어떤 파일도 chat 도구가 읽거나 쓸 수 없습니다.
+project_root: "/home/imnyj/qwen-loop"
+
+# project_root 안에서도 추가 보호할 경로 (자가 수정 금지).
+# 비워두면 chat은 자기 자신 포함 모든 파일 수정 가능.
+# 정책 파일이 외부에 있어 보호되므로 여기는 빈 값이 자연스러움.
+protected_paths: []
+  # 예: 특정 코어 모듈을 자가 수정 못하게 하려면:
+  # - "qwen_loop/safety/"
+  # - "qwen_loop/policy.py"
+
+# 자가 수정 한도
+self_upgrade:
+  daily_limit: 10                    # 하루 최대 자가 수정 횟수
+  cooldown_minutes: 5                # 자가 수정 사이 최소 대기
+  trial_timeout_seconds: 60          # 시범 운영 최대 시간
+  trial_max_retries: 5               # 시범 실패 시 재시도 횟수
+  history_keep_days: 30              # .history 백업 보관 기간
+
+# 외부 도구 한도
+web:
+  enabled: true
+  max_calls_per_session: 30
+  blocked_domains:
+    - facebook.com
+    - instagram.com
+    - twitter.com
+    - x.com
+
+# 셸 명령 실행 (위험 — 기본 비활성)
+shell:
+  enabled: false
+  allowed_commands: []               # ["ls", "cat", "grep"] 등 화이트리스트만
+  timeout_seconds: 30
+
+# 위반 시 동작
+on_violation:
+  notify_user: true                  # 사용자에게 위반 시도 알림
+  log_to_file: true                  # qwen_loop/.violations.log

@@ -1,0 +1,70 @@
+# 단일 모델 (Qwen2.5:72B, Ollama) 구성. 멀티 시뮬 동거 가정의 보수적 기본값.
+
+llm:
+  model: "qwen2.5:72b"
+  base_url: "http://localhost:11434"
+  temperature: 0.2
+  top_p: 0.9
+  num_ctx: 16384
+  request_timeout_sec: 600
+  keep_alive: "10m"
+
+reasoning:
+  react_max_steps: 5
+  self_consistency_n: 1
+  verifier_enabled: true
+  verifier_strict: false
+
+memory:
+  working_size: 12                  # chat에서 도구 결과까지 들어가니 약간 넉넉히
+  episodic_db: "data/episodic.db"
+  semantic_dir: "data/chroma"
+  embed_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  embed_device: "cpu"
+
+self_upgrade:
+  enabled: true
+  reflect_after_each_task: false
+  reflect_batch_size: 20
+  prompt_dir: "prompts"
+  ab_min_trials: 20
+  ab_promote_winrate: 0.60
+  skill_proposal_threshold: 5
+  auto_merge_skills: false
+
+# ---- chat.py 도구 사용 ----
+
+workspace:
+  # 파일 도구가 동작할 수 있는 유일한 경로. 이 밖의 경로는 거부됨.
+  # 절대 경로로 두는 게 안전.
+  dir: "workspace"
+  # 즉, 기본은 ~/qwen-loop/workspace/ 안에서만 파일 작업 가능.
+  # 본인 자료를 다루고 싶으면 ingest 폴더와 별개로 여기에 복사해서 사용.
+
+web:
+  # DuckDuckGo + httpx 기반. 의존성 없으면 자동 비활성.
+  enabled: true
+  max_calls_per_session: 30         # 한 chat 세션당 검색·fetch 합산 한도
+  blocked_domains:                   # 가져오기 차단 도메인
+    - facebook.com
+    - instagram.com
+    - twitter.com
+    - x.com
+
+tools:
+  max_iters_per_turn: 5             # 한 사용자 입력당 도구 호출 반복 한도
+  # 쓰기 도구 자동 승인 (위험)은 chat.py에서 /yolo on 으로만 켤 수 있음.
+  # config로는 강제 OFF 유지.
+
+concurrency:
+  max_inflight_tasks: 1
+  request_queue_size: 50
+  yield_to_others: true
+  yield_ms: 200
+
+server:
+  host: "127.0.0.1"
+  port: 8765
+
+outputs_dir: "outputs"
+ingest_dir: "ingest"

@@ -1,0 +1,42 @@
+{
+  "librarian": {
+    "status": "done",
+    "last_updated": "2025-01-26",
+    "note": "34 references collected. references.json + bibitem.tex generated."
+  },
+  "idea": {
+    "status": "done",
+    "last_updated": "2026-04-15",
+    "note": "NDN + AoI + MAFAC idea finalized. idea_spec.md (19.6KB) exists."
+  },
+  "experiment": {
+    "status": "done",
+    "last_updated": "2026-04-15",
+    "note": "4 scenarios x 6 algorithms. experiment_spec.json (11.7KB) exists."
+  },
+  "coder": {
+    "status": "done",
+    "last_updated": "2026-05-06",
+    "note": "Workstation-ready refactor: GPU support, batch forward (256x speedup), checkpoint+resume, agent persistence (no respawn delete), update_every=10 (10x speedup), entropy bonus, on-policy advantage. Total speedup 200-500x estimate."
+  },
+  "validator": {
+    "status": "done",
+    "last_updated": "2026-05-06",
+    "note": "Static code review FAIL initially → 13 bugs found. Critical 4 (BUG_001/003/005/006/009) all fixed in two rounds. Remaining MINOR (BUG_012/013) deferred."
+  },
+  "visualization": {
+    "status": "pending",
+    "last_updated": "2026-04-16",
+    "note": "figure/ and graph/ folders are EMPTY. No graphs generated yet. Blocked: need matplotlib environment + real data."
+  },
+  "writer": {
+    "status": "done",
+    "last_updated": "2026-04-15",
+    "note": "draft/main.tex exists (50,770 chars, ~14 pages). Full draft written but uses SYNTHETIC data. Figures are commented out (no PNG files). Needs revision after real simulation data."
+  },
+  "proofreader": {
+    "status": "pending",
+    "last_updated": "2026-04-16",
+    "note": "final/ folder is EMPTY. Proofreading not started."
+  }
+}

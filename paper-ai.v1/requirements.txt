@@ -1,0 +1,63 @@
+# ============================================================================
+# paper-ai requirements
+# ============================================================================
+# Install:
+#   python -m venv .venv
+#   source .venv/bin/activate        # Linux/WSL2
+#   pip install --upgrade pip
+#   pip install -r requirements.txt
+# ============================================================================
+
+# ---------- Phase 1: Foundation (Caching + Routing + Skills) ----------
+anthropic>=0.40.0            # Claude API client (prompt caching, batches)
+PyYAML>=6.0.1                # Config files (settings, routing, caching)
+python-dotenv>=1.0.1         # .env loader for API keys
+tenacity>=8.5.0              # Retry logic for API calls
+tiktoken>=0.7.0              # Token counting (cost estimation)
+cryptography>=42.0.0         # Fernet-based .env vault (shared workstations)
+smolagents>=1.0.0            # ReAct CodeAgent loop for autonomous agents
+litellm>=1.50.0              # Multi-provider LLM client used by smolagents
+
+# ---------- Phase 2: Orchestration (Blackboard + LangGraph) ----------
+langgraph>=0.2.50            # DAG orchestration + Magentic-One pattern
+langgraph-checkpoint-sqlite>=2.0.0  # State persistence
+
+# ---------- Phase 3: Advanced RAG (Librarian core) ----------
+paper-qa>=5.0.0              # PaperQA2 - SOTA scientific RAG
+sqlite-vec>=0.1.6            # Local vector store (file-based, WSL2 safe)
+sentence-transformers>=3.0.0 # SPECTER2 scientific embeddings
+FlagEmbedding>=1.2.10        # bge-reranker-v2-m3
+rank-bm25>=0.2.2             # BM25 keyword retrieval
+grobid-client-python>=0.0.9  # PDF parsing for scientific papers
+requests>=2.32.0             # DOI lookup / Crossref API
+
+# ---------- Phase 4: Planning + Batches ----------
+networkx>=3.3                # DAG construction for LLMCompiler
+# (Batches API is built-in anthropic SDK, no extra package)
+
+# ---------- Phase 5: Quality assurance + Learning ----------
+# (VLM critique uses anthropic vision, already included)
+# (Skill library uses sqlite-vec, already included)
+
+# ---------- Domain tools (Coder/Experimenter) ----------
+# libsumo comes with SUMO installation; install SUMO separately:
+#   sudo apt install sumo sumo-tools sumo-doc   (WSL2 / Ubuntu)
+# Then: export SUMO_HOME=/usr/share/sumo
+eclipse-sumo>=1.20.0         # Python bindings (optional fallback)
+traci>=1.20.0                # TraCI interface (backup for libsumo)
+numpy>=1.26.0                # Simulation data processing
+scipy>=1.13.0                # Statistical tests
+pandas>=2.2.0                # Data manipulation
+matplotlib>=3.9.0            # Visualization tool
+seaborn>=0.13.0              # Visualization tool
+Pillow>=10.4.0               # Image handling for VLM critique
+
+# ---------- LaTeX + utilities ----------
+pylatexenc>=2.10             # LaTeX parsing/escaping
+pdf2image>=1.17.0            # Figure verification
+
+# ---------- Dev / testing ----------
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=5.0.0
+ruff>=0.5.0                  # Linter

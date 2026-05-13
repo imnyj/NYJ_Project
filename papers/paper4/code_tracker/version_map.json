@@ -1,0 +1,27 @@
+{
+  "sim_engine.py": {
+    "current_version": "L1-B-3",
+    "history": [
+      {
+        "leaf_id": "L1-B-3",
+        "date": "2025-05-08",
+        "description": "SumoNetSim1.1.5 자산 통합 패치: SUMOCFG_PATH 상수 신설, libsumo.start() -c 옵션으로 변경, 자체 net/route/cfg 생성 호출 제거",
+        "backup": "sim_engine.py.bak_L1B3",
+        "patch_target": "/home/imnyj/papers/paper4/sim/sim_engine.py",
+        "key_changes": [
+          "Line 39-42: SUMOCFG_PATH, SUMO_NET_PATH 상수 신설",
+          "Line 347-353: libsumo.start() -c SUMOCFG_PATH 방식으로 변경",
+          "SimulationRunner.run(): net/route/cfg 생성 호출 전면 제거"
+        ]
+      }
+    ]
+  },
+  "etsi_cam_layer.py": {
+    "current_version": "unchanged",
+    "history": []
+  },
+  "aoi_tracker.py": {
+    "current_version": "unchanged",
+    "history": []
+  }
+}

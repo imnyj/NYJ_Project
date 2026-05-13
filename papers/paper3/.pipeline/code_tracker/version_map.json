@@ -1,0 +1,36 @@
+{
+  "version": "2.0",
+  "last_updated": "2026-04-29",
+  "stage": "implement",
+  "call": "Stage2-재호출2",
+  "files": {
+    "code/sim_core.py": {
+      "version": "1.0",
+      "description": "CIoVSimFast — abstract CIoV simulator",
+      "status": "complete"
+    },
+    "code/algorithms.py": {
+      "version": "1.0",
+      "description": "8 precaching algorithms with unified interface",
+      "status": "complete"
+    },
+    "code/run_scenario.py": {
+      "version": "1.0",
+      "description": "CLI scenario runner",
+      "status": "complete"
+    },
+    "code/utils.py": {
+      "version": "1.0",
+      "description": "Common utilities",
+      "status": "complete"
+    },
+    "data/A_full.csv": {
+      "version": "1.0",
+      "rows": 1920,
+      "description": "Scenario A full results",
+      "status": "complete"
+    }
+  },
+  "scenarios_complete": ["A"],
+  "scenarios_pending": ["B", "C", "D", "E"]
+}

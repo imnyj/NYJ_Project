@@ -1,0 +1,4 @@
+method,scenario,seed,runtime_sec,n_cam_events,CBR_mean,AoI_mean,PDR_mean,energy_efficiency,ETSI_compliance
+BL-D,urban_grid,42,1934.5,2023722,0.6208,319.94,100.0,6.9216,100.0
+BL-D,urban_grid,123,1986.36,2040350,0.6208,322.235,100.0,6.8512,100.0
+BL-D,urban_grid,456,1906.62,2007301,0.6209,323.719,100.0,6.8909,100.0

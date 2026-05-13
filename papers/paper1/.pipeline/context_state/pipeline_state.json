@@ -1,0 +1,72 @@
+{
+  "topic": "ST-MBAN: Deterministic RSU Dwell Time Prediction for CCVN V2I Precaching",
+  "phases": {
+    "librarian": {
+      "status": "done",
+      "updated": "2026-04-30",
+      "note": "총 72편 확보 완료 (8개 카테고리 균형분배). CIoV 11편, V2I 9편, V2V 10편, Popularity 6편, Mobility 10편, Hybrid 6편, ML/DL 7편, Snapshot/RSU-Local 13편. 모두 Tier-1 출판처(IEEE/ACM/Springer) 및 DOI 검증됨.",
+      "papers_total": 72,
+      "category_distribution": {
+        "CIoV": 11,
+        "V2I_Precaching": 9,
+        "V2V_Precaching": 10,
+        "Popularity_based": 6,
+        "Mobility_prediction": 10,
+        "Hybrid": 6,
+        "ML_DL": 7,
+        "Snapshot_RSU_Local": 13
+      }
+    },
+    "idea": {
+      "status": "done",
+      "updated": "2026-04-30",
+      "note": "research_overview.md 작성 완료"
+    },
+    "experimenter": {
+      "status": "running",
+      "updated": "2026-04-30",
+      "note": "Stage 1 (design) 완료. experiment_spec.json 작성됨. Stage 2(implement)는 데이터셋 수집 완료 후 진행.",
+      "stages_done": [
+        "design"
+      ],
+      "retry_count": 0
+    },
+    "reviewer": {
+      "status": "running",
+      "updated": "2026-05-01",
+      "note": "Proofreader 1차 점검 완료 (작성된 섹션만). final/main.tex 생성. 잔존 issue: ' (' 94건은 대부분 약어/수식/LaTeX 라벨로 정당. Performance Evaluation/Conclusion 미작성 영역은 데이터 도착 후 재점검 필요. Validator 모드는 데이터셋 도착 후 시뮬 결과 검증 시 진행.",
+      "modes_done": [
+        "proofreader"
+      ]
+    },
+    "writer": {
+      "status": "running",
+      "updated": "2026-05-01",
+      "note": "Step 1~4 완료: 뼈대, Abstract, Intro, Related Work(D1~D6 + Comparison Table), System Model, ST-MBAN Architecture, Bibliography 삽입(72개 bibitem). 남은 작업: Performance Evaluation, Conclusion (데이터셋 도착 후 진행).",
+      "sections_done": [
+        "skeleton",
+        "abstract",
+        "keywords",
+        "introduction",
+        "related_work",
+        "system_model",
+        "proposed_scheme",
+        "bibliography"
+      ]
+    }
+  },
+  "outputs": [
+    "paper/idea/research_overview.md",
+    "paper/references/references.json",
+    "paper/references/bibitem.tex",
+    "paper/experiment/experiment_spec.json",
+    "paper/experiment/st_cvae_baseline/baselines.py",
+    "paper/experiment/st_cvae_baseline/baselines_extra.py (Stage 2 사전구현)",
+    "paper/draft/main.tex",
+    "paper/final/main.tex (proofreader 1차)",
+    "paper/draft/scheme_legacy.tex (legacy)"
+  ],
+  "blockers": [
+    "Dataset collection in progress — waiting for ~200K samples per RSU"
+  ]
+}

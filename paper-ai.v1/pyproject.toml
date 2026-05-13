@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paper-ai"
+version = "0.1.0"
+description = "Multi-Agent LLM system for automated SCIE-grade paper writing with libsumo simulations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "paper-ai team" }]
+
+# Runtime deps are listed in requirements.txt (keep one source of truth).
+# If the user ever wants `pip install .` to pull runtime deps, mirror the
+# minimum-viable subset here — but we don't duplicate by default since the
+# target deployment is editable + requirements.txt.
+
+[tool.setuptools]
+# Project layout is NOT a standard src/ layout; we have top-level modules
+# (commander.py, cli.py) PLUS package directories (agents/, core/, ...).
+# Explicit py-modules + packages list avoids surprises.
+py-modules = ["commander", "cli"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+  "agents*", "cli_commands*", "core*", "evaluation*",
+  "memory*", "monitoring*", "retrieval*", "tools*",
+]
+exclude = ["tests*", "docs*", "scripts*", "output*", "prompts*",
+           "skills*", "config*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+# No asyncio_mode — we have no async tests and pytest-asyncio is not a
+# hard dependency. Add back (with `asyncio_mode = "auto"`) if async tests
+# are introduced and pytest-asyncio is pinned in requirements.txt.

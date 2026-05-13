@@ -1,0 +1,288 @@
+{
+  "search_date": "2026-04-29",
+  "purpose": "후속 논문 아이디어 도출용 트렌드 서베이 (Youngju Nam, IEEE IoT Journal)",
+  "search_methodology": {
+    "tools_used": [
+      "semantic_scholar_search (rate limited)",
+      "arxiv_search (rate limited)",
+      "web_search (primary)"
+    ],
+    "search_period": "2025-2026 papers prioritized, 2024 Q4 key papers included",
+    "total_queries_executed": 27,
+    "categories": 5
+  },
+  "categories": {
+    "ccn_iov_2025_2026": {
+      "query_count": 3,
+      "key_findings": [
+        {
+          "title": "Vehicular-NDN: Geo-Anchored Datasets",
+          "authors": "Multiple authors (via ScienceDirect)",
+          "year": 2025,
+          "venue": "ScienceDirect/Journal of Systems and Software",
+          "contribution": "Geo-Anchored Datasets (GADs) in NDN-based VANETs for location-aware caching",
+          "technique": "NDN-based geographic clustering",
+          "keywords": [
+            "NDN",
+            "geographic caching",
+            "VANET",
+            "adaptive scheduling"
+          ],
+          "gap_vs_user": "User's ILP-CSMP (2025) uses delay-centric ILP; this paper adds geo-spatial anchoring dimension not yet explored by user"
+        },
+        {
+          "title": "Mobility-Aware Vehicular Caching in Content Centric Networks",
+          "authors": "Yao Zhang, Changle Li, Tom H. Luan et al.",
+          "year": 2019,
+          "venue": "arXiv",
+          "arxiv_id": "1902.07014v1",
+          "contribution": "Edge caching with mobility prediction for CCN vehicular networks",
+          "technique": "Mobility-aware optimization",
+          "keywords": [
+            "CCN",
+            "mobility prediction",
+            "edge caching"
+          ],
+          "gap_vs_user": "Similar to Nam2021 (predictive speed-based precaching), but older; no clear 2025-2026 novelty here"
+        }
+      ]
+    },
+    "outage_v2v": {
+      "query_count": 4,
+      "key_findings": [
+        {
+          "title": "Zone-based Content Pre-caching Strategy in Vehicular Edge Networks",
+          "authors": "Multiple (cited in Springer 2026 article)",
+          "year": 2019,
+          "venue": "Future Generation Computer Systems",
+          "contribution": "Zone-based pre-caching to handle connectivity gaps",
+          "technique": "Zone clustering + pre-caching",
+          "keywords": [
+            "outage",
+            "zone-based",
+            "edge caching"
+          ],
+          "gap_vs_user": "Addresses outage implicitly; user's Nam2026 (SAC-based V2V selection) is RL-driven; this is heuristic-based"
+        },
+        {
+          "title": "A Tarp and Ensemble Classifier-Based Real-Time Congestion Control for V2V",
+          "authors": "Multiple",
+          "year": 2026,
+          "venue": "Wireless Networks (Springer)",
+          "contribution": "Congestion control in V2V with zone-awareness",
+          "technique": "ML ensemble + congestion detection",
+          "keywords": [
+            "V2V",
+            "zone-based",
+            "congestion",
+            "real-time"
+          ],
+          "gap_vs_user": "Uses ML/ensemble; user prefers non-ML optimization (constraint_no_ml: True)"
+        }
+      ]
+    },
+    "new_angles_aoi_semantic_ris_satellite": {
+      "query_count": 10,
+      "key_findings": [
+        {
+          "title": "Age-of-Information Aware Caching and Delivery for Infrastructure-Assisted Vehicular Networks",
+          "authors": "Multiple",
+          "year": 2024,
+          "venue": "IEEE Xplore",
+          "contribution": "AoI-aware RSU caching to minimize data staleness in vehicular networks",
+          "technique": "AoI optimization with RSU/MBS coordination",
+          "keywords": [
+            "AoI",
+            "data freshness",
+            "RSU",
+            "infrastructure"
+          ],
+          "gap_vs_user": "⭐ EMERGING TREND: AoI is 2024-2025 hot topic in vehicular caching; User has NOT addressed AoI dimension yet"
+        },
+        {
+          "title": "Age of Information Minimization in Vehicular Edge Computing",
+          "authors": "Multiple",
+          "year": 2025,
+          "venue": "ScienceDirect",
+          "contribution": "Multi-agent scheduling framework using AoI metrics for data freshness in VEC",
+          "technique": "Multi-agent AoI scheduling",
+          "keywords": [
+            "AoI",
+            "multi-agent",
+            "VEC",
+            "data freshness",
+            "scheduling"
+          ],
+          "gap_vs_user": "⭐ KEY FINDING: AoI + multi-agent coordination emerging as 2025 trend"
+        },
+        {
+          "title": "Joint Content Placement and Delivery Optimization in LEO-Assisted Vehicular Networks",
+          "authors": "Multiple",
+          "year": 2025,
+          "venue": "IEEE ICPADS 2025",
+          "contribution": "Cooperative edge-caching combining LEO satellites + ground RSUs for vehicular content delivery",
+          "technique": "LEO-ground cooperative caching + placement optimization",
+          "keywords": [
+            "LEO",
+            "satellite",
+            "cooperative caching",
+            "content placement"
+          ],
+          "gap_vs_user": "⭐ NOVEL INTEGRATION: LEO + vehicular caching; extends beyond ground-only RSU/V2V; 2025 emerging trend"
+        },
+        {
+          "title": "Privacy-Preserving Machine Learning in Internet of Vehicle Applications",
+          "authors": "Multiple",
+          "year": 2025,
+          "venue": "arXiv",
+          "contribution": "Federated learning + encryption for privacy-aware caching in IoV",
+          "technique": "FL + order-preserving encryption + ZKP",
+          "keywords": [
+            "privacy",
+            "encryption",
+            "federated learning",
+            "IoV"
+          ],
+          "gap_vs_user": "Privacy-centric angle; user's works focus on QoS/delay/energy; not privacy-aware"
+        },
+        {
+          "title": "Reconfigurable Intelligent Surface (RIS)-Aided Vehicular Networks",
+          "authors": "Multiple",
+          "year": 2023,
+          "venue": "ResearchGate / Conference",
+          "contribution": "RIS as passive reflector for improving vehicular connectivity and enabling smarter caching",
+          "technique": "RIS-aided communication + resource allocation",
+          "keywords": [
+            "RIS",
+            "passive beamforming",
+            "vehicular networks",
+            "6G"
+          ],
+          "gap_vs_user": "⭐ EMERGING PHY-LAYER TREND: RIS + vehicular caching not yet in user's publications; 2025-2026 hot topic"
+        },
+        {
+          "title": "BAST: Blockchain-Assisted Secure and Traceable Data Management in Vehicular Networks",
+          "authors": "Multiple",
+          "year": 2025,
+          "venue": "IEEE Xplore",
+          "contribution": "Blockchain for securing edge caching responses and ensuring data reliability",
+          "technique": "Blockchain + edge server security",
+          "keywords": [
+            "blockchain",
+            "security",
+            "edge caching",
+            "trust"
+          ],
+          "gap_vs_user": "Security/trust angle in caching; not yet addressed by user"
+        }
+      ]
+    },
+    "non_ml_optimization": {
+      "query_count": 6,
+      "key_findings": [
+        {
+          "title": "LADPG: Lyapunov Optimization-Based Resource Allocation in Vehicular Edge Computing",
+          "authors": "Multiple",
+          "year": 2026,
+          "venue": "IEEE Xplore",
+          "contribution": "Lyapunov adaptive deterministic policy gradient for multi-objective task offloading + resource allocation",
+          "technique": "Lyapunov optimization + DPG (RL-hybrid)",
+          "keywords": [
+            "Lyapunov",
+            "task offloading",
+            "resource allocation",
+            "VEC"
+          ],
+          "gap_vs_user": "Lyapunov + RL hybrid; user prefers pure non-ML (ILP/heuristic)"
+        },
+        {
+          "title": "Caching on Vehicles: A Lyapunov Based Online Algorithm",
+          "authors": "Multiple",
+          "year": 2023,
+          "venue": "IEEE/Conference",
+          "contribution": "Lyapunov-enabled online algorithm for dynamic vehicle caching decisions",
+          "technique": "Lyapunov online optimization",
+          "keywords": [
+            "Lyapunov",
+            "online algorithm",
+            "vehicular caching"
+          ],
+          "gap_vs_user": "Pure Lyapunov approach (non-ML); compatible with user's constraint_no_ml; alternative to ILP"
+        },
+        {
+          "title": "Joint Optimization of Delay and Energy Consumption in Urban IoV via Vehicle Clustering",
+          "authors": "Multiple",
+          "year": 2025,
+          "venue": "IEEE Xplore",
+          "contribution": "Vehicle clustering + cooperative caching using buses as mobile RSUs for energy-delay tradeoff",
+          "technique": "Clustering + cooperative caching (heuristic-based)",
+          "keywords": [
+            "clustering",
+            "cooperative",
+            "energy-delay",
+            "mobile RSU",
+            "bus"
+          ],
+          "gap_vs_user": "⭐ KEY FINDING: Using buses as mobile RSU (not just V2V); clustering + cooperation; 2025 trend"
+        }
+      ]
+    }
+  },
+  "trend_observations": [
+    "🔴 HOT TREND 1: Age-of-Information (AoI) Caching in Vehicular Networks (2024-2025). Data freshness now critical metric alongside delay. User has NOT explored this dimension yet.",
+    "🔴 HOT TREND 2: Cooperative Caching with Mobile RSUs (Buses, 2025). Moving beyond fixed RSU + V2V; buses become active caching participants. User's ILP framework could extend to mobile RSU scheduling.",
+    "🔴 HOT TREND 3: LEO Satellite + Ground Vehicle Cooperation (2025 emerging). Extending vehicular caching to 3D space (satellite layer). User's clustering logic could model satellite-ground caching coordination.",
+    "🔴 HOT TREND 4: RIS-Aided Vehicular Networks (2023-2025). Passive reconfigurable surfaces improving link quality → enables better caching decisions. 6G-oriented; not yet in user's domain.",
+    "🟡 SECONDARY TREND 1: Privacy-Preserving Caching (2025). Encryption + federated learning for secure cache management. User's works focus on QoS, not privacy.",
+    "🟡 SECONDARY TREND 2: Semantic + Location-Aware Caching (2025). Content similarity + geo-anchoring for smarter placement. User uses predictive mobility but not semantic similarity.",
+    "🟡 SECONDARY TREND 3: Lyapunov Online Algorithms as ILP Alternative (2023-2026). For dynamic, delay-constrained caching without optimization solver. Compatible with user's non-ML constraint.",
+    "⚠️ KEY OBSERVATION: Most 2025-2026 papers either (a) use RL/DRL/FL (violates user's constraint_no_ml), or (b) focus on new dimensions (AoI, privacy, RIS, satellite) rather than ILP optimization. User's non-ML ILP approach is becoming niche. To differentiate: combine ILP with NEW ANGLES (e.g., AoI-aware ILP, mobile RSU ILP, LEO-ground ILP)."
+  ],
+  "novel_idea_candidates": {
+    "idea_1": {
+      "rank": "PRIMARY RECOMMENDATION",
+      "working_title": "AoI-Aware ILP-Based Precaching with Freshness Guarantees in Vehicular Networks",
+      "novelty_angle": "Combines ILP optimization (user strength) with AoI freshness metric (2025 hot trend)",
+      "differentiation_vs_nam2025": "Nam2025 optimizes delay + priority; This optimizes delay + AoI freshness (data staleness)",
+      "preliminary_formulation": "Minimize: Weighted sum of (access delay + data staleness age) subject to cache capacity + availability constraints",
+      "why_novel": "First to explicitly model freshness guarantee in vehicular ILP precaching; aligns with 2025 AoI trend",
+      "estimated_similar_papers": "3-5 papers on AoI vehicular caching, but none with ILP formulation"
+    },
+    "idea_2": {
+      "rank": "PRIMARY RECOMMENDATION",
+      "working_title": "Mobile RSU (Bus) Caching Orchestration via Optimized Routing: An ILP Approach",
+      "novelty_angle": "Extends fixed RSU caching to mobile RSU (bus) as active cache node; optimizes bus route + cache placement",
+      "differentiation_vs_user": "Nam2025/Nam2026 assume static RSU + mobile vehicles; This makes RSU mobile too (bus)",
+      "preliminary_formulation": "ILP to co-optimize: (bus route planning) + (cache content selection) + (vehicle-bus meeting prediction)",
+      "why_novel": "First ILP formulation for mobile RSU caching in buses as collaborative platform; addresses 2025 mobile RSU trend",
+      "estimated_similar_papers": "1-2 papers on bus-assisted caching, but without full ILP treatment"
+    },
+    "idea_3": {
+      "rank": "SECONDARY RECOMMENDATION",
+      "working_title": "LEO-Ground Cooperative Caching: ILP-Based Content Placement for Satellite-Assisted Vehicular Networks",
+      "novelty_angle": "Extends vehicular caching to 3D (LEO satellite layer) + ground (RSU/V2V); joint content placement strategy",
+      "differentiation_vs_user": "User's works are ground-only (2D); This adds satellite dimension for global coverage",
+      "preliminary_formulation": "ILP with 3-layer model: (LEO satellite caches) + (ground RSU caches) + (vehicular caches); optimize hand-off content delivery",
+      "why_novel": "First LEO-vehicular cooperative caching ILP; addresses coverage gaps in remote areas",
+      "estimated_similar_papers": "1 paper found (ICPADS 2025) on LEO-vehicular, but appears heuristic-based; ILP treatment missing"
+    },
+    "idea_5": {
+      "rank": "TERTIARY RECOMMENDATION",
+      "working_title": "Lyapunov-Enabled Dynamic Precaching for Delay-Tolerant Outage Zones (Non-ML Alternative to Nam2026 SAC)",
+      "novelty_angle": "Provides non-ML alternative to Nam2026 SAC RL; uses Lyapunov optimization for outage-zone vehicle selection",
+      "differentiation_vs_user": "Nam2026 uses RL (SAC); This uses pure Lyapunov online algorithm (no solver, lightweight)",
+      "preliminary_formulation": "Lyapunov drift-plus-penalty for: (outage zone detection) + (cache vehicle selection) + (content quantity). Closed-form decisions.",
+      "why_novel": "First Lyapunov treatment for outage-aware V2V precaching; lightweight alternative to RL",
+      "estimated_similar_papers": "2-3 papers on Lyapunov vehicular caching, but not outage-focused"
+    }
+  },
+  "recommendation_summary": {
+    "primary_recommendations": [
+      "IDEA 1 (AoI-Aware ILP): Most aligned with user's ILP strengths + hottest 2025 trend (AoI). Clearly differentiated from Nam2025 CSMP (delay+priority → delay+freshness).",
+      "IDEA 2 (Mobile RSU ILP): Extends ILP to mobile platform (buses); addresses 2025 emerging trend. Strongest practical impact."
+    ],
+    "secondary_recommendation": "IDEA 3 (LEO-Ground ILP): Expands domain scope to 3D space; requires satellite networking knowledge.",
+    "tertiary_recommendation": "IDEA 5 (Lyapunov outage): Provides non-ML alternative to own Nam2026 SAC; lighter computational footprint.",
+    "timeline_to_ieee_iot_j": "6-9 months if starting with IDEA 1 or 2 (already has ILP foundation; only new metric/model)"
+  }
+}

@@ -1,0 +1,84 @@
+# ============================================================================
+# Model routing rules (Heuristic router)
+# ============================================================================
+# Research-backed distribution (RouteLLM, Augment Code 2026 guide):
+#   Haiku  ~60%  : classification, lookups, formatting, routing decisions
+#   Sonnet ~30%  : section drafting, multi-step reasoning, code review
+#   Opus   ~10%  : orchestration, novel argumentation, final critical pass
+# ============================================================================
+
+# Task types and their preferred model
+# `policy_runtime.route(agent, task_type)` consults this table.
+task_types:
+
+  # ---------- Haiku (cheap, fast, classification) ----------
+  classify:             { model: haiku, max_tokens: 512,  thinking: false }
+  extract_metadata:     { model: haiku, max_tokens: 1024, thinking: false }
+  lookup_citation:      { model: haiku, max_tokens: 1024, thinking: false }
+  format_output:        { model: haiku, max_tokens: 2048, thinking: false }
+  route_decision:       { model: haiku, max_tokens: 256,  thinking: false }
+  summarize_short:      { model: haiku, max_tokens: 512,  thinking: false }
+  keyword_extract:      { model: haiku, max_tokens: 256,  thinking: false }
+  pdf_skim:             { model: haiku, max_tokens: 1024, thinking: false }
+
+  # ---------- Sonnet (balanced, default for content work) ----------
+  draft_section:        { model: sonnet, max_tokens: 8192,  thinking: false }
+  review_code:          { model: sonnet, max_tokens: 4096,  thinking: false }
+  proofread_text:       { model: sonnet, max_tokens: 4096,  thinking: false }
+  design_experiment:    { model: sonnet, max_tokens: 6144,  thinking: false }
+  implement_code:       { model: sonnet, max_tokens: 8192,  thinking: false }
+  novelty_analysis:     { model: sonnet, max_tokens: 4096,  thinking: false }
+  storyline_design:     { model: sonnet, max_tokens: 3072,  thinking: false }
+  figure_spec:          { model: sonnet, max_tokens: 2048,  thinking: false }
+
+  # ---------- Opus (expensive, reserved for high-stakes) ----------
+  orchestrate:          { model: opus,   max_tokens: 6144,  thinking: true  }
+  resolve_dispute:      { model: opus,   max_tokens: 6144,  thinking: true  }
+  write_discussion:     { model: opus,   max_tokens: 8192,  thinking: true  }
+  final_review:         { model: opus,   max_tokens: 6144,  thinking: true  }
+  self_upgrade_design:  { model: opus,   max_tokens: 4096,  thinking: true  }
+  novelty_defense:      { model: opus,   max_tokens: 4096,  thinking: true  }
+
+# Per-agent routing override (explicit mapping from role to task_types)
+# When an agent executes, the caller may pass a `task_type` hint; if omitted
+# and not routable, policy_runtime falls back to agents.yaml `defaults`.
+agent_preferred_tasks:
+  commander:
+    - orchestrate
+    - resolve_dispute
+    - final_review
+  idea:
+    - storyline_design
+    - novelty_analysis
+    - novelty_defense
+  librarian:
+    - lookup_citation
+    - extract_metadata
+    - pdf_skim
+    - keyword_extract
+  experimenter:
+    - design_experiment
+    - implement_code
+  reviewer:
+    - review_code
+    - proofread_text
+  writer:
+    - draft_section
+    - write_discussion
+    - figure_spec
+
+# Fallback policy
+fallback:
+  on_unknown_task: sonnet          # safe default if task type missing
+  on_overload:                     # if an API call fails 3x with overload
+    haiku:  haiku                  # stay (cheapest is least loaded)
+    sonnet: haiku                  # downgrade Sonnet → Haiku temporarily
+    opus:   sonnet                 # downgrade Opus → Sonnet
+
+# Quota enforcement (distribution targeting)
+# Policy runtime tracks cumulative calls; if distribution drifts, it nudges.
+target_distribution:
+  haiku:  0.60
+  sonnet: 0.30
+  opus:   0.10
+tolerance: 0.15                    # allow ±15% before log warning

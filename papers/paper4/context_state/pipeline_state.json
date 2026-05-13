@@ -1,0 +1,39 @@
+{
+  "project": "paper4_tinymlp_ai_dcc",
+  "idea_id": "candidate_2_tinymlp_beacon_dcc",
+  "status": "running",
+  "created_at": "2026-05-08",
+  "last_updated": "2026-05-08",
+  "experimenter": {
+    "stages_done": [
+      "design"
+    ],
+    "current_stage": "design",
+    "next_stage": "implementation",
+    "notes": "Stage 1 (design) completed. experiment_spec.json written. BL-B = Simplified Adaptive (§10.1). Phase 2-alpha sensitivity sweep added (§10.2)."
+  },
+  "key_files": {
+    "idea_spec": "paper/idea/idea_spec.md",
+    "experiment_spec": "paper/experiment/experiment_spec.json",
+    "experimenter_memory": "brain/experimenter_memory.md",
+    "sensitivity_output_dir": "paper/data/sensitivity/",
+    "main_output_dir": "paper/data/"
+  },
+  "milestones": {
+    "design_complete": true,
+    "modules_implemented": false,
+    "sensitivity_sweep_done": false,
+    "defaults_confirmed": false,
+    "oracle_generated": false,
+    "tinymlp_trained": false,
+    "main_experiment_done": false,
+    "paper_written": false
+  },
+  "user_directives": [
+    {
+      "timestamp": "2026-05-08 12:39",
+      "summary": "1) BL-B simplified to Simplified Adaptive (§10.1 pseudo-code), 2) Sensitivity Analysis Phase 2-alpha added (§10.2, SA1-SA4 OAT sweeps), 3) sensitivity_runner.py module added",
+      "incorporated_in": "experiment_spec.json (Stage 1 design)"
+    }
+  ]
+}

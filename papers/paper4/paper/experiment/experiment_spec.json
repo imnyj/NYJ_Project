@@ -1,0 +1,477 @@
+{
+  "title": "TinyMLP-AI-DCC: AoI-CBR Joint Optimization for ETSI-Compliant Vehicular Beacon Control",
+  "objective": "Evaluate whether a TinyMLP-based AI-DCC (Intelligent Decentralized Congestion Control) can simultaneously minimize Age-of-Information (AoI) and Channel Busy Ratio (CBR) compared to rule-based ETSI DCC baselines and the variable-beacon state-of-the-art, while satisfying MCU deployment constraints (memory < 16 KB, inference < 1 ms). A preceding Sensitivity Analysis phase (Phase 2-alpha) fixes default hyper-parameters before the main comparative experiment (Phase 2 main).",
+  "phases": [
+    {
+      "phase_id": "phase_2alpha_sensitivity",
+      "purpose": "One-at-a-Time (OAT) sensitivity sweep to determine default values for four key hyper-parameters (oracle cost weights, action grid size, CBR_target for Simplified Adaptive, TinyMLP hidden width) before the main experiment. Results are stored to paper/data/sensitivity/ and summarised in sensitivity_summary.json, which is used to confirm default parameters.",
+      "protocol": "One-at-a-Time (OAT): vary one parameter while keeping all others at their provisional default.",
+      "scenario": {
+        "name": "urban_grid",
+        "note": "SumoNetSim 1.1.5 standard: 3x3 RSU grid (NUM_BLOCKS=3), EDGE_LENGTH=2400m, grid_size=7200m",
+        "grid_num_blocks": 3,
+        "edge_length_m": 2400,
+        "grid_size_m": 7200,
+        "num_lanes_per_dir": 2,
+        "av_speed_kmh": 40,
+        "v2v_comm_range_m": 200,
+        "rsu_comm_range_m": 800,
+        "density_default_veh_per_km_lane": 20,
+        "duration_steps": 3000,
+        "seeds": 3,
+        "note_density": "density=20 veh/km/lane default; n_vehicles determined by sim_engine from density * total_road_length",
+        "note_seeds": "Seeds reduced from 5 to 3 (user directive: small-step execution to minimize errors)"
+      },
+      "sweeps": [
+        {
+          "id": "SA1",
+          "param": "oracle_alpha",
+          "description": "Oracle cost weight alpha for AoI term in J = alpha*AoI + beta*CBR (beta = 1 - alpha). Controls the trade-off direction of the Oracle label generation.",
+          "provisional_default": 0.5,
+          "values": [
+            0.1,
+            0.3,
+            0.5,
+            0.7,
+            0.9
+          ],
+          "affects": "Oracle label generation -> trained model policy",
+          "metrics_measured": [
+            "M1_mean_AoI",
+            "M2_CBR",
+            "M3_PDR"
+          ],
+          "runs_per_point": 3,
+          "total_runs": 15,
+          "scenario": "urban_grid_default (density=20 veh/km/lane, grid_blocks=3, duration=3000 steps)"
+        },
+        {
+          "id": "SA2",
+          "param": "action_grid",
+          "description": "Size of the discrete action grid |T| x |P| used in the Oracle grid-search and as model output classes. Affects both Oracle computation cost and model capacity.",
+          "provisional_default": "4x4",
+          "values": [
+            "3x3",
+            "4x4",
+            "5x5"
+          ],
+          "value_details": {
+            "3x3": "T_GenCam in {0.1, 0.5, 1.0} s x p_tx in {-10, 0, +20} dBm = 9 combos",
+            "4x4": "T_GenCam in {0.1, 0.2, 0.5, 1.0} s x p_tx in {-10, 0, +10, +20} dBm = 16 combos",
+            "5x5": "T_GenCam in {0.1, 0.2, 0.5, 0.8, 1.0} s x p_tx in {-10, -5, 0, +10, +20} dBm = 25 combos"
+          },
+          "affects": "Oracle exhaustive search cost and TinyMLP output dimensionality",
+          "metrics_measured": [
+            "M1_mean_AoI",
+            "M2_CBR",
+            "M3_PDR"
+          ],
+          "runs_per_point": 3,
+          "total_runs": 9,
+          "scenario": "urban_grid_default (density=20 veh/km/lane, grid_blocks=3, duration=3000 steps)"
+        },
+        {
+          "id": "SA3",
+          "param": "cbr_target",
+          "description": "CBR target threshold used by BL-B Simplified Adaptive controller. Determines the operating point of the non-AI adaptive baseline.",
+          "provisional_default": 0.6,
+          "values": [
+            0.5,
+            0.55,
+            0.6,
+            0.65,
+            0.7
+          ],
+          "affects": "BL-B Simplified Adaptive operating point",
+          "metrics_measured": [
+            "M1_mean_AoI",
+            "M2_CBR",
+            "M3_PDR"
+          ],
+          "runs_per_point": 3,
+          "total_runs": 15,
+          "scenario": "urban_grid_default (density=20 veh/km/lane, grid_blocks=3, duration=3000 steps)"
+        },
+        {
+          "id": "SA4",
+          "param": "hidden_width",
+          "description": "Width h of both hidden layers of TinyMLP (two layers of same width). Controls model capacity and MCU memory footprint.",
+          "provisional_default": 8,
+          "values": [
+            4,
+            6,
+            8,
+            12,
+            16
+          ],
+          "param_counts": {
+            "h=4": "5*4+4 + 4*4+4 + 4*8+8 = 24+20+40 = 84 params",
+            "h=6": "5*6+6 + 6*6+6 + 6*8+8 = 36+42+56 = 134 params (approx)",
+            "h=8": "5*8+8 + 8*8+8 + 8*8+8 = 48+72+72 = 192 params",
+            "h=12": "5*12+12 + 12*12+12 + 12*8+8 = 72+156+104 = 332 params",
+            "h=16": "5*16+16 + 16*16+16 + 16*8+8 = 96+272+136 = 504 params"
+          },
+          "affects": "Model capacity, inference latency, MCU FLASH footprint",
+          "metrics_measured": [
+            "M1_mean_AoI",
+            "M2_CBR",
+            "M3_PDR"
+          ],
+          "runs_per_point": 3,
+          "total_runs": 15,
+          "scenario": "urban_grid_default (density=20 veh/km/lane, grid_blocks=3, duration=3000 steps)"
+        }
+      ],
+      "total_sensitivity_runs": 54,
+      "selection_criterion": "For each parameter, select the value minimising the combined score: 0.5 * normalised_AoI + 0.5 * normalised_CBR across 5-seed average.",
+      "output_dir": "paper/data/sensitivity/",
+      "output_files": [
+        "SA1_alpha_AoI.csv",
+        "SA1_alpha_CBR.csv",
+        "SA1_alpha_PDR.csv",
+        "SA2_action_grid_AoI.csv",
+        "SA2_action_grid_CBR.csv",
+        "SA2_action_grid_PDR.csv",
+        "SA3_cbr_target_AoI.csv",
+        "SA3_cbr_target_CBR.csv",
+        "SA3_cbr_target_PDR.csv",
+        "SA4_mlp_hidden_width_AoI.csv",
+        "SA4_mlp_hidden_width_CBR.csv",
+        "SA4_mlp_hidden_width_PDR.csv",
+        "sensitivity_summary.json"
+      ],
+      "output_file_columns": "param_value, seed, AoI_mean, CBR_mean, PDR_mean, runtime_sec",
+      "sensitivity_summary_schema": {
+        "per_sweep": {
+          "id": "SA<n>",
+          "param": "<parameter name>",
+          "results": [
+            {
+              "param_value": "...",
+              "AoI_mean": "...",
+              "CBR_mean": "...",
+              "PDR_mean": "..."
+            }
+          ],
+          "selected_default": "...",
+          "selection_rationale": "..."
+        },
+        "confirmed_defaults": {
+          "oracle_alpha": "TBD after SA1",
+          "action_grid": "TBD after SA2",
+          "cbr_target": "TBD after SA3",
+          "mlp_hidden_width": "TBD after SA4"
+        }
+      }
+    },
+    {
+      "phase_id": "phase_2_main",
+      "purpose": "Main comparative experiment: evaluate TinyMLP-AI-DCC against 4 baselines and 2 ablations across Urban Grid and Highway scenarios at multiple vehicle densities. Default parameters confirmed by Phase 2-alpha are used throughout.",
+      "scenarios": [
+        {
+          "id": "S1",
+          "name": "urban_grid",
+          "description": "SumoNetSim 1.1.5 standard: 3x3 RSU grid (NUM_BLOCKS=3), EDGE_LENGTH=2400m, grid_size=7200m x 7200m, 2 lanes per direction, traffic lights at RSU nodes",
+          "map": "SumoNetSim 1.1.5 make_sumo_set.py generated grid (NUM_BLOCKS=3, EDGE_LENGTH=2400m)",
+          "duration_steps": 3600,
+          "duration_seconds": 3600,
+          "seeds": 3,
+          "speed_profile": "0-60 km/h (default 40 km/h), Krauss model with traffic light stops",
+          "purpose": "High-density + low-speed scenario; tests CBR overload control. SumoNetSim 1.1.5 standard grid.",
+          "grid_num_blocks": 3,
+          "edge_length_m": 2400,
+          "grid_size_m": 7200,
+          "num_lanes_per_dir": 2,
+          "av_speed_kmh": 40,
+          "av_speed_kmh_range": [
+            20,
+            40,
+            60
+          ],
+          "v2v_comm_range_m": 200,
+          "rsu_comm_range_m": 800,
+          "density_veh_per_km_lane": [
+            10,
+            20,
+            30
+          ]
+        },
+        {
+          "id": "S2",
+          "name": "highway",
+          "description": "5 km straight highway, 2 lanes per direction (4 lanes total), 80 km/h default, variable density",
+          "map": "SUMO straight highway with on-ramps",
+          "duration_steps": 3600,
+          "duration_seconds": 3600,
+          "seeds": 3,
+          "speed_profile": "80 km/h default (range 60-120 km/h), Krauss model",
+          "purpose": "High-speed + AoI-sensitive scenario; tests beacon rate adaptation. RSU unused (V2V only).",
+          "length_m": 5000,
+          "num_lanes_per_dir": 2,
+          "av_speed_kmh": 80,
+          "v2v_comm_range_m": 200,
+          "rsu_comm_range_m": 800,
+          "density_veh_per_km_lane": [
+            5,
+            10,
+            20
+          ]
+        }
+      ],
+      "total_main_runs": 126,
+      "total_main_runs_breakdown": "3 densities * 2 scenarios * 3 seeds * 7 methods = 126 runs (seeds reduced from 10 to 3, user directive: small-step execution)",
+      "methods_count": 7,
+      "methods_list": [
+        "TinyMLP-AI-DCC",
+        "BL-A",
+        "BL-B",
+        "BL-C",
+        "BL-D",
+        "ABL-1",
+        "ABL-2"
+      ],
+      "fair_comparison_protocol": {
+        "seed_fixing": "Same 10 seeds applied to all methods via SUMO --seed argument",
+        "scenario_files": "Identical .sumocfg, .net.xml, .rou.xml for all methods per run",
+        "phy_params": "Nakagami-m propagation, alpha=2.0 path loss, 10 MHz, BPSK 1/2 = 3 Mbps for all",
+        "evaluation_window": "30s warmup excluded; metrics collected over 270s",
+        "statistics": "95% CI via t-test or bootstrap; boxplot visualisation",
+        "bhattacharyya_params": "Original paper CBR/neighbor thresholds preserved; p_tx fixed at +20 dBm"
+      },
+      "output_dir": "paper/data/",
+      "output_file_pattern": "<scenario>_<density>_<metric>.csv"
+    }
+  ],
+  "algorithms": {
+    "proposed": {
+      "id": "AI-DCC",
+      "name": "TinyMLP-AI-DCC",
+      "description": "2-layer MLP (input 5D -> hidden h -> hidden h -> output 8 logits reshaped to 4x2) trained offline via Behavior Cloning from an Oracle DCC table. Inputs: [speed v (m/s), acceleration a (m/s^2), estimated neighbour count N_est, CBR, AoI (ms)]. Outputs: T_GenCam in {0.1, 0.2, 0.5, 1.0} s and p_tx in {-10, 0, +10, +20} dBm (argmax). Embedded directly in ETSI CAM generation layer; inference triggered once per CAM event. MCU target: STM32F407 Cortex-M4 @168 MHz; INT8 quantised; estimated <4 KB RAM, <1 ms inference.",
+      "architecture": {
+        "input_dim": 5,
+        "hidden_layers": 2,
+        "hidden_width": "h (confirmed by SA4, provisional default h=32)",
+        "output_dim": 8,
+        "output_reshape": "4x2 -> [T_GenCam logits (4), p_tx logits (4)]",
+        "activation": "ReLU",
+        "inference_call": "argmax -> (T_GenCam index, p_tx index)",
+        "params_at_h32": 1512
+      },
+      "training": {
+        "method": "Behavior Cloning",
+        "oracle": "Grid-search exhaustive over |T|x|P| action combinations, myopic 200ms horizon",
+        "loss": "CrossEntropy(T_GenCam) + CrossEntropy(p_tx)",
+        "dataset_size": "10000+ state-action pairs",
+        "split": "70/15/15 train/val/test",
+        "framework": "PyTorch (CPU), ONNX export, TFLite INT8 quantisation"
+      }
+    },
+    "baselines": [
+      {
+        "id": "BL-A",
+        "name": "ETSI DCC Reactive",
+        "description": "ETSI EN 302 571 §8.1 Reactive algorithm. Three-state machine (Relaxed / Active / Restricted) driven by CBR thresholds (0.60 / 0.40). T_GenCam adjusted in 3 levels; p_tx fixed at +20 dBm. Implemented in etsi_cam_layer.py. Reference: ETSI EN 302 571 V1.2.1 (2014).",
+        "implementation": "etsi_cam_layer.py — state machine with CBR hysteresis thresholds",
+        "power_control": "Fixed +20 dBm",
+        "risk_level": "medium"
+      },
+      {
+        "id": "BL-B",
+        "name": "Simplified Adaptive",
+        "description": "CBR-tracking proportional controller (simplified adaptive baseline). Replaces ETSI DCC Adaptive (LIMERIC) to reduce reproduction risk. Faithfully represents the Adaptive DCC family (congestion -> increase period) with deterministic, seed-stable behaviour. \nAlgorithm pseudo-code (from idea_spec.md §10.1):\n  Inputs : CBR_target = 0.60, T_min = 0.1 s, T_max = 1.0 s,\n           step_size delta_T = 0.05 s,\n           smoothing factor lambda_s = 0.5\n  State  : T_GenCam (current beacon period), CBR_smoothed\n  Per measurement window (every 100 ms):\n     1) CBR_smoothed <- (1 - lambda_s) * CBR_smoothed + lambda_s * CBR_meas\n     2) error <- CBR_smoothed - CBR_target\n     3) if error > 0:                          # channel too busy\n          T_GenCam <- min(T_GenCam + delta_T, T_max)   # increase period\n        elif error < 0:\n          T_GenCam <- max(T_GenCam - delta_T, T_min)   # decrease period\n     4) p_tx held constant at +20 dBm\n  CBR_target sweep range for SA3: [0.40, 0.50, 0.60, 0.70, 0.80]\n  Default CBR_target confirmed by SA3 sensitivity sweep.\n\nPaper statement: 'We adopt a simplified adaptive controller as a representative non-AI Adaptive baseline; full LIMERIC reproduction is left as future work due to its tuning sensitivity.'",
+        "parameters": {
+          "CBR_target": 0.6,
+          "T_min": 0.1,
+          "T_max": 1.0,
+          "delta_T": 0.05,
+          "lambda_s": 0.5
+        },
+        "implementation": "etsi_cam_layer.py — proportional CBR controller with exponential smoothing",
+        "power_control": "Fixed +20 dBm",
+        "risk_level": "low",
+        "change_from_original": "Replaces ETSI DCC Adaptive (LIMERIC) per user directive 2026-05-08 12:39 / idea_spec.md §10.1"
+      },
+      {
+        "id": "BL-C",
+        "name": "Bhattacharyya2024 Variable Beacon",
+        "description": "Variable beacon rate based on CBR and estimated neighbour count. Re-implemented faithfully from IEEE TVT doi:10.1109/TVT.2023.3307672 §III-B. No ML; heuristic rule-based; p_tx fixed. Paper statement: 'faithfully re-implemented based on [Bhattacharyya2024]'.",
+        "reference": "Bhattacharyya et al., IEEE TVT 2024, doi:10.1109/TVT.2023.3307672",
+        "implementation": "etsi_cam_layer.py extension — CBR + neighbour threshold lookup",
+        "power_control": "Fixed +20 dBm",
+        "risk_level": "medium"
+      },
+      {
+        "id": "BL-D",
+        "name": "Fixed 10 Hz",
+        "description": "Static beacon: T_GenCam = 100 ms (10 Hz) fixed, p_tx = +20 dBm fixed. No congestion control. Serves as worst-case CBR upper bound and best-case beacon frequency lower bound for AoI.",
+        "implementation": "One-line constant assignment in etsi_cam_layer.py",
+        "power_control": "Fixed +20 dBm",
+        "risk_level": "low"
+      }
+    ],
+    "ablations": [
+      {
+        "id": "ABL-1",
+        "name": "Rate-Only",
+        "description": "TinyMLP-AI-DCC with power control removed. T_GenCam output used normally; p_tx fixed at +20 dBm (no power adaptation). Isolates the contribution of joint power + rate control versus rate-only control. Trained on same Oracle dataset as TinyMLP-AI-DCC with p_tx dimension ignored.",
+        "removes": "p_tx joint control",
+        "purpose": "Quantify contribution of power co-optimisation"
+      },
+      {
+        "id": "ABL-2",
+        "name": "No-AoI",
+        "description": "TinyMLP-AI-DCC with AoI removed from input. Input reduced from 5D to 4D: [v, a, N_est, CBR] (AoI input zeroed/removed). Isolates the contribution of AoI as a feedback signal. Trained on same Oracle dataset as TinyMLP-AI-DCC with AoI column removed.",
+        "removes": "AoI input feature",
+        "purpose": "Quantify the value of AoI feedback in the control loop"
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "id": "M1",
+      "name": "mean_AoI",
+      "description": "Average Age of Information across all neighbour pairs",
+      "formula": "AoI_mean = (1 / (N*(N-1))) * sum_{i != j} (t_rx_ij - t_gen_ij)",
+      "unit": "ms",
+      "measurement": "aoi_tracker.py: per-CAM (receive_time - generation_timestamp); averaged over all (i,j) pairs every 100 ms evaluation step",
+      "primary": true
+    },
+    {
+      "id": "M2",
+      "name": "CBR",
+      "description": "Channel Busy Ratio — fraction of time the 802.11p channel is detected busy",
+      "formula": "CBR = (busy_sensing_time) / (total_sensing_time)",
+      "unit": "%",
+      "measurement": "SumoNetSim 802.11p PHY channel sensing statistics",
+      "primary": true
+    },
+    {
+      "id": "M3",
+      "name": "PDR",
+      "description": "Packet Delivery Ratio — fraction of CAMs successfully received within 100 m",
+      "formula": "PDR = (received_CAMs within 100m) / (transmitted_CAMs) * 100",
+      "unit": "%",
+      "measurement": "SumoNetSim receive event log; count success per (sender, receiver) pair within distance threshold",
+      "primary": false
+    },
+    {
+      "id": "M4",
+      "name": "energy_efficiency",
+      "description": "Distance-normalised transmission energy per vehicle",
+      "formula": "E_eff = sum(p_tx_level * t_tx * packet_size_bits) / total_distance_km",
+      "unit": "mJ/km",
+      "measurement": "p_tx level (from AI-DCC output or fixed baseline) x transmission count x packet duration / vehicle odometer",
+      "primary": false
+    },
+    {
+      "id": "M5",
+      "name": "ETSI_compliance",
+      "description": "Fraction of CAM generation events where T_GenCam is within ETSI EN 302 637-2 bounds [100ms, 1000ms]",
+      "formula": "ETSI_compliance = (events with T_GenCam in [0.1, 1.0] s) / (total CAM events) * 100",
+      "unit": "%",
+      "measurement": "CAM generation event log; T_GenCam range check per event",
+      "primary": false
+    }
+  ],
+  "modules_to_implement": [
+    {
+      "name": "etsi_cam_layer.py",
+      "purpose": "ETSI EN 302 637-2 CAM generation logic: event triggers (DeltaHeading >= 4 deg, DeltaPos >= 4 m, DeltaSpeed >= 0.5 m/s), T_GenCam timer management, ETSI DCC state machine (BL-A Reactive), Simplified Adaptive controller (BL-B), Bhattacharyya2024 variable beacon (BL-C), Fixed 10 Hz (BL-D). Interfaces with libsumo for vehicle state and SumoNetSim for channel stats.",
+      "priority": 1,
+      "estimated_effort_weeks": 2,
+      "shared_by": [
+        "BL-A",
+        "BL-B",
+        "BL-C",
+        "BL-D"
+      ]
+    },
+    {
+      "name": "ai_dcc_hook.py",
+      "purpose": "TinyMLP inference hook that overrides ETSI DCC output. Loads ONNX/TFLite model, reads 5D input state from libsumo + aoi_tracker, runs inference, maps argmax outputs to (T_GenCam, p_tx) discrete values, applies ETSI range clamping (T_GenCam in [0.1, 1.0] s), and passes result to etsi_cam_layer.py timer.",
+      "priority": 4,
+      "estimated_effort_weeks": 1,
+      "shared_by": [
+        "TinyMLP-AI-DCC",
+        "ABL-1",
+        "ABL-2"
+      ]
+    },
+    {
+      "name": "aoi_tracker.py",
+      "purpose": "Per-vehicle AoI tracking module. Maintains dict {(sender_id, receiver_id): last_gen_timestamp}. On CAM receive event: AoI_ij = t_rx - t_gen; updates running mean. On missed reception: AoI continues accumulating until next successful reception. Outputs per-step M1 (mean AoI) time series to CSV.",
+      "priority": 2,
+      "estimated_effort_weeks": 1,
+      "shared_by": [
+        "all methods"
+      ]
+    },
+    {
+      "name": "oracle_generator.py",
+      "purpose": "Offline Oracle DCC table generator for Behavior Cloning training data. For each sampled state (v, a, N_est, CBR, AoI): exhaustively evaluates all |T|x|P| action combinations (16 by default) in a 200 ms libsumo simulation window, records AoI and CBR for each, computes J = alpha*AoI + beta*CBR, selects argmin action as label. Outputs oracle_dataset.npz (10000+ samples). Uses confirmed defaults from sensitivity_summary.json for alpha and action grid.",
+      "priority": 3,
+      "estimated_effort_weeks": 1,
+      "shared_by": [
+        "TinyMLP-AI-DCC training",
+        "ABL-1",
+        "ABL-2"
+      ]
+    },
+    {
+      "name": "sensitivity_runner.py",
+      "purpose": "Automated Phase 2-alpha sensitivity sweep orchestrator. Reads sweep definitions (SA1-SA4) from experiment_spec.json, launches libsumo + SumoNetSim runs for each (param_value, seed) combination, collects M1/M2/M3, writes SA<ID>_<param>_<metric>.csv files to paper/data/sensitivity/, computes selection criterion (0.5*norm_AoI + 0.5*norm_CBR) per sweep point, writes sensitivity_summary.json with confirmed default values. Supports parallel execution via Python multiprocessing.",
+      "priority": 1,
+      "estimated_effort_weeks": 1,
+      "shared_by": [
+        "Phase 2-alpha sensitivity sweep automation"
+      ]
+    }
+  ],
+  "execution_order": [
+    "1. Phase 2-alpha sensitivity sweep (4 sweeps SA1-SA4, ~54 runs total, Urban Grid density=20 veh/km/lane x 3 seeds per point)",
+    "2. Review sensitivity_summary.json; confirm default parameters: oracle_alpha, action_grid, cbr_target, mlp_hidden_width",
+    "3. Oracle dataset generation using confirmed defaults (oracle_generator.py, ~10000+ state-action pairs, est. 2-8h CPU)",
+    "4. TinyMLP training (PyTorch CPU, Behavior Cloning, confirmed h, <100 epochs)",
+    "5. ONNX export + TFLite INT8 quantisation + CMSIS-NN size verification (<16 KB)",
+    "6. Phase 2 main experiment: S1 Urban Grid (3 densities x 3 seeds x 7 methods = 63 runs) + S2 Highway (3 densities x 3 seeds x 7 methods = 63 runs) = 126 runs total",
+    "7. Statistical analysis: 95% CI (t-test / bootstrap), boxplots, significance tables",
+    "8. Paper writing: Performance Evaluation section with SA1-SA4 sensitivity subsection + main comparison"
+  ],
+  "timeline_estimate": {
+    "module_implementation": "Weeks 1-4 (etsi_cam_layer, aoi_tracker, oracle_generator, ai_dcc_hook, sensitivity_runner)",
+    "phase_2alpha_sensitivity": "Week 5 (90 runs, lightweight)",
+    "oracle_generation": "Week 6",
+    "tinymlp_training": "Week 6 (overlapping with oracle gen)",
+    "phase_2_main_experiment": "Weeks 7-8 (420 runs)",
+    "analysis_and_writing": "Weeks 9-12",
+    "total": "12 weeks (within 3-month constraint)"
+  },
+  "simulator": {
+    "mobility": "libsumo (SUMO Python API) — vehicle positions, speeds, accelerations",
+    "network": "SumoNetSim — 802.11p MAC/PHY, Nakagami-m propagation, 10 MHz bandwidth, BPSK 1/2 = 3 Mbps",
+    "note": "No external simulators assumed. CAM generation layer and DCC algorithms implemented directly in Python on top of libsumo. SumoNetSim provides channel statistics (CBR, PDR)."
+  },
+  "references": {
+    "etsi_cam": "ETSI EN 302 637-2 V1.3.1 — Intelligent Transport Systems; Vehicular Communications; Basic Set of Applications; Part 2: Specification of Cooperative Awareness Basic Service",
+    "etsi_dcc": "ETSI EN 302 571 V1.2.1 — Intelligent Transport Systems; Radiocommunications equipment operating in the 5 855 MHz to 5 925 MHz frequency band; Harmonized EN",
+    "bhattacharyya2024": "Bhattacharyya et al., IEEE Trans. Veh. Technol., doi:10.1109/TVT.2023.3307672",
+    "idea_spec": "paper/idea/idea_spec.md — §10 Update Patch (2026-05-08 12:39 user directive)"
+  },
+  "_metadata": {
+    "created_by": "Experimenter agent",
+    "stage": "Stage 1 — design",
+    "created_at": "2026-05-08",
+    "user_directive_incorporated": "2026-05-08 12:39 — BL-B simplified to Simplified Adaptive (§10.1) + Sensitivity Analysis Phase 2-alpha added (§10.2); 2026-05-08 13:25 — scenarios+sweeps patched to SumoNetSim 1.1.5 standard (NUM_BLOCKS=3, EDGE_LENGTH=2400m, V2V=200m, RSU=800m, seeds 5→3, SA3 cbr_target [0.50-0.70], SA4 hidden_width [4-16] per idea_spec §10.2)",
+    "idea_spec_version": "candidate_2_tinymlp_beacon_dcc, Phase 2 GO, 2026-05-08",
+    "summary": {
+      "phases": 2,
+      "sweeps": 4,
+      "baselines": 4,
+      "ablations": 2,
+      "metrics": 5,
+      "total_sensitivity_runs": 54,
+      "total_main_runs": 126,
+      "grand_total_runs": 180
+    }
+  }
+}

@@ -1,0 +1,35 @@
+# 가상환경 및 라이브러리
+venv/
+.venv/
+node_modules/
+snap/
+
+# AI 모델 및 대용량 데이터셋 (6.5GB의 주범일 가능성이 높음)
+.ollama/
+
+# 리눅스 시스템 및 설정 파일 (보안상 제외 권장)
+.bash_history
+.bash_logout
+.bashrc
+.profile
+.python_history
+.ssh/
+.dotnet/
+.cache/
+.config/
+.local/
+.nv/
+.vscode-server/
+.copilot/
+20202020
+20202020.pub
+.wget-hsts
+.tmux.conf
+.sudo_as_admin_successful
+simulation.pid
+simulation_log.txt
+
+# 기타 임시 파일
+*.log
+__pycache__/
+papers/paper4/paper/data/oracle_dataset.csv

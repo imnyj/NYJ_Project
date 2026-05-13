@@ -1,0 +1,29 @@
+🚀 실행 명령어:
+cd ~/0_paper/simulation
+chmod +x run_simulation.sh
+
+# 전체 실행 (~12-24시간)
+./run_simulation.sh
+
+# 단계별 실행 (권장)
+./run_simulation.sh --phases 0,1      # 환경+모델 검증 (~5분)
+./run_simulation.sh --phases 2        # MAFAC 학습 (~2-6시간)
+./run_simulation.sh --phases 3        # 성능 평가 (~4-12시간)
+./run_simulation.sh --phases 4,5      # Ablation+Overhead (~3-6시간)
+
+# 축소 모드
+./run_simulation.sh --medium          # 200ep (~4-8시간)
+./run_simulation.sh --quick           # 20ep (~30분-1시간)
+
+# 백그라운드 실행
+./run_simulation.sh --background
+tail -f simulation_log.txt            # 모니터링
+
+📊 결과: ~/0_paper/paper/data/*.csv (22개 파일)
+📝 로그: ~/0_paper/simulation/simulation_log.txt
+
+진행 상태
+(  ) phase 0, 1
+(  ) phase 2
+(  ) phase 3
+(  ) phase 4, 5

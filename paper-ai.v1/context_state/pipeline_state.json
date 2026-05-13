@@ -1,0 +1,87 @@
+{
+  "timestamp": "2026-04-29T00:00:00Z",
+  "phases": {
+    "librarian": {
+      "status": "done",
+      "updated": "2026-04-28",
+      "note": "Self-publications 21편 메타데이터 정리 완료",
+      "papers_processed": 21,
+      "first_author": 8,
+      "co_author": 13
+    },
+    "idea": {
+      "status": "done",
+      "updated": "2026-04-29",
+      "note": "Round 2 안1 (AoI-Guaranteed Robust ILP Precaching) 사용자 컨펌. 4-Contribution Frame 확정 (C1~C4). idea_spec.md 작성 완료.",
+      "analysis_type": "ILP_followup_candidates",
+      "clusters_identified": 6,
+      "first_author_papers_analyzed": 8,
+      "candidates_generated": 3,
+      "candidate_titles": [
+        "후보 A: Joint RSU Content Placement and Precaching Vehicle Selection via ILP in CIoV",
+        "후보 B: ILP-Based Joint Vehicular Cloud Formation and Content Task Assignment with RSU-Assisted Mobility Prediction",
+        "후보 C: Traffic-Aware ILP Optimization of Multi-Hop V2V Relay Path Selection and Cache Allocation in CIoV"
+      ],
+      "recommended_priority": [
+        "후보 A",
+        "후보 C",
+        "후보 B"
+      ],
+      "output": "brain/idea_memory.md",
+      "next_step": "Experimenter: libsumo C4 검증 실험 설계"
+    },
+    "experimenter": {
+      "status": "running",
+      "updated": "2026-04-29",
+      "stages_done": [
+        "design",
+        "implement_scenario_A"
+      ],
+      "note": "시나리오 A CSV 디스크 저장 검증 완료. data/A_*.csv 6개 (A_CHR, A_CDSR, A_AoI_violation_rate, A_PCO, A_RLBI, A_full) 각 1920 rows 저장.",
+      "output": "workspace/paper/experiment/experiment_spec.json",
+      "data_output": "workspace/paper/data/",
+      "scenarios": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E"
+      ],
+      "scenario_A_csv_files": 6,
+      "scenario_A_total_rows": 1920,
+      "algorithms": {
+        "proposed": [
+          "RILP",
+          "RILP-Greedy"
+        ],
+        "baselines": [
+          "Nam2023b",
+          "Nam2025",
+          "Youn2026",
+          "V2I-Base",
+          "V2V-Base",
+          "Random-K"
+        ]
+      },
+      "metrics": [
+        "CHR",
+        "CDSR",
+        "AoI_violation_rate",
+        "PCO",
+        "RLBI"
+      ],
+      "total_estimated_runs": 8340
+    },
+    "reviewer": {
+      "note": "ad-hoc SUMO integrity check (2026-04-29) — result: PASS, libsumo 기반 SUMO 시뮬레이션 확인됨. 정식 validator 모드 완료 아님.",
+      "ad_hoc_checks": [
+        {
+          "date": "2026-04-29",
+          "type": "SUMO integrity check",
+          "result": "PASS",
+          "report": "workspace/paper/validation/validation_report.json"
+        }
+      ]
+    }
+  }
+}

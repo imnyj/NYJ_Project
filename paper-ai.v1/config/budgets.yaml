@@ -1,0 +1,29 @@
+# ============================================================================
+# Token / time / cost budgets
+# ============================================================================
+# Enforced by core.policy_runtime.BudgetGuard
+# When a budget is exceeded, the guard raises BudgetExceeded which triggers
+# watchdog exit code 30 (budget exceeded → wait for user).
+# ============================================================================
+
+per_paper:
+  max_total_input_tokens: 2_000_000     # 2M input tokens cap per paper
+  max_total_output_tokens: 300_000      # 300K output tokens
+  max_usd: 50.00                        # hard cost ceiling (USD)
+  max_wall_seconds: 14400               # 4h wall time
+
+per_session:
+  max_input_tokens: 500_000
+  max_output_tokens: 80_000
+  max_usd: 15.00
+
+per_agent_turn:
+  # individual API call caps (prevents a runaway prompt)
+  max_input_tokens: 180_000             # Claude 200K context leaves headroom
+  max_output_tokens: 16_000
+  max_retries: 3
+
+# Warnings (non-fatal - logged for awareness)
+warn_at:
+  usd_per_paper: 30.00                  # warn when 60% of budget consumed
+  input_tokens_per_paper: 1_500_000

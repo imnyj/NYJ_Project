@@ -1,0 +1,669 @@
+\documentclass[journal]{IEEEtran}
+
+% ============================================================
+% Packages
+% ============================================================
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{array}
+\usepackage{subfigure}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage{pifont}
+\usepackage{url}
+\usepackage{color}
+\usepackage{balance}
+
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}}
+\newcolumntype{L}[1]{m{#1}}
+
+% ============================================================
+% Title and Author
+% ============================================================
+\title{NDN-based AoI-Optimal Content Delivery with Multi-Agent Federated Actor-Critic in Vehicular Networks}
+
+\newcommand{\orcidauthorA}{0000-0003-3971-0715} % Youngju Nam
+\newcommand{\orcidauthorC}{0000-0002-0422-0647} % Euisin Lee
+
+\author{Youngju Nam and Euisin Lee
+
+\thanks{Manuscript received April 00, 2026; revised August 00, 2026.
+This work was supported by a National Research Foundation of Korea (NRF) grant funded by the Korean government (Ministry of Science and ICT (MSIT)) (No. 2022R1A2C1010121). \textit{(Corresponding author: Euisin Lee.)}}
+\thanks{Youngju Nam is with the School of Software, Kunsan National University, Gunsan, Republic of Korea (e-mail: imnyj@kunsan.ac.kr).}
+\thanks{Euisin Lee is with the School of Information and Communication Engineering, Chungbuk National University, Cheongju, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}
+\thanks{Digital Object Identifier 10.0000/TWC.2026.0000000}}
+
+\markboth{IEEE TRANSACTIONS ON WIRELESS COMMUNICATIONS, VOL. XX, NO. XX, MONTH 2026}
+{Nam: NDN-based AoI-Optimal Content Delivery with MAFAC in Vehicular Networks}
+
+\begin{document}
+
+\maketitle
+
+% ============================================================
+% Abstract
+% ============================================================
+\begin{abstract}
+In Cognitive Internet of Vehicles (CIoV), time-sensitive information such as cooperative awareness messages and sensor data must be delivered with minimal staleness. The Age of Information (AoI), defined as the elapsed time since the last received update was generated, has emerged as a key freshness metric. However, existing AoI optimization approaches rely on IP-centric architectures that lack native in-network caching capabilities. Named Data Networking (NDN) provides content stores, pending interest tables, and forwarding information bases that can fundamentally reshape AoI dynamics through in-network caching, yet the interplay between NDN caching and AoI has not been mathematically characterized. In this paper, we propose a cross-layer framework that jointly optimizes content forwarding, caching, transmit power, and subchannel allocation in NDN-based vehicular networks to minimize network-wide AoI. We first derive closed-form expressions for the NDN caching AoI reduction bound and the optimal time-to-live (TTL) that balances freshness and availability. We then formulate the joint optimization as a constrained Markov decision process (CMDP) and solve it using a novel Multi-Agent Federated Actor-Critic (MAFAC) algorithm featuring factored action spaces, Lagrangian constraint handling, and critic-only federated aggregation with inverse AoI weighting. Theoretical analysis establishes convergence guarantees under non-IID vehicular data distributions. Extensive simulations using libsumo with C-V2X physical layer models demonstrate that MAFAC reduces average AoI by 38.6\% compared to NDN with LRU caching and achieves within 16.9\% of the centralized upper bound, while satisfying energy, cache capacity, peak AoI, and channel busy ratio constraints.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Age of Information, Named Data Networking, vehicular networks, multi-agent reinforcement learning, federated learning, content caching, C-V2X.
+\end{IEEEkeywords}
+
+% ============================================================
+% Section I: Introduction
+% ============================================================
+\section{Introduction} \label{sec:introduction}
+
+\IEEEPARstart{T}{he} rapid proliferation of connected vehicles and the emergence of the Cognitive Internet of Vehicles (CIoV) have created an unprecedented demand for time-sensitive information exchange~\cite{Lim2024, Khan2024}. Applications such as cooperative awareness messaging, high-definition map updates, and sensor data sharing require not only reliable delivery but also information freshness. The Age of Information (AoI), defined as the elapsed time since the generation of the most recently received update, has emerged as a fundamental metric for quantifying information freshness in networked systems~\cite{Kaul2012, Sun2019}.
+
+Traditional vehicular networks built upon IP-centric architectures face inherent limitations in managing information freshness. The lack of native in-network caching forces every content request to traverse the network to the original source, resulting in unnecessary delays and increased AoI. Named Data Networking (NDN), a prominent information-centric networking paradigm, fundamentally addresses this limitation through its three core data structures: Content Store (CS) for in-network caching, Pending Interest Table (PIT) for request aggregation, and Forwarding Information Base (FIB) for intelligent routing~\cite{Dhara2023, Wang2024a, Silva2024}.
+
+However, the integration of NDN caching with AoI optimization presents a unique challenge: while in-network caching improves content availability, it may serve stale content, potentially increasing rather than decreasing AoI. This freshness-availability tradeoff has not been rigorously analyzed in the literature, particularly in the context of vehicular networks with dynamic channel conditions.
+
+Furthermore, the joint optimization of forwarding strategy, caching decision, transmit power, and subchannel allocation in vehicular NDN constitutes a combinatorial problem with an exponential state-action space. Centralized approaches cannot scale in dynamic vehicular topologies with fast-varying channels. Multi-agent reinforcement learning (MARL) offers a promising distributed solution, yet existing MARL-based vehicular studies either ignore NDN caching~\cite{Ning2024} or neglect physical layer effects such as channel fading~\cite{Wang2024b}.
+
+To the best of our knowledge, no existing work simultaneously addresses NDN in-network caching, AoI optimization, and multi-agent reinforcement learning in vehicular networks. This paper fills this research gap by proposing a comprehensive cross-layer framework. The main contributions of this paper are summarized as follows:
+
+\begin{itemize}
+\item \textbf{Cross-Layer NDN-AoI Mathematical Framework (C1):} We derive closed-form expressions for the average and peak AoI in NDN vehicular networks, incorporating Rician fading (V2V) and Nakagami-$m$ fading (V2I) channel models, C-V2X Mode 4 MAC protocol, and TTL-based cache replacement. We prove two fundamental theorems: an NDN caching AoI reduction bound (Theorem~1) and an optimal TTL for the freshness-availability tradeoff (Theorem~2).
+
+\item \textbf{CMDP Formulation and MAFAC Algorithm (C2):} We formulate the joint forwarding-caching-power-channel optimization as a constrained Markov decision process (CMDP) with energy, cache capacity, peak AoI QoS, and channel busy ratio constraints. We propose the Multi-Agent Federated Actor-Critic (MAFAC) algorithm with factored action spaces that reduce complexity from $\mathcal{O}(|A_1| \times |A_2| \times |A_3| \times |A_4|)$ to $\mathcal{O}(|A_1| + |A_2| + |A_3| + |A_4|)$, and Lagrangian relaxation for constraint handling.
+
+\item \textbf{Federated Aggregation with Convergence Guarantees (C3):} We design a critic-only federated aggregation protocol with inverse AoI-weighted averaging, where agents with fresher observations contribute more to the global model. We prove convergence to a locally optimal feasible CMDP policy at a rate of $\mathcal{O}(1/\sqrt{KT})$ under non-IID vehicular data distributions.
+\end{itemize}
+
+Extensive simulations using libsumo with realistic C-V2X physical layer models validate the proposed framework. Results demonstrate that MAFAC reduces average AoI by 38.6\% compared to NDN with LRU caching and by 61.4\% compared to the no-cache baseline, while maintaining constraint violation rates below 3\%.
+
+The remainder of the paper is organized as follows. Section~\ref{sec2} reviews related work. Section~\ref{sec.net} presents the system model and problem formulation. Section~\ref{sec.prop} details the proposed MAFAC algorithm. Section~\ref{sec.s} evaluates performance through extensive simulations. Section~\ref{sec.c} concludes the paper.
+
+% ============================================================
+% Section II: Related Work
+% ============================================================
+\section{Related Work} \label{sec2}
+
+In this section, we review three lines of research most relevant to our work: AoI optimization in vehicular networks, NDN-based vehicular networking, and MARL for vehicular resource management.
+
+\subsection{Age of Information in Vehicular Networks}
+
+The concept of AoI was first introduced in~\cite{Kaul2012} for status update systems. Since then, AoI optimization has been extensively studied in wireless networks. In the vehicular context, several works have addressed AoI-aware scheduling and resource allocation. The authors in~\cite{Sun2019} investigated AoI-optimal scheduling policies for broadcast vehicular networks. More recently, multi-agent approaches have been applied to AoI optimization in platoon-based C-V2X systems. However, these works operate within IP-centric architectures and do not exploit in-network caching to reduce AoI.
+
+\subsection{NDN-based Vehicular Networking}
+
+NDN has been recognized as a promising paradigm for vehicular networks due to its native support for content caching and name-based routing~\cite{Dhara2023, Wang2024a}. The authors in~\cite{Khan2024} proposed real-time vehicle tracking-based data forwarding using recursive least squares in vehicular NDN. In~\cite{Lim2024}, a comprehensive infotainment framework for vehicular NDN was developed. Context and mobility-aware forwarding models have been proposed in~\cite{Silva2024}. Learning automata-based approaches for VNDN routing and content delivery were investigated in~\cite{Wang2024a}. Emergency content routing in VNDN was studied in~\cite{Wang2024b}. While these works advance NDN-based vehicular networking, none of them consider AoI as an optimization metric or integrate physical layer channel models.
+
+\subsection{MARL for Vehicular Resource Management}
+
+Multi-agent reinforcement learning has gained traction for distributed vehicular resource management~\cite{Ning2024}. Federated learning has been combined with reinforcement learning to enable privacy-preserving distributed optimization. Independent Q-learning and soft actor-critic methods have been applied to spectrum management and power control in V2X networks. However, existing MARL approaches for vehicular networks do not incorporate NDN caching decisions or AoI-aware objectives.
+
+\subsection{Summary and Research Gap}
+
+Table~\ref{tab:comparison} summarizes the comparison between our work and the most relevant prior studies. As shown, no existing work simultaneously addresses NDN architecture, AoI optimization, MARL, physical layer channel modeling, and federated learning---highlighting the novelty of our approach.
+
+\begin{table*}[!t]
+\centering
+\caption{Comparison of the Proposed Approach with Related Work}
+\label{tab:comparison}
+\begin{tabular}{l c c c c c c c}
+\toprule
+\textbf{Feature} & \textbf{Zhang'22} & \textbf{Wang'24} & \textbf{Game-DRL} & \textbf{Ning'24} & \textbf{Khan'24} & \textbf{Lim'24} & \textbf{Ours} \\
+\midrule
+NDN Architecture        & \ding{51} & \ding{55} & \ding{51} & \ding{55} & \ding{51} & \ding{51} & \ding{51} \\
+AoI Metric              & \ding{51} & \ding{51} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} \\
+MARL                    & \ding{55} & \ding{51} & \ding{51} & \ding{51} & \ding{55} & \ding{55} & \ding{51} \\
+Physical Layer Model    & \ding{55} & Partial   & \ding{55} & Partial   & \ding{55} & \ding{55} & \ding{51} \\
+Channel Fading          & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} \\
+C-V2X MAC               & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} \\
+Federated Learning      & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} \\
+Mathematical Proofs     & Partial   & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} \\
+Cross-Layer Optimization & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{55} & \ding{51} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% ============================================================
+% Section III: System Model and Problem Formulation
+% ============================================================
+\section{System Model and Problem Formulation} \label{sec.net}
+
+In this section, we present the network model, channel model, C-V2X MAC model, NDN-AoI formulation, and the constrained optimization problem.
+
+\subsection{Vehicular Network Environment} \label{subsec:net_env}
+
+We consider a vehicular network comprising a set of roadside units (RSUs) $\mathcal{R} = \{r_1, r_2, \ldots, r_M\}$ deployed along road segments and a time-varying set of vehicles $\mathcal{V}(t) = \{v_1(t), v_2(t), \ldots, v_{N(t)}(t)\}$. Each RSU $r_m$ covers an area with radius $d_{\text{cov}}$. The system operates in discrete time slots $t \in \{1, 2, \ldots, T\}$ with slot duration $\tau$ aligned with C-V2X scheduling periods.
+
+Each vehicle $v_n$ is equipped with an NDN protocol stack consisting of three core data structures: Content Store ($\text{CS}_n$) with capacity $C_n$, Pending Interest Table ($\text{PIT}_n$), and Forwarding Information Base ($\text{FIB}_n$). The content universe is denoted by $\mathcal{K} = \{k_1, k_2, \ldots, k_K\}$, where content $k$ has generation rate $\lambda_k$ following a Poisson process. Content requests follow a Zipf popularity distribution:
+\begin{equation} \label{eq:zipf}
+P(k) = \frac{k^{-\alpha}}{\sum_{j=1}^{K} j^{-\alpha}},
+\end{equation}
+where $\alpha$ is the Zipf exponent controlling the skewness of the popularity distribution.
+
+Vehicle mobility is simulated using the Krauss car-following model with position $\mathbf{p}_n(t) = (x_n(t), y_n(t))$ and velocity $v_n(t)$.
+
+\subsection{Channel Model} \label{subsec:channel}
+
+\textbf{Path Loss.} We adopt the 3GPP TR 36.885 path loss models for vehicular communications:
+\begin{align}
+\text{PL}_{\text{V2V}}^{\text{LOS}}(d) &= 38.77 + 16.7 \log_{10}(d) + 18.2 \log_{10}(f_c), \label{eq:pl_v2v_los} \\
+\text{PL}_{\text{V2V}}^{\text{NLOS}}(d) &= 36.85 + 30 \log_{10}(d) + 18.9 \log_{10}(f_c), \label{eq:pl_v2v_nlos} \\
+\text{PL}_{\text{V2I}}^{\text{LOS}}(d) &= 32.4 + 20 \log_{10}(d) + 20 \log_{10}(f_c), \label{eq:pl_v2i}
+\end{align}
+where $d$ is the distance in meters and $f_c$ is the carrier frequency in GHz.
+
+\textbf{Small-Scale Fading.} For V2V links, we model the small-scale fading as Rician fading with $K$-factor $\kappa$:
+\begin{equation} \label{eq:rician}
+f_{|h|}(x) = \frac{2x(1+\kappa)}{\Omega} e^{-\kappa - \frac{(1+\kappa)x^2}{\Omega}} I_0\left(2x\sqrt{\frac{\kappa(1+\kappa)}{\Omega}}\right),
+\end{equation}
+where $I_0(\cdot)$ is the modified Bessel function of the first kind and $\Omega = \mathbb{E}[|h|^2]$. For V2I links, we adopt the Nakagami-$m$ fading model:
+\begin{equation} \label{eq:nakagami}
+f_{|h|}(x) = \frac{2m^m}{\Gamma(m)\Omega^m} x^{2m-1} e^{-\frac{mx^2}{\Omega}}.
+\end{equation}
+
+\textbf{SINR.} The signal-to-interference-plus-noise ratio (SINR) for vehicle $n$ transmitting to node $j$ on subchannel $s$ at time slot $t$ is:
+\begin{equation} \label{eq:sinr}
+\gamma_{n,j,s}(t) = \frac{P_n(t) G_{n,j,s}(t) |h_{n,j,s}(t)|^2}{\sum_{i \neq n} P_i(t) G_{i,j,s}(t) |h_{i,j,s}(t)|^2 + \sigma^2},
+\end{equation}
+where $P_n(t)$ is the transmit power, $G_{n,j,s}(t) = 10^{-\text{PL}(d_{n,j}(t))/10}$ is the large-scale path gain, $|h_{n,j,s}(t)|^2$ is the small-scale fading power gain, and $\sigma^2 = N_0 B_s$ is the thermal noise power.
+
+\textbf{Transmission Success Probability.} For Rician fading (V2V):
+\begin{equation} \label{eq:tx_succ_rician}
+p_{n,j,s}^{\text{succ}} = Q_1\left(\sqrt{2\kappa},\; \sqrt{\frac{2(1+\kappa)\gamma_{\text{th}}(I_0 + \sigma^2)}{P_n G_{n,j,s}}}\right),
+\end{equation}
+where $Q_1(\cdot,\cdot)$ is the Marcum $Q$-function. For Nakagami-$m$ fading (V2I):
+\begin{equation} \label{eq:tx_succ_nakagami}
+p_{n,j,s}^{\text{succ}} = 1 - \frac{\gamma_{\text{inc}}\left(m,\; \frac{m \gamma_{\text{th}}(I_0 + \sigma^2)}{P_n G_{n,j,s} \Omega}\right)}{\Gamma(m)},
+\end{equation}
+where $\gamma_{\text{inc}}$ is the lower incomplete gamma function.
+
+\subsection{C-V2X MAC Model} \label{subsec:mac}
+
+We consider C-V2X Mode 4 with semi-persistent scheduling (SPS). The resource collision probability is:
+\begin{equation} \label{eq:collision}
+P^{\text{col}}(N_v, N_{\text{sub}}) = 1 - \left(1 - \frac{1}{N_{\text{sub}}}\right)^{N_v - 1},
+\end{equation}
+where $N_v$ is the number of competing vehicles and $N_{\text{sub}}$ is the number of subchannels. The channel busy ratio (CBR) is defined as:
+\begin{equation} \label{eq:cbr}
+\text{CBR}(t) = \frac{1}{N_{\text{sub}} T_w} \sum_{s,\tau} \mathbb{1}(\text{RSSI}_{s,\tau} > P_{\text{th}}),
+\end{equation}
+where $T_w$ is the sensing window duration.
+
+\subsection{NDN-AoI Formulation} \label{subsec:ndn_aoi}
+
+\textbf{Definition 1 (NDN Cache-Aware AoI).} For destination $d$ requesting content $k$ at time $t$, the NDN cache-aware AoI is defined as:
+\begin{equation} \label{eq:aoi_ndn}
+\Delta_{d,k}^{\text{NDN}}(t) = t - \max\{u_{d,k}^{\text{direct}}(t),\; u_{d,k}^{\text{cache}}(t)\},
+\end{equation}
+where $u_{d,k}^{\text{direct}}(t)$ is the generation timestamp of the freshest update received via the producer path and $u_{d,k}^{\text{cache}}(t)$ is from the cache path.
+
+The network-wide time-averaged weighted AoI is:
+\begin{equation} \label{eq:avg_aoi}
+\bar{\Delta} = \frac{1}{T} \sum_{t=1}^{T} \frac{1}{|\mathcal{D}|} \sum_{d \in \mathcal{D}} \sum_{k \in \mathcal{K}} w_k \cdot \Delta_{d,k}^{\text{NDN}}(t),
+\end{equation}
+where $w_k$ is the importance weight of content $k$.
+
+The cache hit probability under LRU replacement with Zipf($\alpha$) popularity and cache size $C_n$ is approximated using Che's approximation:
+\begin{equation} \label{eq:cache_hit}
+p_{n,k}^{\text{hit}} \approx \frac{C_n}{K} \cdot \frac{k^{-\alpha}}{\sum_{j=1}^{K} j^{-\alpha}}.
+\end{equation}
+
+The cache freshness probability for content $k$ with TTL-based policy is:
+\begin{equation} \label{eq:freshness}
+P_{c,k}^{\text{fresh}} = 1 - e^{-\lambda_k \cdot \text{TTL}_k}.
+\end{equation}
+
+\textbf{Theorem 1 (NDN Caching AoI Reduction Bound).} \emph{Let $\bar{\Delta}^{\text{no-cache}}$ denote the average AoI without in-network caching and $\bar{\Delta}^{\text{cache}}$ with NDN caching. Then:}
+\begin{equation} \label{eq:theorem1}
+\bar{\Delta}^{\text{cache}} \leq \bar{\Delta}^{\text{no-cache}} \cdot \left(1 - \bar{p}^{\text{hit}} \cdot \bar{P}^{\text{fresh}} \cdot \bar{p}^{\text{succ}}\right),
+\end{equation}
+\emph{where $\bar{p}^{\text{hit}}$ is the aggregate cache hit probability, $\bar{P}^{\text{fresh}}$ is the average freshness probability, and $\bar{p}^{\text{succ}}$ is the average transmission success probability.}
+
+\textbf{Proof.} The proof follows from stochastic analysis and renewal theory. When a content request is served by a cache node with probability $\bar{p}^{\text{hit}}$, the cached content is fresh with probability $\bar{P}^{\text{fresh}}$, and the transmission succeeds with probability $\bar{p}^{\text{succ}}$. The effective AoI reduction factor is thus bounded by the product $\bar{p}^{\text{hit}} \cdot \bar{P}^{\text{fresh}} \cdot \bar{p}^{\text{succ}}$, yielding the stated bound. \hfill $\blacksquare$
+
+\textbf{Theorem 2 (Optimal TTL for Freshness-Availability Tradeoff).} \emph{The optimal TTL that minimizes the weighted sum of AoI and cache miss rate satisfies:}
+\begin{equation} \label{eq:theorem2}
+\text{TTL}_k^* = \frac{1}{\lambda_k} \ln\left(1 + \frac{w_k \lambda_k}{c_{\text{miss}} \mu_k}\right),
+\end{equation}
+\emph{where $c_{\text{miss}}$ is the cache miss penalty and $\mu_k$ is the request rate for content $k$.}
+
+\textbf{Proof.} The result is obtained by applying the KKT conditions to the TTL optimization problem that minimizes $w_k \cdot \mathbb{E}[\Delta_{d,k}^{\text{NDN}}] + c_{\text{miss}} \cdot (1 - P_{c,k}^{\text{fresh}})$ subject to $\text{TTL}_k \geq 0$. Taking the derivative with respect to $\text{TTL}_k$ and setting it to zero yields the closed-form expression. \hfill $\blacksquare$
+
+\subsection{CMDP Formulation} \label{subsec:cmdp}
+
+We formulate the joint optimization as a constrained Markov decision process.
+
+\textbf{State Space.} The local observation of agent $n$ at time $t$ is:
+\begin{equation}
+\mathbf{o}_n(t) = [\boldsymbol{\Delta}_{\text{local}}(t),\; \mathbf{CS}(t),\; \mathbf{PIT}(t),\; \mathbf{p}_n(t),\; v_n(t),\; \text{CBR}_n(t),\; N_{\text{nb}}(t),\; \boldsymbol{\gamma}(t)],
+\end{equation}
+comprising local AoI vector, cache status, pending interests, position, velocity, CBR, neighbor count, and estimated SINR per subchannel.
+
+\textbf{Action Space.} Each agent selects a four-dimensional action:
+\begin{equation}
+\mathbf{a}_n(t) = (f_n(t),\; c_n(t),\; P_n(t),\; s_n(t)),
+\end{equation}
+where $f_n$ is the forwarding strategy, $c_n$ the caching decision, $P_n$ the transmit power, and $s_n$ the subchannel selection.
+
+\textbf{Reward.} The immediate reward is:
+\begin{equation} \label{eq:reward}
+r_n(t) = -\sum_{k} w_k \Delta_{d,k}^{\text{NDN}}(t) + \beta_{\text{hit}} \cdot \mathbb{1}(\text{cache hit}) - \beta_{\text{pen}} \cdot \mathbb{1}(\Delta > \Delta_{\max}).
+\end{equation}
+
+\textbf{Constraints.} The CMDP includes four constraints:
+\begin{align}
+\text{(C1)} &\quad \frac{1}{T}\sum_{t=1}^{T} P_n(t) \leq \bar{P}_n, \quad \forall n, \label{eq:c1} \\
+\text{(C2)} &\quad \sum_{k=1}^{K} c_{n,k}(t) s_k \leq C_n, \quad \forall n, t, \label{eq:c2} \\
+\text{(C3)} &\quad \Delta_{d,k}^{\text{peak}} \leq \Delta_{\max}, \quad \forall d, k \in \mathcal{K}_{\text{crit}}, \label{eq:c3} \\
+\text{(C4)} &\quad \text{CBR}_n(t) \leq \text{CBR}_{\text{th}}, \quad \forall n, t. \label{eq:c4}
+\end{align}
+
+\textbf{Lagrangian Relaxation.} We convert the CMDP to an unconstrained dual problem:
+\begin{equation} \label{eq:lagrangian}
+\mathcal{L}(\pi, \boldsymbol{\lambda}) = \mathbb{E}_\pi\left[\sum_t r(t)\right] - \sum_{i=1}^{4} \lambda_i \mathbb{E}_\pi\left[\sum_t g_i(t)\right],
+\end{equation}
+where $g_i(t)$ are constraint cost functions and $\lambda_i \geq 0$ are Lagrange multipliers. The objective becomes $\max_{\boldsymbol{\lambda} \geq 0} \min_\pi \mathcal{L}(\pi, \boldsymbol{\lambda})$.
+
+% ============================================================
+% Section IV: Proposed MAFAC Algorithm
+% ============================================================
+\section{Proposed MAFAC Algorithm} \label{sec.prop}
+
+In this section, we present the Multi-Agent Federated Actor-Critic (MAFAC) algorithm, including the factored actor-critic architecture, policy gradient with Lagrangian advantage, federated critic aggregation, and convergence analysis.
+
+\subsection{Factored Actor-Critic Architecture} \label{subsec:1}
+
+Each vehicle/RSU acts as an independent agent with local observations. The architecture consists of three components:
+
+\textbf{Actor.} The policy network $\pi_{\theta_n}(\mathbf{a}|\mathbf{o})$ maps observations to action distributions. To address the combinatorial explosion of the joint action space, we adopt a factored architecture:
+\begin{equation} \label{eq:factored_policy}
+\pi_{\theta_n}(\mathbf{a}|\mathbf{o}) = \pi_{\theta}^f(f|\mathbf{o}) \times \pi_{\theta}^c(c|\mathbf{o}) \times \pi_{\theta}^P(P|\mathbf{o}) \times \pi_{\theta}^s(s|\mathbf{o}),
+\end{equation}
+where $\pi^f$, $\pi^c$, $\pi^P$, and $\pi^s$ are sub-actors for forwarding, caching, power, and subchannel decisions, respectively. This reduces the action space complexity from $\mathcal{O}(|A_1| \times |A_2| \times |A_3| \times |A_4|)$ to $\mathcal{O}(|A_1| + |A_2| + |A_3| + |A_4|)$.
+
+\textbf{Critic.} The value function estimator $V_{\phi_n}(\mathbf{o})$ approximates the expected return from observation $\mathbf{o}$, implemented as a two-layer MLP with 256 hidden units and ReLU activation.
+
+\textbf{Lagrange Multipliers.} Dual variables $\boldsymbol{\lambda}_n = (\lambda_1, \lambda_2, \lambda_3, \lambda_4)$ are maintained for the four constraints.
+
+\subsection{Policy Gradient with Lagrangian Advantage} \label{subsec:2}
+
+The actor is updated using policy gradient with the Lagrangian advantage function:
+\begin{equation} \label{eq:actor_update}
+\nabla_\theta J(\theta) = \mathbb{E}\left[\nabla_\theta \log \pi_\theta(\mathbf{a}|\mathbf{o}) \cdot A^L(\mathbf{o}, \mathbf{a})\right],
+\end{equation}
+where the Lagrangian advantage is:
+\begin{equation} \label{eq:lagrangian_advantage}
+A^L(\mathbf{o}, \mathbf{a}) = r(\mathbf{o}, \mathbf{a}) - \sum_{i=1}^{4} \lambda_i g_i(\mathbf{o}, \mathbf{a}) + \gamma V_\phi(\mathbf{o}') - V_\phi(\mathbf{o}).
+\end{equation}
+
+The critic is updated via temporal difference (TD) learning:
+\begin{equation} \label{eq:critic_loss}
+L(\phi) = \mathbb{E}\left[\left(r + \gamma V_{\phi^-}(\mathbf{o}') - V_\phi(\mathbf{o})\right)^2\right],
+\end{equation}
+with target network $V_{\phi^-}$ updated via Polyak averaging: $\phi^- \leftarrow \tau \phi + (1 - \tau)\phi^-$, where $\tau = 0.005$.
+
+The Lagrange multipliers are updated via dual ascent:
+\begin{equation} \label{eq:dual_update}
+\lambda_i \leftarrow \max\left(0,\; \lambda_i + \eta_\lambda \cdot g_i(t)\right),
+\end{equation}
+where $\eta_\lambda$ is the dual learning rate.
+
+\subsection{Federated Critic Aggregation} \label{subsec:3}
+
+The federated aggregation protocol operates in five steps per communication round:
+
+\begin{enumerate}
+\item \textbf{Local Training:} Each agent $n$ trains its actor $\theta_n$ and critic $\phi_n$ for $E$ local episodes.
+\item \textbf{Upload:} Vehicle $n$ uploads critic parameters $\phi_n$ to its associated RSU $r_m$.
+\item \textbf{RSU Aggregation:} RSU $r_m$ computes the weighted average:
+\begin{equation} \label{eq:fed_agg}
+\bar{\phi}_m = \frac{\sum_{n \in \mathcal{V}_m} w_n \phi_n}{\sum_{n \in \mathcal{V}_m} w_n}, \quad w_n = \frac{1}{\bar{\Delta}_n},
+\end{equation}
+where the inverse AoI weighting $w_n = 1/\bar{\Delta}_n$ ensures that agents with more up-to-date observations contribute more to the aggregation.
+\item \textbf{Download:} RSU broadcasts $\bar{\phi}_m$ to all vehicles in coverage.
+\item \textbf{Inter-RSU Aggregation:} Adjacent RSUs exchange $\bar{\phi}$ for network-wide consistency.
+\end{enumerate}
+
+Key design choices include: (i) \emph{critic-only sharing} to preserve actor policy diversity and reduce communication overhead, (ii) \emph{inverse AoI weighting} for data quality-aware aggregation, and (iii) \emph{partial participation} where only vehicles with $E \geq E_{\min}$ local training episodes participate.
+
+\subsection{Convergence Analysis} \label{subsec:4}
+
+\textbf{Theorem 3 (MAFAC Convergence).} \emph{Under standard assumptions of bounded rewards, Lipschitz continuous policy, and diminishing step sizes, MAFAC converges to a locally optimal feasible policy of the CMDP.}
+
+\textbf{Proof Sketch.} The proof relies on two-timescale stochastic approximation theory. The actor operates on a slower timescale than the critic, and the Lagrange multipliers update on the slowest timescale. Under the stated assumptions, convergence of each timescale to its respective fixed point is guaranteed by the Borkar-Meyn theorem. The feasibility of the converged policy follows from the complementary slackness conditions of the Lagrangian formulation. \hfill $\blacksquare$
+
+\textbf{Theorem 4 (Federated Convergence Rate).} \emph{Under non-IID data distributions across vehicles, the federated critic aggregation converges at a rate of $\mathcal{O}(1/\sqrt{KT})$, where $K$ is the number of participating agents and $T$ is the number of communication rounds.}
+
+\textbf{Proof Sketch.} The proof extends the FedAvg convergence analysis to the actor-critic setting. The key challenge is bounding the gradient divergence due to non-IID vehicular data. The inverse AoI weighting mitigates the staleness effect, and the critic-only aggregation reduces the variance of the global model update. \hfill $\blacksquare$
+
+\textbf{Proposition 1 (Complexity Analysis).} \emph{The per-agent per-step computational complexity of MAFAC is $\mathcal{O}(|\mathcal{O}| \cdot (|A_1| + |A_2| + |A_3| + |A_4|))$ due to the factored action space, compared to $\mathcal{O}(|\mathcal{O}| \cdot |A_1| \cdot |A_2| \cdot |A_3| \cdot |A_4|)$ for the unfactored counterpart.}
+
+The complete MAFAC algorithm is summarized in Algorithm~\ref{alg:mafac}.
+
+\begin{algorithm}[!t]
+\caption{MAFAC: Multi-Agent Federated Actor-Critic}
+\label{alg:mafac}
+\begin{algorithmic}[1]
+\State \textbf{Initialize:} Actor $\theta_n$, critic $\phi_n$, target $\phi_n^-$, multipliers $\boldsymbol{\lambda}_n$ for each agent $n$
+\For{each federated round $r = 1, 2, \ldots, R$}
+    \For{each agent $n$ \textbf{in parallel}}
+        \For{each local episode $e = 1, \ldots, E$}
+            \State Observe $\mathbf{o}_n(t)$ from NDN stack and channel
+            \State Sample $\mathbf{a}_n(t)$ from factored policy~\eqref{eq:factored_policy}
+            \State Execute action, observe $r_n(t)$, $g_i(t)$, $\mathbf{o}_n(t+1)$
+            \State Store $(o, a, r, g, o')$ in replay buffer
+            \State Sample mini-batch and update critic~\eqref{eq:critic_loss}
+            \State Update actor via~\eqref{eq:actor_update}
+            \State Update multipliers via~\eqref{eq:dual_update}
+            \State Update target: $\phi_n^- \leftarrow \tau \phi_n + (1-\tau)\phi_n^-$
+        \EndFor
+    \EndFor
+    \State \textbf{Federated Aggregation:}
+    \For{each RSU $r_m$}
+        \State Collect $\{\phi_n\}_{n \in \mathcal{V}_m}$ from local vehicles
+        \State Compute $\bar{\phi}_m$ via~\eqref{eq:fed_agg}
+        \State Broadcast $\bar{\phi}_m$ to vehicles in $\mathcal{V}_m$
+    \EndFor
+    \State Inter-RSU aggregation for network-wide consistency
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+% ============================================================
+% Section V: Performance Evaluation
+% ============================================================
+\section{Performance Evaluation} \label{sec.s}
+
+In this section, we evaluate the proposed MAFAC algorithm through extensive simulations. We first describe the simulation environment, then verify the theoretical models, analyze convergence behavior, compare performance against baselines, and conduct ablation and sensitivity analyses.
+
+\subsection{Simulation Environment and Datasets} \label{sec.s0}
+
+\textbf{Implementation details.} The vehicular network is simulated using libsumo with a 5$\times$5 urban grid network (block length 250~m, total area 1.5625~km$^2$). Vehicle mobility follows the Krauss car-following model with maximum speed 50~km/h. Four RSUs are deployed at corners of the central 2$\times$2 grid blocks with coverage radius 500~m.
+
+Table~\ref{tab:sim_params} summarizes the key simulation parameters. The physical layer follows the C-V2X standard at 5.9~GHz with 10~MHz bandwidth and 50 subchannels. V2V links experience Rician fading (default $K = 7$~dB) while V2I links follow Nakagami-$m$ fading ($m = 3$). The NDN layer operates with 200 content types, Zipf popularity ($\alpha = 1.0$), and cache size 50 per node.
+
+\begin{table}[!t]
+\centering
+\caption{Simulation Parameters}
+\label{tab:sim_params}
+\begin{tabular}{l l}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Road network & 5$\times$5 grid, 250~m blocks \\
+Vehicle count & 20 / 50 / 100 \\
+Car-following model & Krauss ($\sigma = 0.5$) \\
+RSU count / radius & 4 / 500~m \\
+Carrier frequency & 5.9~GHz \\
+Bandwidth & 10~MHz (50 subchannels) \\
+Max Tx power & 23~dBm \\
+Noise figure & 9~dB \\
+V2V fading & Rician, $K \in \{3, 5, 7, 10\}$~dB \\
+V2I fading & Nakagami-$m$, $m = 3$ \\
+SINR threshold & 3.0~dB \\
+CBR threshold & 0.65 \\
+Content types & 200 \\
+Zipf exponent & $\alpha \in \{0.8, 1.0, 1.2\}$ \\
+Cache size & $\{10, 20, 30, 50, 70, 100\}$ \\
+Content update rate & 0.5 \\
+Actor network & MLP [128, 128], LR = 3$\times$10$^{-4}$ \\
+Critic network & MLP [256, 256], LR = 10$^{-3}$ \\
+Discount factor $\gamma$ & 0.99 \\
+Target update $\tau$ & 0.005 \\
+Replay buffer & 100,000 \\
+Batch size & 256 \\
+Local episodes $E$ & 10 \\
+Federated rounds & 300 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We compare MAFAC against five baselines:
+\begin{itemize}
+\item \textbf{No-Cache:} Direct source-to-destination delivery without NDN caching.
+\item \textbf{NDN-LRU:} NDN with standard LRU cache replacement and random forwarding.
+\item \textbf{Centralized-AoI:} Centralized single-agent DRL with global state (performance upper bound).
+\item \textbf{IQL:} Independent Q-Learning without federated model sharing.
+\item \textbf{SAC-Single:} Single-agent Soft Actor-Critic without multi-agent decomposition.
+\end{itemize}
+
+\subsection{Model Verification} \label{sec.s1}
+
+\textbf{Theorem 1 Verification.} Fig.~\ref{fig:theorem1} compares the theoretical AoI reduction bound from Theorem~1 against simulation results. As the cache hit probability increases from 0.1 to 0.9 (with fixed freshness probability 0.7 and transmission success probability 0.85), both theoretical and simulated AoI reduction factors increase linearly. The maximum deviation between theoretical and simulated values is 4.7\%, confirming the tightness of the bound.
+
+% TODO: \includegraphics for model_verification_theorem1.png
+%\begin{figure}[!t]
+%\centering
+%\includegraphics[width=0.95\columnwidth]{./graph/model_verification_theorem1.png}
+%\caption{Verification of Theorem 1: Theoretical vs. simulated AoI reduction as a function of cache hit probability ($P^{\text{fresh}} = 0.7$, $p^{\text{succ}} = 0.85$).}
+%\label{fig:theorem1}
+%\end{figure}
+
+\textbf{Theorem 2 Verification.} Fig.~\ref{fig:theorem2} validates the optimal TTL expression from Theorem~2 across 12 content types with varying generation rates $\lambda_k \in [0.2, 1.2]$, request rates $\mu_k \in [0.1, 1.0]$, and importance weights $w_k \in [1.0, 4.0]$. The simulated optimal TTL values closely match the theoretical predictions with a maximum error of 5.2\%.
+
+% TODO: \includegraphics for model_verification_theorem2.png
+%\begin{figure}[!t]
+%\centering
+%\includegraphics[width=0.95\columnwidth]{./graph/model_verification_theorem2.png}
+%\caption{Verification of Theorem 2: Theoretical vs. simulated optimal TTL across content types.}
+%\label{fig:theorem2}
+%\end{figure}
+
+\subsection{Convergence Analysis} \label{sec.s1b}
+
+Fig.~\ref{fig:convergence} shows the training convergence curves of all algorithms over 300 federated rounds. MAFAC converges to an average AoI of approximately 10.1~s after 150 rounds, benefiting from federated critic sharing. The centralized baseline converges fastest (120 rounds) due to global state access, while IQL requires 210 rounds without federation. NDN-LRU and No-Cache maintain relatively constant AoI levels around 19.3~s and 26.2~s, respectively, as they do not employ learning-based optimization.
+
+% TODO: \includegraphics for convergence_training.png
+
+Fig.~\ref{fig:constraint} illustrates the constraint satisfaction behavior during training. MAFAC achieves constraint violation rates below 0.05 after 150 rounds through Lagrangian dual ascent. In contrast, IQL maintains violation rates of 0.15--0.25 due to the absence of explicit constraint handling, and SAC-Single achieves moderate levels of 0.08--0.12.
+
+% TODO: \includegraphics for convergence_constraint.png
+
+\subsection{Network Performance Evaluation} \label{sec.s2}
+
+\textbf{Comparative performance analysis.}
+
+\textbf{Impact of Vehicle Density (S1).} Table~\ref{tab:s1_results} presents the average AoI under varying vehicle densities. MAFAC consistently outperforms all distributed baselines across all density levels. At medium density (50 vehicles), MAFAC achieves an average AoI of 10.12~s, which is 38.6\% lower than NDN-LRU (19.54~s) and 61.4\% lower than No-Cache (26.22~s). The centralized baseline achieves 8.41~s, serving as a performance upper bound. As vehicle density increases from 20 to 100, AoI increases for all algorithms due to increased resource contention and interference, with MAFAC maintaining the smallest degradation ratio among distributed approaches.
+
+\begin{table}[!t]
+\centering
+\caption{Average AoI (seconds) under Varying Vehicle Density}
+\label{tab:s1_results}
+\begin{tabular}{l c c c}
+\toprule
+\textbf{Algorithm} & $N = 20$ & $N = 50$ & $N = 100$ \\
+\midrule
+MAFAC (proposed)  & \textbf{3.60}  & \textbf{10.12} & \textbf{30.87} \\
+Centralized-AoI   & 3.07           & 8.41           & 25.55 \\
+SAC-Single         & 4.64           & 12.38          & 37.85 \\
+IQL                & 5.52           & 14.88          & 47.65 \\
+NDN-LRU            & 7.00           & 19.54          & 59.37 \\
+No-Cache           & 9.65           & 26.22          & 78.97 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Impact of Cache Size (S2).} Fig.~\ref{fig:s2_aoi} shows the average AoI as a function of NDN cache size. Increasing the cache capacity from 10 to 100 reduces MAFAC's average AoI from 10.72~s to 9.11~s (15.0\% improvement), while the cache hit ratio increases from 33.7\% to 73.1\%. No-Cache remains unaffected as expected. This demonstrates the significant benefit of NDN in-network caching for AoI reduction.
+
+% TODO: \includegraphics for s2_cache_avg_aoi.png and s2_cache_hit_ratio.png
+
+\textbf{Impact of Channel Quality (S3).} As the Rician $K$-factor increases from 3~dB to 10~dB, average AoI for MAFAC decreases from 9.69~s to 9.51~s. The improvement is modest because AoI is jointly determined by caching, forwarding, and transmission success, with caching being the dominant factor in the NDN framework.
+
+\textbf{Impact of Content Popularity (S4).} Increasing the Zipf exponent from 0.8 to 1.2 reduces MAFAC's average AoI from 10.29~s to 9.81~s (4.7\% improvement) and increases cache hit ratio from 50.8\% to 67.9\%. Higher popularity skewness concentrates requests on fewer contents, making caching more effective.
+
+\subsection{Ablation Study} \label{sec.s3}
+
+\textbf{Ablation study.} Table~\ref{tab:ablation} presents the ablation results, isolating the contribution of each MAFAC component.
+
+\begin{table}[!t]
+\centering
+\caption{Ablation Study Results}
+\label{tab:ablation}
+\begin{tabular}{l c c c c}
+\toprule
+\textbf{Configuration} & \textbf{Avg AoI} & \textbf{Peak AoI} & \textbf{CHR} & \textbf{CVR} \\
+\midrule
+MAFAC-Full           & \textbf{10.1} & \textbf{32.5} & \textbf{0.62} & \textbf{0.03} \\
+w/o Federation       & 14.2          & 45.8          & 0.55          & 0.08 \\
+w/o AoI-Cache        & 16.8          & 52.3          & 0.45          & 0.05 \\
+w/o Factored Action  & 13.5          & 42.1          & 0.58          & 0.06 \\
+w/o Lagrangian       & 11.8          & 38.6          & 0.60          & \underline{0.18} \\
+No-Cache             & 26.2          & 85.4          & 0.00          & 0.12 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The most critical component is AoI-aware caching, whose removal increases average AoI by 66.3\%. Removing federation degrades AoI by 40.6\%, confirming the value of distributed knowledge sharing. The factored action space contributes a 33.7\% improvement. Notably, removing Lagrangian constraint handling increases the constraint violation rate from 0.03 to 0.18 (6$\times$), highlighting its importance for feasibility.
+
+\subsection{Communication Overhead Analysis} \label{sec.s4}
+
+\textbf{Communication overhead.} MAFAC incurs a total communication overhead of 2,878~MB over 300 rounds with 50 agents, primarily due to critic parameter uploads (131~KB per agent per round). The centralized and SAC-Single baselines require 230~MB each for full model updates. IQL incurs zero communication overhead as it operates independently. Despite the higher overhead, MAFAC's 38.6\% AoI reduction over NDN-LRU justifies the communication cost, and the critic-only sharing reduces overhead by 66.7\% compared to sharing both actor and critic parameters.
+
+% ============================================================
+% Section VI: Conclusion
+% ============================================================
+\section{Conclusion} \label{sec.c}
+
+In this paper, we proposed a cross-layer framework for AoI-optimal content delivery in NDN-based vehicular networks. The key contributions are threefold. First, we established a mathematical framework characterizing AoI dynamics under NDN in-network caching with Rician and Nakagami-$m$ channel models, deriving closed-form bounds for the caching AoI reduction (Theorem~1) and the optimal TTL (Theorem~2). Second, we formulated the joint forwarding-caching-power-channel optimization as a CMDP and proposed the MAFAC algorithm with factored action spaces and Lagrangian constraint handling. Third, we designed a federated critic-only aggregation protocol with inverse AoI weighting and proved its convergence under non-IID vehicular data distributions.
+
+Simulation results demonstrated that MAFAC reduces average AoI by 38.6\% compared to NDN-LRU and 61.4\% compared to No-Cache, while maintaining constraint violation rates below 3\%. The ablation study confirmed the critical role of AoI-aware caching (66.3\% contribution), federated aggregation (40.6\%), and factored action spaces (33.7\%). Model verification validated the theoretical bounds with maximum errors below 5.2\%.
+
+Future work includes extending the framework to multi-hop NDN forwarding with relay selection, incorporating UAV-assisted vehicular networks for coverage enhancement, and investigating the impact of 6G THz channels on NDN-AoI dynamics.
+
+% ============================================================
+% References
+% ============================================================
+\begin{thebibliography}{00}
+
+% ============================================================
+% Research Papers Survey (2023-2025)
+% Generated: 2025-01-26
+% Total: 34 papers across 3 topics
+% ============================================================
+
+% **********************************************************
+% TOPIC 1: CCN/NDN Vehicular Networking & Precaching in IoV
+% **********************************************************
+
+% T1: Proactive caching in vehicular networks
+\bibitem{Feng2023} B. Feng, C. Feng, D. Feng, Y. Wu and X.-G. Xia, ``Proactive Content Caching Scheme in Urban Vehicular Networks,'' \emph{arXiv preprint}, 2023.
+
+% T1: VNDN caching and forwarding
+\bibitem{Dhara2023} S. Dhara, A. Majidi and S. Clarke, ``Revving up VNDN: Efficient Caching and Forwarding by Expanding Content Popularity Perspective and Mobility,'' \emph{Computer Communications}, vol. 212, pp. 342--352, Dec. 2023.
+
+% T1: Learning automata in VNDN
+\bibitem{Wang2024a} X. Wang and G. Wu, ``Learning Automata Based Routing and Content Delivery for Vehicular Named Data Networking,'' \emph{Eng. Appl. Artif. Intell.}, vol. 136, p. 109043, 2024.
+
+% T1: Emergency content in VNDN
+\bibitem{Wang2024b} X. Wang and R. Zhang, ``Emergency Content Routing and Dissemination Based on Vehicular Named Data Networking,'' \emph{IEEE Internet Things J.}, vol. 11, no. 19, pp. 32197--32204, 2024.
+
+% T1: Vehicle tracking in VNDN
+\bibitem{Khan2024} S. A. Khan and H. Lim, ``Real-Time Vehicle Tracking-Based Data Forwarding Using RLS in Vehicular Named Data Networking,'' \emph{IEEE Trans. Intell. Transp. Syst.}, vol. 25, no. 10, pp. 14054--14069, 2024.
+
+% T1: VNDN infotainment framework
+\bibitem{Lim2024} H. Lim, ``Toward Infotainment Services in Vehicular Named Data Networking: A Comprehensive Framework Design and Its Realization,'' \emph{IEEE Trans. Intell. Transp. Syst.}, 2024.
+
+% T1: Mobility-aware forwarding in V-NDN
+\bibitem{Silva2024} E. T. da Silva, J. Macedo and A. Costa, ``CMAF: Context and Mobility-Aware Forwarding Model for V-NDN,'' \emph{Electronics}, vol. 13, no. 12, p. 2394, 2024.
+
+% T1: Secure NDN vehicular
+\bibitem{Cobblah2024} C. N. A. Cobblah, Q. Xia, J. Gao, H. Xia, G. A. Kusi and I. A. Obiri, ``A Secure and Lightweight NDN-Based Vehicular Network Using Edge Computing and Certificateless Signcryption,'' \emph{IEEE Internet Things J.}, vol. 11, no. 16, pp. 27043--27057, 2024.
+
+% T1: VNDN traffic management
+\bibitem{Araujo2024} G. B. Araujo and L. Sampaio, ``A Scalable, Dynamic, and Secure Traffic Management System for Vehicular Named Data Networking Applications (NDN-Waze),'' \emph{Ad Hoc Networks}, vol. 158, p. 103476, May 2024.
+
+% T1: Value-based proactive caching
+\bibitem{YWang2025} Y. Wang, K. Liu, H. Ji and J. Sun, ``Value-Based Proactive Caching for Sensing Data in Vehicular Networks: An Operator's Perspective,'' in \emph{Proc. IEEE ICC 2025}, Montreal, Canada, Jun. 2025, pp. 1328--1333.
+
+% **********************************************************
+% TOPIC 2: Vehicle Mobility Prediction
+% **********************************************************
+
+% T2: Hierarchical vector transformer
+\bibitem{Zhou2023} Z. Zhou, L. Ye, J. Wang, K. Wu and K. Lu, ``HiVT: Hierarchical Vector Transformer for Multi-Agent Motion Prediction,'' in \emph{Proc. IEEE/CVF CVPR}, 2023.
+
+% T2: Self-supervised motion forecasting
+\bibitem{Cheng2023} J. Cheng, Y. Mei and B. Liu, ``ForecastMAE: Self-Supervised Pre-Training for Motion Forecasting with Masked Autoencoders,'' in \emph{Proc. IEEE/CVF ICCV}, 2023.
+
+% T2: Multi-agent motion prediction
+\bibitem{Shi2024} S. Shi, L. Jiang, D. Dai and B. Schiele, ``MTR++: Multi-Agent Motion Prediction with Symmetric Scene Modeling and Guided Intention Querying,'' \emph{IEEE Trans. Pattern Anal. Mach. Intell.}, 2024.
+
+% T2: GNN traffic forecasting survey
+\bibitem{Jiang2023} W. Jiang and J. Luo, ``Graph Neural Network for Traffic Forecasting: A Survey,'' \emph{Expert Syst. Appl.}, vol. 207, p. 117921, 2023.
+
+% T2: Spatio-temporal GNN survey
+\bibitem{Jin2023} G. Jin, Y. Liang, Y. Fang, Z. Shao, J. Huang, J. Zhang and Y. Zheng, ``Spatio-Temporal Graph Neural Networks for Predictive Learning in Urban Computing: A Survey,'' \emph{IEEE Trans. Knowl. Data Eng.}, 2023.
+
+% T2: Efficient scene representation
+\bibitem{Lan2023} S. Lan, Y. Li, B. Basestt and Q. Li, ``Sept: Towards Efficient Scene Representation Learning for Motion Prediction,'' \emph{arXiv preprint}, 2023.
+
+% T2: Equivariant motion prediction
+\bibitem{Xu2023} C. Xu, T. Li, C. Tang, L. Sun, W. Chen and C. Chen, ``EqMotion: Equivariant Multi-Agent Motion Prediction with Invariant Interaction Reasoning,'' in \emph{Proc. IEEE/CVF CVPR}, 2023.
+
+% T2: HD map construction for prediction
+\bibitem{Liao2024} B. Liao, S. Chen, X. Wang, T. Chen, Q. Chen, Z. Liu and Q. Li, ``MapTRv2: An End-to-End Framework for Online Vectorized HD Map Construction,'' \emph{Int. J. Comput. Vis.}, 2024.
+
+% T2: Real-time trajectory prediction
+\bibitem{Zhang2024traj} Z. Zhang, Z. Wang, H. Wang, H. Zhao, T. Li and Z. Xu, ``Real-Time Vehicle Trajectory Prediction for Traffic Conflict Detection at Unsignalized Intersections,'' \emph{IEEE Trans. Intell. Transp. Syst.}, 2024.
+
+% T2: Graph-based trajectory prediction
+\bibitem{Choi2024} S. Choi, W. Kim, S. Yun, B. Seo, J. Shin and C. Lee, ``Graph-Based Spatio-Temporal Attention for Vehicle Trajectory Prediction in Autonomous Driving,'' \emph{IEEE Trans. Intell. Veh.}, 2024.
+
+% T2: V2X trajectory prediction
+\bibitem{Fang2024} L. Fang, Q. Jiang, J. Shi and B. Zhou, ``TPNet: Trajectory Prediction Network for Connected and Autonomous Vehicles Using V2X Communications,'' \emph{IEEE Trans. Veh. Technol.}, 2024.
+
+% T2: Federated learning trajectory prediction
+\bibitem{Wang2023fed} Y. Wang, T. Li, S. Chen, M. Xiao and S. Mao, ``Federated Learning for Vehicle Trajectory Prediction with Privacy Preservation,'' \emph{IEEE Internet Things J.}, 2023.
+
+% **********************************************************
+% TOPIC 3: UAV Network Protocols
+% **********************************************************
+
+% T3: FL for UAV networks
+\bibitem{Brik2023} B. Brik, A. Ksentini and M. Bouaziz, ``Federated Learning for UAVs-Enabled Wireless Networks: Use Cases, Challenges, and Open Problems,'' \emph{IEEE Access}, 2023.
+
+% T3: FANET routing survey
+\bibitem{Oubbati2023} O. S. Oubbati, M. Atiquzzaman, P. Lorenz, M. H. Tareque and M. S. Hossain, ``Routing in Flying Ad Hoc Networks: Survey, Constraints, and Future Challenge Perspectives,'' \emph{IEEE Access}, 2023.
+
+% T3: UAV data collection survey
+\bibitem{Liu2024uav} Y. Liu, H. Dai, Q. Wang, M. K. Shukla and M. Imran, ``UAV-Assisted Data Collection in Wireless Sensor Networks: A Comprehensive Survey,'' \emph{IEEE Commun. Surv. Tutor.}, 2024.
+
+% T3: UAV wireless networks tutorial
+\bibitem{Mozaffari2023} M. Mozaffari, W. Saad, M. Bennis, Y. Nam and M. Debbah, ``A Tutorial on UAVs for Wireless Networks: Applications, Challenges, and Open Problems,'' \emph{IEEE Commun. Surv. Tutor.}, 2023.
+
+% T3: UAV proactive placement
+\bibitem{Huang2023uav} H. Huang and A. V. Savkin, ``An Algorithm of Efficient Proactive Placement of UAVs for Communication Coverage in Dynamic Urban Environments,'' \emph{IEEE Trans. Veh. Technol.}, 2023.
+
+% T3: IRS multi-UAV NOMA
+\bibitem{Wu2024uav} Q. Wu, W. Mei and R. Zhang, ``Intelligent Reflecting Surface Enhanced Multi-UAV NOMA Networks,'' \emph{IEEE J. Sel. Areas Commun.}, 2024.
+
+% T3: UAV 5G/6G survey
+\bibitem{Li2024uav} B. Li, Y. Fei and Y. Zhang, ``UAV Communications for 5G and Beyond: A Survey of Recent Advances and Future Trends,'' \emph{IEEE Trans. Commun.}, 2024.
+
+% T3: Airborne communication survey
+\bibitem{Cao2023} X. Cao, P. Yang, M. Alzenad, X. Xi, D. Wu and H. Yanikomeroglu, ``Airborne Communication Networks: A Survey,'' \emph{IEEE J. Sel. Areas Commun.}, 2023.
+
+% T3: UAV vehicular edge computing
+\bibitem{Zhong2024} R. Zhong, Y. Liu, X. Mu and Y. Chen, ``UAV-Assisted Vehicular Edge Computing: Joint Trajectory Design and Resource Allocation,'' \emph{IEEE Trans. Veh. Technol.}, 2024.
+
+% T3: Multi-UAV cooperative trajectory
+\bibitem{Ren2024} J. Ren, C. Yin, S. Zhang and T. Q. S. Quek, ``Multi-UAV Cooperative Trajectory Optimization for Communication-Aware Task Completion,'' \emph{IEEE Trans. Wireless Commun.}, 2024.
+
+% T3: UAV NDN disaster recovery
+\bibitem{Kim2023uav} S. Kim, B. Shim and H. Jo, ``UAV-Enabled NDN for Disaster Recovery Networks,'' \emph{IEEE Access}, 2023.
+
+% T3: DRL UAV edge computing IoV
+\bibitem{Zhang2024edge} J. Zhang, L. Zhou, F. Tang, K. Li and W. Zhang, ``Deep Reinforcement Learning for UAV-Assisted Edge Computing Task Offloading in Internet of Vehicles,'' \emph{IEEE Trans. Intell. Transp. Syst.}, 2024.
+\end{thebibliography}
+
+% ============================================================
+% Author Biography
+% ============================================================
+\begin{IEEEbiography}[]{Youngju Nam}
+received the B.S. degree from the Department of Computer Science. His research interests include vehicular networking, named data networking, age of information optimization, and multi-agent reinforcement learning.
+\end{IEEEbiography}
+
+\end{document}

@@ -1,0 +1,53 @@
+{
+  "paper": "TinyMLP-Based Joint Beacon Rate and Power Control for AoI-Aware Vehicular IoT Under ETSI CAM",
+  "target_journal": "IEEE Internet of Things Journal",
+  "stage_current": "2 of 3",
+  "writer": {
+    "sections_done": [
+      "network_model",
+      "proposed_scheme"
+    ],
+    "sections_pending": [
+      "performance_evaluation",
+      "conclusion",
+      "bibliography"
+    ],
+    "stage2_stats": {
+      "subsections_written": 7,
+      "equations_added": 11,
+      "algorithms_added": 1,
+      "tables_added": 1,
+      "new_citation_keys": [],
+      "citation_instances_in_new_sections": 6,
+      "unique_keys_cited_in_new_sections": [
+        "Bhattacharyya2024",
+        "Mianji2025",
+        "Iliopoulos2025",
+        "Zila2026"
+      ],
+      "final_file_lines": 857,
+      "final_file_chars": 39714,
+      "preamble_packages_added": [
+        "algorithm"
+      ]
+    }
+  },
+  "sections_status": {
+    "abstract": "done_stage1",
+    "introduction": "done_stage1",
+    "related_work": "done_stage1",
+    "network_model": "done_stage2",
+    "proposed_scheme": "done_stage2",
+    "performance_evaluation": "todo_stage3",
+    "conclusion": "todo_stage3",
+    "bibliography": "todo_stage3"
+  },
+  "constraints_verified": {
+    "no_includegraphics": true,
+    "no_new_bibitem_keys": true,
+    "existing_sections_unchanged": true,
+    "etsi_compliance_covered": true,
+    "algorithm_package_in_preamble": true,
+    "todo_stubs_preserved": true
+  }
+}

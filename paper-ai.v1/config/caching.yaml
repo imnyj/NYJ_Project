@@ -1,0 +1,91 @@
+# ============================================================================
+# Prompt caching policy (Anthropic Multi-Breakpoint Caching)
+# ============================================================================
+# Research: Anthropic prompt-caching docs (2026) + Finout.io 50K-token study
+#   - cached READ  = 0.1× base input price (90% discount)
+#   - cached WRITE = 1.25× base (5-min TTL) or 2.0× base (1-hour TTL)
+#   - 1024-token minimum per breakpoint (2048 for Haiku)
+#   - up to 4 breakpoints per request
+# ============================================================================
+
+enabled: true
+
+# Layered TTL structure: outermost most-stable first
+# Breakpoints are placed at boundaries so that dynamic data goes AFTER them
+# (otherwise cache key is invalidated)
+breakpoints:
+
+  # Layer 0: System prompt (role + rules) - almost never changes
+  - name: system_prompt
+    ttl: 1h
+    min_tokens: 1024
+    content_source: "prompts/{agent}.txt"
+    required: true
+
+  # Layer 1: Tool schemas (JSON tool definitions) - stable per deployment
+  - name: tool_schemas
+    ttl: 1h
+    min_tokens: 1024
+    content_source: "tools_manifest"
+    required: false                  # only if agent uses tools
+
+  # Layer 2: Skill metadata (name + description frontmatter only - not body)
+  # Skill body is loaded on-demand by Claude, outside the cached prefix
+  - name: skill_metadata
+    ttl: 1h
+    min_tokens: 512                  # metadata is short; relaxed floor
+    content_source: "skills_frontmatter"
+    required: false
+
+  # Layer 3: Shared task context (paper draft, bibliography JSON)
+  # Re-cached when paper state changes (not per turn)
+  - name: shared_artifacts
+    ttl: 1h
+    min_tokens: 1024
+    content_source: "blackboard_snapshot"
+    required: false
+
+  # Layer 4: Recent conversation history - changes often, short TTL
+  - name: conversation_history
+    ttl: 5m
+    min_tokens: 1024
+    content_source: "session_history"
+    required: false
+
+# Anything AFTER layer 4 (the current user turn) is not cached.
+
+# Tool-specific caching
+tools:
+  cache_definitions: true            # tool_choice / schemas get TTL 1h
+  cache_ttl: 1h
+
+# Cache invalidation rules
+invalidation:
+  # This list is DOCUMENTATION only. The Anthropic prompt cache is keyed on
+  # the exact byte content of each cached block; when any of these artifacts
+  # change, Blackboard.snapshot_for_agent emits a different prefix and the
+  # cache is invalidated automatically. No explicit invalidation code reads
+  # this list. It's kept here as an aid for reviewers understanding which
+  # artifacts are expected to flip the layer-3 cache key.
+  shared_artifacts_watch:
+    - main_idea.md
+    - refs.json
+    - experiment_spec.yaml
+    - main.tex
+
+# Prompt structure enforcement
+structure:
+  # Each agent call assembled in this order (to keep cache prefix stable):
+  order:
+    - system_prompt        # layer 0 breakpoint
+    - tool_schemas         # layer 1 breakpoint
+    - skill_metadata       # layer 2 breakpoint
+    - shared_artifacts     # layer 3 breakpoint
+    - conversation_history # layer 4 breakpoint
+    - current_user_turn    # NOT cached - dynamic
+
+# Monitoring - log cache hit rate per session
+monitoring:
+  log_cache_hits: true
+  warn_if_hit_rate_below: 0.50       # expected ≥50% after warmup
+  report_every_n_calls: 20

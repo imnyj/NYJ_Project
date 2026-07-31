@@ -1,0 +1,990 @@
+--- backup/main.tex.rw_flow.1781585957.bak	2026-06-15 15:45:42.687518666 +0900
++++ main.tex	2026-07-17 13:45:16.882030734 +0900
+@@ -1,9 +1,9 @@
+ \documentclass[journal]{IEEEtran}
+ 
+-% *** CITATION PACKAGES ***
++% CITATION PACKAGES
+ \usepackage{cite}
+ 
+-% *** GRAPHICS RELATED PACKAGES ***
++% GRAPHICS RELATED PACKAGES
+ \usepackage{multirow,makecell}
+ \usepackage{booktabs,pifont}
+ \newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}}
+@@ -13,25 +13,25 @@
+ \else
+ \fi
+ 
+-% *** MATH PACKAGES ***
++% MATH PACKAGES
+ \usepackage{amsmath}
+ \usepackage{amssymb}
+ 
+-% *** ALGORITHM PACKAGES ***
++% ALGORITHM PACKAGES
+ \usepackage{algorithm}
+ \usepackage{algpseudocode}
+ 
+-% *** ALIGNMENT PACKAGES ***
++% ALIGNMENT PACKAGES
+ \usepackage{array}
+ 
+-% *** SUBFIGURE PACKAGES ***
++% SUBFIGURE PACKAGES
+ \usepackage{subfigure}
+ 
+-% *** URL PACKAGES ***
++% URL PACKAGES
+ \usepackage{url}
+ \usepackage{orcidlink}
+ 
+-% *** TIKZ PACKAGES ***
++% TIKZ PACKAGES
+ \usepackage{tikz}
+ \usetikzlibrary{positioning,shapes,arrows.meta}
+ 
+@@ -43,25 +43,23 @@
+ 
+ \begin{document}
+ 
+-\title{Deterministic RSU Dwell Time Prediction via\\Hybrid Multi-Branch Attention Network in Content-Centric Vehicular Networks}
++\title{Content Precaching via Deterministic Dwell Time Prediction\\in Content-Centric Vehicular Networks}
+ 
+ \newcommand{\orcidauthorA}{0000-0003-3971-0715} % Youngju Nam
+ \newcommand{\orcidauthorC}{0000-0002-0422-0647} % Euisin Lee
+ \newcommand{\orcidauthorB}{0000-0001-8209-5944} % Jeong-Hun Kim
+ 
+-\author{Youngju Nam,~\IEEEmembership{Student Member,~IEEE,}
+-        Euisin Lee,~\IEEEmembership{Member,~IEEE,}
+-        and Jeong-Hun Kim,~\IEEEmembership{Member,~IEEE}
++\author{Youngju Nam, Jeong-Hun Kim, and Euisin Lee
+ 
+ \thanks{Manuscript received April 00, 2026; revised August 00, 2026.
+ This work was supported by the National Research Foundation of Korea (NRF) grant funded by the Korean government Ministry of Science and ICT (MSIT) under Grant No. 2022R1A2C1010121.
+-\textit{(Corresponding author: Jeong-Hun Kim.)}}
++\textit{(Corresponding author: Euisin Lee)}}
+ \thanks{Youngju Nam is with the School of Software, Kunsan National University,
+ Gunsan 54150, Republic of Korea (e-mail: imnyj@kunsan.ac.kr).}
+-\thanks{Euisin Lee is with the School of Information and Communication Engineering,
+-Chungbuk National University, Cheongju 28644, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}
+ \thanks{Jeong-Hun Kim is with the Department of Computer Science and Information Engineering,
+ Kunsan National University, Gunsan 54150, Republic of Korea (e-mail: kimjh@kunsan.ac.kr).}
++\thanks{Euisin Lee is with the School of Information and Communication Engineering,
++Chungbuk National University, Cheongju 28644, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}
+ \thanks{Digital Object Identifier 10.0000/JIOT.2026.0000000}}
+ 
+ \markboth{IEEE Internet of Things Journal,~Vol.~00, No.~0, 2026}%
+@@ -73,26 +71,18 @@
+ 
+ % ============================================================
+ \begin{abstract}
+-In Content-Centric Vehicular Networks (CCVNs), proactive RSU caching requires accurate prediction of vehicle dwell time at the moment a content request is issued.
+-Prior work on vehicular mobility prediction relies on continuous time-series inputs and is not suited to the event-driven, single-snapshot inference setting at an RSU.
+-This paper proposes \textbf{H-ST-MBAN}, which represents a Hybrid Spatio-Temporal Multi-Branch Attention Network, as a fully deterministic regression model for RSU dwell time prediction.
+-H-ST-MBAN decomposes input features into three semantically distinct branches, namely the Kinematic, Traffic Control, and Social/Contextual branches.
+-Each branch is encoded independently by a dedicated Residual Block to prevent gradient conflict across heterogeneous variable groups.
+-Cyclical encoding resolves signal-phase discontinuities in the traffic control branch, and a three-token multi-head self-attention layer subsequently integrates the branch representations into a unified tensor.
+-The RSU utilizes this unified tensor to compute the expected residency period for the requesting vehicle.
+-H-ST-MBAN incorporates an XGBoost-based tabular prior stream to model sharp decision boundaries, while the neural network branches learn spatio-temporal residual errors.
+-The two streams are fused via a learnable gating mechanism for final regression.
+-Twelve SUMO-derived microscopic variables augment the feature set with fine-grained local traffic dynamics not available from GPS-level mobility traces.
+-The vehicle dwell time at an RSU exhibits high dynamic variability, averaging around 100 seconds and extending up to 300 seconds due to signal delays and traffic congestion.
+-To address this challenge, we propose H-ST-MBAN as an explicit deterministic regression model designed to resolve high dynamic variability in dwell times.
+-By adopting a deterministic regression approach, the model avoids complex probabilistic sampling, improving prediction accuracy while reducing inference latency.
+-Experiments on SUMO-simulated CCVN environments confirm that H-ST-MBAN achieves lower MAE and RMSE than representative ML/DL baselines.
++In Content-Centric Vehicular Networks (CCVNs), proactive edge caching requires accurate vehicle dwell time prediction at the moment of content requests.
++Existing continuous time-series models fail in this event-driven, single-snapshot Road-Side Unit (RSU) inference setting.
++This paper proposes H-ST-MBAN, a deterministic regression model using a Hybrid Spatio-Temporal Multi-Branch Attention Network.
++H-ST-MBAN partitions input features into Kinematic, Traffic Control, and Social branches, encoding them via independent residual blocks to prevent gradient conflicts.
++A three-token Multi-Head Attention (MHA) layer integrates these branches into a unified tensor, which is then fused with an XGBoost-based tabular prior stream via a learnable gating mechanism to resolve sharp decision boundaries.
++By utilizing deterministic regression instead of complex probabilistic sampling, the model handles highly dynamic dwell times averaging 100 to 300 seconds without latency bottlenecks.
++Experiments on SUMO-simulated environments demonstrate that H-ST-MBAN achieves lower regression errors than representative deep learning models.
+ \end{abstract}
+ 
+ \begin{IEEEkeywords}
+ Content-Centric Vehicular Networks, RSU Dwell Time Prediction,
+-Hybrid Multi-Branch Attention Network, Snapshot-Based Inference,
+-Vehicle-to-Infrastructure, Edge Caching, Microscopic Traffic Simulation.
++Hybrid Multi-Branch Attention Network, Snapshot-Based Inference, Content Precaching.
+ \end{IEEEkeywords}
+ 
+ \IEEEpeerreviewmaketitle
+@@ -102,55 +92,11 @@
+ \section{Introduction}\label{sec:introduction}
+ % ============================================================
+ 
+-\IEEEPARstart{T}{he} advancement of the Internet of Vehicles (IoV) and connected vehicles has established road-side infrastructure as an active participant in content distribution.
+-In Content-Centric Vehicular Networks, Road-Side Units (RSUs) act as edge caching nodes to deliver requested content via Vehicle-to-Infrastructure (V2I) links \cite{1,2,3}.
+-Because a vehicle typically traverses an RSU communication zone with highly dynamic stay times—often averaging around 100 seconds but escalating up to 300 seconds under traffic congestion or red-light signal phases, content unavailable at the moment of a request cannot always be fully transmitted before the vehicle exits the coverage area.
+-The V2I communication channel provides the fundamental medium through which content chunks are continuously delivered to moving vehicles.
+-Therefore, proactive caching, which places content at the RSU before demand materializes, is required to maintain service continuity across consecutive intersections \cite{4,5,6}.
+-Understanding these complex interaction variables is paramount because vehicle residency times dictate the prefetching window size at the edge. By integrating vehicular dynamics directly into the scheduling logic, road-side infrastructure can dynamically allocate limited cache storage without centralized coordination.
+-
+-The performance of proactive caching strategies relies on estimating the duration a vehicle remains within the RSU coverage zone.
+-The dynamic nature of this dwell time, which ranges from 100 to 300 seconds, poses a challenge for resource allocation.
+-Underestimating the dwell time causes the scheduler to assume insufficient transmission time, resulting in under-prefetching and subsequent communication disruptions as vehicles depart before receiving their requested content.
+-Conversely, overestimating this duration leads to over-prefetching, which occupies local cache storage with unused data and wastes backhaul link capacity.
+-This misallocation of resources prevents the scheduler from optimizing priorities among competing requests when V2I bandwidth is limited.
+-Thus, predicting the dwell time in an event-driven setting is a necessary requirement to minimize network overhead and maintain service quality in CCVNs \cite{7,8}.
+-
+-However, existing approaches face several critical limitations regarding their applicability to CCVN operations.
+-First, most vehicular mobility prediction methods \cite{9,10} rely on continuous time-series inputs from globally collected sensor data.
+-These approaches are structurally misaligned with the event-driven, single-snapshot inference environment of an RSU.
+-When a request arrives, the RSU possesses only the instantaneous state of the vehicle without historical sequences, making continuous tracking via V2I uplink transmissions inefficient.
+-Adapting sequence-based architectures to this setting introduces buffering delays, consumes bandwidth that should be reserved for content delivery, and degrades overall prediction accuracy.
+-Second, prior studies on proactive caching \cite{11,12,13} focus primarily on content popularity modeling, often failing to estimate the explicit scalar dwell time required to schedule individual transfers.
+-Third, existing methods frequently overlook the practical constraints of edge hardware by implicitly assuming centralized aggregation and inference using powerful servers \cite{14,15}.
+-In a realistic CCVN, predictive models must operate within the limited computational and memory budgets of local RSUs, without relying on continuous cloud connectivity.
+-
+-\IEEEpubidadjcol
+-To address these challenges, we propose \textbf{H-ST-MBAN}, a deterministic dwell-time predictor designed for event-driven, RSU-local inference.
+-H-ST-MBAN captures a single snapshot of the vehicle state at the moment of a request, processing it immediately without historical buffering.
+-The inference relies solely on the data payload embedded within the initial content request packet and local RSU sensor readings.
+-To enable continuous local adaptation, we introduce a Dual-Model fine-tuning architecture where a globally pre-trained base model is deployed to the RSU.
+-The RSU then fine-tunes a shadow model using a local snapshot queue, alternating roles with the active inference model to adapt to intersection-specific traffic dynamics without service interruption.
+-In this context, H-ST-MBAN adopts an explicit deterministic regression architecture to estimate the dwell time of vehicles.
+-This design optimizes the computational overhead at edge nodes by avoiding complex probabilistic sampling operations during inference.
+-Thus, the deterministic approach minimizes processing latency, allowing the system to respond immediately to request packets.
+-The resulting streamlined framework remains highly compatible with the resource-constrained environment of roadside units.
+-
+-In this work, we propose H-ST-MBAN to address the limitations of existing dwell-time prediction models in Content-Centric Vehicular Networks.
+-We introduce a multi-branch neural network optimized for snap-shot edge inference alongside a local adaptation framework.
+-These architectural and operational enhancements are designed to minimize network overhead and processing latency.
+-Accurate dwell-time prediction enables edge routers to optimize prefetching decisions, thereby preventing both cache under-provisioning and backhaul traffic waste.
+-The performance of the system is validated through extensive microscopic traffic simulations.
+-The main contributions of this paper are summarized as follows.
+-\begin{itemize}
+-    \item \textbf{Feature Partitioning:} We partition the input feature space into three semantically distinct branches, namely the Kinematic, Traffic Control, and Social/Contextual branches, where each branch is encoded by a dedicated ResBlock to prevent gradient conflicts across heterogeneous variable groups.
+-    \item \textbf{Branch-level Attention:} We introduce a multi-head self-attention mechanism over branch-level representations, allowing the model to aggregate branch contributions dynamically according to the current traffic context.
+-    \item \textbf{Hybrid Dual-Stream Architecture:} We incorporate an XGBoost-based tabular prior stream combined with spatio-temporal neural network branches using a learnable gating fusion mechanism to capture decision boundaries.
+-    \item \textbf{SUMO-based Feature Augmentation:} We augment the input feature set with twelve variables obtained from the SUMO microscopic traffic simulator, capturing fine-grained local dynamics including leader-follower gaps, lane occupancy, and intersection queue lengths.
+-    \item \textbf{Steady-State Filtering:} We incorporate a steady-state filtering mechanism that stabilizes gradient updates, mitigating the degradation of model weight parameters caused by outlier variables during local adaptation.
+-    \item \textbf{Local Ensemble Fine-Tuning:} We resolve the limitations of tree ensembles by enabling local fine-tuning of the tabular model, allowing it to track changing spatial-temporal vehicular dynamics at edge nodes.
+-    \item \textbf{Ping-Pong Update Strategy:} We propose a ping-pong update strategy that fine-tunes a shadow model using a local snapshot queue while the primary model serves requests, ensuring service continuity without blocking real-time inference.
+-\end{itemize}
++\IEEEPARstart{T}{he} development of the Internet of Vehicles (IoV) and autonomous driving has increased vehicular data generation. According to the Ericsson Mobility Report, global mobile network data traffic is projected to reach 515 Exabytes per month by 2031 \cite{36}. To deliver high-bandwidth content to moving vehicles without overloading the core network, proactive edge caching via RSUs in CCVNs is utilized as a foundational infrastructure \cite{2,3,4}. However, the Vehicle-to-Infrastructure (V2I) transmission window is constrained by the dynamic dwell time of the vehicle at the intersection, which fluctuates between 100 to 300 seconds due to traffic signal phases and queueing densities. If this residency duration is not accurately predicted, the RSU misallocates local resources, resulting in either over-prefetching that wastes edge storage and backhaul bandwidth, or under-prefetching that causes service interruptions when vehicles exit the coverage area \cite{5,6,7}. Therefore, real-time dwell-time prediction at the edge is a prerequisite for optimizing proactive caching schedules and ensuring service continuity in CCVNs.
++
++Designing a mobility prediction model for proactive edge caching requires balancing low-latency constraints with the need for adaptability to local traffic dynamics. To maximize predictive accuracy, recent sequence-based forecasting architectures and federated learning frameworks extract continuous temporal dependencies \cite{9,12}. However, the continuous uplink tracking and repetitive parameter exchanges required by these models increase V2I bandwidth usage and introduce buffering delays, which contradicts the event-driven nature of immediate edge caching \cite{10,11}. Conversely, gradient-boosted decision trees (GBDTs) can eliminate tracking latency by executing inferences on a single snapshot without historical buffering. Despite their communication efficiency, these tree ensembles are constrained by static global weights, limiting their capacity to adapt to the localized spatio-temporal conditions of individual intersections. Furthermore, mapping heterogeneous tabular data directly through standard deep neural networks results in gradient interference and degraded learning performance. Therefore, existing methodologies remain confined within a structural trade-off, where they either prioritize communication efficiency at the cost of adaptive local precision, or vice versa.
++
++To address these structural and algorithmic limitations, this paper proposes the Hybrid Spatio-Temporal Multi-Branch Attention Network, denoted as H-ST-MBAN, for proactive edge caching in CCVNs. The primary contribution of this paper involves the design of a specialized vehicular communication protocol and edge table management scheme that autonomously constructs local datasets by piggybacking state variables onto content request packets and logging targets via asynchronous exit events. Building upon this data foundation, we propose an event-driven regression framework that predicts intersection dwell time using a single vehicular snapshot extracted from the initial content request packet, which eliminates the need for continuous historical buffering. To process this snapshot data without gradient interference, we design a dual-stream architecture that combines a gradient boosting ensemble with a multi-branch neural network to isolate and learn the complex spatio-temporal dynamics of heterogeneous traffic variables. Furthermore, we introduce a decentralized updating strategy that fine-tunes the network using strictly local intersection data, allowing the model to adapt to localized traffic variations without incurring uplink parameter exchange overheads. Finally, we validate the proposed framework using microscopic traffic traces generated via the SUMO simulator to confirm that the localized architecture maintains target cache hit rates while satisfying the strict latency constraints of vehicular environments.
+ 
+ The remainder of this paper is organized as follows.
+ Section~\ref{sec:related} reviews related work on vehicular caching, mobility prediction, and dwell-time estimation.
+@@ -165,19 +111,19 @@
+ % ============================================================
+ 
+ We survey prior work along six key dimensions relevant to RSU-based proactive caching. These dimensions include the comparison of network architectures between content-centric IoV and conventional vehicle-to-infrastructure systems, and the categorization of caching triggers as either reactive or proactive. In addition, we differentiate studies based on their dwell-time awareness, contrasting explicit sojourn estimations against implicit models, and classify their mobility inputs as either continuous traces or single-snapshot observations. Finally, we analyze the prediction targets, distinguishing content popularity from vehicle sojourn times, and evaluate inference latency by separating online-training requirements from pre-trained inference-only frameworks. Table~\ref{tab:related_work} summarizes representative works across these dimensions. Through this systematic classification, we highlight the architectural and operational limitations of existing sequence-based mobility models and emphasize the necessity of snapshot-based deterministic regression for resource-constrained edge computing environments.
+-\paragraph{Category 1: CIoV and Content-Centric Networking} Content-Centric IoV (CIoV) embeds Named Data Networking semantics into vehicular architectures, allowing RSUs and vehicles to cache and forward content by name rather than address \cite{1,2,16}. Recent work has extended CIoV to edge-computing and mobility-aware routing contexts, improving content availability under dynamic topologies \cite{17,18,19}. However, these architectures suffer from efficiency limitations during content distribution because the caching decision engines at the RSUs lack knowledge of the exact residency duration of incoming vehicles. Without explicit coordination of the vehicle dwell time, the edge node pre-positions excessive segments of large content files resulting in over-prefetching overhead, or terminates the V2I transmission before delivery completes, causing under-prefetching waste. Therefore, it is necessary to integrate a dwell-time aware caching schedule where the RSU estimates the connection interval using single-snapshot telemetry data transmitted from the vehicle during the initial association handshake to optimize the allocation of backhaul and local storage resources. This name-based resolution paradigm allows the roadside units to identify and fetch content independent of the host location, which simplifies routing in highly dynamic vehicular topologies.
++Regarding network architectures and content distribution mechanisms, Content-Centric IoV (CIoV) embeds Named Data Networking semantics into vehicular architectures, allowing RSUs and vehicles to cache and forward content by name rather than address \cite{1,2,16}. Recent work has extended CIoV to edge-computing and mobility-aware routing contexts, improving content availability under dynamic topologies \cite{17,18,19}. However, these architectures suffer from efficiency limitations during content distribution because the caching decision engines at the RSUs lack knowledge of the exact residency duration of incoming vehicles. Without explicit coordination of the vehicle dwell time, the edge node pre-positions excessive segments of large content files resulting in over-prefetching overhead, or terminates the V2I transmission before delivery completes, causing under-prefetching waste. Therefore, it is necessary to integrate a dwell-time aware caching schedule where the RSU estimates the connection interval using single-snapshot telemetry data transmitted from the vehicle during the initial association handshake to optimize the allocation of backhaul and local storage resources. This name-based resolution paradigm allows the roadside units to identify and fetch content independent of the host location, which simplifies routing in highly dynamic vehicular topologies.
+ 
+-\paragraph{Category 2: V2I Precaching} V2I precaching exploits scheduled RSU-to-vehicle links to deliver content before a request is issued. Federated learning approaches \cite{20,21,22} distribute model training across vehicles to protect privacy while adapting caching decisions to real-time traffic conditions. Under these frameworks, vehicles transmit their local model parameter updates to the serving RSU, which aggregates them to update global parameters before broadcasting the refined model back to the edge clients. Although these methods optimize global cache hit rates, they overlook the micro-level variations in vehicle dwell times caused by intersection signal phase and timing (SPaT) variables and queuing delays. Failing to account for such temporal volatility leads to mismatching the transmission window, which increases the edge delivery delay when vehicles exit the communication range before receiving the pre-cached content. Additionally, local parameter updates must be scheduled dynamically to prevent uplink channel congestion when multiple vehicles upload parameters simultaneously.
++In the domain of content delivery triggers, V2I precaching exploits scheduled RSU-to-vehicle links to deliver content before a request is issued. Federated learning approaches \cite{20,21,22} distribute model training across vehicles to protect privacy while adapting caching decisions to real-time traffic conditions. Under these frameworks, vehicles transmit their local model parameter updates to the serving RSU, which aggregates them to update global parameters before broadcasting the refined model back to the edge clients. Although these methods optimize global cache hit rates, they overlook the micro-level variations in vehicle dwell times caused by intersection signal phase and timing (SPaT) variables and queuing delays. Failing to account for such temporal volatility leads to mismatching the transmission window, which increases the edge delivery delay when vehicles exit the communication range before receiving the pre-cached content. Additionally, local parameter updates must be scheduled dynamically to prevent uplink channel congestion when multiple vehicles upload parameters simultaneously.
+ 
+-\paragraph{Category 3: Popularity-Based and Hybrid Precaching} Popularity-based schemes predict which content items will be requested and prefetch them to edge nodes \cite{4,5,23}. Hybrid designs combine popularity estimation with context signals, such as social ties or unmanned aerial vehicle (UAV) relay paths, improving hit rates in heterogeneous topologies \cite{11,12,13}. In these environments, the RSU updates its local caching list by fetching global popularity indices from a central content server at regular intervals. However, relying on long-term content popularity estimates ignores the physical mobility characteristics of individual vehicles, such as instantaneous velocity and the resulting transmission duration within the RSU coverage area. As a result, the RSU fails to complete content delivery during the short link duration, which renders the prefetched content invalid and highlights the necessity of incorporating physical dwell time as an explicit scheduling metric. Since popularity rankings change slowly compared to physical vehicle transits, decoupling popularity estimation from short-term dwell time prediction is necessary to prevent cache thrashing.
++Concerning the metrics used to schedule caching, popularity-based schemes predict which content items will be requested and prefetch them to edge nodes \cite{4,5,23}. Hybrid designs combine popularity estimation with context signals, such as social ties or unmanned aerial vehicle (UAV) relay paths, improving hit rates in heterogeneous topologies \cite{11,12,13}. In these environments, the RSU updates its local caching list by fetching global popularity indices from a central content server at regular intervals. However, relying on long-term content popularity estimates ignores the physical mobility characteristics of individual vehicles, such as instantaneous velocity and the resulting transmission duration within the RSU coverage area. As a result, the RSU fails to complete content delivery during the short link duration, which renders the prefetched content invalid and highlights the necessity of incorporating physical dwell time as an explicit scheduling metric. Since popularity rankings change slowly compared to physical vehicle transits, decoupling popularity estimation from short-term dwell time prediction is necessary to prevent cache thrashing.
+ 
+-\paragraph{Category 4: Mobility Prediction and Combined Caching} Mobility-aware caching couples vehicle trajectory forecasts with content placement decisions \cite{6,7,10}. These methods use multi-step time-series models, such as Long Short-Term Memory or Transformer architectures, to predict future RSU associations, subsequently pre-positioning content along predicted paths \cite{9,3}. Under typical implementations, vehicles upload their GPS traces and direction vectors every 100 milliseconds to allow the central server to execute sequential path modeling. This continuous transmission of spatial-temporal data incurs uplink bandwidth overhead and elevates the risk of vehicle privacy leaks. In addition, these models forecast the discrete sequence of future RSUs rather than performing continuous-time regression of the exact dwell duration, failing to resolve the fine-grained timing requirements of proactive caching schedules. These time-series sequence models also assume uninterrupted connectivity, which is rarely guaranteed in dense urban arterials where buildings obstruct signal propagation.
++Addressing the integration of vehicle movement, mobility-aware caching couples vehicle trajectory forecasts with content placement decisions \cite{6,7,10}. These methods use multi-step time-series models, such as Long Short-Term Memory or Transformer architectures, to predict future RSU associations, subsequently pre-positioning content along predicted paths \cite{9,3}. Under typical implementations, vehicles upload their GPS traces and direction vectors every 100 milliseconds to allow the central server to execute sequential path modeling. This continuous transmission of spatial-temporal data incurs uplink bandwidth overhead and elevates the risk of vehicle privacy leaks. In addition, these models forecast the discrete sequence of future RSUs rather than performing continuous-time regression of the exact dwell duration, failing to resolve the fine-grained timing requirements of proactive caching schedules. These time-series sequence models also assume uninterrupted connectivity, which is rarely guaranteed in dense urban arterials where buildings obstruct signal propagation.
+ 
+-\paragraph{Category 5: RSU-Local and Snapshot-Based Learning} A growing body of work deploys lightweight inference directly at the RSU using only locally available observations, avoiding the need for continuous uplink traces \cite{15,24,25}. Federated and hierarchical learning frameworks have been proposed to aggregate RSU-local models while preserving vehicle privacy \cite{26,14,27}. However, these methods rely on cumulative observation windows that require multiple seconds of historical monitoring, making them unsuitable for low-latency decision-making during fast-moving vehicular transits. In addition, there is a lack of real-time protocols capable of combining intersection SPaT configurations and queuing delay variables from edge-local infrastructure to feed back into the prefetching scheduler. To address these limitations, our approach introduces an event-driven framework where the vehicle transmits a single kinematic snapshot package within the initial content request packet, allowing the RSU to estimate the dwell time and execute caching decisions without continuous track history. To our knowledge, no existing method performs deterministic dwell-time regression from a single kinematic snapshot at the instant of a content request, which is the operating condition targeted in this work.
++Focusing on the computational constraints at the network edge, a growing body of work deploys lightweight inference directly at the RSU using only locally available observations, avoiding the need for continuous uplink traces \cite{15,24,25}. Federated and hierarchical learning frameworks have been proposed to aggregate RSU-local models while preserving vehicle privacy \cite{26,14,27}. However, these methods rely on cumulative observation windows that require multiple seconds of historical monitoring, making them unsuitable for low-latency decision-making during fast-moving vehicular transits. In addition, there is a lack of real-time protocols capable of combining intersection SPaT configurations and queuing delay variables from edge-local infrastructure to feed back into the prefetching scheduler. To address these limitations, our approach introduces an event-driven framework where the vehicle transmits a single kinematic snapshot package within the initial content request packet, allowing the RSU to estimate the dwell time and execute caching decisions without continuous track history. To our knowledge, no existing method performs deterministic dwell-time regression from a single kinematic snapshot at the instant of a content request, which is the operating condition targeted in this work.
+ 
+ \begin{table*}[!t]
+ \centering
+-\caption{Comparison of representative precaching/prediction studies in vehicular networks (D1: Network Architecture, D2: Caching Trigger, D3: Dwell-time Awareness, D4: Mobility Input, D5: Prediction Target, and D6: Inference Latency).}
++\caption{Comparison of representative precaching/prediction studies in vehicular networks, including D1: Network Architecture, D2: Caching Trigger, D3: Dwell-time Awareness, D4: Mobility Input, D5: Prediction Target, and D6: Inference Latency.}
+ \label{tab:related_work}
+ \begin{tabular}{@{}lccccccl@{}}
+ \toprule
+@@ -202,156 +148,94 @@
+ Works that do consider sojourn, such as the studies in \cite{6,7,3}, typically treat it as an implicit byproduct of trajectory forecasting and require multi-step historical inputs that are unavailable at the instant of a content request.
+ Specifically, estimating the exact physical residency duration of a vehicle introduces high volatility due to real-time traffic control and dynamic queue conditions, making it more challenging than modeling slower-varying global content popularity.
+ No prior study formulates dwell-time prediction as an explicit single-snapshot regression problem with kinematic, traffic-control, and social features jointly encoded using a hybrid multi-branch network architecture.
+-This explicit formulation is vital for real-time edge processing because it aligns the predictive objective directly with the scheduling requirements of the RSU communication layer.
++This explicit formulation is important for real-time edge processing because it aligns the predictive objective directly with the scheduling requirements of the RSU communication layer.
+ This gap motivates the H-ST-MBAN design presented in this paper.
+ 
+ \section{Network Model and Scheme Overview}\label{sec:system}
+ % ============================================================
+ 
+-In this section, we describe the network model, the event-driven inference paradigm, the regression task formulation, and the complete input feature set that underlies the proposed H-ST-MBAN framework. The network model formalizes the intersection geometry and RSU deployment strategy. The event-driven paradigm details how snapshot data is collected without relying on continuous historical buffering. The regression formulation translates these snapshots into actionable deterministic dwell-time estimates. Finally, the input feature enumeration systematically categorizes all variables used to capture the prevailing traffic conditions. This foundational framework provides a mathematically rigorous representation of the physical environment, ensuring the deterministic predictor operates under realistic communication and microscopic traffic assumptions.
++In this section, we describe the comprehensive network model and the operation scheme that underlie the proposed predictive caching framework.
++The network model formalizes the urban intersection geometry and the deployment strategy of roadside units.
++Following this, the management of traffic metrics and communication speeds is detailed to explain how historical queuing data is aggregated.
++The content distribution model subsequently defines the assumptions regarding chunk sizes and user demand patterns.
++Finally, the precaching scheme overview synthesizes these components to explain how snapshot data is collected and utilized for localized model training and deterministic dwell-time estimation.
++This foundational framework provides a mathematically rigorous representation of the physical environment, ensuring the predictor operates under realistic traffic assumptions.
+ 
+ % ============================================================
+-\subsection{Vehicular Network Environment}
+-\label{sec.net.A}
++\subsection{Vehicular Network Environment}\label{sec.net.A}
+ % ============================================================
+ 
+-We consider a road segment in which a set of RSUs
+-$\mathcal{R} = \{r_1, r_2, \ldots, r_M\}$ are deployed at the geometric centers
+-of signalized four-arm intersections.
+-Each RSU maintains a circular communication coverage of radius
+-$\rho = 800\,\text{m}$, so that any vehicle within the zone can establish a V2I link.
+-Consecutive RSUs are placed at an inter-RSU spacing of $d_{\text{rsu}} = 2{,}400\,\text{m}$,
+-producing a shadow region of $800\,\text{m}$ between adjacent coverage zones in which
+-no RSU signal is available.
+-This four-arm intersection topology is representative of urban arterial environments
+-and yields a repeating coverage-gap-coverage pattern along the vehicle trajectory.
+-Vehicle mobility is generated using SUMO, which
+-provides microscopic traffic dynamics including car-following behavior,
+-lane-change decisions, signal-phase responses, and queue formation at intersections.
+-Each vehicle $v$ in the simulation is associated with at most one RSU at any instant,
+-referred to as the current RSU $r_{\text{cur}}$. The immediately following RSU along
+-the vehicle's route is denoted $r_{\text{nxt}}$.
+-Four neighboring RSUs of $r_{\text{nxt}}$, indexed $r_{\text{nxt},0}$ through
+-$r_{\text{nxt},3}$, provide traffic density context for the social feature branch.
+-In addition to the distributed edge RSUs, a centralized cloud server orchestrates the overarching CCVN ecosystem.
+-This cloud server is responsible for hosting the core content libraries and executing the initial global pre-training of the predictive models.
+-Specifically, it aggregates historical traffic traces from multiple urban intersections to train a baseline model, which is subsequently deployed to all RSUs to ensure high initial accuracy. The globally trained parameters serve as a generic spatial prior that ensures stable initialization for all edge routers. This prior initialization mitigates the cold-start problem at newly deployed intersections where local historical queue data has not yet been accumulated.
+-
+-% ============================================================
+-\subsection{Scheme Overview and Task Formulation}
+-\label{sec.net.C}
+-% ============================================================
+-
+-At request time $t_0$, the RSU-local prediction model maps the snapshot $\mathbf{X} \in \mathbb{R}^{30}$ to a two-dimensional output $\hat{\mathbf{y}} = [\hat{\tau}_{\text{cur}},\, \hat{\tau}_{\text{nxt}}]^\top$, where $\hat{\tau}_{\text{cur}}$ is the predicted remaining dwell time of vehicle $v$ within $r_{\text{cur}}$, and $\hat{\tau}_{\text{nxt}}$ is the predicted sojourn duration within $r_{\text{nxt}}$. The mapping is expressed as \begin{equation}   \hat{\mathbf{y}} = f_\theta(\mathbf{X}),   \label{eq:task} \end{equation} where $f_\theta$ denotes the H-ST-MBAN model with learnable parameters $\theta$. Equation~(\ref{eq:task}) is formulated as a deterministic regression problem: given sufficient information from the features, the conditional distribution of dwell time is unimodal, which obviates the need for explicit uncertainty modeling. Each RSU learns $\theta$ independently from the set of snapshots accumulated at its intersection, with no gradient exchange between RSUs. This RSU-local learning paradigm allows each model to learn the specific signal cycle timing, road geometry, and traffic flow characteristics of its own intersection without explicit parameterization of those factors. By removing the computational burden of modeling high-order probability density functions, the model remains highly compatible with the real-time processing constraints of roadside units.
++The network model adopts a Manhattan mobility framework to reflect an urban grid environment composed of multiple intersections. Vehicles are generated at the boundary edges of the map and assigned a random destination located at another boundary edge. A navigation algorithm guides each vehicle along the route that requires the shortest estimated travel time. If a route modification becomes necessary due to localized traffic congestion, the system updates the path outside the communication range of any intersection controller. The topology contains no secondary roads between adjacent intersections, which ensures that vehicles transition directly to their designated next location without deviations. This routing mechanism prevents the input features collected for predictive models from changing during the vehicle transit.
++
++To facilitate data distribution, one RSU is deployed at every intersection equipped with a traffic signal. Each RSU contains dedicated memory to cache content chunks and implements a content-centric networking policy to fetch unavailable data. Following a local forwarding information base, the RSU requests missing content from neighboring RSUs or from a centralized content server. All RSUs and the central content server are interconnected via wired fiber optic links to provide backhaul communication. When a vehicle requires specific information, it receives the data directly from the associated RSU using standard WAVE protocols. This edge-assisted architecture enables the delivery of data to mobile clients traversing the urban grid.
+ 
+ % ============================================================
++\subsection{Traffic and Communication Metrics Management}\label{sec.net.B}
++% ============================================================
+ 
+-The prediction target is $\mathbf{y} = [\tau_{\text{cur}},\, \tau_{\text{nxt}}]^\top
+-\in \mathbb{R}^2$, where both components are directly relevant to the RSU caching
+-scheduler.
+-\textbf{Current RSU dwell time}, denoted as \tau_{\text{cur}}, represents the elapsed time from the
+-request instant $t_0$ until vehicle $v$ exits the coverage zone of $r_{\text{cur}}$.
+-Formally, $\tau_{\text{cur}} = t_{\text{cur,out}} - t_0$, where $t_{\text{cur,out}}$
+-is the moment the vehicle's position crosses the boundary of $r_{\text{cur}}$.
+-This quantity determines the maximum time window available to complete a content
+-transfer for the current request.
+-\textbf{Next RSU dwell time}, denoted as \tau_{\text{nxt}}, represents the full sojourn duration of
+-vehicle $v$ within the coverage zone of $r_{\text{nxt}}$.
+-Formally, $\tau_{\text{nxt}} = t_{\text{nxt,out}} - t_{\text{nxt,in}}$, where
+-$t_{\text{nxt,in}}$ and $t_{\text{nxt,out}}$ denote the entry and exit timestamps,
+-respectively.
+-This quantity supports prefetching decisions that span the handoff to the next RSU.
+-Both targets are measured directly from SUMO simulation event logs and constitute
+-continuous real-valued regression outputs.
+-Directly regressing the two sojourn durations, rather than regressing the three
+-raw timestamps used in traditional multi-step baseline architectures, eliminates error compounding across
+-dependent time points and produces outputs that are immediately interpretable by the
+-precaching scheduler without further arithmetic.
++For predictive inference and caching calculations, the RSU manages metrics regarding the average vehicle speed and the average communication speed. The average vehicle speed is derived from a fixed-size queue of historical observations collected from passing vehicles. To record the specific speed per vehicle, the system collects the entry time, the traveled path length, and the exit time for each client. All vehicles inform the RSU of these temporal markers via periodic beacon messages transmitted upon entering and exiting the communication range. The RSU calculates the individual average speed by dividing the path length by the total time stayed within the coverage area. This aggregated metric encompasses the effects of local traffic congestion, total vehicle density, and the specific phasing characteristics of the traffic signal. Among the collected records, vehicles that have not yet transmitted their exit time are classified as staying within the communication range and contribute to the real-time density statistics.
++
++In addition to kinematic data, the RSU maintains a separate queue to calculate the average communication speed based on historical download performance. Vehicles actively downloading data record the time they start receiving content and the time the provision concludes. During this window, the vehicle aggregates the total size of the content chunks successfully received over the wireless link. Based on this aggregated size and the recorded duration, the vehicle calculates its individual average download speed and delivers this value to the RSU via a beacon message at the end of the provision. The end of a provision event occurs either when the vehicle departs from the communication range of the RSU or when it completes downloading all requested chunks. Because the total download amount and the transmission time vary for each vehicle, incorporating the individual average speed accounts for dynamic channel conditions and varying data requirements. The RSU then averages these reported values in its local queue to estimate the available bandwidth for future caching calculations.
+ 
+-\section{Proposed Precaching Scheme}\label{sec:architecture}
+ % ============================================================
++\subsection{Content Distribution Model}\label{sec.net.C}
++% ============================================================
++
++To simplify the mathematical modeling and storage management, the system assumes that all content files are divided into chunks of an identical fixed size. Content requests are generated independently by each vehicle according to a Poisson distribution. As a result, a vehicle may issue a new content request even while the download of a previously requested file has not yet completed. The specific content requested by a vehicle is determined based on Zipf law. The total size of each content file is determined in advance according to a Gaussian distribution to simulate varying file sizes. Based on the fixed chunk size and the total file size, the central server determines the exact number of chunks required to reconstruct the complete file. This representation allows the edge caching mechanism to compute prefetching schedules at the granular level of individual chunks.
++
++% ============================================================
++\subsection{Precaching Scheme Overview}\label{sec.net.D}
++% ============================================================
++
++The precaching scenario is initiated when a vehicle request prompts the current RSU to collect local information and create an input feature vector. If a pre-trained predictive model exists locally, the RSU uses the feature vector to infer the dwell time of the vehicle at the current intersection, denoted as $\hat{\tau}_{\text{cur}}$, and the predicted sojourn duration at the next anticipated intersection, denoted as $\hat{\tau}_{\text{nxt}}$. Based on these inferred dwell times and the managed average communication speed, the current RSU calculates the exact number of chunks the next RSU must precache. Following this calculation, the current RSU instructs the next RSU over the fiber link to fetch the required chunks from the network. Meanwhile, the vehicle measures and records its actual dwell times, $\tau_{\text{cur}}$ and $\tau_{\text{nxt}}$, at the current RSU and the subsequent RSU as it travels. Just before departing from the coverage area of the next RSU, the vehicle transmits these recorded dwell times back to the initial RSU. This feedback loop ensures that the true labels for the predictive task are captured for future model training.
++
++The collected dwell times are immediately combined with the original input feature vector and added to the local dataset of the RSU. If the RSU lacks a pre-trained model and its local dataset reaches full capacity, it transmits the accumulated information to a centralized learning server. The centralized server receives comprehensive dataset information from all RSUs operating within the region and accumulates a global dataset. Once the global dataset reaches a sufficient volume, the server performs a complete training cycle to learn the spatial characteristics of the traffic environment. The server then distributes the fully trained network parameters to all participating RSUs across the regional grid. RSUs equipped with this pre-trained model subsequently perform local fine-tuning whenever their individual datasets become full. This continuous local adaptation allows the model to reflect the road geometry, traffic signal patterns, and congestion characteristics of each specific intersection.
++
++\section{Proposed Precaching Scheme}\label{sec:architecture}
++
++This section details the proactive content precaching procedure driven by the proposed Hybrid Spatio-Temporal Multi-Branch Attention Network (H-ST-MBAN) and delineates its underlying architectural design.
++The first subsection explains the mechanism by which a vehicular content request triggers the generation and aggregation of a comprehensive feature vector.
++Subsequently, the second subsection presents the detailed architecture of the H-ST-MBAN model and describes how the model infers the required vehicular dwell times.
++The third subsection elaborates on the utilization of the predicted dwell times to execute the proactive content precaching operations across the distributed infrastructure nodes.
++Finally, the fourth subsection outlines the procedures for collecting ground-truth labels and reporting these metrics, discussing the methodologies applied for the continuous pre-training and online fine-tuning of the predictive model.
+ 
+-In this section, we present the proposed RSU-driven precaching scheme designed to support seamless content delivery in snapshot-based CCVN environments.
+-The design is motivated by three distinct operational principles that are directly aligned with the V2I communication constraints.
+-First, semantic separation partitions heterogeneous input variables into dedicated encoding branches, which prevents gradient conflicts during training.
+-Second, branch-specific inductive biases are precisely calibrated to match the statistical structure of each variable group.
+-Finally, a dynamic fusion mechanism integrates the GBDT and NN streams through learnable gating, adapting the overall contribution to the current traffic context. By partitioning representation learning and decision prioritization into decoupled steps, the network optimizes gradient propagation without compromising the physical interpretability of individual feature groups.
+-
+-% ============================================================
+-\subsection{Request Handling and Feature Acquisition}
+-\label{sec.net.B}
+-% ============================================================
+-
+-Inference in H-ST-MBAN is triggered by content request events.
+-When a vehicle $v$ issues a content request to $r_{\text{cur}}$, the RSU
+-assembles a \emph{snapshot} $\mathbf{X}_v$ consisting of all observable
+-state variables at that moment and forwards it to the local prediction model.
+-No historical sequence of prior observations is required, as the snapshot is a single
+-cross-sectional record that captures the vehicle's kinematic state, the prevailing
+-signal phases, and the surrounding traffic context at time $t_0$.
+-This instantaneous assembly avoids the tracking overhead associated with continuous monitoring of vehicular trajectories.
+-By executing snapshot creation solely at the instance of a V2I request packet arrival, the system minimizes computational and memory allocations on edge hardware. This single-snapshot approach aligns with the event-driven nature of content requests, where immediate precaching actions are prioritized over long-term trajectory tracking.
+-To assemble the 30-dimensional snapshot vector $\mathbf{X}_v$ in real time without relying on a central server, the RSUs and vehicles exchange a sequence of communication packets over V2I and I2I links.
+-First, vehicle $v$ initiates a session by transmitting an \texttt{[INTEREST]} packet over the V2I link, containing its Vehicle ID (VID), Content ID (CID), requested chunk index, and real-time onboard sensor data.
+-Following standard CCN procedures, $r_{\text{cur}}$ begins serving any locally available content via \texttt{[DATA]} packets.
+-Concurrently, $r_{\text{cur}}$ extracts the spatial variables, which include $\text{direct}$, $d_{l,c}$, $d_{e,n}$, $d_{l,n}$, $t_{\text{est}}$, and $\Delta_{\text{lane}}$, and stores the metadata in its pending request table.
+-Triggered by this initial request, $r_{\text{cur}}$ reads its own traffic signal controller ($\text{tls}_c$, $\text{tlt}_c$) and roadside sensors to extract local queue and density metrics ($v_{c,a}$, $n_{\text{cur}}$, $n_{\text{ahead,cur}}$, $v_{\text{ahead,avg}}$, $q_{\text{len,cur}}$, $\text{occ}_{\text{cur}}$).
+-The collection of these localized metrics allows the computing entity to form the first portion of the required snapshot.
+-
+-To acquire the state of the next intersection at time $t_0$, $r_{\text{cur}}$ sends an \texttt{[INFO REQ]} packet via the I2I link to $r_{\text{nxt}}$.
+-Upon receiving this query, $r_{\text{nxt}}$ must calculate the inbound traffic approaching its intersection to form the social features ($n_{t,0}$ to $n_{t,3}$).
+-To do this, $r_{\text{nxt}}$ broadcasts an \texttt{[INFO HELLO]} packet to its adjacent neighboring RSUs.
+-The neighbors reply with the number of vehicles currently routed toward $r_{\text{nxt}}$.
+-Subsequently, $r_{\text{nxt}}$ aggregates these inbound counts, bundles them with its own local signal and queue state ($\text{tls}_n$, $\text{tlt}_n$, $v_{n,a}$, $n_{\text{nxt}}$, $q_{\text{len,nxt}}$, $\text{occ}_{\text{nxt}}$), and transmits the final \texttt{[INFO REP]} back to $r_{\text{cur}}$.
+-This fulfills the on-demand assembly of the snapshot $\mathbf{X}_v$ without incurring cloud processing delays.
+-
+-Once the snapshot is constructed, $r_{\text{cur}}$ feeds $\mathbf{X}_v$ into the local H-ST-MBAN model to predict the durations represented by \hat{\tau}_\text{cur} and \hat{\tau}_\text{nxt}.
+-Based on $\hat{\tau}_{\text{cur}}$, $r_{\text{cur}}$ identifies the number of chunks it can transmit and determines the next starting chunk.
+-Then, $r_{\text{cur}}$ issues a \texttt{[PRECACHE REQ]} packet to $r_{\text{nxt}}$, piggybacking $\hat{\tau}_{\text{nxt}}$, the CID, and the next chunk index.
+-This enables $r_{\text{nxt}}$ to calculate its transmission window and cache the remaining chunks from the core server prior to the vehicle's arrival.
+-For model adaptation, vehicle $v$ monitors its actual entrance and exit times, generating a \texttt{[RESULT]} packet containing the true dwell times ($\tau_{\text{cur}}^{\text{true}}, \tau_{\text{nxt}}^{\text{true}}$) upon leaving $r_{\text{nxt}}$.
+-This packet is transmitted to $r_{\text{nxt}}$, forwarded via an I2I link back to $r_{\text{cur}}$, and stored in a local dataset queue to trigger the background shadow model for local fine-tuning. This on-demand scheduling ensures that next-hop prefetching starts immediately, minimizing delivery delays when the vehicle crosses the boundary into the next coverage zone.
+-This event-driven design has two practical consequences.
+-First, inference is invoked only when a caching decision is actually needed,
+-eliminating continuous periodic overhead.
+-Second, because the snapshot is assembled and consumed entirely within the RSU,
+-no data transmission to a central server is required at inference time.
+-Each RSU fine-tunes and serves its own model instance using observations accumulated
+-within its coverage zone, enabling a decentralized learning paradigm.
+-This localized processing reduces V2I uplink bandwidth consumption since raw kinematic profiles do not cross the network edge.
+-Additionally, retaining sensitive trajectory parameters locally enhances driver privacy by preventing the central exposure of vehicle identification data. Furthermore, avoiding continuous telemetry transmissions reduces local CPU utilization at the vehicle, preserving battery life and on-board processing capacity.
+-To enable local adaptation without interrupting real-time service, we implement a Dual-Model continuous fine-tuning mechanism.
+-As established in Section~\ref{sec.net.A}, a globally pre-trained baseline model from the cloud server is initially deployed to all RSUs.
+-Each RSU then maintains two localized model instances: an active inference model and a background training model.
+-As requests arrive, the RSU accumulates snapshot data into a local queue.
+-Once the queue reaches a threshold, such as 3,000 samples, the background model performs fine-tuning.
+-Upon completion, the models swap roles, acting as a ping-pong transition, allowing the newly adapted model to handle
+-subsequent requests with zero downtime.
+-
+-% ============================================================
+-
+-The input vector $\mathbf{X}$ aggregates 30 observable quantities drawn from
+-two sources: baseline vehicular kinematic variables, and
+-twelve microscopic variables newly derived from SUMO simulation outputs.
+-Each variable is assigned to one or more semantic categories, specifically the kinematic, traffic control, and social/contextual branches.
+-A variable may belong to multiple categories when its physical meaning spans
+-more than one domain. In such cases, all applicable tags are listed.
+-Table~\ref{tab:features} enumerates all 30 input features.
+-These features collectively provide the model with a view of the local intersection dynamics.
++\subsection{Feature Collection via Content Requests}
++\label{sec.prop.A}
++
++The proactive caching procedure within the proposed framework is initiated when a vehicle issues a content request within the communication range of a Road-Side Unit (RSU).
++If the vehicle remains outside the effective communication boundary, it maintains a standby state until physical entry occurs.
++Upon entry, the vehicle transmits an INTEREST packet containing its unique vehicle identifier, the target content identifier, the requisite starting chunk index, and real-time kinematic metrics such as position, velocity, inter-vehicle distance, required lane changes, and the subsequent topological route.
++The receiving RSU processes this packet and commences content provisioning in accordance with standard Content-Centric Networking (CCN) procedures.
++Simultaneously, the RSU initializes a Pending Data Table (PDT) using the vehicle and content identifiers as primary keys, recording the physical state of the requesting vehicle.
++The RSU enriches this table by appending locally observable variables including traffic signal states, remaining signal phase duration, the mean speed of vehicles within the coverage area, and the absolute communication radius.
++Furthermore, the infrastructure calculates and logs the distance to the intersection center, denoted as $d_{rsu}$, and the estimated traversal time, denoted as $t_{est}$, based on the reported position and velocity vectors.
++To capture directional dynamics, the RSU assigns a binary flag of 1 if the vehicle is departing from the intersection, and 0 if it is approaching.
++The infrastructure node also identifies the specific lane occupied by the requesting vehicle to collect granular metrics, including the instantaneous and average speed of the preceding vehicle, the total number of vehicles ahead, and the localized queue length and lane occupancy rate.
++Following route extraction, the RSU updates the PDT with the remaining traversal distance within the current coverage zone, the distance to the next RSU entry point, and the distance to the next RSU exit boundary.
++By integrating periodic beacon messages, the system computes the real-time average vehicle speed and accounts for vehicles that have not yet exited the coverage zone, ensuring the density metrics reflect current physical conditions.
++
++To acquire complementary spatial states from the subsequent intersection, the current RSU transmits an INFO REQ packet over the wired Infrastructure-to-Infrastructure (I2I) link.
++This query packet embeds the originating RSU identifier, the targeted vehicle identifier, and the requested content identifier.
++Upon receiving the INFO REQ packet, the subsequent RSU logs the request into its own pending request table.
++The subsequent RSU then replaces the source identifier with its own and broadcasts an INFO HELLO packet to its adjacent neighboring infrastructure nodes.
++These neighboring nodes evaluate their local average speed management tables to count the number of vehicles anticipated to merge onto the route toward the subsequent RSU, defined as $n_{merge,nxt}$.
++The neighbors transmit this aggregated merge count back to the subsequent RSU via an INFO REP packet, alongside the original vehicle and content identifiers.
++Concurrently, the subsequent RSU computes its own localized variables, including its current signal state, phase duration, local average speed, downstream queue length, lane occupancy, and the count of preceding vehicles on the anticipated path, denoted as $n_{ahead,nxt}$.
++The subsequent RSU synthesizes its internal metrics with the received merge counts and forwards a final consolidated INFO REP packet back to the originating RSU.
++Consequently, the initial serving RSU obtains a representation of the downstream conditions, encompassing traffic states, expected vehicular density, and signal timing parameters.
+ 
+ \begin{table}[!t]
+   \renewcommand{\arraystretch}{1.1}
+-  \caption{Input feature enumeration with branch category assignments.}
++  \caption{Input feature enumeration with branch category assignments}
+   \label{tab:features}
+   \centering
+   \begin{tabular}{@{}lp{5.0cm}c@{}}
+     \toprule
+     \textbf{Symbol} & \textbf{Description} & \textbf{Category} \\
+     \midrule
+-    \multicolumn{3}{l}{\textit{Baseline Kinematic Features}} \\
+     $r_{\text{cov}}$          & RSU communication coverage radius fixed at 800\,m                            & K \\
+     $d_{\text{rsu}}$          & Physical distance between consecutive RSUs                                   & K \\
+-    $\text{direct}$           & Vehicle direction relative to RSU represented by -1 for approaching and +1 for departing      & K \\
++    $\text{direct}$           & Vehicle direction relative to RSU represented by 0 for approaching and 1 for departing      & K \\
+     $d_{l,c}$                 & Remaining distance to current RSU coverage boundary                          & K \\
+     $d_{e,n}$                 & Remaining distance to next RSU coverage entry point                          & K \\
+     $d_{l,n}$                 & Distance to next RSU coverage exit boundary                                  & K \\
+@@ -367,8 +251,6 @@
+     $n_{t,3}$                 & Vehicle count heading toward next RSU from neighbor RSU 3 coverage zone      & S \\
+     $n_{\text{cur}}$          & Total vehicle count within current RSU coverage representing absolute density & S \\
+     $n_{\text{nxt}}$          & Total vehicle count within next RSU coverage representing absolute density    & S \\
+-    \midrule
+-    \multicolumn{3}{l}{\textit{Newly added SUMO-derived microscopic variables}} \\
+     $n_{\text{ahead,cur}}$    & Number of vehicles ahead of requesting vehicle on current road edge          & S \\
+     $n_{\text{ahead,nxt}}$    & Number of vehicles ahead of requesting vehicle approaching next RSU          & S \\
+     $v_{\text{ahead,avg}}$    & Mean speed of vehicles directly ahead on the same edge                       & K, S \\
+@@ -385,159 +267,164 @@
+   \end{tabular}
+ \end{table}
+ 
+-% ============================================================
+-\subsection{H-ST-MBAN Dwell Time Estimation}
+-\label{sec.prop.A}
+-% ============================================================
+-
+-\textbf{Definition 1 (RSU-Local Snapshot Inference).}
+-At the moment vehicle $v$ issues a content request to its serving RSU $r$, a single feature vector $\mathbf{x} \in \mathbb{R}^{30}$ is assembled.
+-This vector aggregates the real-time state of $v$ and its local traffic environment as observed exclusively by $r$.
+-The predictor $f_r : \mathbb{R}^{30} \to \mathbb{R}^2$ subsequently maps this snapshot to two scalar dwell-time estimates represented by \hat{\tau}_\text{cur} and \hat{\tau}_\text{nxt}.
+-This mapping executes in one forward pass, with no buffering of historical observations.
+-Therefore, the model avoids unnecessary data exchange and communication with other RSUs during the inference stage. This decentralized design ensures that localized traffic anomalies do not propagate errors to adjacent intersection controllers, improving global network resilience.
+-
+-The overall H-ST-MBAN architecture consists of a dual-stream design: a GBDT Prior Stream and a Spatio-Temporal Neural Network Stream, combined via Learnable Gating Fusion, as illustrated in Figure~\ref{fig:arch}.
+-The 30 input features are directly fed into a fully-optimized XGBoost model to generate a base tabular prediction.
+-In parallel, the identical features are partitioned into three semantically distinct subsets for the neural network stream: the kinematic branch represented by $\mathbf{x}^K \in \mathbb{R}^{13}$, the traffic control branch represented by $\mathbf{x}^T \in \mathbb{R}^{6}$, and the social/contextual branch represented by $\mathbf{x}^S \in \mathbb{R}^{11}$.
+-Each subset is encoded independently by a dedicated branch encoder to a shared dimension $d_\text{branch}$, yielding branch representations $Z_k$, $Z_t$, and $Z_s$.
+-These three representations are treated as a 3-token sequence and fused by a multi-head self-attention layer.
+-The fused embedding is decoded by four consecutive ResBlocks, which forms a deep ResNet, to learn the spatio-temporal residual errors not captured by the GBDT stream.
+-Finally, the joint prediction represented by \hat{\tau}_\text{cur} and \hat{\tau}_\text{nxt} is produced by dynamically gating the outputs of both streams, trained under a combined Huber loss function.
+-
+-\begin{figure}[!t]
+-\centering
+-\includegraphics[width=\columnwidth]{./figure/architecture.pdf}
+-\caption{Overall architecture of H-ST-MBAN. A GBDT prior stream (XGBoost) provides a base prediction from tabular features. In parallel, three branch encoders process the Kinematic, Traffic Control, and Social/Contextual features. The T Branch applies Cyclical Temporal Encoding to signal phase variables. Branch representations $Z_k$, $Z_t$, $Z_s$ are treated as a 3-token sequence and fused by multi-head self-attention. The neural network stream focuses on learning residual errors through a deep four-layer ResNet. The outputs from both streams are combined via learnable gating to produce final joint predictions $\hat{\tau}_\text{cur}$ and $\hat{\tau}_\text{nxt}$ under Huber loss.}
+-\label{fig:arch}
+-\end{figure}
+-
+-The design rationale for the three-branch decomposition follows from the distinct inductive biases required by each variable group.
+-Kinematic variables encode continuous physical quantities governed by Newtonian kinematics.
+-Thus, a dedicated Residual Block with standard ReLU activations is well suited to learning their nonlinear interactions without vanishing gradients.
+-Traffic control variables carry phase periodicity that a raw integer representation cannot convey, so Cyclical Temporal Encoding resolves phase discontinuities before any learnable layer is applied.
+-Social and contextual variables encode queue and density signals whose relevance varies across intersections.
+-Thus, a specialized weighting block assigns RSU-specific feature-wise coefficients, allowing each RSU instance to emphasize the social signals that are most predictive at its own intersection.
+-Fusing the resulting branch tokens through MHA rather than simple concatenation permits the model to reweight branch contributions based on the current snapshot, without coupling the encoding gradients of different variable groups.
+-Rather than forcing the deep neural network to learn sharp, discontinuous tabular boundaries from scratch, H-ST-MBAN leverages an ensemble stacking approach.
+-The XGBoost prior resolves tabular splits, leaving the branch encoders and subsequent deep residual layers to model complex, non-linear spatio-temporal correlations.
+-
+-% ============================================================
+-
+-\subsubsection{Kinematic Encoder}
+-
+-The Kinematic branch encodes 13 continuous variables that characterize vehicle speed, inter-vehicle spacing, and geometric distances to RSU coverage boundaries. Specifically, these parameters consist of $r_\text{cov}$, $\text{dirct}$, $d_{l,c}$, $d_{e,n}$, $d_{l,n}$, $d_\text{rsu}$, $v_{c,a}$, $v_{n,a}$, $v_\text{ahead,avg}$, $d_\text{leader}$, $v_\text{leader}$, $\text{est\_travel\_time}$, and $\text{route\_lane\_changes}$. These variables are numerically heterogeneous in scale, so a learned linear projection precedes the nonlinear encoder. The K Branch encoder consists of a linear projection followed by a standard ReLU ResBlock: \begin{equation} Z_k = \text{ResBlock}_\text{K}\!\left(W_K\, \mathbf{x}^K + b_K\right), \quad Z_k \in \mathbb{R}^{d_\text{branch}} \label{eq:zk} \end{equation} where $W_K \in \mathbb{R}^{d_\text{branch} \times 13}$. The standard ReLU activation, coupled with Batch Normalization within the residual connection, provides gradient propagation for continuous inputs. The residual connection allows the block to refine rather than overwrite the initial projection. Equation~(\ref{eq:zk}) maps the 13-dimensional input to the shared branch dimension $d_\text{branch}$.
+-
+-\subsubsection{Traffic Control Encoder}
+-
+-The Traffic Control branch encodes 6 variables related to signal state and phase timing: $\text{tls}_c$, $\text{tls}_n$, $\text{tlt}_c$, $\text{tlt}_n$, $q_{\text{len},c}$, and $q_{\text{len},n}$. Signal phase variables are periodic; representing them as raw scalars introduces an artificial discontinuity at cycle boundaries that impedes gradient-based learning. CTE resolves this by mapping each phase scalar $t$ onto the unit circle: \begin{equation} \phi(t,\, T) = \left(\sin\!\left(\frac{2\pi\, t}{T}\right),\ \cos\!\left(\frac{2\pi\, t}{T}\right)\right) \label{eq:cte} \end{equation} where $T$ is the relevant period, with $T_\text{sig} = 90$\,s representing the signal state and $T_\text{phase} = 30$\,s representing the time-to-phase-change. CTE is applied independently to $\text{tls}_c$, $\text{tls}_n$, $\text{tlt}_c$, and $\text{tlt}_n$, expanding these 4 scalars to 8 values. The two queue-length variables $q_{\text{len},c}$, $q_{\text{len},n}$ are passed through unchanged, yielding a 10-dimensional encoded vector $\tilde{\mathbf{x}}^T \in \mathbb{R}^{10}$. The T Branch encoder then maps this vector through a linear projection and a ResBlock: \begin{equation} Z_t = \text{ResBlock}_\text{T}\!\left(W_T\, \tilde{\mathbf{x}}^T + b_T\right), \quad \tilde{\mathbf{x}}^T = \bigl[\phi(\text{tls}_c,T_\text{sig}),\, \phi(\text{tls}_n,T_\text{sig}),\, \phi(\text{tlt}_c,T_\text{phase}),\, \phi(\text{tlt}_n,T_\text{phase}),\, q_{\text{len},c},\, q_{\text{len},n}\bigr] \label{eq:zt} \end{equation} where $W_T \in \mathbb{R}^{d_\text{branch} \times 10}$ and $Z_t \in \mathbb{R}^{d_\text{branch}}$. Because the dominant nonlinearity is resolved analytically by CTE, the downstream ResBlock focuses on learning interactions among the encoded traffic variables.
+-
+-\subsubsection{Social/Contextual Encoder}
+-
+-The Social branch encodes 11 variables that describe surrounding vehicle density, queue occupancy, and merge-lane competition. These variables consist of $n_{t,0}$ through $n_{t,3}$, $n_\text{cur}$, $n_\text{nxt}$, $n_{\text{ahead},c}$, $n_{\text{ahead},n}$, $\text{occ}_c$, $\text{occ}_n$, and $n_\text{merge}$.
+-The relevance of these variables depends on the geometry and signal timing of the specific RSU. For instance, the same queue length may be critical at a narrow single-lane intersection yet largely irrelevant at a wide multi-lane junction.
+-A feature-wise attention mechanism based on the SE block~\cite{29} is applied before the residual encoder.
+-This architectural choice enables each computational node to calibrate its own feature dependencies based on local sensor data.
+-Thus, each RSU instance learns which density signals are most critical at its own intersection.
+-Such localized adjustments are necessary because different intersections exhibit distinct bottleneck behaviors.
+-The resulting attention-weighted tensor is then passed into the subsequent residual encoding stages:
++The originating RSU merges the received external data with its local PDT entries using the vehicle and content identifiers as relational keys.
++To maximize representational efficiency, the integrated data elements are categorized into discrete semantic branches prior to computation.
++The resulting feature vector and its corresponding domain categories are structurally defined as presented in Table~\ref{tab:features}.
++Because this formulation constructs an instantaneous snapshot utilizing small control packets during ongoing content provision, it reduces the overall communication load compared to continuous time-series trajectory tracking.
++The separation between background feature aggregation and active content delivery guarantees that physical service quality remains uncompromised.
++This domain-specific categorization empowers the computational framework to extract localized traffic characteristics without relying on a centralized cloud architecture.
++By independently resolving contextual metrics at the network edge, the system mitigates the bottleneck phenomena typically observed in centralized processing architectures.
++
++\subsection{Dwell Time Inference and Model Architecture}
++\label{sec.prop.B}
++
++To determine the precise volume of proactive chunk prefetching at the subsequent infrastructure node, the active Road-Side Unit (RSU) processes the aggregated feature vector from the Pending Data Table (PDT) to infer the current communication residency time ($t_{cur, dw}$) and the anticipated next residency time ($t_{nxt, dw}$).
++Specifically, the system addresses the extreme volatility of Vehicular-to-Infrastructure (V2I) environments by proposing the Hybrid Spatio-Temporal Multi-Branch Attention Network (H-ST-MBAN), which is meticulously designed to accommodate heterogeneous sensor modalities.
++During the initial deployment phase where a pre-trained neural network remains unavailable, the RSU defaults to a deterministic cold-start fallback mechanism that approximates the target durations algebraically.
++This analytical fallback computes the residency periods by dividing the remaining route distances, derived from the Wireless Access in Vehicular Environments (WAVE) standard boundaries, by the instantaneous spatial mean velocity of the surrounding traffic.
++Nevertheless, despite operating under this heuristic approximation, the communication framework continuously maintains the PDT and the internal dataset accumulation queues to ensure comprehensive data collection for subsequent optimization procedures.
++
++Once the pre-trained H-ST-MBAN model becomes fully disseminated across the network edges, the infrastructure nodes seamlessly transition to executing precise multi-variable neural inferences.
++Unlike homogeneous visual or sequential structures, vehicular tabular data inherently exhibits massive discrepancies in physical scaling properties, encompassing kinematic, spatial, and topological dynamics.
++Consequently, these structural variations frequently induce statistical outliers associated with sudden localized congestion phenomena or unanticipated vehicular collisions.
++Conventional recurrent architectures or simplistic multi-layer perceptrons conventionally concatenate these heterogeneous arrays, forcing the optimization space to be dominated by features exhibiting disproportionately massive magnitudes.
++Furthermore, this elementary concatenation inevitably triggers gradient vanishing or explosion during the continuous online fine-tuning processes at the computational edges, massively exacerbating the phenomenon of catastrophic forgetting.
++
++In order to fundamentally overcome these structural limitations and maximize operational reliability within the constrained V2I paradigm, the proposed H-ST-MBAN framework is constructed around four integral architectural methodologies.
++First, the architecture performs Heterogeneous Feature Extraction via Pre-activation Residual Blocks to strictly isolate the disparate scaling metrics by independently processing the respective categorical domains.
++Mathematically, for a given arbitrary input vector partition $\mathbf{x}_i$, the pre-activation non-linear transformation is defined as follows:
+ \begin{equation}
+-\mathbf{a} = \sigma\!\left(W_2 \cdot \text{ReLU}(W_1 \cdot \mathbf{x}^S + b_1) + b_2\right), \quad \mathbf{a} \in [0,1]^{11}
+-\label{eq:se_attn}
++\mathbf{z}_i = \mathbf{x}_i + \mathcal{F}(\text{ReLU}(\text{BN}(\mathbf{x}_i)), \mathbf{W}_i)
+ \end{equation}
++where $\text{BN}(\cdot)$ denotes batch normalization, $\mathcal{F}(\cdot)$ represents the residual mapping function, and $\mathbf{W}_i$ incorporates the localized learnable weights.
++This explicit pre-activation structural formulation aggressively normalizes the domain-specific tensors prior to any dense linear projection, subsequently circumventing the risk of numerical gradient explosion.
++Ultimately, this independent feature refinement isolates the kinematic, topological, and spatial domains into a uniform high-dimensional latent space without prematurely imposing deterministic feature fusion.
++
++Second, the system incorporates Domain-Level Multi-Head Attention Fusion by processing the independently encoded latent domain vectors as discrete and sequential embedded tokens.
++Instead of relying on rudimentary flat tensor concatenations, the proposed framework leverages the scaled dot-product attention paradigm to dynamically compute the complicated cross-domain interactions.
++The attention output for the query matrices ($\mathbf{Q}$), key matrices ($\mathbf{K}$), and value matrices ($\mathbf{V}$) is mathematically derived through the following expression:
+ \begin{equation}
+-Z_s = \text{ResBlock}_\text{S}\!\left(W_S\,(\mathbf{a} \odot \mathbf{x}^S) + b_S\right), \quad Z_s \in \mathbb{R}^{d_\text{branch}}
+-\label{eq:zs}
++\text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\mathbf{Q}\mathbf{K}^T}{\sqrt{d_k}}\right)\mathbf{V}
+ \end{equation}
+-where $\odot$ denotes element-wise multiplication, $W_1 \in \mathbb{R}^{4 \times 11}$ and $W_2 \in \mathbb{R}^{11 \times 4}$ are the SE reduction and expansion weights, which feature a reduction ratio of 4, and $W_S \in \mathbb{R}^{d_\text{branch} \times 11}$. Because each RSU trains its own model, the weights $W_1$ and $W_2$ encode the idiosyncratic traffic patterns of that intersection, making the Social branch the primary carrier of RSU-local knowledge. To integrate this localized contextual knowledge with the other two representations, the three branch representations $Z_k$, $Z_t$, and $Z_s \in \mathbb{R}^{d_\text{branch}}$ are combined into a single unified embedding. Rather than using naive concatenation followed by a fully connected layer, which would allow the fusion layer to freely mix features across branches and potentially reintroduce gradient interference between heterogeneous variable groups, H-ST-MBAN treats each branch representation as a single token and applies multi-head self-attention~\cite{30} over the resulting 3-token sequence. This explicit attention mechanism preserves the isolated gradient pathways established during the initial encoding phase, preventing the heterogeneous variables from disrupting each other during the continuous local fine-tuning cycles. Specifically, we define the concatenated branch tensor as $\mathbf{Z} = [Z_k;\, Z_t;\, Z_s] \in \mathbb{R}^{3 \times d_\text{branch}}$, and for each attention head $i = 1, \ldots, h$, the model computes the self-attention projections as follows:
++where $d_k$ represents the defined scaling dimension of the embedded latent space.
++This sophisticated attention allocation dynamically evaluates the complex contextual interdependence connecting topological traffic signals with physical queue formations and real-time velocity arrays.
++Consequently, the final aggregated attention scores produce a highly contextualized fusion representation that accurately weights the localized infrastructural constraints critically affecting subsequent vehicular trajectories.
++
++Third, the predictive system ensures Robust Deterministic Decoding against Outliers by mapping the multi-head attention weighted tensors through a serialized set of residual decoders directly yielding deterministic time scalars.
++Because the underlying task necessitates precise temporal intervals for the content caching schedules, the decoding architecture aggressively discards probabilistic generative distributions to prioritize absolute point-estimate stability.
++To further stabilize the backward optimization gradients against sudden traffic anomalies, the model rigorously employs the continuous $L_1$ Mean Absolute Error metric defined as:
+ \begin{equation}
+-Q_i = \mathbf{Z}\, W^Q_i,\quad K_i = \mathbf{Z}\, W^K_i,\quad V_i = \mathbf{Z}\, W^V_i
+-\label{eq:mha_proj}
+-\end{equation}
+-\begin{equation}
+-\text{head}_i = \text{softmax}\!\left(\frac{Q_i K_i^\top}{\sqrt{d_k}}\right) V_i,\quad d_k = \frac{d_\text{branch}}{h}
+-\label{eq:mha_head}
++\mathcal{L}_{\text{MAE}} = \frac{1}{N} \sum_{j=1}^{N} \left| y_j - \hat{y}_j \right|
+ \end{equation}
++where $y_j$ and $\hat{y}_j$ denote the ground-truth and inferred temporal residency scalars across the processed vehicular batches.
++This intentional architectural departure from standard squared error objectives naturally bounds the magnitude of gradient updates directly provoked by severe statistical outliers inherent in complex vehicular networks.
++Thus, the network parameter optimization reliably converges toward globally optimal configurations, regardless of the instantaneous extreme congestion fluctuations frequently observed within the designated intersection coverage zones.
++
++Finally, the integrated framework implements an Adaptive Residual Prior Learning methodology designed to seamlessly hybridize non-linear neural processing with the structural robustness of gradient-boosted decision trees.
++The ultimate contextual dwell time inference explicitly fuses the dual predictive mechanisms through the formulated adaptive gating equation:
+ \begin{equation}
+-\mathbf{H} = \text{LayerNorm}\!\left(\text{Concat}(\text{head}_1,\ldots,\text{head}_h)\, W^O + \mathbf{Z}\right), \quad \mathbf{H} \in \mathbb{R}^{3 \times d_\text{branch}}
+-\label{eq:mha_out}
++\text{Pred}_{\text{final}} = \alpha \times \text{ML\_Pred} + \beta \times \text{NN\_Pred}
+ \end{equation}
+-where $W^Q_i, W^K_i, W^V_i \in \mathbb{R}^{d_\text{branch} \times d_k}$ and $W^O \in \mathbb{R}^{d_\text{branch} \times d_\text{branch}}$.
+-The residual connection and LayerNorm in Equation~(\ref{eq:mha_out}) follow the standard pre-norm transformer formulation.
+-The network is securely configured with $h = 4$ heads and $d_\text{branch} = 128$, yielding $d_k = 32$.
+-By utilizing these multi-head projections, the model accurately calibrates the combined influence of kinematic, traffic, and social data.
+-As a result, the network produces an intermediate state ready for the deeper decoding stages. The layer normalization step stabilizes the activation distributions, which prevents the subsequent deep residual decoder from suffering from covariate shift during continuous local updates.
+-
+-Because attention weights are explicitly conditioned on the current snapshot, the model dynamically adjusts branch contributions to reflect the dominant bottleneck factor in each scenario.
+-The resulting fused tensor $\mathbf{H}$ is then systematically flattened to $\mathbb{R}^{3\,d_\text{branch}}$.
+-Subsequently, it is projected back down to $\mathbb{R}^{d_\text{branch}}$ by a final linear layer accompanied by LayerNorm.
+-This specific dimensional reduction strictly controls the capacity of the feature bottleneck before it enters the residual decoder.
+-As a result, the deep residual layers can focus entirely on mapping the unified embedding to the physical output variables required by the CCVN precaching scheduler.
+-
+-% ============================================================
+-
+-The decoder maps the fused branch embedding to two-dimensional residual predictions through a deep sequence of four ResBlocks followed by a linear output head. This deep sequence is necessary to process the complex interactions captured within the unified representation. The ResBlock structure provides sufficient representational capacity to capture the nonlinear mapping from the fused embedding to the residual dwell-time estimates. Simultaneously, the skip connections prevent representational collapse and support gradient flow during the local fine-tuning phase. This gradient propagation ensures that the RSU shadow model converges rapidly without disrupting the active content delivery tasks: \begin{equation} \text{ResBlock}(\mathbf{x}) = \text{ReGLU}\!\left(W_2\, \text{LayerNorm}\!\left(\text{Dropout}\!\left(\text{ReGLU}(W_1\, \text{LayerNorm}(\mathbf{x}))\right)\right)\right) + \mathbf{x} \label{eq:resblock} \end{equation} where $W_1, W_2 \in \mathbb{R}^{2d \times d}$ expand the dimension for the ReGLU operation and the skip connection restores dimension $d$ after the gating halves the width. The neural network stream output is: \begin{equation} P_\text{NN} = W_\text{out}\, \text{ResBlock}_4\!\left(\cdots \text{ResBlock}_1\!\left(\text{LayerNorm}(W_p\, \text{Flatten}(\mathbf{H}))\right)\cdots\right) \label{eq:decoder} \end{equation} where $W_p \in \mathbb{R}^{d_\text{branch} \times 3d_\text{branch}}$ projects the flattened fusion output back to dimension $d_\text{branch}$, and $W_\text{out} \in \mathbb{R}^{2 \times d_\text{branch}}$ is the output head producing $P_\text{NN} \in \mathbb{R}^2$. The output values directly translate into the expected time intervals required by the V2I chunk scheduler. By directly regressing the target parameters, the decoder entirely bypasses the complex sampling operations found in generative sampling architectures. This structural simplification guarantees deterministic, low-latency execution at the network edge. Therefore, the RSU can instantly allocate bandwidth resources and schedule proactive data transfers before the requesting vehicle departs.
++where $\text{ML\_Pred}$ signifies the prior machine learning output and $\text{NN\_Pred}$ represents the deep neural network estimation.
++In this mathematical hybrid construct, the scaling coefficients $\alpha$ and $\beta$ serve as continuously learnable vector parameters autonomously optimized during progressive local backpropagation cycles at the individual network edges.
++By initializing the algorithmic configuration to rely heavily upon the decision tree prior, the system dynamically establishes a foundational stabilization anchor that aggressively prevents immediate model collapse.
++As the localized infrastructure continuously accumulates distinct intersection traffic patterns, this adaptive gating mechanism logically expands the respective neural parameters, fundamentally shielding the architecture against catastrophic forgetting during incremental online fine-tuning iterations.
++
++\subsection{Precaching Procedure Based on Inferred Dwell Time}
++\label{sec.prop.C}
++
++The calculated dwell-time estimates, $t_{cur, dw}$ and $t_{nxt, dw}$, serve as the primary foundational variables for scheduling the proactive caching execution.
++Based on the inferred value of $t_{cur, dw}$, the current serving RSU computes the absolute data volume it can transmit by evaluating the managed average communication bandwidth, denoted as $B_{avg}^{cur}$.
++To optimize localized cache storage and circumvent memory fragmentation resulting from variable packet sizing, the architecture mandates a fixed and uniform CCN chunk size, denoted as $S_{chunk}$.
++This constant chunk size ensures $O(1)$ algorithmic complexity for memory management while preventing packet segmentation errors caused by lower-layer transmission unit constraints.
++When calculating the deliverable chunk count, the system introduces an adaptive safety margin coefficient, denoted as $\eta$, to absorb transient wireless channel fluctuations.
++Rather than functioning as a static constant, this coefficient adapts to physical layer conditions via the formulation $\eta(t) = \alpha \cdot \bar{P}_{success}(t) - \beta \cdot f(\sigma_{channel}^2(t))$, where it processes the recent packet success rate and the measured signal-to-noise ratio variance.
++Consequently, the maximum number of chunks the current infrastructure can transmit is evaluated using the mathematical formula $N_{cur, chunk} = \lfloor \frac{\eta \cdot B_{avg}^{cur} \cdot t_{cur, dw}}{S_{chunk}} \rfloor$.
++
++By referencing the initial requested chunk index alongside the calculated $N_{cur, chunk}$ value, the current infrastructure determines the exact terminal chunk number that will complete transmission prior to vehicle departure.
++Following this deterministic derivation, the current RSU generates and transmits a specialized Precache Packet to the subsequent infrastructure node via the backhaul network.
++This strategic communication packet contains the target content identifier, the sequential starting index for the next data block, and the inferred subsequent residency duration $t_{nxt, dw}$.
++Upon intercepting this packet, the subsequent RSU utilizes the provided $t_{nxt, dw}$ value to independently compute its own predictable transmission capacity using the identical algebraic methodology.
++The subsequent RSU issues internal interest packets to proactively download the designated sequence of chunks from adjacent routers or the centralized core server in accordance with standard CCN routing protocols.
++To mathematically guarantee data freshness and prevent the exhaustion of pending interest tables during vehicle detours, the cached chunks are governed by a Time-To-Live eviction policy.
++This proactive expiration mechanism defends the edge storage infrastructure against systemic cache pollution.
++
++\subsection{Vehicle-Measured Dwell Time Ground Truth Reporting}
++\label{sec.prop.D}
++
++To guarantee the continuous optimization of the localized predictive models, the edge network mandates an operational feedback loop originating from the mobile clients.
++As the vehicle crosses the exit boundary of the current RSU, its onboard computing unit locally records the associated infrastructure identifier and the physically measured empirical residency time.
++Following standard network protocol, the vehicle periodically broadcasts interest packets to attempt continuous content retrieval from the infrastructure.
++Upon physically entering the communication range of the subsequent intersection, the vehicle transmits these interest packets to the new RSU, triggering a distinct and independent content provision process.
++This parallel operation initiates the feature collection sequence anew at the subsequent intersection independently of the prior data session.
++Simultaneously, the vehicular system activates an internal timer to measure the actual $t_{nxt, dw}$ duration while receiving the prefetched data chunks.
++Any segments that were not proactively cached due to estimation variance are requested and retrieved from neighboring nodes utilizing standard name-based resolution mechanisms.
++
++As the vehicle prepares to depart from the coverage zone of this subsequent RSU, it finalizes the aggregation of the true $t_{nxt, dw}$ duration.
++The onboard unit encapsulates the vehicle identifier, the target content identifier, the previously stored RSU identifier, and the two verified empirical dwell times into a dedicated Report Packet.
++The vehicle transmits this operational feedback packet to the currently associated infrastructure node over the active wireless interface.
++Upon packet reception, the active RSU evaluates the embedded infrastructure identifier; if the identifier does not match its own, the RSU routes the packet backward through the wired topology.
++When the originally serving RSU receives the forwarded Report Packet, it scans its internal PDT to match the relational keys associated with the original vehicle and content identifiers.
++The infrastructure node extracts the correlated input feature vector and combines it with the empirical time durations to generate a ground truth record.
++This annotated data structure is accumulated into the dedicated local dataset queue to facilitate subsequent supervised machine learning processes.
+ 
+-% ============================================================
+-\subsection{Dual-Model Asynchronous Update}
++\subsection{Dataset Training and Two-Track Model Operation Mechanism}
+ \label{sec.prop.E}
+-% ============================================================
+-
+-Rather than forcing the neural network to learn both sharp tabular splits and complex spatio-temporal interactions from scratch, H-ST-MBAN employs a residual prior learning approach via ensemble stacking. The GBDT Prior Stream processes the raw snapshot features using a fully-optimized XGBoost model. This tree-based ensemble captures the discontinuous, hard boundaries prevalent in vehicular tabular data. The integration of this prior stream reduces the burden on the deeper neural layers. The base prediction generated by this stream is denoted as $P_\text{XGB} = \text{XGBoost}(\mathbf{X}) \in \mathbb{R}^2$. The final prediction combines the tabular prior and the neural network residual using learnable scalar gates $\alpha, \beta \in \mathbb{R}^2$: \begin{equation} \hat{\mathbf{y}} = P_\text{XGB} \odot \alpha + P_\text{NN} \odot \beta \label{eq:fusion_gate} \end{equation} where $\alpha$ is initialized to $1.0$ and $\beta$ is initialized to $0.0$. This specific initialization mathematically guarantees that the H-ST-MBAN model begins training exactly at XGBoost's performance level. Over the course of training, gradient descent adjusts $\alpha$ and $\beta$ alongside the neural network parameters. This adaptive gating allows the deep learning branches to strictly improve upon the GBDT baseline by learning the spatio-temporal residual errors that XGBoost misses. Both dwell-time targets are regressed simultaneously under a shared loss, allowing the decoder to exploit correlated causal factors.
+ 
+-% ============================================================
++The continuous aggregation of these verified ground truth pairs governs the localized model adaptation under a two-track operation protocol designed to ensure zero service interruption.
++Depending on the current architectural state, the training process executes in either a centralized pre-training phase or an autonomous online fine-tuning phase.
++During the initial deployment phase, the active RSUs lack pre-trained neural parameters and accumulate the empirical data records into their localized storage queues.
++Once a sufficient volume of data accumulates, the infrastructure transmits these dense batches to a centralized cloud server, which aggregates the regional observations to execute global pre-training.
++Following the mathematical convergence of the global model, the central server distributes the identical optimized parameter weights back to every participating RSU.
++Upon receiving these initialized parameters, the edge nodes sever their training dependency on the central server and transition into an autonomous, localized operational state.
++This localized architecture eliminates continuous uplink training bottlenecks while reacting to specific intersection anomalies and localized concept drift phenomena.
+ 
+-Training minimizes the sum of per-output Huber losses:
+-\begin{equation}
+-\mathcal{L}_\delta(\mathbf{y}, \hat{\mathbf{y}}) = \sum_{i \in \{\text{cur},\,\text{nxt}\}} \ell_\delta(\tau_i,\, \hat{\tau}_i)
+-\label{eq:total_loss}
+-\end{equation}
+-\begin{equation}
+-\ell_\delta(y,\, \hat{y}) =
+-\begin{cases}
+-\dfrac{1}{2}(y - \hat{y})^2 & \text{if } |y - \hat{y}| \le \delta \\[6pt]
+-\delta\,|y - \hat{y}| - \dfrac{1}{2}\delta^2 & \text{otherwise}
+-\end{cases}
+-\label{eq:huber}
+-\end{equation}
+-with $\delta = 1.0$ fixed throughout all experiments.
+-The piecewise definition in Equation~(\ref{eq:huber}) provides MSE-like behavior in the normal operating range $|y - \hat{y}| \le \delta$, yielding smooth gradients during typical training steps, while growing linearly for residuals beyond $\delta$ so that outlier samples cannot dominate the gradient update.
+-In the snapshot-based CCVN setting, dwell-time outliers arise naturally from vehicles caught by extended red phases or anomalous queue build-up. These samples would inflate MSE gradients and bias the model toward worst-case scenarios.
+-Huber loss bounds their influence while preserving informative gradients for the majority of predictions.
+-A fixed $\delta = 1.0$ second corresponds to the typical per-step dwell-time measurement resolution in the SUMO simulation and was confirmed on a held-out validation split.
++To execute this continuous local adaptation without introducing latency into the active caching decisions, each RSU natively operates two independent model instances following a distinct ping-pong logic.
++The content provisioning and dwell-time inference exclusively rely on the active inference model, which utilizes the most recently optimized neural weights to process incoming client requests.
++Simultaneously, the background standby model monitors the localized dataset queue and initiates the parameter fine-tuning process the moment the accumulated records exceed the defined capacity threshold.
++When the background model successfully finalizes its localized gradient descent updates, the RSU executes a role exchange, promoting the updated model to handle all subsequent inference operations.
++The outdated inference model is permitted to conclude its final ongoing predictive calculations before being structurally demoted to the standby role.
++Upon demotion, the system flushes the processed dataset queue, allowing the newly assigned standby model to begin accumulating a fresh batch of physical observations for the subsequent optimization cycle.
++This uninterrupted alternation mechanism guarantees that predictive precaching operates continuously within urban communication networks.
+ 
++\n\section{Performance Evaluations}\label{sec:experiments}
+ % ============================================================
+ 
++\subsection{Experimental Setup}
++To validate the proposed H-ST-MBAN architecture, we construct a microscopic traffic environment utilizing the Simulation of Urban MObility (SUMO) framework. The CCVN environment is explicitly modeled around complex multi-lane intersection topologies, utilizing the Desk02 and Desk01 urban road network layouts to capture realistic vehicle trajectories. Within this simulation, vehicles are governed by advanced car-following and lane-changing models that replicate real-world human driving behaviors, including acceleration, deceleration, and lane-merging dynamics. The intersection traffic signals operate on fixed periodic cycles, with the total signal phase duration $T_\text{sig}$ set to 90 seconds and individual phase transitions $T_\text{phase}$ occurring every 30 seconds. To emulate a wide spectrum of congestion states, the simulations inject vehicles at varying generation rates, resulting in traffic densities that span continuously from sparse conditions at 5 veh/km/lane to heavily congested scenarios reaching 25 veh/km/lane.
+ 
++The networking layer of the simulation implements specific communication parameters to govern the V2I interactions. Each RSU is positioned at the geometric center of major intersections and provides a fixed omnidirectional communication coverage radius of 800 meters. Consecutive RSUs are deployed at an inter-RSU spacing of 2,400 meters, intentionally creating an 800-meter shadow region between adjacent coverage zones where no V2I signal is available. This topology forces the proactive caching scheduler to perfectly time its content delivery before the vehicle enters the dead zone. The V2I links are modeled with standard vehicular networking bandwidth constraints, where packet delivery success rates and channel signal-to-noise ratios fluctuate based on instantaneous vehicle density and physical distance to the RSU antenna. These strict communication parameters ensure that the predictive models are evaluated under realistic bandwidth constraints and edge-caching deadlines.
+ 
++To execute the computational aspects of the framework, we utilize a heterogeneous hardware environment that separates global pre-training from local fine-tuning. The initial global pre-training phase is conducted on a high-performance centralized workstation equipped with an Intel Core i9-10900X CPU, 128 GB of DDR4 RAM, and four NVIDIA GeForce RTX 3090 GPUs. This massive computational capacity allows the core server to rapidly process the aggregated global dataset and establish the initial prior weights for the neural network. Conversely, the local fine-tuning phase is simulated under the strict resource constraints typical of standard RSU edge hardware. The edge nodes operate with limited thermal and electrical budgets, restricting peak memory consumption to under 50 MB and requiring fast execution times to prevent inference bottlenecks. This dual-tier hardware configuration accurately reflects the practical deployment constraints of modern intelligent transportation systems.
+ 
+-% ============================================================
+-\section{Experiments and Results}\label{sec:experiments}
+-% ============================================================
++The underlying dataset comprises over 600,000 independent snapshot samples collected systematically across various target intersections, including nodes N8, N14, N21, and N35. Each snapshot encapsulates a 30-dimensional feature vector containing kinematic, traffic control, and social density variables captured at the exact moment a content request is issued. To ensure rigorous model evaluation and prevent temporal data leakage, the dataset is partitioned using a strict chronological split strategy. Specifically, 70\% of the earliest temporal data is allocated for training, 15\% for validation, and the final 15\% is reserved for testing. Standard scaling is applied exclusively using the statistics derived from the training set to prevent any forward-looking bias during the validation and testing phases.
++
++\subsection{Baseline Models}
++To rigorously evaluate the predictive performance of H-ST-MBAN, we benchmark the proposed architecture against four mobility prediction baselines. First, we compare against a Conditional Variational Autoencoder (ST-CVAE) augmented with posterior information, which handles spatial-temporal uncertainty by learning a probabilistic latent space to generate multimodal future paths \cite{32}. Second, we incorporate a Time-Frequency Wavelet Transformer model designed to capture both time and frequency domain features through attention mechanisms, serving as a sequence-based long-term forecaster \cite{33}. Third, we evaluate a Gated Recurrent Unit (GRU) neural network, which efficiently processes sequential movement data and temporal dependencies while maintaining lower computational overhead than traditional recurrent architectures \cite{34}. Fourth, we include a fundamental Long Short-Term Memory (LSTM) framework that learns historical motion states and environmental cues to simultaneously forecast future positions and driver intentions \cite{35}. These representative models span generative, attention-based, and recurrent sequence paradigms, providing an evaluation baseline for assessing the real-time deterministic regression capabilities of H-ST-MBAN.
+ 
+-We evaluate the proposed H-ST-MBAN architecture using microscopic vehicular mobility data generated from SUMO. The CCVN environment is modeled around complex multi-lane intersections, such as the Desk02 dataset, capturing realistic traffic light phases, vehicle kinematics, and social density interactions. The global dataset consists of over 120,000 snapshot samples collected under varying traffic densities spanning from 5 to 25~\text{veh/km/lane}. This large-scale mobility data emulates the diverse communication scenarios encountered in urban V2I deployments. These simulations allow us to evaluate the predictive stability required for edge caching operations. \subsection{G1: Learning Curves} We structure our evaluation through a logical sequence of seven distinct graphs, represented by G1 to G7, analyzing model convergence, component contributions, prediction accuracy, edge deployment feasibility, and downstream proactive caching performance. To evaluate training convergence, we benchmark H-ST-MBAN against twelve representative models, including linear and tree-based ensembles, traditional time-series models, standard deep learning baselines, and advanced deep tabular models.
++\subsection{Learning Curves} We structure our evaluation through a logical sequence of seven distinct graphs, analyzing model convergence, component contributions, prediction accuracy, edge deployment feasibility, and downstream proactive caching performance. To evaluate training convergence, we benchmark H-ST-MBAN against twelve representative models, including linear and tree-based ensembles, traditional time-series models, standard deep learning baselines, and advanced deep tabular models.
+ Figure~\ref{fig:G1} presents the learning curves. For a fair comparison, the machine learning iterations, such as boosting rounds, were scaled and converted to align with the epoch-based deep learning curves on the x-axis. The curves demonstrate that H-ST-MBAN converges more smoothly and achieves a lower loss compared to the baseline approaches.
+ 
+ \begin{figure}[!t]
+ \centering
+ \includegraphics[width=\columnwidth]{figure/G1_learning_curves.png}
+-\caption{G1 (Learning Curves): Convergence of H-ST-MBAN compared to baseline models. ML model iterations are aligned with DL epochs for a fair comparison.}
++\caption{Convergence of H-ST-MBAN compared to baseline models. ML model iterations are aligned with DL epochs for a fair comparison.}
+ \label{fig:G1}
+ \end{figure}
+ 
+-\subsection{G2: Ablation Study}
++\subsection{Ablation Study}
+ To evaluate the contribution of the proposed architecture, we conducted an ablation study by modifying the H-ST-MBAN components.
+-As illustrated in Figure~\ref{fig:G2}, we evaluate three degraded variants: 1) \textit{w/o Attn}, which replaces the multi-head self-attention mechanism with simple concatenation; 2) \textit{w/o XGB}, which relies solely on the neural network stream by omitting the GBDT prior; and 3) \textit{Early Fusion}, which concatenates features before encoding instead of using the independent branch structure. This component breakdown isolates the individual contribution of each architectural feature. The results show that the \textit{w/o XGB} variant suffers a significant performance drop, confirming the necessity of integrating the tabular prior to handle decision boundaries that the neural network struggles to learn alone. The \textit{Early Fusion} variant also exhibits higher error, indicating that the heterogeneous nature of vehicular data benefits from semantic branching to prevent gradient conflicts during encoding. Finally, removing the attention layer in \textit{w/o Attn} degrades convergence and increases error, showing that multi-head self-attention routes the relevant bottleneck features depending on the specific intersection context. The full H-ST-MBAN model achieves the lowest error and fastest convergence. This collective behavior confirms the powerful synergy between gradient-boosted tabular priors and neural representation learning, where the GBDT stream establishes baseline decisions and the multi-branch neural network stream refines spatio-temporal details.
++As illustrated in Figure~\ref{fig:G2}, we evaluate three degraded variants to isolate the individual contribution of each architectural feature. The \textit{w/o Attn} variant replaces the MHA mechanism with simple concatenation. The \textit{w/o XGB} variant relies solely on the neural network stream by omitting the GBDT prior. The \textit{Early Fusion} variant concatenates features before encoding instead of using the independent branch structure. The results show that the \textit{w/o XGB} variant suffers a significant performance drop, confirming the necessity of integrating the tabular prior to handle decision boundaries that the neural network struggles to learn alone. The \textit{Early Fusion} variant also exhibits higher error, indicating that the heterogeneous nature of vehicular data benefits from semantic branching to prevent gradient conflicts during encoding. Finally, removing the attention layer in \textit{w/o Attn} degrades convergence and increases error, showing that MHA routes the relevant bottleneck features depending on the specific intersection context. The full H-ST-MBAN model achieves the lowest error and fastest convergence. This collective behavior confirms the powerful synergy between gradient-boosted tabular priors and neural representation learning, where the GBDT stream establishes baseline decisions and the multi-branch neural network stream refines spatio-temporal details.
+ 
+ \begin{figure}[!t]
+ \centering
+ \includegraphics[width=\columnwidth]{figure/G2_ablation_study.png}
+-\caption{G2 (Ablation Study): Performance of H-ST-MBAN compared to w/o Attn, w/o XGB, and Early Fusion variants.}
++\caption{Performance of H-ST-MBAN compared to w/o Attn, w/o XGB, and Early Fusion variants.}
+ \label{fig:G2}
+ \end{figure}
+ 
+-\subsection{G3: Prediction Accuracy}
+-Table~\ref{tab:accuracy} summarizes the global prediction performance.
++\subsection{Prediction Accuracy}
++Table~\ref{tab:accuracy} summarizes the global prediction performance, evaluated using Mean Absolute Error (MAE), Root Mean Square Error (RMSE), and Mean Absolute Percentage Error (MAPE).
+ H-ST-MBAN yields an MAE of 44.32~s, improving upon the second-best baseline, ResNet, which yields an MAE of 47.10~s. Traditional sequential models, namely LSTM and GRU, show higher error, exhibiting higher MAEs of 96.90~s and 101.75~s, respectively, which may be attributed to the difficulty of inferring temporal dynamics from a single event-driven snapshot.
+ The reduction in MAE achieved by H-ST-MBAN compared to ResNet is primarily due to the incorporation of the gradient boosting tabular prior stream, which models sharp decision boundaries.
+ In contrast, pure deep neural network structures struggle to learn these non-linear tabular divisions from unstructured variables.
+@@ -545,12 +432,12 @@
+ 
+ Figure~\ref{fig:G3} visualizes the True vs. Predicted dwell times for both current and next targets.
+ In these plots, H-ST-MBAN demonstrates tighter clustering along the identity line, indicating stability against outliers that typically disrupt V2I schedules.
+-The prediction for the next RSU dwell time ($\hat{\tau}_\text{nxt}$) shows slightly more variance and error than the current RSU dwell time ($\hat{\tau}_\text{cur}$). This variance is physically intuitive because downstream traffic conditions at the next intersection are subject to additional random perturbations during the inter-RSU traversal interval. Despite this inherent uncertainty, the proposed design maintains a tight error boundary, confirming the benefit of incorporating multi-intersection social features.
++The prediction for the next RSU dwell time, $\hat{\tau}_{\text{nxt}}$, shows slightly more variance and error than the current RSU dwell time, $\hat{\tau}_{\text{cur}}$. This variance is physically intuitive because downstream traffic conditions at the next intersection are subject to additional random perturbations during the inter-RSU traversal interval. Despite this inherent uncertainty, the proposed design maintains a tight error boundary, confirming the benefit of incorporating multi-intersection social features.
+ This occurs because predicting further into the future involves a more complex spatial-temporal space, particularly since the vehicle can branch into one of four possible next RSUs at the upcoming intersection.
+ To address this spatial-temporal uncertainty, the caching scheduler can implement a dynamic correction factor that adjusts prefetching thresholds based on branching probabilities.
+ This compensation mechanism mitigates the impact of estimation variance on subsequent roadside edge cache hit rates.
+ 
+-\begin{table*}[!t]
++\begin{table}[!t]
+ \centering
+ \caption{Global Prediction Accuracy Across 13 Models. H-ST-MBAN achieves the lowest MAE and RMSE.}
+ \label{tab:accuracy}
+@@ -573,26 +460,29 @@
+ NGBoost & 109.18 & 199.09 & 76.12 & 0.3318 \\
+ \bottomrule
+ \end{tabular}
+-\end{table*}
++\end{table}
+ 
+ \begin{figure}[!t]
+ \centering
+ \includegraphics[width=0.48\columnwidth]{figure/G3-1_pred_vs_true_cur.png}
+ \hfill
+ \includegraphics[width=0.48\columnwidth]{figure/G3-2_pred_vs_true_nxt.png}
+-\caption{G3 (Prediction Accuracy): Scatter plots of True vs. Predicted Dwell Time for current target ($\hat{\tau}_\text{cur}$, left) and next target ($\hat{\tau}_\text{nxt}$, right).}
++\caption{Scatter plots of True vs. Predicted Dwell Time for current target ($\hat{\tau}_{\text{cur}}$, left) and next target ($\hat{\tau}_{\text{nxt}}$, right).}
+ \label{fig:G3}
+ \end{figure}
+ 
+-\subsection{G4: Optimal Queue Size Analysis}
++\subsection{Optimal Queue Size Analysis}
+ The global pre-training phase is executed on a high-performance workstation equipped with an Intel Core i9-10900X CPU, 128 GB of RAM, and four NVIDIA GeForce RTX 3090 GPUs, while the local fine-tuning phase must be viable on resource-constrained RSU edge hardware.
+ To evaluate edge feasibility, we analyze the computational complexity of the model and its memory footprint.
+ In dynamic vehicular environments, edge computing boards operate under strict thermal and electrical constraints, which limits the deployment of oversized deep learning parameters.
+ Moreover, because dwell-time prediction must be completed within milliseconds of a request packet arrival, memory access latency must be minimized to avoid buffering bottlenecks.
+ These edge constraints necessitate lightweight models that do not exceed local computing bounds while maintaining accuracy.
+-Specifically, empirical measurements during the first round of local fine-tuning demonstrate a total training time of 1.93 seconds and a peak memory consumption of 47.69 MB.
+-This lightweight resource requirement fits within the thermal and electrical limits of typical RSU hardware units.
+-Thus, real-time localized adaptation is computationally feasible under dynamic vehicular edge environments.
++Specifically, as detailed in Table~\ref{tab:complexity}, the empirical measurements of the proposed H-ST-MBAN architecture exhibit optimized computational complexity tailored for edge deployment.
++Considering the general hardware computing specifications of contemporary roadside units, which typically feature low-power embedded processors and constrained RAM capacities, the model maintains a storage footprint of 5.32~MB.
++Furthermore, the total parameter count is restricted to 1.385 million, ensuring that the learnable weights are retained within the local memory cache without triggering excessive paging.
++During the localized adaptation phase, the peak memory utilization is contained at 47.69~MB, and the fine-tuning execution is completed in 1.93 seconds per update cycle.
++These physical characteristics allow the proposed model to operate on standard RSU hardware without imposing detrimental computational overhead or inducing thermal bottlenecks.
++Consequently, the predictive framework executes both instantaneous dwell-time inference and periodic local fine-tuning without disrupting the primary communication and caching operations of the edge router.
+ 
+ As shown in Figure~\ref{fig:G4-1} and Figure~\ref{fig:G4-2}, we analyze the trade-off between the fine-tuning queue size and local prediction stability. A queue size of 5000 is chosen as the optimal operating parameter based on three analytical justifications. First, this value represents the knee of the curve regarding cost-effectiveness, where the marginal gain in stability, which represents a variance reduction, drops when scaling past 5000. Second, to ensure statistical confidence, the MAE standard deviation, represented by SEM, is below 1.0, yielding approximately 0.29~s, at $Q=5000$, preventing erratic model updates. Third, this configuration provides an adequate ITS SLA margin. According to ITS recommended standards, caching and model updates should occur every 15--60 minutes \cite{31}. Accumulating a queue of 5000 snapshots takes approximately 43 minutes, placing the update frequency in the middle of this 15--60 minutes ITS standard interval and providing a safety buffer against varying traffic density.
+ 
+@@ -627,8 +517,8 @@
+ \end{tabular}
+ \end{table}
+ 
+-\subsection{G5: Online Fine-Tuning Performance}
+-Figure~\ref{fig:G5} and Table~\ref{tab:finetune_accuracy} present the online fine-tuning performance. As quantitatively summarized in Table~\ref{tab:finetune_accuracy}, H-ST-MBAN achieves the lowest average MAE of 20.33~\text{s}, outperforming all baseline models including the FTT model, which records 40.62~\text{s}. In addition, the MAE progression in Figure~\ref{fig:G5} visually demonstrates H-ST-MBAN's performance over the ML/NN baselines by preventing catastrophic forgetting. The proposed dual-model fine-tuning mechanism updates the local weights, maintaining a low error rate across continuous operation. In contrast, baseline models that lack this localized adaptation experience higher error over time as they fail to adapt to evolving traffic patterns. This performance advantage highlights the robustness of combining GBDT-based boundary partition with deep temporal feature learning during online adaptation.
++\subsection{Online Fine-Tuning Performance}
++Figure~\ref{fig:G5} and Table~\ref{tab:finetune_accuracy} present the online fine-tuning performance. As quantitatively summarized in Table~\ref{tab:finetune_accuracy}, H-ST-MBAN achieves the lowest average MAE of 20.33~\text{s}, outperforming all baseline models including the FTT model, which records 40.62~\text{s}. In addition, the MAE progression in Figure~\ref{fig:G5} visually demonstrates H-ST-MBAN's performance over the ML/NN baselines by preventing catastrophic forgetting. The proposed dual-model fine-tuning mechanism updates the local weights, maintaining a low error rate across continuous operation. In contrast, baseline models that lack this localized adaptation experience higher error over time as they fail to adapt to evolving traffic patterns. This performance advantage highlights the stability of combining GBDT-based boundary partition with deep temporal feature learning during online adaptation.
+ 
+ Specifically, Table~\ref{tab:finetune_accuracy} shows that H-ST-MBAN reduces its prediction error from a Global MAE of 58.39~s to a Final MAE of 17.58~s after fine-tuning. This improvement is accompanied by a low standard deviation of 4.12~s, indicating that the local adaptation process is highly stable. In contrast, standard deep learning baselines such as MLP, ResNet, and TabR exhibit severe performance degradation during the local fine-tuning phase. Due to local overfitting and gradient instability under resource-constrained conditions, their Average MAEs escalate beyond 100~s, reaching 100.91~s, 103.58~s, and 106.38~s for MLP, ResNet, and TabR, respectively. Similarly, their standard deviations soar past 20~s, yielding 21.04~s, 23.86~s, and 26.74~s. This numerical contrast reveals that these baseline architectures suffer from weight spiking and highly volatile optimization trajectories when updated with local edge queues. As a result, H-ST-MBAN maintains predictive reliability under dynamic traffic environments, whereas conventional neural network models fail to adapt. Meanwhile, traditional sequential baselines such as LSTM maintain a relatively stable error, yielding an Average MAE of 52.06~s, yet fail to approach the performance of H-ST-MBAN.
+ 
+@@ -638,14 +528,14 @@
+ 
+ To overcome these vulnerabilities and stabilize the parameter update path, four corresponding mitigation strategies are required, which are structurally addressed by the H-ST-MBAN architecture. First, parameter-efficient fine-tuning or localized training of gating layers minimizes parameter drift, a mechanism realized by the gating fusion structure in H-ST-MBAN to control neural network weight variations. Second, global weight anchoring restricts the deviation between the local parameters and the globally pre-trained model weights. Third, applying a cosine annealing learning rate scheduler and enhanced weight decay prevents abrupt weight updates under noisy inputs. Fourth, the RSU utilizes a steady-state filtering pre-processor to sanitize the local queue before initiating gradient calculations. Once the fine-tuning iteration completes, the RSU computes the estimated vehicle dwell duration and transmits this value to the prefetching scheduler to configure the edge cache.
+ 
+-\begin{figure*}[!t]
++\begin{figure}[!t]
+ \centering
+-\includegraphics[width=\textwidth]{figure/G5_baseline_comparison.png}
++\includegraphics[width=\columnwidth]{figure/G5_baseline_comparison.png}
+ \caption{Cumulative validation MAE comparison of H-ST-MBAN against 12 ML/NN baselines under the optimal queue size Q=5000.}
+ \label{fig:G5}
+-\end{figure*}
++\end{figure}
+ 
+-\begin{table}[!t]
++\begin{table*}[!t]
+ \centering
+ \caption{Average MAE During Online Fine-Tuning (12 Rounds). H-ST-MBAN avoids catastrophic forgetting and achieves the lowest average MAE.}
+ \label{tab:finetune_accuracy}
+@@ -668,33 +558,33 @@
+ TabR & 56.69 & 90.64 & 106.38 $\pm$ 26.74 \\
+ \bottomrule
+ \end{tabular}
+-\end{table}
++\end{table*}
+ 
+-\subsection{G6: Cache Hit Ratio and Delay}
++\subsection{Cache Hit Ratio and Delay}
+ Figure~\ref{fig:G6} presents the average cache performance metrics. The results indicate that H-ST-MBAN achieves an average cache hit ratio of 90.70\% alongside a low average access delay of 0.1196~\text{s} and reduced wasted traffic of 17.70~\text{MB}, demonstrating competitive precaching performance compared to the 12 baseline models, which span traditional machine learning, standard deep learning, and advanced tabular models. This performance advantage stems from the model's ability to accurately predict vehicle dwell times, allowing roadside units to proactively cache content with high precision. By improving the accuracy of cache placement, the proposed approach reduces both the latency experienced by end users and the redundant network traffic caused by incorrectly cached data. On the other hand, the baseline models show lower hit ratios and increased latency, highlighting the critical importance of reliable dwell time prediction for edge caching systems. This reduction in wasted traffic is particularly valuable when backhaul capacity is leased or bandwidth-constrained, as it directly translates to lower operational costs.
+ 
+ \begin{figure*}[!t]
+ \centering
+ \includegraphics[width=\textwidth]{figure/G6_cache_metrics_avg.png}
+-\caption{G6 (Average Cache Performance Metrics): Cache hit ratio, access delay, and wasted traffic comparing H-ST-MBAN against 12 baseline models.}
++\caption{Cache hit ratio, access delay, and wasted traffic comparing H-ST-MBAN against 12 baseline models.}
+ \label{fig:G6}
+ \end{figure*}
+ 
+-\subsection{G7: Cache Metrics by Vehicle Density}
+-Figure~\ref{fig:G7} illustrates the impact of varying vehicle densities on cache performance. Specifically, in the high-density traffic interval of $(22.5, 25.0]~\text{veh/km/lane}$, H-ST-MBAN maintains a cache hit ratio of 91.64\% and low access latency, which demonstrates its operational stability. Conversely, the baseline models experience performance degradation under similar conditions. This decline in baseline performance is primarily due to their inability to capture the increasingly complex spatial queuing dynamics and inter-vehicle interactions inherent in dense traffic. The sustained efficiency of H-ST-MBAN highlights the performance of its hybrid spatio-temporal design in managing intricate congestion patterns without sacrificing predictive accuracy. This stable caching performance under high vehicle densities confirms that the network can maintain service quality even during peak traffic hours.
++\subsection{Cache Metrics by Vehicle Density}
++Figure~\ref{fig:G7} illustrates the impact of varying vehicle densities on cache performance. Specifically, in the high-density traffic interval of $(22.5, 25.0]~\text{veh/km/lane}$, H-ST-MBAN maintains a cache hit ratio of 91.64\% and low access latency, which demonstrates its operational stability. Conversely, the baseline models experience performance degradation under similar conditions. This decline in baseline performance is primarily due to their inability to capture the increasingly complex spatial queuing dynamics and inter-vehicle interactions inherent in dense traffic. The sustained efficiency of H-ST-MBAN highlights the performance of its hybrid spatio-temporal design in managing complex congestion patterns without sacrificing predictive accuracy. This stable caching performance under high vehicle densities confirms that the network can maintain service quality even during peak traffic hours.
+ 
+ \begin{figure*}[!t]
+ \centering
+ \includegraphics[width=\textwidth]{figure/G7_cache_metrics_density.png}
+-\caption{G7 (Cache Metrics by Vehicle Density): Cache performance under varying vehicle densities, demonstrating the stability of H-ST-MBAN against complex spatial queuing dynamics.}
++\caption{Cache performance under varying vehicle densities, demonstrating the stability of H-ST-MBAN against complex spatial queuing dynamics.}
+ \label{fig:G7}
+ \end{figure*}
+ % ============================================================
+ \section{Conclusion}\label{sec:conclusion}
+ % ============================================================
+-In this paper, we proposed H-ST-MBAN, a deterministic regression model for dwell-time prediction in Content-Centric Vehicular Networks.
++In this paper, we proposed H-ST-MBAN, a deterministic regression model for dwell-time prediction in CCVNs.
+ To overcome complex traffic patterns and localized inference latency, H-ST-MBAN adopts a hybrid residual regression architecture.
+-By establishing a highly accurate XGBoost base prediction and learning the spatio-temporal residual errors through semantically partitioned branch encoders fused via multi-head self-attention, H-ST-MBAN captures complex traffic dynamics without high computational overhead.
++By establishing a highly accurate XGBoost base prediction and learning the spatio-temporal residual errors through semantically partitioned branch encoders fused via MHA, H-ST-MBAN captures complex traffic dynamics without high computational overhead.
+ Evaluations using the SUMO traffic simulator indicated that H-ST-MBAN achieves the lowest prediction error compared to 12 baseline models.
+ Ablation studies showed that the GBDT prior stream, multi-branch attention structure, and deep residual decoder all contribute to maintaining prediction accuracy and ensuring fast convergence. Ultimately, the integration of physical traffic constraints with non-linear neural mapping establishes a new methodology for decentralized edge intelligence in future intelligent transportation systems.
+ 
+@@ -716,109 +606,114 @@
+ \bibliographystyle{IEEEtran}
+ % ============================================================
+ 
+-\begin{thebibliography}{31}
+-
+-%% ========================================================================
+-%% IEEE Transactions Style Bibliography
+-%% Generated for: paper1 - H-ST-MBAN for CCVN V2I Precaching
+-%% Target Journal: IEEE Internet of Things Journal
+-%% ========================================================================
+-
+-
+-%% ********** Related Work — CIoV and Content-Centric Networking **********
+-
++\begin{thebibliography}{99}
+ \bibitem{1}
+-Zhou Su, Yilong Hui, Qing Yang, ``The Next Generation Vehicular Networks: A Content-Centric Framework,'' \textit{IEEE wireless communications}, 2017, doi: 10.1109/MWC.2017.1600195WC.
++Zhou Su, Yilong Hui, and Qing Yang, ``The Next Generation Vehicular Networks: A Content-Centric Framework,'' \emph{IEEE Wireless Communications}, vol. 24, no. 1, pp. 60--66, 2017, doi: 10.1109/MWC.2017.1600195WC.
+ 
+ \bibitem{2}
+-M. Wang, Jun Wu, Gaolei Li, Jianhua Li, Qiang Li..., ``Toward mobility support for information-centric IoV in smart city using fog computing,'' \textit{2017 IEEE International Conference on Smart Energy Grid Engineering (SEGE)}, 2017, doi: 10.1109/SEGE.2017.8052825.
++Meng Wang, Jun Wu, Gaolei Li, Jianhua Li, Qiang Li, and Shen Wang, ``Toward mobility support for information-centric IoV in smart city using fog computing,'' \emph{2017 IEEE International Conference on Smart Energy Grid Engineering (SEGE)}, Oshawa, ON, Canada, pp. 357--361, 2017, doi: 10.1109/SEGE.2017.8052825.
+ 
+ \bibitem{3}
+-Youngju Nam, Hyeonseok Choi, Euisin Lee, ``Content Storage Management and Precaching Scheme in Content-Centric-Network-Based Internet of Vehicles,'' \textit{IEEE Internet of Things Journal}, 2025, doi: 10.1109/JIOT.2024.3522322.
++Youngju Nam, Hyeonseok Choi, and Euisin Lee, ``Content Storage Management and Precaching Scheme in Content-Centric-Network-Based Internet of Vehicles,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 9, pp. 12927--12947, 2025, doi: 10.1109/JIOT.2024.3522322.
+ 
+ \bibitem{4}
+-Zhou Su, Yilong Hui, Qichao Xu, Tingting Yang, Jianyi Liu..., ``An Edge Caching Scheme to Distribute Content in Vehicular Networks,'' \textit{IEEE Transactions on Vehicular Technology}, 2018, doi: 10.1109/TVT.2018.2824345.
++Zhou Su, Yilong Hui, Qichao Xu, Tingting Yang, Jianyi Liu, and Yunjian Jia, ``An Edge Caching Scheme to Distribute Content in Vehicular Networks,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 67, no. 6, pp. 5346--5356, 2018, doi: 10.1109/TVT.2018.2824345.
+ 
+ \bibitem{5}
+-Wanying Huang, Tian Song, Yating Yang, Yu Zhang, ``Cluster-Based Cooperative Caching With Mobility Prediction in Vehicular Named Data Networking,'' \textit{IEEE Access}, 2019, doi: 10.1109/ACCESS.2019.2897747.
++Wanying Huang, Tian Song, Yating Yang, and Yu Zhang, ``Cluster-Based Cooperative Caching With Mobility Prediction in Vehicular Named Data Networking,'' \emph{IEEE Access}, vol. 7, pp. 23442--23458, 2019, doi: 10.1109/ACCESS.2019.2897747.
+ 
+ \bibitem{6}
+-Biqian Feng, Chenyuan Feng, Daquan Feng, Yongpeng Wu, Xianggen Xia, ``Proactive Content Caching Scheme in Urban Vehicular Networks,'' \textit{IEEE Transactions on Communications}, 2023, doi: 10.1109/TCOMM.2023.3277530.
++Biqian Feng, Chenyuan Feng, Daquan Feng, Yongpeng Wu, and Xiang-Gen Xia, ``Proactive Content Caching Scheme in Urban Vehicular Networks,'' \emph{IEEE Transactions on Communications}, vol. 71, no. 7, pp. 4165--4180, 2023, doi: 10.1109/TCOMM.2023.3277530.
+ 
+ \bibitem{7}
+-Chenglong Wang, Jun Peng, Lin Cai, Weirong Liu, Ziyu Zhao..., ``Mobility and Context-Aware Precaching Strategy Using Spatial-Temporal Informer for Vehicular Service,'' \textit{IEEE Internet of Things Journal}, 2025, doi: 10.1109/JIOT.2025.3530699.
++Chenglong Wang, Jun Peng, Lin Cai, Weirong Liu, Ziyu Zhao, Hu He, and Zhiwu Huang, ``Mobility and Context-Aware Precaching Strategy Using Spatial-Temporal Informer for Vehicular Service,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 11, pp. 16053--16066, 2025, doi: 10.1109/JIOT.2025.3530699.
+ 
+ \bibitem{8}
+-Liang Xu, Kaitao Meng, Deshi Li, Rui Wang, Lele Cong, ``Adaptive Video Segment Precaching With Varying Travel Duration for Internet of Vehicles,'' \textit{IEEE Internet of Things Journal}, 2025, doi: 10.1109/JIOT.2025.3587768.
++Liang Xu, Kaitao Meng, Deshi Li, Rui Wang, and Lele Cong, ``Adaptive Video Segment Pre-Caching With Varying Travel Duration for Internet of Vehicles,'' \emph{IEEE Internet of Things Journal}, 2025, doi: 10.1109/JIOT.2025.3587768.
+ 
+ \bibitem{9}
+-Jinguo Cheng, Ke Li, Yuxuan Liang, Lijun Sun, Junchi Yan..., ``Rethinking Urban Mobility Prediction: A Multivariate Time Series Forecasting Approach,'' \textit{IEEE transactions on intelligent transportation systems (Print)}, 2025, doi: 10.1109/TITS.2024.3498054.
++Jinguo Cheng, Ke Li, Yuxuan Liang, Lijun Sun, Junchi Yan, and Yuankai Wu, ``Rethinking Urban Mobility Prediction: A Multivariate Time Series Forecasting Approach,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 2, pp. 2543--2557, 2025, doi: 10.1109/TITS.2024.3498054.
+ 
+ \bibitem{10}
+-Genghua Yu, Jian Wu, Rui Liu, Yixin He, Zhigang Chen..., ``Joint Cooperative Caching and UAV Trajectory Optimization Based on Mobility Prediction in the Internet of Connected Vehicles,'' \textit{IEEE transactions on intelligent transportation systems (Print)}, 2024, doi: 10.1109/TITS.2024.3429305.
++Genghua Yu, Jian Wu, Rui Liu, Yixin He, Zhigang Chen, and Jianping Pan, ``Joint Cooperative Caching and UAV Trajectory Optimization Based on Mobility Prediction in the Internet of Connected Vehicles,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 11, pp. 17392--17406, 2024, doi: 10.1109/TITS.2024.3429305.
+ 
+ \bibitem{11}
+-Nyothiri Aung, Sahraoui Dhelim, L. Chen, Abderrahmane Lakas, Wenyin Zhang..., ``VeSoNet: Traffic-Aware Content Caching for Vehicular Social Networks Using Deep Reinforcement Learning,'' \textit{IEEE transactions on intelligent transportation systems (Print)}, 2023, doi: 10.1109/TITS.2023.3250320.
++Nyothiri Aung, Sahraoui Dhelim, Liming Chen, Abderrahmane Lakas, Wenyin Zhang, Huansheng Ning, Souleyman Chaib, and Mohand Tahar Kechadi, ``VeSoNet: Traffic-Aware Content Caching for Vehicular Social Networks Using Deep Reinforcement Learning,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 24, no. 8, pp. 8638--8649, 2023, doi: 10.1109/TITS.2023.3250320.
+ 
+ \bibitem{12}
+-Kai Jiang, Yue Cao, Yujie Song, Huan Zhou, Shaohua Wan..., ``Asynchronous Federated and Reinforcement Learning for Mobility-Aware Edge Caching in IoV,'' \textit{IEEE Internet of Things Journal}, 2024, doi: 10.1109/JIOT.2023.3349255.
++Kai Jiang, Yue Cao, Yujie Song, Huan Zhou, Shaohua Wan, and Xu Zhang, ``Asynchronous Federated and Reinforcement Learning for Mobility-Aware Edge Caching in IoV,'' \emph{IEEE Internet of Things Journal}, vol. 11, no. 9, pp. 15334--15347, 2024, doi: 10.1109/JIOT.2023.3349255.
+ 
+ \bibitem{13}
+-Zhoufan Liao, Pang Liu, Bin Zheng, Xiaoyong Tang, ``Context-Aware Proactive Edge Caching for Vehicular Edge Computing Based on Asynchronous Federated Learning,'' \textit{IEEE Internet of Things Journal}, 2025, doi: 10.1109/JIOT.2025.3552682.
++Zhuofan Liao, Pang Liu, Bin Zheng, and XiaoYong Tang, ``Context-Aware Proactive Edge Caching for Vehicular Edge Computing Based on Asynchronous Federated Learning,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 13, pp. 23195--23206, 2025, doi: 10.1109/JIOT.2025.3552682.
+ 
+ \bibitem{14}
+-Xinran Zhang, Zheng Chang, T. Hu, Weilong Chen, Xin Zhang..., ``Vehicle Selection and Resource Allocation for Federated Learning-Assisted Vehicular Network,'' \textit{IEEE Transactions on Mobile Computing}, 2024, doi: 10.1109/TMC.2023.3283295.
++Xinran Zhang, Zheng Chang, Tao Hu, Weilong Chen, Xin Zhang, and Geyong Min, ``Vehicle Selection and Resource Allocation for Federated Learning-Assisted Vehicular Network,'' \emph{IEEE Transactions on Mobile Computing}, vol. 23, no. 5, pp. 3817--3829, 2024, doi: 10.1109/TMC.2023.3283295.
+ 
+ \bibitem{15}
+-R. Liu, Jianping Pan, ``CRS: A Privacy-Preserving Two-Layered Distributed Machine Learning Framework for IoV,'' \textit{IEEE Internet of Things Journal}, 2024, doi: 10.1109/JIOT.2023.3287799.
++Rui Liu and Jianping Pan, ``CRS: A Privacy-Preserving Two-Layered Distributed Machine Learning Framework for IoV,'' \emph{IEEE Internet of Things Journal}, vol. 11, no. 1, pp. 1080--1095, 2024, doi: 10.1109/JIOT.2023.3287799.
+ 
+ \bibitem{16}
+-Zhuo Li, Yutong Chen, Deliang Liu, Xiang Li, ``Performance analysis for an enhanced architecture of IoV via Content-Centric Networking,'' \textit{EURASIP Journal on Wireless Communications and Networking}, 2017, doi: 10.1186/S13638-017-0905-4.
++Zhuo Li, Yutong Chen, Deliang Liu, and Xiang Li, ``Performance analysis for an enhanced architecture of IoV via Content-Centric Networking,'' \emph{EURASIP Journal on Wireless Communications and Networking}, vol. 2017, no. 1, 2017, doi: 10.1186/S13638-017-0905-4.
+ 
+ \bibitem{17}
+-Irfanullah Khan, Tiankui Zhang, Xiaogeng Xu, Siyang Shan, Adil Khan..., ``Priority-based Content Dissemination in Content Centric Vehicular Networks,'' \textit{IEEE Advanced Information Management, Communicates, Electronic and Automation Control Conference}, 2018, doi: 10.1109/IMCEC.2018.8469332.
++Irfanullah Khan, Tiankui Zhang, Xiaogeng Xu, Siyang Shan, Adil Khan, and Shabeer Ahmad, ``Priority-based Content Dissemination in Content Centric Vehicular Networks,'' \emph{2018 2nd IEEE Advanced Information Management, Communicates, Electronic and Automation Control Conference (IMCEC)}, Xi'an, China, 2018, doi: 10.1109/IMCEC.2018.8469332.
+ 
+ \bibitem{18}
+-Sajjad Ahmad Khan, Huhnkuk Lim, Shehzad Ashraf Chaudhry, ``Adaptive Data Forwarding Scheme for Diverse Infotainment Services in Vehicular Named Data Networking,'' \textit{IEEE Transactions on Vehicular Technology}, 2025, doi: 10.1109/TVT.2024.3524122.
++Sajjad Ahmad Khan, Huhnkuk Lim, and Shehzad Ashraf Chaudhry, ``Adaptive Data Forwarding Scheme for Diverse Infotainment Services in Vehicular Named Data Networking,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 74, no. 5, pp. 8012--8022, 2025, doi: 10.1109/TVT.2024.3524122.
+ 
+ \bibitem{19}
+-Huhnkuk Lim, ``Toward Infotainment Services in Vehicular Named Data Networking: A Comprehensive Framework Design and Its Realization,'' \textit{IEEE transactions on intelligent transportation systems (Print)}, 2025, doi: 10.1109/TITS.2024.3489574.
++Huhnkuk Lim, ``Toward Infotainment Services in Vehicular Named Data Networking: A Comprehensive Framework Design and Its Realization,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 2, pp. 2793--2810, 2025, doi: 10.1109/TITS.2024.3489574.
+ 
+ \bibitem{20}
+-Azan Khan, Basharat Hussain, Muhammad F. Islam, M. M. A. Dabel, Ali Kashif Bashir, ``Optimizing Content Cache With Vehicular Edge Computing: A Deep Federated Learning-Based Novel Predictive Study,'' \textit{IEEE transactions on consumer electronics}, 2025, doi: 10.1109/TCE.2025.3571029.
++Azan Ali Khan, Basharat Hussain, Muhammad Islam, Maryam M. Al Dabel, and Ali Kashif Bashir, ``Optimizing Content Cache With Vehicular Edge Computing: A Deep Federated Learning-Based Novel Predictive Study,'' \emph{IEEE Transactions on Consumer Electronics}, vol. 71, no. 2, pp. 6069--6079, 2025, doi: 10.1109/TCE.2025.3571029.
+ 
+ \bibitem{21}
+-Tengfei Cao, Ni Zhang, Xiaoying Wang, Jianqiang Huang, ``Mobility-Aware Cooperative Caching in Vehicular Edge Computing Based on Federated Distillation and Deep Reinforcement Learning,'' \textit{IEEE Transactions on Network Science and Engineering}, 2025, doi: 10.1109/TNSE.2025.3571902.
++Tengfei Cao, Nianqing Zhang, Xiaoying Wang, and Jianqiang Huang, ``Mobility-Aware Cooperative Caching in Vehicular Edge Computing Based on Federated Distillation and Deep Reinforcement Learning,'' \emph{IEEE Transactions on Network Science and Engineering}, pp. 1--17, 2025, doi: 10.1109/TNSE.2025.3571902.
+ 
+ \bibitem{22}
+-Yali Wang, Shouhao Li, ``Federated Learning-based Vehicle Edge Caching Optimization Strategy,'' \textit{2025 IEEE 6th International Conference on Pattern Recognition and Machine Learning (PRML)}, 2025, doi: 10.1109/PRML66062.2025.11160265.
++Yali Wang and Shouhao Li, ``Federated Learning-based Vehicle Edge Caching Optimization Strategy,'' \emph{2025 IEEE 6th International Conference on Pattern Recognition and Machine Learning (PRML)}, Chongqing, China, pp. 285--290, 2025, doi: 10.1109/PRML66062.2025.11160265.
+ 
+ \bibitem{23}
+-Yaqin Xie, Cheng Zhou, Zhongyu Liu, Yu Zhang, Jianyue Zhu..., ``Research on Cache Placement Optimization and Popularity-Based Content Prefetching Strategy in LEO Satellite Networks,'' \textit{IEEE Transactions on Green Communications and Networking}, 2026, doi: 10.1109/TGCN.2025.3570489.
++Yaqin Xie, Chengshuai Zhou, Zhongyu Liu, Yu Zhang, Jianyue Zhu, and Junmin Wu, ``Research on Cache Placement Optimization and Popularity-Based Content Prefetching Strategy in LEO Satellite Networks,'' \emph{IEEE Transactions on Green Communications and Networking}, vol. 10, pp. 50--62, 2026, doi: 10.1109/TGCN.2025.3570489.
+ 
+ \bibitem{24}
+-Qin Yang, Sang-Jo Yoo, ``Hierarchical Reinforcement Learning-Based Routing Algorithm With Grouped RSU in Urban VANETs,'' \textit{IEEE transactions on intelligent transportation systems (Print)}, 2024, doi: 10.1109/TITS.2024.3353258.
++Qin Yang and Sang-Jo Yoo, ``Hierarchical Reinforcement Learning-Based Routing Algorithm With Grouped RSU in Urban VANETs,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 8, pp. 10131--10146, 2024, doi: 10.1109/TITS.2024.3353258.
+ 
+ \bibitem{25}
+-G. R. Gopal, Jie Chen, W. Hillery, Jun Tan, Serdar Özen..., ``Wireless Channel Scenario Identification Using Convolutional Neural Networks,'' \textit{IEEE Vehicular Technology Conference}, 2023, doi: 10.1109/VTC2023-Spring57618.2023.10200552.
++Govind R. Gopal, Jie Chen, William J. Hillery, Jun Tan, Serdar Özen, and Qiping Zhu, ``Wireless Channel Scenario Identification Using Convolutional Neural Networks,'' \emph{2023 IEEE 97th Vehicular Technology Conference (VTC2023-Spring)}, Florence, Italy, pp. 1--5, 2023, doi: 10.1109/VTC2023-Spring57618.2023.10200552.
+ 
+ \bibitem{26}
+-M. Hasan, Nusrat Jahan, Mohd Zakree Ahmad Nazri, S. Islam, Muhammad Attique Khan..., ``Federated Learning for Computational Offloading and Resource Management of Vehicular Edge Computing in 6G-V2X Network,'' \textit{IEEE transactions on consumer electronics}, 2024, doi: 10.1109/TCE.2024.3357530.
++Mohammad Kamrul Hasan, Nusrat Jahan, Mohd Zakree Ahmad Nazri, Shayla Islam, Muhammad Attique Khan, Ahmed Ibrahim Alzahrani, Nasser Alalwan, and Yunyoung Nam, ``Federated Learning for Computational Offloading and Resource Management of Vehicular Edge Computing in 6G-V2X Network,'' \emph{IEEE Transactions on Consumer Electronics}, vol. 70, no. 1, pp. 3827--3847, 2024, doi: 10.1109/TCE.2024.3357530.
+ 
+ \bibitem{27}
+-Bo Xu, Haitao Zhao, Haotong Cao, Xiaozhen Lu, Hongbo Zhu, ``Joint Contract Design and Task Reorganization for Semi-Decentralized Federated Edge Learning in Vehicular Networks,'' \textit{IEEE Transactions on Vehicular Technology}, 2024, doi: 10.1109/TVT.2024.3364515.
++Bo Xu, Haitao Zhao, Haotong Cao, Xiaozhen Lu, and Hongbo Zhu, ``Joint Contract Design and Task Reorganization for Semi-Decentralized Federated Edge Learning in Vehicular Networks,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 7, pp. 10539--10553, 2024, doi: 10.1109/TVT.2024.3364515.
+ 
+ \bibitem{28}
+-Soohyun Park, C. Park, Soyi Jung, Minseok Choi, Joongheon Kim, ``Age-of-Information Aware Caching and Delivery for Infrastructure-Assisted Connected Vehicles,'' \textit{IEEE Transactions on Vehicular Technology}, 2024, doi: 10.1109/TVT.2024.3384952.
++Soohyun Park, Chanyoung Park, Soyi Jung, Minseok Choi, and Joongheon Kim, ``Age-of-Information Aware Caching and Delivery for Infrastructure-Assisted Connected Vehicles,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 7, pp. 10681--10696, 2024, doi: 10.1109/TVT.2024.3384952.
+ 
+ \bibitem{29}
+-Jie Hu, Li Shen, and Gang Sun, ``Squeeze-and-Excitation Networks,'' in \textit{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, 2018, pp. 7132--7141.
++Jie Hu, Li Shen, and Gang Sun, ``Squeeze-and-Excitation Networks,'' \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, Salt Lake City, UT, USA, pp. 7132--7141, 2018.
+ 
+ \bibitem{30}
+-Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin, ``Attention Is All You Need,'' in \textit{Advances in Neural Information Processing Systems}, 2017, pp. 5998--6008.
++Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin, ``Attention Is All You Need,'' \emph{Advances in Neural Information Processing Systems}, Long Beach, CA, USA, pp. 5998--6008, 2017.
+ 
+ \bibitem{31}
+-Intelligent Transportation Systems Joint Program Office, ``ITS Standards Program: Strategic Plan 2021--2026,'' \textit{U.S. Department of Transportation}, 2021.
++Intelligent Transportation Systems Joint Program Office, ``ITS Standards Program: Strategic Plan 2021--2026,'' \emph{U.S. Department of Transportation}, 2021.
++
++\bibitem{32}
++Yuxuan Wu, Le Wang, Sanping Zhou, Ning Ding, and Gang Hua, ``Posterior Augmented CVAE for Pedestrian Trajectory Prediction with Momentary Observation,'' \emph{IEEE Transactions on Multimedia}, pp. 1--11, 2026, doi: 10.1109/tmm.2026.3673507.
++
++\bibitem{33}
++Marina Kurilova and Howard Li, ``Time-Frequency Wavelet Transformer Forecasting for Hypersonic Glide Vehicle Trajectory Prediction,'' \emph{2026 IEEE Aerospace Conference}, Big Sky, MT, USA, pp. 1--14, 2026, doi: 10.1109/aero66936.2026.11519972.
++
++\bibitem{34}
++Yue Liu, Hongjian Wang, Kai Zhang, and Jingfei Ren, ``UUV Trajectory Prediction Based on GRU Neural Network,'' \emph{2021 40th Chinese Control Conference (CCC)}, Shanghai, China, pp. 8346--8352, 2021, doi: 10.23919/ccc52363.2021.9549995.
++
++\bibitem{35}
++Fatimetou El Jili, ``An Effective Driver Intention and Trajectory Prediction for Autonomous Vehicle based on LSTM,'' \emph{Proceedings of the 13th International Conference on Agents and Artificial Intelligence}, Online Streaming, pp. 1090--1096, 2021, doi: 10.5220/0010321710901096.
++
++\bibitem{36}
++Ericsson, ``Ericsson Mobility Report,'' \emph{Ericsson}, Stockholm, Sweden, 2023. [Online]. Available: https://www.ericsson.com/en/reports-and-papers/mobility-report
+ 
+ \end{thebibliography}
+ 

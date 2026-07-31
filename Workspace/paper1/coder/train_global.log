@@ -1,0 +1,35 @@
+Using device: cuda
+Loading data...
+Dataset randomly sampled to exactly 500,000 instances.
+Data loaded. Train samples: 400000, Test samples: 100000
+Saved scaler.pkl
+
+--- Training ST_MBAN_Global ---
+Epoch 1/10 | Train Loss: 33641.6233 | Val Loss: 23770.4835 | MAE: 70.7424 | R2: 0.4005
+Epoch 10/10 | Train Loss: 19046.4680 | Val Loss: 18996.2822 | MAE: 64.5939 | R2: 0.5134
+Finished ST_MBAN_Global. Best Val Loss: 18996.2822
+
+--- Training MLP_Global ---
+Epoch 1/10 | Train Loss: 35205.9936 | Val Loss: 25494.8461 | MAE: 76.5935 | R2: 0.3680
+Epoch 10/10 | Train Loss: 19701.4720 | Val Loss: 19717.8186 | MAE: 68.6915 | R2: 0.4946
+Finished MLP_Global. Best Val Loss: 19717.8186
+
+--- Training LSTM_Global ---
+Epoch 1/10 | Train Loss: 90485.7091 | Val Loss: 81427.8841 | MAE: 197.4098 | R2: -0.9205
+Epoch 10/10 | Train Loss: 35478.3017 | Val Loss: 34759.9682 | MAE: 89.3102 | R2: 0.1749
+Finished LSTM_Global. Best Val Loss: 34759.9682
+
+--- Training GRU_Global ---
+Epoch 1/10 | Train Loss: 87539.0810 | Val Loss: 76549.6777 | MAE: 185.7277 | R2: -0.8041
+Epoch 10/10 | Train Loss: 31965.1304 | Val Loss: 31194.2522 | MAE: 81.9012 | R2: 0.2485
+Finished GRU_Global. Best Val Loss: 31194.2522
+
+--- Training FTT_Global ---
+Epoch 1/10 | Train Loss: 84678.0096 | Val Loss: 63262.1576 | MAE: 150.6347 | R2: -0.4859
+Epoch 10/10 | Train Loss: 19768.4108 | Val Loss: 18849.6740 | MAE: 60.9797 | R2: 0.5154
+Finished FTT_Global. Best Val Loss: 18849.6740
+
+--- Training TabR_Global ---
+Epoch 1/10 | Train Loss: 68219.8290 | Val Loss: 37989.9499 | MAE: 113.2284 | R2: 0.0519
+Epoch 10/10 | Train Loss: 14151.3425 | Val Loss: 15257.8335 | MAE: 57.4744 | R2: 0.6066
+Finished TabR_Global. Best Val Loss: 15257.8335

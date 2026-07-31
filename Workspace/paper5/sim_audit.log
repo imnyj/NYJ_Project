@@ -1,0 +1,8 @@
+{"timestamp": 1785417812.314507, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V1", "description": "Scheduled from VP_01 to VP_02 at t=0.0, alt=150.0"}
+{"timestamp": 1785417812.3147597, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V2", "description": "Scheduled from VP_01 to VP_02 at t=10.0, alt=150.0"}
+{"timestamp": 1785417812.314994, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V3", "description": "Scheduled from VP_03 to VP_04 at t=0.0, alt=200.0"}
+{"timestamp": 1785417812.315239, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V4", "description": "Scheduled from VP_02 to VP_01 at t=0.0, alt=150.0"}
+{"timestamp": 1785417894.2484257, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V1", "description": "Scheduled from VP_01 to VP_02 at t=0.0, alt=150.0"}
+{"timestamp": 1785417894.2505522, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V2", "description": "Scheduled from VP_01 to VP_02 at t=10.0, alt=150.0"}
+{"timestamp": 1785417894.2521467, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V3", "description": "Scheduled from VP_03 to VP_04 at t=0.0, alt=200.0"}
+{"timestamp": 1785417894.256594, "agent_id": "sim_manager", "parent_id": null, "action": "SCHEDULE", "target": "V4", "description": "Scheduled from VP_02 to VP_01 at t=0.0, alt=150.0"}

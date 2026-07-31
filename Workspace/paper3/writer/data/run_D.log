@@ -1,0 +1,28 @@
+
+============================================================
+  Phase 2: Algorithm Evaluation — Scenario D
+============================================================
+
+[run_scenario] Resume: 116 runs already in /home/imnyj/papers/paper3/paper/data/D_full.csv; will skip those.
+[HEARTBEAT] 시작 | 2026-06-01 23:11:21 | 시나리오=D | total_runs=420 | already_done=116
+  [117/420] d=10 eps=20 g=2.0 tau=4 algo=Random-K    seed=48 | CHR=0.831 AoI=0.169 | run=3266.5s tot=3267s eta=16496m
+  [118/420] d=10 eps=20 g=2.0 tau=4 algo=Random-K    seed=49 | CHR=0.834 AoI=0.166 | run=5091.8s tot=8358s eta=21035m
+[HEARTBEAT] 2026-06-02 01:30:39 | 경과=2h 19m 18s | 진행=118/420 (28.1%) | 평균=4179.1s/run | ETA=350h 35m | 최근완료: algo=Random-K d=10 eps=20 g=2.0 tau=4 seed=49
+  [119/420] d=10 eps=20 g=2.0 tau=4 algo=Random-K    seed=50 | CHR=0.826 AoI=0.174 | run=5043.6s tot=13402s eta=22411m
+[HEARTBEAT] 2026-06-02 02:54:43 | 경과=3h 43m 21s | 진행=119/420 (28.3%) | 평균=4467.3s/run | ETA=373h 30m | 최근완료: algo=Random-K d=10 eps=20 g=2.0 tau=4 seed=50
+  [120/420] d=10 eps=20 g=2.0 tau=4 algo=Random-K    seed=51 | CHR=0.819 AoI=0.181 | run=4822.1s tot=18224s eta=22780m
+[HEARTBEAT] 2026-06-02 04:15:05 | 경과=5h 03m 43s | 진행=120/420 (28.6%) | 평균=4556.0s/run | ETA=379h 39m | 최근완료: algo=Random-K d=10 eps=20 g=2.0 tau=4 seed=51
+  [121/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=42 | CHR=0.219 AoI=0.781 | run=7.6s tot=18232s eta=18171m
+  [122/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=43 | CHR=0.236 AoI=0.764 | run=2.4s tot=18234s eta=15094m
+  [123/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=44 | CHR=0.214 AoI=0.786 | run=4390.6s tot=22625s eta=15999m
+[HEARTBEAT] 2026-06-02 05:28:25 | 경과=6h 17m 04s | 진행=123/420 (29.3%) | 평균=3232.1s/run | ETA=266h 38m | 최근완료: algo=RILP d=10 eps=20 g=2.0 tau=5 seed=44
+  [124/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=45 | CHR=0.261 AoI=0.739 | run=4432.4s tot=27057s eta=16685m
+[HEARTBEAT] 2026-06-02 06:42:18 | 경과=7h 30m 56s | 진행=124/420 (29.5%) | 평균=3382.1s/run | ETA=278h 05m | 최근완료: algo=RILP d=10 eps=20 g=2.0 tau=5 seed=45
+  [125/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=46 | CHR=0.207 AoI=0.793 | run=4530.1s tot=31587s eta=17256m
+[HEARTBEAT] 2026-06-02 07:57:48 | 경과=8h 46m 26s | 진행=125/420 (29.8%) | 평균=3509.7s/run | ETA=287h 35m | 최근완료: algo=RILP d=10 eps=20 g=2.0 tau=5 seed=46
+  [126/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=47 | CHR=0.227 AoI=0.773 | run=5368.2s tot=36955s eta=18108m
+[HEARTBEAT] 2026-06-02 09:27:16 | 경과=10h 15m 55s | 진행=126/420 (30.0%) | 평균=3695.5s/run | ETA=301h 48m | 최근완료: algo=RILP d=10 eps=20 g=2.0 tau=5 seed=47
+  [127/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=48 | CHR=0.224 AoI=0.776 | run=5134.1s tot=42089s eta=18685m
+[HEARTBEAT] 2026-06-02 10:52:50 | 경과=11h 41m 29s | 진행=127/420 (30.2%) | 평균=3826.3s/run | ETA=311h 25m | 최근완료: algo=RILP d=10 eps=20 g=2.0 tau=5 seed=48
+  [128/420] d=10 eps=20 g=2.0 tau=5 algo=RILP        seed=49 | CHR=0.257 AoI=0.743 | run=6438.3s tot=48528s eta=19681m
+[HEARTBEAT] 2026-06-02 12:40:08 | 경과=13h 28m 47s | 진행=128/420 (30.5%) | 평균=4044.0s/run | ETA=328h 00m | 최근완료: algo=RILP d=10 eps=20 g=2.0 tau=5 seed=49

@@ -1,0 +1,18 @@
+
+============================================================
+  Phase 2: Algorithm Evaluation — Scenario B
+============================================================
+
+[HEARTBEAT] 시작 | 2026-05-22 12:41:07 | 시나리오=B | total_runs=1680 | already_done=0
+Traceback (most recent call last):
+  File "/home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py", line 660, in <module>
+    main()
+  File "/home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py", line 656, in main
+    run_scenario(scenario_id, output_dir, verbose)
+  File "/home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py", line 428, in run_scenario
+    metrics = sim.run(algo_fn)
+              ^^^^^^^^^^^^^^^^
+  File "/home/imnyj/papers/paper3/paper/experiment/code/sim_core.py", line 291, in run
+    traj_snapshot = self.trajectories[step_idx]
+                    ~~~~~~~~~~~~~~~~~^^^^^^^^^^
+IndexError: list index out of range

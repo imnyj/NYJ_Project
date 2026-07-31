@@ -1,0 +1,10 @@
+
+--- Simulating Ping-Pong Dual-Model on rsu_N10.csv ---
+Round 0 | Evaluated 5000 requests | Active Model MAE: 50.7900, R2: 0.6430
+Round 1 | Evaluated 5000 requests | Active Model MAE: 53.9627, R2: 0.6374
+Saved pingpong_adaptation_results.csv and pred_vs_true_samples.csv for graphing.
+
+--- Edge Feasibility: FLOPs Profiling ---
+fvcore not installed. Please `pip install fvcore` to get exact FLOPs.
+Approximate parameters count:
+Total Parameters: 38.47 K

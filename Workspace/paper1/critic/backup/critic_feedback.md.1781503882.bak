@@ -1,0 +1,88 @@
+# Critic Feedback Report for `main.tex`
+- **Target File**: `/home/imnyj/papers/paper1/paper/draft/main.tex`
+- **Date**: 2026-06-15
+- **Agent ID**: `critic_paper1`
+
+---
+
+## 1. Numerical Consistency Check (수치적 정합성 검증)
+
+### 1.1 Table III (`tab:finetune_accuracy`) vs. Text (Lines 635-638)
+Table III의 실제 성능 데이터와 본문 텍스트 내에서 언급되는 파인튜닝 수치 간에 일부 불일치 및 설명 생략이 존재합니다.
+
+* **LSTM의 수치 언급 결여**:
+  - **현황**: Table III에서 LSTM의 Average MAE는 **52.06 $\pm$ 2.54 s**로 기록되어 있으나, 본문 텍스트(636행 및 638행)에서는 MLP(100.91 s), ResNet(103.58 s), TabR(106.38 s), H-ST-MBAN(20.33 s)의 수치만 언급되고 LSTM에 대한 구체적인 수치는 서술되지 않았습니다.
+  - **수정 지침**: LSTM은 파인튜닝 과정에서 비교적 성능 방어가 우수한 중요한 순차적 딥러닝 모델이므로, 본문 638행 부근에 "Meanwhile, traditional sequential baselines such as LSTM maintain a relatively stable error (Average MAE of 52.06 s), yet fail to approach the performance of H-ST-MBAN." 와 같은 수치 설명 문장을 추가하십시오.
+* **XGBoost 및 기타 모델들과의 대비 확인**:
+  - H-ST-MBAN의 Global MAE 58.39 s, Final MAE 17.58 s, Average MAE 20.33 s 수치는 본문과 테이블 간 완벽하게 일치합니다.
+
+### 1.2 Table I (`tab:accuracy`) vs. Text (Lines 539-541)
+* **검증 결과**:
+  - H-ST-MBAN (MAE 44.32 s), ResNet (MAE 47.10 s), LSTM (MAE 96.90 s), GRU (MAE 101.75 s)의 수치들이 본문 텍스트와 Table I 간 완벽하게 일치합니다. (정합성 통과)
+
+### 1.3 Cache Performance Metrics Consistency (G6 vs. G7 vs. Conclusion)
+* **검증 결과**:
+  - G6 평균 캐시 힛 레이트(90.70%), G7 고밀도 구간 캐시 힛 레이트(91.64%), 결론의 고밀도 힛 레이트(91.64%) 및 평균 힛 레이트(90.70%) 비교 언급이 상호 완벽하게 일치합니다. (정합성 통과)
+
+---
+
+## 2. Structure & Logical Flow Check (구조 및 논리 흐름 검증)
+
+### 2.1 CVAE / ST-CVAE 흔적 제거
+기존 variational generative 모델의 직접적인 흔적을 완벽히 배제하고, 독자에게 혼란을 주지 않도록 표현을 중립화해야 합니다.
+
+* **Line 479 (Decoder 파트)**:
+  - *기존*: "...the decoder entirely bypasses the complex sampling operations found in **variational autoencoders**."
+  - *수정 지침*: "variational autoencoders"라는 표현을 **"probabilistic sampling-based models"** 또는 **"generative sampling architectures"**로 변경하여 CVAE 관련 흔적을 완전히 지우십시오.
+* **Line 266 (proposed scheme)**:
+  - *기존*: "...rather than regressing the three raw timestamps used in **predecessor models**, eliminates error compounding..."
+  - *수정 지침*: 본문 앞부분에서 "predecessor models"가 직접 정의되지 않았으므로, 이를 **"traditional multi-step baseline architectures"** 또는 **"previous sequential regression methods"**와 같이 일반화된 표현으로 수정하십시오.
+
+---
+
+## 3. Style & Formatting Check (스타일 및 서식 검증)
+
+### 3.1 AI적 표현 및 기계적 부사 남용
+학술 원고의 객관성 유지를 위해 감정적이거나 과장된 뉘앙스의 부사들을 제거 또는 대체해야 합니다.
+
+* **`successfully` 부사 제거**:
+  - **Line 530**: "...where the GBDT stream establishes robust baseline decisions and the multi-branch neural network stream **successfully** refines spatio-temporal details."
+  - *수정안*: "...and the multi-branch neural network stream refines spatio-temporal details." (`successfully` 삭제)
+* **기타 기계적 부사 완화**:
+  - **Line 305**: "This **completely** fulfills..." -> "This fulfills..."
+  - **Line 397**: "...completely avoids..." -> "...avoids..."
+  - **Line 420**: "...permits the model to **dynamically** reweight..." -> "...permits the model to reweight..."
+  - **Line 452**: "...reliably preserves..." -> "...preserves..."
+
+### 3.2 리스트 남용 (List Abuse)
+규칙 상 itemize와 enumerate는 최소화하고 산문 형태로 서술해야 합니다.
+
+* **Line 143-151 (Introduction Contribution 리스트)**:
+  - **현황**: 7개의 `itemize` 항목을 이용하여 공헌을 열거하고 있습니다.
+  - *수정 지침*: 이를 산문 형태의 연속적인 문단으로 풀어서 작성하십시오.
+* **Line 598-602 (G4 queue size justifications)**:
+  - **현황**: `enumerate` 환경을 사용해 3가지 근거를 나열하고 있습니다.
+  - *수정 지침*: 이를 순차적 지시어(First, Second, Third)를 포함한 산문 형태의 단일 문단으로 리라이팅하십시오.
+
+### 3.3 문단 최소 길이 위반 (Paragraph Length Violation)
+모든 본문 문단은 최소 5문장 이상으로 구성되어야 합니다.
+
+* **Line 138-141 (Introduction의 기여 도입 문단)**: **4문장**
+  - *현황*: In this work, we propose... (1) / We introduce a... (2) / These architectural... (3) / The performance of... (4)
+  - *수정 지침*: 한 문장을 추가하여 본 논문이 CCVN 시스템 설계에 기여하는 실용적 이점이나 마이크로 트래픽 제어의 필요성을 보강하십시오.
+
+### 3.4 본문 오타 수정
+* **Line 432 (Traffic Control Encoder)**:
+  - *현황*: "Because the dominant nonlinearity, **namely the phase periodicity**, is resolved..."
+  - *수정 지침*: 문장의 앞부분에 "namely the phase periodicity"가 중복 기재되었으므로, 불필요한 반복 구를 삭제하여 문장을 정돈하십시오.
+
+---
+
+## 4. Actionable Revision Guidelines for Writer (수정 가이드 요약)
+
+1. **LSTM 수치 본문 보강**: Table III의 LSTM Average MAE 수치(52.06 s)를 언급하는 비교 문장을 본문 638행 근처에 추가할 것.
+2. **CVAE 표현 완벽 정제**: 479행의 "variational autoencoders"를 "probabilistic sampling-based models"로, 266행의 "predecessor models"를 "traditional multi-step baseline architectures"로 중립화할 것.
+3. **Introduction 공헌 및 G4 근거 리스트 산문화**: 143-151행의 itemize 및 598-602행의 enumerate를 완전한 산문 문맥으로 리라이팅할 것.
+4. **부사 정제**: 530행의 "successfully" 및 본문 내 "completely", "dynamically" 등의 남용을 제거할 것.
+5. **문단 길이 충족**: 138-141행 문단에 1문장을 추가하여 5문장 이상으로 늘릴 것.
+6. **오타 수정**: 432행의 "namely the phase periodicity" 중복 표현을 제거할 것.

@@ -1,0 +1,547 @@
+"""
+UAM Simulation Environment Module (paper5)
+=========================================
+
+This module defines the 3D environment for Urban Air Mobility (UAM) simulations,
+including a grid road network, roadside units (RSUs), traffic lights, 3D buildings,
+vertiports, cellular base stations, and satellite coverage for proactive handover research.
+
+Environment Parameters:
+- Area: 20 km x 20 km (20,000m x 20,000m)
+- Grid Roads: First road 1.5 km from edge, intersections every 3.0 km.
+- Intersections: Equipped with traffic lights and 1 RSU per intersection.
+- Buildings: Non-overlapping 3D structures with random altitude, dimensions, and position.
+- Vertiports: Rooftop or ground vertiport locations for eVTOL landing/takeoff.
+- Multi-tier Communication: RSU (short-range, high speed), 5G Cellular (mid-range), Starlink (global).
+"""
+
+import math
+from config_loader import load_config
+import random
+from dataclasses import dataclass, field
+from typing import List, Tuple, Dict, Optional, Any
+
+
+@dataclass
+class TrafficLight:
+    """Traffic light at a road intersection."""
+    id: str
+    position: Tuple[float, float]
+    state: str = "GREEN"  # GREEN, YELLOW, RED
+    cycle_time: float = 60.0
+    green_duration: float = 25.0
+    yellow_duration: float = 5.0
+    timer: float = 0.0
+
+    def update(self, dt: float) -> None:
+        """Update traffic light state based on elapsed time dt (seconds)."""
+        self.timer = (self.timer + dt) % self.cycle_time
+        if self.timer < self.green_duration:
+            self.state = "GREEN"
+        elif self.timer < self.green_duration + self.yellow_duration:
+            self.state = "YELLOW"
+        else:
+            self.state = "RED"
+
+
+@dataclass
+class RSU:
+    """Roadside Unit (RSU) at an intersection providing V2X/U2X wireless communications."""
+    id: str
+    position: Tuple[float, float, float]  # (x, y, z) in meters
+    coverage_radius: float = field(default_factory=lambda: load_config().get("RSU", {}).get("COVERAGE_RADIUS", 500.0))
+    tx_power_dbm: float = field(default_factory=lambda: load_config().get("RSU", {}).get("TX_POWER_DBM", 30.0))
+    frequency_ghz: float = field(default_factory=lambda: load_config().get("RSU", {}).get("FREQUENCY_GHZ", 5.9))
+    bandwidth_mhz: float = field(default_factory=lambda: load_config().get("RSU", {}).get("BANDWIDTH_MHZ", 20.0))
+    max_data_rate_mbps: float = field(default_factory=lambda: load_config().get("RSU", {}).get("MAX_DATA_RATE_MBPS", 100.0))
+
+    def distance_to(self, point_3d: Tuple[float, float, float]) -> float:
+        """Calculate 3D Euclidean distance from RSU to point."""
+        dx = self.position[0] - point_3d[0]
+        dy = self.position[1] - point_3d[1]
+        dz = self.position[2] - point_3d[2]
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    def is_in_coverage(self, point_3d: Tuple[float, float, float]) -> bool:
+        """Check if point is within RSU coverage radius."""
+        return self.distance_to(point_3d) <= self.coverage_radius
+
+    def get_snr_db(self, point_3d: Tuple[float, float, float], noise_floor_dbm: float = -95.0) -> float:
+        """Calculate SNR in dB using free-space path loss model."""
+        d = max(1.0, self.distance_to(point_3d))
+        if d > self.coverage_radius:
+            return -float('inf')
+        fspl = 20.0 * math.log10(d) + 20.0 * math.log10(self.frequency_ghz) + 32.44
+        rx_power = self.tx_power_dbm - fspl
+        return rx_power - noise_floor_dbm
+
+    def get_data_rate_mbps(self, point_3d: Tuple[float, float, float]) -> float:
+        """Calculate achievable data rate in Mbps using Shannon capacity formula."""
+        snr_db = self.get_snr_db(point_3d)
+        if snr_db <= 0:
+            return 0.0
+        snr_linear = 10.0 ** (snr_db / 10.0)
+        capacity_bps = self.bandwidth_mhz * 1e6 * math.log2(1.0 + snr_linear)
+        rate_mbps = capacity_bps / 1e6
+        return min(self.max_data_rate_mbps, rate_mbps)
+
+
+@dataclass
+class CellularBaseStation:
+    """5G Macro Cellular Base Station."""
+    id: str
+    position: Tuple[float, float, float]  # (x, y, z) in meters
+    coverage_radius: float = field(default_factory=lambda: load_config().get("CELLULAR", {}).get("COVERAGE_RADIUS", 3500.0))
+    tx_power_dbm: float = field(default_factory=lambda: load_config().get("CELLULAR", {}).get("TX_POWER_DBM", 46.0))
+    frequency_ghz: float = field(default_factory=lambda: load_config().get("CELLULAR", {}).get("FREQUENCY_GHZ", 3.5))
+    bandwidth_mhz: float = field(default_factory=lambda: load_config().get("CELLULAR", {}).get("BANDWIDTH_MHZ", 100.0))
+    max_data_rate_mbps: float = field(default_factory=lambda: load_config().get("CELLULAR", {}).get("MAX_DATA_RATE_MBPS", 1000.0))
+
+    def distance_to(self, point_3d: Tuple[float, float, float]) -> float:
+        dx = self.position[0] - point_3d[0]
+        dy = self.position[1] - point_3d[1]
+        dz = self.position[2] - point_3d[2]
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+    def is_in_coverage(self, point_3d: Tuple[float, float, float]) -> bool:
+        return self.distance_to(point_3d) <= self.coverage_radius
+
+    def get_snr_db(self, point_3d: Tuple[float, float, float], noise_floor_dbm: float = -95.0) -> float:
+        d = max(1.0, self.distance_to(point_3d))
+        if d > self.coverage_radius:
+            return -float('inf')
+        fspl = 20.0 * math.log10(d) + 20.0 * math.log10(self.frequency_ghz) + 32.44
+        rx_power = self.tx_power_dbm - fspl
+        return rx_power - noise_floor_dbm
+
+    def get_data_rate_mbps(self, point_3d: Tuple[float, float, float]) -> float:
+        snr_db = self.get_snr_db(point_3d)
+        if snr_db <= 0:
+            return 0.0
+        snr_linear = 10.0 ** (snr_db / 10.0)
+        capacity_bps = self.bandwidth_mhz * 1e6 * math.log2(1.0 + snr_linear)
+        return min(self.max_data_rate_mbps, capacity_bps / 1e6)
+
+
+@dataclass
+class StarlinkSatellite:
+    """Starlink LEO Satellite Communication layer."""
+    id: str = "Starlink_LEO_Constellation"
+    altitude_km: float = field(default_factory=lambda: load_config().get("STARLINK", {}).get("ALTITUDE_KM", 550.0))
+    latency_ms: float = field(default_factory=lambda: load_config().get("STARLINK", {}).get("LATENCY_MS", 30.0))
+    max_data_rate_mbps: float = field(default_factory=lambda: load_config().get("STARLINK", {}).get("MAX_DATA_RATE_MBPS", 200.0))
+    coverage_radius: float = field(default_factory=lambda: load_config().get("STARLINK", {}).get("COVERAGE_RADIUS", 50000.0))
+
+    def is_in_coverage(self, point_3d: Tuple[float, float, float]) -> bool:
+        return True
+
+    def get_snr_db(self, point_3d: Tuple[float, float, float]) -> float:
+        return 15.0
+
+    def get_data_rate_mbps(self, point_3d: Tuple[float, float, float]) -> float:
+        return self.max_data_rate_mbps
+
+
+@dataclass
+class Intersection:
+    """Grid road intersection holding traffic light and RSU."""
+    id: str
+    grid_index: Tuple[int, int]
+    position: Tuple[float, float]
+    traffic_light: TrafficLight
+    rsu: RSU
+
+
+@dataclass
+class Building:
+    """3D Building obstacle in the UAM environment."""
+    id: str
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+    height: float  # Altitude / roof level in meters
+    has_vertiport: bool = False
+    vertiport_id: Optional[str] = None
+
+    @property
+    def center(self) -> Tuple[float, float]:
+        return ((self.x_min + self.x_max) / 2.0, (self.y_min + self.y_max) / 2.0)
+
+    @property
+    def width(self) -> float:
+        return self.x_max - self.x_min
+
+    @property
+    def length(self) -> float:
+        return self.y_max - self.y_min
+
+    def contains_point(self, point_3d: Tuple[float, float, float]) -> bool:
+        """Check if 3D point (x, y, z) is inside building volume."""
+        x, y, z = point_3d
+        return (self.x_min <= x <= self.x_max and
+                self.y_min <= y <= self.y_max and
+                0.0 <= z <= self.height)
+
+    def intersects_box_2d(self, x_min: float, x_max: float, y_min: float, y_max: float, buffer: float = 0.0) -> bool:
+        """Check 2D AABB bounding box collision with safety buffer."""
+        return (self.x_min - buffer < x_max and
+                self.x_max + buffer > x_min and
+                self.y_min - buffer < y_max and
+                self.y_max + buffer > y_min)
+
+    def intersects_line_segment(self, p1: Tuple[float, float, float], p2: Tuple[float, float, float], buffer: float = 0.0) -> bool:
+        """3D Slab method for line-segment AABB collision detection."""
+        box_min = [self.x_min - buffer, self.y_min - buffer, 0.0]
+        box_max = [self.x_max + buffer, self.y_max + buffer, self.height + buffer]
+
+        t_min = 0.0
+        t_max = 1.0
+
+        for i in range(3):
+            d = p2[i] - p1[i]
+            if abs(d) < 1e-9:
+                if p1[i] < box_min[i] or p1[i] > box_max[i]:
+                    return False
+            else:
+                oof = 1.0 / d
+                t1 = (box_min[i] - p1[i]) * oof
+                t2 = (box_max[i] - p1[i]) * oof
+                if t1 > t2:
+                    t1, t2 = t2, t1
+                t_min = max(t_min, t1)
+                t_max = min(t_max, t2)
+                if t_min > t_max:
+                    return False
+        return True
+
+
+@dataclass
+class Vertiport:
+    """Vertiport for eVTOL aircraft takeoff and landing."""
+    id: str
+    position: Tuple[float, float, float]  # (x, y, z) in meters
+    building_id: Optional[str] = None
+    num_pads: int = 4
+    capacity: int = 10
+    occupied_pads: int = 0
+
+    def is_available(self) -> bool:
+        return self.occupied_pads < self.num_pads
+
+    def reserve_pad(self) -> bool:
+        if self.is_available():
+            self.occupied_pads += 1
+            return True
+        return False
+
+    def release_pad(self) -> bool:
+        if self.occupied_pads > 0:
+            self.occupied_pads -= 1
+            return True
+        return False
+
+
+class UAMEnvironment:
+    """Main UAM Simulation Environment.
+
+    Attributes:
+        width (float): Environment width in meters (20,000 m = 20 km)
+        height (float): Environment height in meters (20,000 m = 20 km)
+        first_road_offset (float): Distance from edge to first grid road (1,500 m = 1.5 km)
+        road_interval (float): Grid road spacing (3,000 m = 3 km)
+        road_width (float): Road width in meters (30 m)
+    """
+    def __init__(
+        self,
+        width: Optional[float] = None,
+        height: Optional[float] = None,
+        first_road_offset: Optional[float] = None,
+        road_interval: Optional[float] = None,
+        road_width: Optional[float] = None,
+        seed: Optional[int] = 42
+    ):
+        cfg = load_config().get("ENVIRONMENT", {})
+        self.width = width if width is not None else cfg.get("WIDTH", 20000.0)
+        self.height = height if height is not None else cfg.get("HEIGHT", 20000.0)
+        self.first_road_offset = first_road_offset if first_road_offset is not None else cfg.get("FIRST_ROAD_OFFSET", 1500.0)
+        self.road_interval = road_interval if road_interval is not None else cfg.get("ROAD_INTERVAL", 3000.0)
+        self.road_width = road_width if road_width is not None else cfg.get("ROAD_WIDTH", 30.0)
+        self.seed = seed
+
+        if seed is not None:
+            random.seed(seed)
+
+        self.x_roads: List[float] = []
+        self.y_roads: List[float] = []
+        self.intersections: Dict[str, Intersection] = {}
+        self.buildings: List[Building] = []
+        self.vertiports: Dict[str, Vertiport] = {}
+        self.cellular_stations: List[CellularBaseStation] = []
+        self.starlink = StarlinkSatellite()
+
+        self._init_grid_roads()
+        self._init_intersections_and_rsus()
+        self._init_cellular_network()
+
+    def _init_grid_roads(self) -> None:
+        """Calculate X and Y grid road centerlines based on 1.5km offset and 3km interval."""
+        x = self.first_road_offset
+        while x < self.width:
+            self.x_roads.append(x)
+            x += self.road_interval
+
+        y = self.first_road_offset
+        while y < self.height:
+            self.y_roads.append(y)
+            y += self.road_interval
+
+    def _init_intersections_and_rsus(self) -> None:
+        """Create intersections with traffic lights and RSUs at all road grid crossings."""
+        for i, x in enumerate(self.x_roads):
+            for j, y in enumerate(self.y_roads):
+                int_id = f"INT_{i}_{j}"
+                tl_id = f"TL_{i}_{j}"
+                rsu_id = f"RSU_INT_{i}_{j}"
+
+                traffic_light = TrafficLight(id=tl_id, position=(x, y))
+                rsu = RSU(id=rsu_id, position=(x, y, 10.0), coverage_radius=500.0)
+
+                intersection = Intersection(
+                    id=int_id,
+                    grid_index=(i, j),
+                    position=(x, y),
+                    traffic_light=traffic_light,
+                    rsu=rsu
+                )
+                self.intersections[int_id] = intersection
+
+    def _init_cellular_network(self) -> None:
+        """Initialize 5G cellular macro base stations across the environment."""
+        bs_count_per_axis = 4
+        x_step = self.width / bs_count_per_axis
+        y_step = self.height / bs_count_per_axis
+
+        for i in range(bs_count_per_axis):
+            for j in range(bs_count_per_axis):
+                x = x_step * (i + 0.5)
+                y = y_step * (j + 0.5)
+                bs_id = f"5G_BS_{i}_{j}"
+                bs = CellularBaseStation(id=bs_id, position=(x, y, 35.0), coverage_radius=3500.0)
+                self.cellular_stations.append(bs)
+
+    def check_road_overlap(self, x_min: float, x_max: float, y_min: float, y_max: float, buffer: float = 0.0) -> bool:
+        """Check if a rectangular footprint overlaps with any vertical or horizontal road."""
+        half_w = self.road_width / 2.0
+
+        # Vertical roads check
+        for xr in self.x_roads:
+            if (x_min - buffer < xr + half_w) and (x_max + buffer > xr - half_w):
+                return True
+
+        # Horizontal roads check
+        for yr in self.y_roads:
+            if (y_min - buffer < yr + half_w) and (y_max + buffer > yr - half_w):
+                return True
+
+        return False
+
+    def check_building_overlap(self, x_min: float, x_max: float, y_min: float, y_max: float, buffer: float = 0.0) -> bool:
+        """Check if a rectangular footprint overlaps with any existing building."""
+        for b in self.buildings:
+            if b.intersects_box_2d(x_min, x_max, y_min, y_max, buffer=buffer):
+                return True
+        return False
+
+    def generate_buildings(
+        self,
+        num_buildings: int = 60,
+        min_size: float = 80.0,
+        max_size: float = 250.0,
+        min_height: float = 30.0,
+        max_height: float = 300.0,
+        buffer: float = 15.0,
+        max_attempts: int = 10000,
+        seed: Optional[int] = None
+    ) -> int:
+        """Randomly generate non-overlapping buildings avoiding grid roads.
+
+        Returns the number of successfully placed buildings.
+        """
+        rng = random.Random(seed if seed is not None else self.seed)
+        placed = 0
+        attempts = 0
+
+        while placed < num_buildings and attempts < max_attempts:
+            attempts += 1
+            w = rng.uniform(min_size, max_size)
+            l = rng.uniform(min_size, max_size)
+            h = rng.uniform(min_height, max_height)
+
+            x_min = rng.uniform(0.0, self.width - w)
+            y_min = rng.uniform(0.0, self.height - l)
+            x_max = x_min + w
+            y_max = y_min + l
+
+            # Rule 1: No road overlap
+            if self.check_road_overlap(x_min, x_max, y_min, y_max, buffer=buffer):
+                continue
+
+            # Rule 2: No building overlap
+            if self.check_building_overlap(x_min, x_max, y_min, y_max, buffer=buffer):
+                continue
+
+            building_id = f"BLDG_{placed + 1:03d}"
+            building = Building(
+                id=building_id,
+                x_min=x_min,
+                x_max=x_max,
+                y_min=y_min,
+                y_max=y_max,
+                height=h
+            )
+            self.buildings.append(building)
+            placed += 1
+
+        return placed
+
+    def generate_vertiports(
+        self,
+        num_vertiports: int = 6,
+        rooftop_only: bool = True,
+        seed: Optional[int] = None
+    ) -> List[Vertiport]:
+        """Generate vertiports on rooftop of selected tall buildings or at designated locations."""
+        rng = random.Random(seed if seed is not None else self.seed)
+
+        if rooftop_only:
+            candidates = [b for b in self.buildings if b.width >= 80.0 and b.length >= 80.0 and not b.has_vertiport]
+            if not candidates:
+                candidates = [b for b in self.buildings if not b.has_vertiport]
+
+            selected_bldgs = rng.sample(candidates, min(num_vertiports, len(candidates)))
+            created_vertiports = []
+
+            for idx, bldg in enumerate(selected_bldgs):
+                vp_id = f"VP_{idx + 1:02d}"
+                cx, cy = bldg.center
+                pos = (cx, cy, bldg.height)
+
+                vp = Vertiport(
+                    id=vp_id,
+                    position=pos,
+                    building_id=bldg.id,
+                    num_pads=4,
+                    capacity=10
+                )
+                bldg.has_vertiport = True
+                bldg.vertiport_id = vp_id
+                self.vertiports[vp_id] = vp
+                created_vertiports.append(vp)
+
+            return created_vertiports
+        else:
+            created_vertiports = []
+            for i in range(num_vertiports):
+                vp_id = f"VP_G_{i + 1:02d}"
+                bx = rng.choice(self.x_roads[:-1]) + self.road_interval / 2.0 if len(self.x_roads) > 1 else self.width / 2.0
+                by = rng.choice(self.y_roads[:-1]) + self.road_interval / 2.0 if len(self.y_roads) > 1 else self.height / 2.0
+                pos = (bx, by, 0.0)
+                vp = Vertiport(id=vp_id, position=pos, building_id=None, num_pads=4, capacity=10)
+                self.vertiports[vp_id] = vp
+                created_vertiports.append(vp)
+            return created_vertiports
+
+    def get_covering_rsus(self, point_3d: Tuple[float, float, float]) -> List[RSU]:
+        """Return all RSUs covering the given 3D position."""
+        return [int_obj.rsu for int_obj in self.intersections.values() if int_obj.rsu.is_in_coverage(point_3d)]
+
+    def get_nearest_rsu(self, point_3d: Tuple[float, float, float]) -> Optional[RSU]:
+        """Find the nearest RSU to a given 3D position."""
+        nearest_rsu = None
+        min_dist = float('inf')
+
+        for int_obj in self.intersections.values():
+            d = int_obj.rsu.distance_to(point_3d)
+            if d < min_dist:
+                min_dist = d
+                nearest_rsu = int_obj.rsu
+        return nearest_rsu
+
+    def get_comm_status(self, point_3d: Tuple[float, float, float]) -> Dict[str, Any]:
+        """Comprehensive communication status evaluation at position (x, y, z)."""
+        covering_rsus = self.get_covering_rsus(point_3d)
+        rsu_info = []
+        for rsu in covering_rsus:
+            rsu_info.append({
+                "rsu_id": rsu.id,
+                "snr_db": rsu.get_snr_db(point_3d),
+                "data_rate_mbps": rsu.get_data_rate_mbps(point_3d),
+                "distance": rsu.distance_to(point_3d)
+            })
+
+        best_bs = None
+        best_bs_snr = -float('inf')
+        best_bs_rate = 0.0
+        for bs in self.cellular_stations:
+            if bs.is_in_coverage(point_3d):
+                snr = bs.get_snr_db(point_3d)
+                if snr > best_bs_snr:
+                    best_bs_snr = snr
+                    best_bs = bs.id
+                    best_bs_rate = bs.get_data_rate_mbps(point_3d)
+
+        starlink_info = {
+            "id": self.starlink.id,
+            "snr_db": self.starlink.get_snr_db(point_3d),
+            "data_rate_mbps": self.starlink.get_data_rate_mbps(point_3d),
+            "latency_ms": self.starlink.latency_ms
+        }
+
+        return {
+            "position": point_3d,
+            "covering_rsus": rsu_info,
+            "rsu_count": len(rsu_info),
+            "best_5g_bs": best_bs,
+            "best_5g_snr_db": best_bs_snr if best_bs else None,
+            "best_5g_data_rate_mbps": best_bs_rate,
+            "starlink": starlink_info
+        }
+
+    def is_collision_with_building(self, point_3d: Tuple[float, float, float], buffer: float = 5.0) -> bool:
+        """Check if 3D point collides with any building volume."""
+        for bldg in self.buildings:
+            if (bldg.x_min - buffer <= point_3d[0] <= bldg.x_max + buffer and
+                bldg.y_min - buffer <= point_3d[1] <= bldg.y_max + buffer and
+                0.0 <= point_3d[2] <= bldg.height + buffer):
+                return True
+        return False
+
+    def is_path_blocked(self, p1: Tuple[float, float, float], p2: Tuple[float, float, float], buffer: float = 5.0) -> bool:
+        """Check if line segment trajectory between p1 and p2 intersects any building."""
+        for bldg in self.buildings:
+            if bldg.intersects_line_segment(p1, p2, buffer=buffer):
+                return True
+        return False
+
+    def update(self, dt: float) -> None:
+        """Step environment state (e.g. traffic light updates)."""
+        for int_obj in self.intersections.values():
+            int_obj.traffic_light.update(dt)
+
+    def get_summary(self) -> Dict[str, Any]:
+        """Return dictionary summary of the environment."""
+        return {
+            "dimensions": f"{self.width/1000:.1f}km x {self.height/1000:.1f}km",
+            "first_road_offset": f"{self.first_road_offset/1000:.1f}km",
+            "road_interval": f"{self.road_interval/1000:.1f}km",
+            "x_roads_count": len(self.x_roads),
+            "y_roads_count": len(self.y_roads),
+            "x_roads_km": [x / 1000.0 for x in self.x_roads],
+            "y_roads_km": [y / 1000.0 for y in self.y_roads],
+            "intersections_count": len(self.intersections),
+            "rsus_count": len(self.intersections),
+            "buildings_count": len(self.buildings),
+            "vertiports_count": len(self.vertiports),
+            "cellular_bs_count": len(self.cellular_stations)
+        }

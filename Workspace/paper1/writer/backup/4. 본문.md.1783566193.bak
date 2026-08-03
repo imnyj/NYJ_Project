@@ -1,0 +1,51 @@
+# 0. 섹션 초입
+본 섹션에서는 H-ST-MBAN을 기반으로 content precaching이 어떻게 진행되는지와 해당 모델의 구조 등을 상세히 설명함.
+첫 서브섹션에서 content요청으로 인해 feature vector가 어떻게 생성되는지 설명함
+두번째 서브섹션에서 feature로 인해 inference가 어떻게 수행되어 dwell time이 예측되는지 설명함
+세번째 서브섹션에서 예측된 dwell time으로 content precaching이 어떻게 수행되는지 설명함
+네번째 서브섹션에서 시나리오 종료 후 true 값을 어떻게 해서 dataset에 추가하는지와 학습이 어떻게 수행되는지 설명함
+
+# 1. content 요청
+차량은 원하는 content가 발생하면, RSU 통신 범위 내에 위치할 경우 즉각적으로 interest packet을 전송하여 content를 요청함.
+RSU 통신 범위 밖인 경우 대기 상태를 유지함.
+interest packet에는 차량 ID, content ID, 차량의 위치, 속도, 앞 차량과의 간격, 필요 차선 변경 횟수, 다음 RSU까지의 경로, 요청된 content의 요청 시작 청크 번호가 포함됨.
+RSU는 해당 패킷을 수신한 후 CCN 절차에 따라 content 제공을 개시함.
+동시에, RSU는 수신한 정보를 바탕으로 pending data table(PDT)에 차량 ID와 content ID를 key 값으로 하여 차량의 위치, 속도를 기록함.
+이때 RSU는 즉시 입력 가능한 정보인 신호등 상태, 신호 변경 잔여 시간, 통신 범위 내 차량들의 평균 속도, RSU의 통신 반경을 PDT에 추가함.
+더불어 위치와 속도를 바탕으로 산출한 RSU 중심점까지의 거리($d_{rsu}$) 및 예상 도달 시간($t_{est}$)을 계산하여 PDT에 기입함.
+또한 차량의 이동 방향을 구분하여 기록함: 차량이 신호등에 설치된 RSU를 기 통과한 경우(RSU로부터 멀어지는 방향)는 1, 통과 이전인 경우(RSU로 접근하는 방향)는 0으로 표기함.
+요청 차량이 소속된 차선(lane)을 식별하여 앞 차량의 순간/평균 속도, 요청 차량 전방의 차량 수, 해당 차선의 대기열(queue) 길이 및 점유율을 수집함.
+이후 차량 경로 정보를 바탕으로 현재 RSU 범위 내 체류 잔여 거리, 다음 RSU 진입 시점까지의 거리, 다음 RSU 이탈 시점까지의 거리를 산출하여 PDT에 갱신함.
+비콘 메시지 기반 평균 차량 속도 관리 메커니즘을 통해, 아직 집계되지 않은 통신 범위 내 체류 차량 대수를 파악하여 PDT에 반영함.
+
+다음 RSU로부터 추가 정보를 획득하기 위해 `[INFO REQ]` 패킷을 송신함.
+해당 패킷에는 현재 RSU ID, 차량 ID, content ID가 포함됨.
+`[INFO REQ]` 패킷을 수신한 다음 RSU는 pending request table에 해당 패킷을 등록함.
+다음 RSU는 수신 확인 후, 패킷의 RSU ID를 자신의 ID로 갱신하여 이웃 RSU들에게 `[INFO HELLO]` 패킷 형태로 브로드캐스트함.
+`[INFO HELLO]` 패킷을 수신한 이웃 RSU는 평균 속도 관리 테이블을 참조하여, 차량 중 다음 RSU ID를 목적지로 가지며 이웃 교차로 등에서 해당 경로로 진입/병합이 예상되는 차량 수($n_{merge,nxt}$)를 집계하고, 요청 차량 ID 및 content ID와 함께 `[INFO REP]` 패킷을 통해 다음 RSU로 회신함.
+동시에 다음 RSU는 자체적으로 보유한 신호등 상태, 신호 변경 잔여 시간, 평균 차량 속도, 요청 차량 진입 방향 차선의 대기열 길이 및 점유율, 그리고 해당 차량이 진입할 경로상의 선행 차량 수($n_{ahead,nxt}$)를 산출함. 
+이후 이웃 RSU로부터 수신한 $n_{merge,nxt}$를 취합하여, pending request table에 저장된 원래의 요청 RSU ID를 목적지로 삼아 `[INFO REP]` 패킷을 송신(회신)함.
+최종적으로 초기 요청 RSU가 수신하는 `[INFO REP]` 패킷에는 다음 RSU의 평균 차량 속도, 통신 범위 내 차량 수, 신호등 상태, 신호 변경 잔여 시간, 해당 차량 경로상의 선행 차량 수($n_{ahead,nxt}$), 그리고 이웃 RSU로부터 진입이 예상되는 차량 수($n_{merge,nxt}$)가 포함됨.
+
+초기 RSU는 수신한 `[INFO REP]` 패킷 데이터를 차량 ID와 content ID를 key로 하여 PDT에 병합함.
+각 정보의 특성을 효과적으로 반영하기 위하여, 수집된 요소(element)들은 카테고리화(categorized)됨.
+완성된 feature vector 및 각 요소의 카테고리는 표 1과 같이 정의됨. (feature vector 정리한 표 추가)
+Content 제공이 이루어지는 동안 소형 패킷 기반 snapshot 형태로 feature를 구성하므로, 시계열 기반 연속 생성 방식 대비 통신망 부하를 저감할 수 있음.
+또한, content 데이터 전송과 feature 수집이 독립적으로 수행되므로 서비스 품질 저하를 방지함.
+요소별 카테고리화를 통해 데이터 특성 반영의 효율을 높일 수 있음.
+궁극적으로 중앙 서버 의존 없이 국소적(local) 정보 수집을 수행하여, 서버 병목 현상을 완화함.
+
+# 2. Inference
+모델이 없는 경우에는 평균속도를 기반으로 계산
+PDT에 완성된 feature를 기반으로 t_{cur, dw}과 t_{nxt, dw} 추론
+
+# 3. Precaching
+계산 및 추론된 값을 기반으로 precaching 수행
+
+# 4. Report Result
+요청 차량이 R_{nxt}를 이탈하고 나서 정답값을 이전 RSU인 R_{cur}에게 전달
+
+# 5. Pre-training & Fine-tuning
+모델이 없는 경우, RSU들으는 데이터를 local 서버에 전송하고 dataset이 충분히 쌓인 경우 pre-training (이 논문에서는 60만개 data로 pre-training 진행. 성능평가에서 설명)
+pre-trained model이 있는 경우, local RSU에서 dataset이 충분히 쌓이는 대로 fine-tuning 진행 (이 논문에서는 5000. 성능평가에서 설명)
+제안 모델(H-ST-MBAN) 설명.

@@ -1,0 +1,5 @@
+- `[/]` 1. **Update Scripts**: Modify `train_global.py`, `train_local_pingpong.py`, and `plot_all_graphs.py` to implement the new evaluation logic.
+- `[ ]` 2. **Global Retraining**: Run `train_global.py` to train all 6 models (ST-MBAN, TabR, FTT, MLP, LSTM, GRU) for exactly 200 epochs.
+- `[ ]` 3. **Ping-Pong Evaluation**: Run `train_local_pingpong.py` evaluating both Local (Fine-tuned) and Global (Static) models.
+- `[ ]` 4. **Plot Generation**: Run `plot_all_graphs.py` to generate the new Density, Interval, and Adaptation graphs.
+- `[ ]` 5. **Update Walkthrough**: Present the new SOTA results.

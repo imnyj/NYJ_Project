@@ -1,0 +1,2 @@
+Search logs for UAM handover delay minimization and multi-network (Cellular/RSU/Starlink).
+Found multiple papers on proactive handover, CHO (Conditional Handover), predictive handovers in ISAGNs, and AI/ML based approaches.

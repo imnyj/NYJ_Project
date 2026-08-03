@@ -1,0 +1,40 @@
+# UAM Simulation Configuration
+
+```json
+{
+  "ENVIRONMENT": {
+    "WIDTH": 20000.0,
+    "HEIGHT": 20000.0,
+    "FIRST_ROAD_OFFSET": 1500.0,
+    "ROAD_INTERVAL": 3000.0,
+    "ROAD_WIDTH": 30.0
+  },
+  "RSU": {
+    "COVERAGE_RADIUS": 500.0,
+    "TX_POWER_DBM": 30.0,
+    "FREQUENCY_GHZ": 5.9,
+    "BANDWIDTH_MHZ": 20.0,
+    "MAX_DATA_RATE_MBPS": 100.0
+  },
+  "CELLULAR": {
+    "COVERAGE_RADIUS": 3500.0,
+    "TX_POWER_DBM": 46.0,
+    "FREQUENCY_GHZ": 3.5,
+    "BANDWIDTH_MHZ": 100.0,
+    "MAX_DATA_RATE_MBPS": 1000.0
+  },
+  "STARLINK": {
+    "ALTITUDE_KM": 550.0,
+    "LATENCY_MS": 30.0,
+    "MAX_DATA_RATE_MBPS": 200.0,
+    "COVERAGE_RADIUS": 50000.0
+  },
+  "VEHICLE": {
+    "MAX_HORIZONTAL_SPEED": 50.0,
+    "MAX_CLIMB_RATE": 5.0,
+    "MAX_DESCENT_RATE": 3.0,
+    "ACCELERATION": 2.5,
+    "ARRIVAL_RADIUS": 5.0
+  }
+}
+```

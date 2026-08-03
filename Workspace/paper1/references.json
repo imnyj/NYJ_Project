@@ -1,0 +1,86 @@
+{
+  "LR": {
+    "title": "The regression analysis of binary sequences",
+    "authors": "Cox, D. R.",
+    "venue": "Journal of the Royal Statistical Society: Series B (Methodological)",
+    "year": 1958,
+    "publisher": "Wiley"
+  },
+  "RF": {
+    "title": "Random forests",
+    "authors": "Breiman, L.",
+    "venue": "Machine learning",
+    "year": 2001,
+    "publisher": "Springer"
+  },
+  "XGBoost": {
+    "title": "XGBoost: A scalable tree boosting system",
+    "authors": "Chen, T., & Guestrin, C.",
+    "venue": "Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining",
+    "year": 2016,
+    "publisher": "ACM"
+  },
+  "CatBoost": {
+    "title": "CatBoost: unbiased boosting with categorical features",
+    "authors": "Prokhorenkova, L., Gusev, G., Vorobev, A., Dorogush, A. V., & Gulin, A.",
+    "venue": "Advances in Neural Information Processing Systems",
+    "year": 2018,
+    "publisher": "Curran Associates, Inc."
+  },
+  "NGBoost": {
+    "title": "NGBoost: Natural gradient boosting for probabilistic prediction",
+    "authors": "Duan, T., Anand, A., Ding, D. Y., Thai, K. K., Schuler, S., Ng, A. Y., & Schuler, A.",
+    "venue": "International Conference on Machine Learning",
+    "year": 2020,
+    "publisher": "PMLR"
+  },
+  "MLP": {
+    "title": "Learning representations by back-propagating errors",
+    "authors": "Rumelhart, D. E., Hinton, G. E., & Williams, R. J.",
+    "venue": "Nature",
+    "year": 1986,
+    "publisher": "Nature Publishing Group"
+  },
+  "FTT": {
+    "title": "Revisiting Deep Learning Models for Tabular Data",
+    "authors": "Gorishniy, Y., Rubachev, I., Khrulkov, V., & Babenko, A.",
+    "venue": "Advances in Neural Information Processing Systems",
+    "year": 2021,
+    "publisher": "Curran Associates, Inc."
+  },
+  "ResNet": {
+    "title": "Deep residual learning for image recognition",
+    "authors": "He, K., Zhang, X., Ren, S., & Sun, J.",
+    "venue": "Proceedings of the IEEE conference on computer vision and pattern recognition",
+    "year": 2016,
+    "publisher": "IEEE"
+  },
+  "LSTM": {
+    "title": "Long short-term memory",
+    "authors": "Hochreiter, S., & Schmidhuber, J.",
+    "venue": "Neural computation",
+    "year": 1997,
+    "publisher": "MIT Press"
+  },
+  "GRU": {
+    "title": "Learning phrase representations using RNN encoder-decoder for statistical machine translation",
+    "authors": "Cho, K., Van Merri\u00ebnboer, B., Gulcehre, C., Bahdanau, D., Bougares, F., Schwenk, H., & Bengio, Y.",
+    "venue": "Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP)",
+    "year": 2014,
+    "publisher": "Association for Computational Linguistics"
+  },
+  "TabR": {
+    "title": "TabR: Tabular Deep Learning Meets Nearest Neighbors",
+    "authors": "Gorishniy, Y., Rubachev, I., Kartashev, N., Shlenskii, D., Kotelnikov, A., & Babenko, A.",
+    "venue": "The Twelfth International Conference on Learning Representations",
+    "year": 2024,
+    "publisher": "ICLR"
+  },
+  "TabPFN": {
+    "title": "TabPFN: A Transformer That Solves Small Tabular Classification Problems in a Second",
+    "authors": "Hollmann, N., M\u00fcller, S., Eggensperger, K., & Hutter, F.",
+    "venue": "The Eleventh International Conference on Learning Representations",
+    "year": 2023,
+    "publisher": "ICLR"
+  }
+}

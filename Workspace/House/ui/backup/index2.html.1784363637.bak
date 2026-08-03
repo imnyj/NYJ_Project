@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>부동산 대출 및 자금 계산기</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #ffffff;
+            --glass-bg: #ffffff;
+            --glass-border: #000000;
+            --text-main: #000000;
+            --text-muted: #000000;
+            --accent: #000000;
+            --danger: #000000;
+            --success: #000000;
+            --card-shadow: none;
+        }
+        body {
+            background: #ffffff;
+            color: #000000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0; padding: 20px;
+            font-weight: 800;
+        }
+        .container { max-width: 1000px; margin: 0 auto; }
+        .glass {
+            background: #ffffff;
+            border: 3px solid #000000;
+            border-radius: 0;
+            box-shadow: none;
+            padding: 30px;
+            margin-bottom: 24px;
+        }
+        h1, h2, h3, p, label, strong, span { color: #000000 !important; font-weight: 900 !important; }
+        .tabs { display: flex; gap: 12px; margin-bottom: 30px; flex-wrap: wrap; justify-content: center; }
+        .tab-btn {
+            background: #ffffff; border: 3px solid #000000;
+            padding: 12px 24px; color: #000000;
+            cursor: pointer; font-weight: 900; font-size: 1.1em;
+            border-radius: 0;
+        }
+        .tab-btn.active { background: #000000; color: #ffffff !important; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        .grid { display: grid; grid-template-columns: 1fr; gap: 30px; }
+        @media (min-width: 768px) { .grid { grid-template-columns: 1fr 1fr; } }
+        
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 900; color: #000000; }
+        .form-group input[type="number"] { 
+            width: 100%; padding: 12px; border: 3px solid #000000;
+            background: #ffffff; color: #000000; box-sizing: border-box;
+            font-size: 1.2em; outline: none; font-weight: 900;
+        }
+        .form-group input[type="range"] { width: 100%; margin-top: 8px; }
+        
+        .loan-item { padding: 20px; margin-bottom: 15px; border: 3px solid #000000; background: #ffffff; }
+        .possible { border-left: 12px solid #000000; }
+        .impossible { border-left: 12px dashed #000000; }
+        
+        .result-box { padding: 20px; background: #ffffff; border: 3px solid #000000; }
+        .circle-progress {
+            width: 220px; height: 220px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            border: 6px solid #000000; background: #ffffff;
+        }
+        .circle-inner {
+            width: 190px; height: 190px; border-radius: 50%;
+            background: #ffffff; border: 4px solid #000000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+</style>
+</head>
+<body>
+    
+    
+    
+    
+    
+    <div class="container">
+        <h1>부동산 대출 및 자금 계산기</h1>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('tab1')">대출 정리</button>
+            <button class="tab-btn" onclick="switchTab('tab2')">대출 계산기</button>
+            <button class="tab-btn" onclick="switchTab('tab3')">역산 계산기</button>
+            <button class="tab-btn" onclick="switchTab('tab4')">별채 거주</button>
+        </div>
+
+        <!-- 탭 1: 대출 정리 -->
+        <div id="tab1" class="tab-content active glass">
+            <h2 style="margin-bottom: 20px; border-bottom: 2px solid var(--glass-border); padding-bottom: 10px;">대출 종류별 가능 여부 <span style="font-size:0.6em; color:var(--text-muted);">(부부합산 소득 1.5억 이상 기준)</span></h2>
+            
+            <div class="loan-item impossible">
+                <h3 style="margin-top:0; color:var(--danger);">신혼부부 특례 (디딤돌 대출) ❌ (불가능)</h3>
+                <p><strong>원인:</strong> 신혼부부 특례나 신혼부부 전용 디딤돌 대출은 부부합산 연소득 8.5천만원 이하여야 하나, 두 분의 합산 소득이 1.5억 이상이므로 <strong>소득 기준 초과</strong>로 대상이 아닙니다.</p>
+            </div>
+            <div class="loan-item possible">
+                <h3 style="margin-top:0; color:var(--success);">보금자리론 ✅ (가능)</h3>
+                <p><strong>원인:</strong> 소득 제한이 없는 특례보금자리론 기준 적용이 가능하거나 일반 보금자리론 요건 충족 시 가능.</p>
+            </div>
+            <div class="loan-item possible">
+                <h3 style="margin-top:0; color:var(--success);">신생아 특례대출 ✅ (가능)</h3>
+                <p><strong>원인:</strong> 소득 요건이 기존 1.3억에서 <strong>2억 이하로 완화</strong>되어 조건 충족됨. (출산 조건 필요)</p>
+            </div>
+            <div class="loan-item possible">
+                <h3 style="margin-top:0; color:var(--success);">일반 주택담보대출 ✅ (가능)</h3>
+                <p><strong>원인:</strong> 소득 제한이 없어 언제든 신청 가능. 단, 정부지원 대출 대비 <strong>금리가 높음</strong>.</p>
+            </div>
+        </div>
+
+        <!-- 탭 2: 대출 계산기 -->
+        <div id="tab2" class="tab-content glass">
+            <h2 style="margin-bottom: 20px;">대출 계산기 <span style="font-size:0.6em; color:var(--text-muted);">(보금자리론 → 신생아 대출 전략)</span></h2>
+            <div class="result-box" style="margin-bottom: 25px;">
+                <strong>기본 자금 Fix: <span style="color:var(--accent); font-size:1.2em;">2억 3,000만원</span></strong>
+                <p style="margin: 5px 0 0 0; font-size:0.9em; color:var(--text-muted);">내 부모님 1억 + 나 3천만원 + 은비네 부모님 1억</p>
+            </div>
+            
+            <div class="grid">
+                <div>
+                    <div class="form-group">
+                        <label>아파트 가격 <span class="value-display" id="t2-apt-val">4억 5,000만원</span></label>
+                        <input type="range" id="t2-apt" min="300000000" max="450000000" step="1000000" value="450000000" oninput="updateTab2()">
+                    </div>
+                    <div class="form-group">
+                        <label>신생아 대출 전환 시점 <span class="value-display" id="t2-switch-val">3년 뒤</span></label>
+                        <input type="range" id="t2-switch" min="1" max="10" step="1" value="3" oninput="updateTab2()">
+                    </div>
+                    <div class="form-group">
+                        <label>대출 상환 기간 <span class="value-display" id="t2-period-val">30년</span></label>
+                        <input type="range" id="t2-period" min="30" max="40" step="5" value="30" oninput="updateTab2()">
+                    </div>
+                    <div class="form-group">
+                        <label>월급 중 대출 상환 가능액 (원) <span style="font-weight:normal; font-size:0.8em;">(이자+원금)</span></label>
+                        <input type="number" id="t2-payment" value="500000" step="100000" oninput="updateTab2()">
+                    </div>
+                    <div class="form-group">
+                        <label>연간 교연비 투입액 (원)</label>
+                        <input type="number" id="t2-annual-bonus" value="8000000" step="1000000" oninput="updateTab2()">
+                    </div>
+                    <div class="form-group">
+                        <label>연간 부가 수익 투입액 (원)</label>
+                        <input type="number" id="t2-annual-extra" value="1000000" step="100000" oninput="updateTab2()">
+                    </div>
+                    
+                    <div class="result-box" style="margin-top: 20px;">
+                        <p style="margin:0;">필요 대출 금액: <strong id="t2-loan-amount" style="color:var(--accent); font-size:1.2em;">1억 2,000만원</strong></p>
+                        <p style="margin: 10px 0 0 0;">총 상환 원금: <strong id="t2-total-principal" style="color:var(--text-main);">0원</strong></p>
+                        <p style="margin: 5px 0 0 0;">총 상환액(원금+이자): <strong id="t2-total-payment" style="color:var(--accent);">0원</strong></p>
+                    </div>
+                </div>
+                <div>
+                    <canvas id="chartTab2" style="max-height: 350px;"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 탭 3: 역산 계산기 -->
+        <div id="tab3" class="tab-content glass">
+            <h2 style="margin-bottom: 20px;">역산 계산기 <span style="font-size:0.6em; color:var(--text-muted);">(목표 상환액으로 상환 기간 산출)</span></h2>
+            <div class="result-box" style="margin-bottom: 25px;">
+                <strong>기본 자금 Fix: <span style="color:var(--accent); font-size:1.2em;">2억 3,000만원</span></strong>
+                <p style="margin: 5px 0 0 0; font-size:0.9em; color:var(--text-muted);">내 부모님 1억 + 나 3천만원 + 은비네 부모님 1억</p>
+            </div>
+            
+            <div class="grid">
+                <div>
+                    <div class="form-group">
+                        <label>아파트 가격 <span class="value-display" id="t3-apt-val">4억 5,000만원</span></label>
+                        <input type="range" id="t3-apt" min="300000000" max="450000000" step="1000000" value="450000000" oninput="updateTab3()">
+                    </div>
+                    <div class="form-group">
+                        <label>신생아 대출 전환 시점 <span class="value-display" id="t3-switch-val">3년 뒤</span></label>
+                        <input type="range" id="t3-switch" min="1" max="10" step="1" value="3" oninput="updateTab3()">
+                    </div>
+                    <div class="form-group">
+                        <label>월 최대 상환 가능액 (원) <span style="font-weight:normal; font-size:0.8em;">(이자+원금)</span></label>
+                        <input type="number" id="t3-payment" value="500000" step="100000" oninput="updateTab3()">
+                    </div>
+                    <div class="form-group">
+                        <label>연간 교연비 투입액 (원)</label>
+                        <input type="number" id="t3-annual-bonus" value="8000000" step="1000000" oninput="updateTab3()">
+                    </div>
+                    <div class="form-group">
+                        <label>연간 부가 수익 투입액 (원)</label>
+                        <input type="number" id="t3-annual-extra" value="1000000" step="1000000" oninput="updateTab3()">
+                    </div>
+                    
+                    <div class="result-box" style="margin-top: 20px;">
+                        <p style="margin:0;">예상 상환 완료: <strong id="t3-result-time" style="color:var(--success); font-size:1.2em;">-</strong></p>
+                        <p style="margin: 10px 0 0 0;">총 상환 원금: <strong id="t3-total-principal" style="color:var(--text-main);">0원</strong></p>
+                        <p style="margin: 5px 0 0 0;">총 상환액(원금+이자): <strong id="t3-total-payment" style="color:var(--accent);">0원</strong></p>
+                        <p style="margin: 10px 0 0 0; font-size:0.9em; color:var(--danger);" id="t3-error-msg"></p>
+                    </div>
+                </div>
+                <div>
+                    <canvas id="chartTab3" style="max-height: 350px;"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 탭 4: 별채 거주 -->
+        <div id="tab4" class="tab-content glass">
+            <h2 style="margin-bottom: 20px;">별채 거주 (독립 자금 마련)</h2>
+            <div class="result-box" style="margin-bottom: 25px;">
+                <strong>기본 자금 Fix: <span style="color:var(--accent); font-size:1.2em;">2억 3,000만원</span></strong>
+                <p style="margin: 5px 0 0 0; font-size:0.9em; color:var(--text-muted);">내 부모님 1억 + 나 3천만원 + 은비네 부모님 1억</p>
+            </div>
+            
+            <div class="grid">
+                <div>
+                    <div class="form-group">
+                        <label>목표 아파트 가격 <span class="value-display" id="t4-apt-val">3억 5,000만원</span></label>
+                        <input type="range" id="t4-apt" min="300000000" max="450000000" step="1000000" value="450000000" oninput="updateTab4()">
+                    </div>
+                    <div class="form-group">
+                        <label>월 저축액 (원)</label>
+                        <input type="number" id="t4-saving" value="500000" step="100000" oninput="updateTab4()">
+                    </div>
+                    <div class="form-group">
+                        <label>학기당 부가 수익 (원) <span style="font-weight:normal; font-size:0.8em;">(특강 등)</span></label>
+                        <input type="number" id="t4-extra" value="500000" step="100000" oninput="updateTab4()">
+                    </div>
+                    <p style="font-size: 0.85em; color: var(--text-muted); background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px;">
+                        📌 매년 <strong>교연비 1,000만원</strong>이 추가 합산 반영됩니다.
+                    </p>
+                </div>
+                <div style="display: flex; align-items: center; justify-content: center; flex-direction: column;">
+                    <div class="circle-progress" id="t4-circle">
+                        <div class="circle-inner">
+                            <span style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 5px;">목표 달성까지</span>
+                            <strong id="t4-years" style="font-size: 2.2em; color: var(--accent);">3.5년</strong>
+                        </div>
+                    </div>
+                    <div class="result-box" style="margin-top: 25px; width: 80%; text-align: center;">
+                        <p style="margin:0;">필요 추가 자금: <br><strong id="t4-need" style="font-size:1.2em;">1억 2,000만원</strong></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_CASH = 230000000;
+        
+        function formatKRW(val) {
+            if (val <= 0) return '0원';
+            const uk = Math.floor(val / 100000000);
+            const man = Math.floor((val % 100000000) / 10000);
+            if (uk > 0 && man > 0) return `${uk}억 ${man.toLocaleString()}만원`;
+            if (uk > 0) return `${uk}억원`;
+            return `${man.toLocaleString()}만원`;
+        }
+
+        function toggleTheme() {} else { 
+                body.setAttribute('data-theme', 'dark'); 
+                btn.innerText = '☀️';
+            }
+            // updateChartTheme();
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            document.querySelector(`button[onclick="switchTab('${tabId}')"]`).classList.add('active');
+            
+            if(tabId === 'tab2') updateTab2();
+            if(tabId === 'tab3') updateTab3();
+            if(tabId === 'tab4') updateTab4();
+        }
+
+        let chart2, chart3;
+
+        function initCharts() {
+            const ctx2 = document.getElementById('chartTab2').getContext('2d');
+            chart2 = new Chart(ctx2, {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { 
+                        label: '이자 + 원금상환액 (원)', 
+                        data: [], 
+                        borderColor: '#000000', borderDash: [5, 5], 
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: false,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#000000',
+                        pointRadius: 4
+                    },
+                    { 
+                        label: '월 이자 부담액 (원)', 
+                        data: [], 
+                        borderColor: '#000000', 
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#000000',
+                        pointRadius: 4
+                    }
+                ] },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } },
+                    plugins: { 
+                        tooltip: { callbacks: { label: function(context) { return Math.round(context.raw).toLocaleString() + '원'; } } },
+                        legend: { labels: { font: { family: 'inherit', weight: 'bold' } } } 
+                    }
+                }
+            });
+
+            const ctx3 = document.getElementById('chartTab3').getContext('2d');
+            chart3 = new Chart(ctx3, {
+                type: 'line',
+                data: { labels: [], datasets: [
+                    { 
+                        label: '월 최대 상환액 (이자+원금)', 
+                        data: [], 
+                        borderColor: '#000000', borderDash: [5, 5], 
+                        backgroundColor: 'rgba(0, 0, 0, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: false,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#000000',
+                        pointRadius: 4
+                    },
+                    { 
+                        label: '월 이자액 (원)', 
+                        data: [], 
+                        borderColor: '#000000', borderDash: [10, 5], 
+                        backgroundColor: 'rgba(0, 0, 0, 0.15)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: true,
+                        pointBackgroundColor: '#fff',
+                        pointBorderColor: '#000000',
+                        pointRadius: 4
+                    }
+                ] },
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } },
+                    plugins: { 
+                        tooltip: { callbacks: { label: function(context) { return Math.round(context.raw).toLocaleString() + '원'; } } },
+                        legend: { labels: { font: { family: 'inherit', weight: 'bold' } } } 
+                    }
+                }
+            });
+            // updateChartTheme();
+        }
+
+        function updateChartTheme() {
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            const color = isDark ? '#f8fafc' : '#1f2937';
+            const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+            
+            [chart2, chart3].forEach(chart => {
+                if(!chart) return;
+                chart.options.plugins.legend.labels.color = color;
+                if(chart.options.scales.x) {
+                    chart.options.scales.x.ticks.color = color;
+                    chart.options.scales.x.grid.color = gridColor;
+                }
+                if(chart.options.scales.y) {
+                    chart.options.scales.y.ticks.color = color;
+                    chart.options.scales.y.grid.color = gridColor;
+                }
+                chart.update();
+            });
+        }
+
+        function updateTab2() {
+            const aptPrice = parseInt(document.getElementById('t2-apt').value);
+            const switchYear = parseInt(document.getElementById('t2-switch').value);
+            const period = parseInt(document.getElementById('t2-period').value);
+            const monthlyPayment = parseInt(document.getElementById('t2-payment').value);
+            const annualBonus = parseInt(document.getElementById('t2-annual-bonus').value) || 0;
+            const annualExtra = parseInt(document.getElementById('t2-annual-extra').value) || 0;
+            const extraAnnualRepayment = annualBonus + annualExtra;
+
+            document.getElementById('t2-apt-val').innerText = formatKRW(aptPrice);
+            document.getElementById('t2-switch-val').innerText = switchYear + '년 뒤';
+            document.getElementById('t2-period-val').innerText = period + '년';
+
+            const loanAmount = aptPrice - BASE_CASH;
+            document.getElementById('t2-loan-amount').innerText = formatKRW(loanAmount);
+
+            const labels = [];
+            const interestData = [];
+            const totalData = [];
+            let currentLoan = loanAmount;
+            let totalInterestPaid = 0;
+            let totalPrincipalPaid = 0;
+            let accumulatedShortfall = 0;
+            
+            // 보금자리론 평균 4.2%, 신생아 대출 평균 2.0% 가정
+            const rate1 = 0.042; 
+            const rate2 = 0.020;
+
+            if (loanAmount <= 0) {
+                chart2.data.labels = [];
+                chart2.data.datasets[0].data = [];
+                chart2.data.datasets[1].data = [];
+                chart2.update();
+                return;
+            }
+            
+            const maxMonths = period * 12;
+            for(let month = 1; month <= maxMonths; month++) {
+                if(currentLoan <= 0) break;
+                
+                const currentYear = Math.ceil(month / 12);
+                const currentRate = currentYear <= switchYear ? rate1 : rate2;
+                const monthlyInterest = currentLoan * (currentRate / 12);
+                
+                if (monthlyPayment >= monthlyInterest) {
+                    const principalPayment = monthlyPayment - monthlyInterest;
+                    let actualP = Math.min(currentLoan, principalPayment);
+                    totalPrincipalPaid += actualP;
+                    totalInterestPaid += monthlyInterest;
+                    currentLoan -= actualP;
+                } else {
+                    totalInterestPaid += monthlyPayment;
+                    accumulatedShortfall += (monthlyInterest - monthlyPayment);
+                }
+                
+                if (month % 12 === 0) {
+                    if (extraAnnualRepayment >= accumulatedShortfall) {
+                        const remainingBonus = extraAnnualRepayment - accumulatedShortfall;
+                        accumulatedShortfall = 0;
+                        let actualExtraP = Math.min(currentLoan, remainingBonus);
+                        totalPrincipalPaid += actualExtraP;
+                        currentLoan -= actualExtraP;
+                    } else {
+                        accumulatedShortfall -= extraAnnualRepayment;
+                        currentLoan += accumulatedShortfall;
+                        accumulatedShortfall = 0;
+                    }
+                    
+                    labels.push(`${currentYear}년차`);
+                    interestData.push(Math.round(monthlyInterest));
+                    totalData.push(monthlyPayment);
+                } else if (currentLoan <= 0) {
+                    labels.push(`${currentYear}년차 (${month % 12}개월)`);
+                    interestData.push(Math.round(monthlyInterest));
+                    totalData.push(monthlyPayment);
+                }
+            }
+
+            chart2.data.labels = labels;
+            chart2.data.datasets[0].data = totalData;
+            chart2.data.datasets[1].data = interestData;
+            chart2.update();
+            if(document.getElementById('t2-total-principal')) {
+                document.getElementById('t2-total-principal').innerText = formatKRW(Math.round(totalPrincipalPaid));
+                document.getElementById('t2-total-payment').innerText = formatKRW(Math.round(totalPrincipalPaid + totalInterestPaid));
+            }
+        }
+
+        function updateTab3() {
+            const aptPrice = parseInt(document.getElementById('t3-apt').value);
+            const switchYear = parseInt(document.getElementById('t3-switch').value);
+            const monthlyPayment = parseInt(document.getElementById('t3-payment').value);
+            const annualBonus = parseInt(document.getElementById('t3-annual-bonus').value) || 0;
+            const annualExtra = parseInt(document.getElementById('t3-annual-extra').value) || 0;
+            const extraAnnualRepayment = annualBonus + annualExtra;
+
+            document.getElementById('t3-apt-val').innerText = formatKRW(aptPrice);
+            document.getElementById('t3-switch-val').innerText = switchYear + '년 뒤';
+            
+            let loanAmount = aptPrice - BASE_CASH;
+            const errorMsgEl = document.getElementById('t3-error-msg');
+            const resultTimeEl = document.getElementById('t3-result-time');
+            
+            errorMsgEl.innerText = "";
+            resultTimeEl.innerText = "-";
+
+            const rate1 = 0.042; 
+            const rate2 = 0.020;
+
+            if (loanAmount <= 0) {
+                resultTimeEl.innerText = "대출 불필요 (보유 자금으로 구매 가능)";
+                chart3.data.labels = [];
+                chart3.data.datasets[0].data = [];
+                chart3.data.datasets[1].data = [];
+                chart3.update();
+                return;
+            }
+
+            let currentLoan = loanAmount;
+            let month = 0;
+            const labels = [];
+            const interestData = [];
+            const paymentData = [];
+            let totalInterestPaid = 0;
+            let totalPrincipalPaid = 0;
+            let accumulatedShortfall = 0;
+            
+            const MAX_MONTHS = 1200; // 최대 100년 방지용
+            
+            while (currentLoan > 0 && month < MAX_MONTHS) {
+                month++;
+                const currentYear = Math.ceil(month / 12);
+                const currentRate = currentYear <= switchYear ? rate1 : rate2;
+                const monthlyInterest = currentLoan * (currentRate / 12);
+                
+                if (monthlyPayment >= monthlyInterest) {
+                    const principalPayment = monthlyPayment - monthlyInterest;
+                    let actualP = Math.min(currentLoan, principalPayment);
+                    totalPrincipalPaid += actualP;
+                    totalInterestPaid += monthlyInterest;
+                    currentLoan -= actualP;
+                } else {
+                    totalInterestPaid += monthlyPayment;
+                    accumulatedShortfall += (monthlyInterest - monthlyPayment);
+                }
+                
+                if (month % 12 === 0) {
+                    if (extraAnnualRepayment >= accumulatedShortfall) {
+                        const remainingBonus = extraAnnualRepayment - accumulatedShortfall;
+                        accumulatedShortfall = 0;
+                        let actualExtraP = Math.min(currentLoan, remainingBonus);
+                        totalPrincipalPaid += actualExtraP;
+                        currentLoan -= actualExtraP;
+                    } else {
+                        accumulatedShortfall -= extraAnnualRepayment;
+                        currentLoan += accumulatedShortfall;
+                        accumulatedShortfall = 0;
+                    }
+                }
+                
+                // 매년 12번째 달 혹은 마지막 달의 데이터를 그래프에 표시
+                if (month % 12 === 0 || currentLoan <= 0) {
+                    labels.push(`${currentYear}년차`);
+                    interestData.push(Math.round(monthlyInterest));
+                    paymentData.push(monthlyPayment);
+                }
+            }
+            
+            if (currentLoan <= 0) {
+                const years = Math.floor(month / 12);
+                const months = month % 12;
+                let resultText = "";
+                if (years > 0) resultText += `${years}년 `;
+                if (months > 0 || years === 0) resultText += `${months}개월 `;
+                resultText += "소요";
+                resultTimeEl.innerText = resultText;
+                if(document.getElementById('t3-total-principal')) {
+                    document.getElementById('t3-total-principal').innerText = formatKRW(Math.round(totalPrincipalPaid));
+                    document.getElementById('t3-total-payment').innerText = formatKRW(Math.round(totalPrincipalPaid + totalInterestPaid));
+                }
+            } else {
+                errorMsgEl.innerText = "100년 내 상환이 불가능한 조건입니다.";
+                if(document.getElementById('t3-total-principal')) {
+                    document.getElementById('t3-total-principal').innerText = "-";
+                    document.getElementById('t3-total-payment').innerText = "-";
+                }
+            }
+            
+            chart3.data.labels = labels;
+            chart3.data.datasets[0].data = paymentData;
+            chart3.data.datasets[1].data = interestData;
+            chart3.update();
+        }
+
+        function updateTab4() {
+            const aptPrice = parseInt(document.getElementById('t4-apt').value);
+            const monthlySaving = parseInt(document.getElementById('t4-saving').value) || 0;
+            const extraPerSemester = parseInt(document.getElementById('t4-extra').value) || 0;
+            
+            document.getElementById('t4-apt-val').innerText = formatKRW(aptPrice);
+
+            const needAmount = aptPrice - BASE_CASH;
+            document.getElementById('t4-need').innerText = formatKRW(needAmount);
+
+            if(needAmount <= 0) {
+                document.getElementById('t4-years').innerText = "완료!";
+                document.getElementById('t4-circle').style.background = `conic-gradient(var(--success) 100%, rgba(0,0,0,0.1) 0%)`;
+                return;
+            }
+
+            const annualSaving = (monthlySaving * 12) + 10000000 + (extraPerSemester * 2);
+            
+            if (annualSaving <= 0) {
+                document.getElementById('t4-years').innerText = "∞";
+                document.getElementById('t4-circle').style.background = `conic-gradient(var(--danger) 100%, rgba(0,0,0,0.1) 0%)`;
+                return;
+            }
+
+            const years = needAmount / annualSaving;
+            document.getElementById('t4-years').innerText = years.toFixed(1) + '년';
+
+            let progress = Math.min(100, (1 - Math.min(years, 10)/10) * 100); 
+            if (years <= 3) progress = 90;
+            else if (years <= 5) progress = 70;
+            else if (years <= 8) progress = 40;
+            else progress = 20;
+
+            document.getElementById('t4-circle').style.background = `conic-gradient(var(--accent) ${progress}%, rgba(0,0,0,0.1) ${progress}%)`;
+        }
+
+        window.onload = () => {
+            initCharts();
+            updateTab2();
+            updateTab3();
+            updateTab4();
+        };
+    </script>
+</body>
+</html>

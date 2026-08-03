@@ -1,0 +1,1103 @@
+%% bare_jrnl.tex
+%% V1.4b
+%% 2015/08/26
+%% by Michael Shell
+%% see http://www.michaelshell.org/
+%% for current contact information.
+%%
+%% This is a skeleton file demonstrating the use of IEEEtran.cls
+%% (requires IEEEtran.cls version 1.8b or later) with an IEEE
+%% journal paper.
+%%
+%% Support sites:
+%% http://www.michaelshell.org/tex/ieeetran/
+%% http://www.ctan.org/pkg/ieeetran
+%% and
+%% http://www.ieee.org/
+%%*************************************************************************
+%% Legal Notice:
+%% This code is offered as-is without any warranty either expressed or
+%% implied; without even the implied warranty of MERCHANTABILITY or
+%% FITNESS FOR A PARTICULAR PURPOSE! 
+%% User assumes all risk.
+%% In no event shall the IEEE or any contributor to this code be liable for
+%% any damages or losses, including, but not limited to, incidental,
+%% consequential, or any other damages, resulting from the use or misuse
+%% of any information contained here.
+%%
+%% All comments are the opinions of their respective authors and are not
+%% necessarily endorsed by the IEEE.
+%%
+%% This work is distributed under the LaTeX Project Public License (LPPL)
+%% ( http://www.latex-project.org/ ) version 1.3, and may be freely used,
+%% distributed and modified. A copy of the LPPL, version 1.3, is included
+%% in the base LaTeX documentation of all distributions of LaTeX released
+%% 2003/12/01 or later.
+%% Retain all contribution notices and credits.
+%% ** Modified files should be clearly indicated as such, including  **
+%% ** renaming them and changing author support contact information. **
+%%*************************************************************************
+% *** Authors should verify (and, if needed, correct) their LaTeX system  ***
+% *** with the testflow diagnostic prior to trusting their LaTeX platform ***
+% *** with production work. The IEEE's font choices and paper sizes can   ***
+% *** trigger bugs that do not appear when using other class files.       ***
+% The testflow support page is at:
+% http://www.michaelshell.org/tex/testflow/
+\documentclass[journal]{IEEEtran}
+% If IEEEtran.cls has not been installed into the LaTeX system files,
+% manually specify the path to it like:
+% \documentclass[journal]{../sty/IEEEtran}
+
+% Some very useful LaTeX packages include:
+% (uncomment the ones you want to load)
+
+% *** MISC UTILITY PACKAGES ***
+%\usepackage{ifpdf}
+% Heiko Oberdiek's ifpdf.sty is very useful if you need conditional
+% compilation based on whether the output is pdf or dvi.
+% usage:
+% \ifpdf
+%   % pdf code
+% \else
+%   % dvi code
+% \fi
+% The latest version of ifpdf.sty can be obtained from:
+% http://www.ctan.org/pkg/ifpdf
+% Also, note that IEEEtran.cls V1.7 and later provides a builtin
+% \ifCLASSINFOpdf conditional that works the same way.
+% When switching from latex to pdflatex and vice-versa, the compiler may
+% have to be run twice to clear warning/error messages.
+
+% *** CITATION PACKAGES ***
+%
+\usepackage{cite}
+% cite.sty was written by Donald Arseneau
+% V1.6 and later of IEEEtran pre-defines the format of the cite.sty package
+% \cite{} output to follow that of the IEEE. Loading the cite package will
+% result in citation numbers being automatically sorted and properly
+% "compressed/ranged". e.g., [1], [9], [2], [7], [5], [6] without using
+% cite.sty will become [1], [2], [5]--[7], [9] using cite.sty. cite.sty's
+% \cite will automatically add leading space, if needed. Use cite.sty's
+% noadjust option (cite.sty V3.8 and later) if you want to turn this off
+% such as if a citation ever needs to be enclosed in parenthesis.
+% cite.sty is already installed on most LaTeX systems. Be sure and use
+% version 5.0 (2009-03-20) and later if using hyperref.sty.
+% The latest version can be obtained at:
+% http://www.ctan.org/pkg/cite
+% The documentation is contained in the cite.sty file itself.
+
+% *** GRAPHICS RELATED PACKAGES ***
+\usepackage{multirow,makecell}
+\usepackage{booktabs, pifont}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}}
+\newcolumntype{L}[1]{m{#1}}
+\ifCLASSINFOpdf
+  \usepackage[pdftex]{graphicx}
+  % declare the path(s) where your graphic files are
+  % \graphicspath{{../pdf/}{../jpeg/}}
+  % and their extensions so you won't have to specify these with
+  % every instance of \includegraphics
+  % \DeclareGraphicsExtensions{.pdf,.jpeg,.png}
+\else
+  % or other class option (dvipsone, dvipdf, if not using dvips). graphicx
+  % will default to the driver specified in the system graphics.cfg if no
+  % driver is specified.
+  % \usepackage[dvips]{graphicx}
+  % declare the path(s) where your graphic files are
+  % \graphicspath{{../eps/}}
+  % and their extensions so you won't have to specify these with
+  % every instance of \includegraphics
+  % \DeclareGraphicsExtensions{.eps}
+\fi
+% graphicx was written by David Carlisle and Sebastian Rahtz. It is
+% required if you want graphics, photos, etc. graphicx.sty is already
+% installed on most LaTeX systems. The latest version and documentation
+% can be obtained at: 
+% http://www.ctan.org/pkg/graphicx
+% Another good source of documentation is "Using Imported Graphics in
+% LaTeX2e" by Keith Reckdahl which can be found at:
+% http://www.ctan.org/pkg/epslatex
+%
+% latex, and pdflatex in dvi mode, support graphics in encapsulated
+% postscript (.eps) format. pdflatex in pdf mode supports graphics
+% in .pdf, .jpeg, .png and .mps (metapost) formats. Users should ensure
+% that all non-photo figures use a vector format (.eps, .pdf, .mps) and
+% not a bitmapped formats (.jpeg, .png). The IEEE frowns on bitmapped formats
+% which can result in "jaggedy"/blurry rendering of lines and letters as
+% well as large increases in file sizes.
+%
+% You can find documentation about the pdfTeX application at:
+% http://www.tug.org/applications/pdftex
+
+% *** MATH PACKAGES ***
+\usepackage{amsmath}
+\usepackage{amssymb}
+% A popular package from the American Mathematical Society that provides
+% many useful and powerful commands for dealing with mathematics.
+%
+% Note that the amsmath package sets \interdisplaylinepenalty to 10000
+% thus preventing page breaks from occurring within multiline equations. Use:
+%\interdisplaylinepenalty=2500
+% after loading amsmath to restore such page breaks as IEEEtran.cls normally
+% does. amsmath.sty is already installed on most LaTeX systems. The latest
+% version and documentation can be obtained at:
+% http://www.ctan.org/pkg/amsmath
+
+% *** SPECIALIZED LIST PACKAGES ***
+%\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+% algorithmic.sty was written by Peter Williams and Rogerio Brito.
+% This package provides an algorithmic environment fo describing algorithms.
+% You can use the algorithmic environment in-text or within a figure
+% environment to provide for a floating algorithm. Do NOT use the algorithm
+% floating environment provided by algorithm.sty (by the same authors) or
+% algorithm2e.sty (by Christophe Fiorio) as the IEEE does not use dedicated
+% algorithm float types and packages that provide these will not provide
+% correct IEEE style captions. The latest version and documentation of
+% algorithmic.sty can be obtained at:
+% http://www.ctan.org/pkg/algorithms
+% Also of interest may be the (relatively newer and more customizable)
+% algorithmicx.sty package by Szasz Janos:
+% http://www.ctan.org/pkg/algorithmicx
+
+% *** ALIGNMENT PACKAGES ***
+\usepackage{array}
+% Frank Mittelbach's and David Carlisle's array.sty patches and improves
+% the standard LaTeX2e array and tabular environments to provide better
+% appearance and additional user controls. As the default LaTeX2e table
+% generation code is lacking to the point of almost being broken with
+% respect to the quality of the end results, all users are strongly
+% advised to use an enhanced (at the very least that provided by array.sty)
+% set of table tools. array.sty is already installed on most systems. The
+% latest version and documentation can be obtained at:
+% http://www.ctan.org/pkg/array
+
+% IEEEtran contains the IEEEeqnarray family of commands that can be used to
+% generate multiline equations as well as matrices, tables, etc., of high
+% quality.
+
+% *** SUBFIGURE PACKAGES ***
+\usepackage{subfigure}
+%\ifCLASSOPTIONcompsoc
+%  \usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+%\else
+%  \usepackage[caption=false,font=footnotesize]{subfig}
+%\fi
+% subfig.sty, written by Steven Douglas Cochran, is the modern replacement
+% for subfigure.sty, the latter of which is no longer maintained and is
+% incompatible with some LaTeX packages including fixltx2e. However,
+% subfig.sty requires and automatically loads Axel Sommerfeldt's caption.sty
+% which will override IEEEtran.cls' handling of captions and this will result
+% in non-IEEE style figure/table captions. To prevent this problem, be sure
+% and invoke subfig.sty's "caption=false" package option (available since
+% subfig.sty version 1.3, 2005/06/28) as this is will preserve IEEEtran.cls
+% handling of captions.
+% Note that the Computer Society format requires a larger sans serif font
+% than the serif footnote size font used in traditional IEEE formatting
+% and thus the need to invoke different subfig.sty package options depending
+% on whether compsoc mode has been enabled.
+%
+% The latest version and documentation of subfig.sty can be obtained at:
+% http://www.ctan.org/pkg/subfig
+
+% *** FLOAT PACKAGES ***
+%\usepackage{fixltx2e}
+% fixltx2e, the successor to the earlier fix2col.sty, was written by
+% Frank Mittelbach and David Carlisle. This package corrects a few problems
+% in the LaTeX2e kernel, the most notable of which is that in current
+% LaTeX2e releases, the ordering of single and double column floats is not
+% guaranteed to be preserved. Thus, an unpatched LaTeX2e can allow a
+% single column figure to be placed prior to an earlier double column
+% figure.
+% Be aware that LaTeX2e kernels dated 2015 and later have fixltx2e.sty's
+% corrections already built into the system in which case a warning will
+% be issued if an attempt is made to load fixltx2e.sty as it is no longer
+% needed.
+% The latest version and documentation can be found at:
+% http://www.ctan.org/pkg/fixltx2e
+
+%\usepackage{stfloats}
+% stfloats.sty was written by Sigitas Tolusis. This package gives LaTeX2e
+% the ability to do double column floats at the bottom of the page as well
+% as the top. (e.g., "\begin{figure*}[!b]" is not normally possible in
+% LaTeX2e). It also provides a command:
+%\fnbelowfloat
+% to enable the placement of footnotes below bottom floats (the standard
+% LaTeX2e kernel puts them above bottom floats). This is an invasive package
+% which rewrites many portions of the LaTeX2e float routines. It may not work
+% with other packages that modify the LaTeX2e float routines. The latest
+% version and documentation can be obtained at:
+% http://www.ctan.org/pkg/stfloats
+% Do not use the stfloats baselinefloat ability as the IEEE does not allow
+% \baselineskip to stretch. Authors submitting work to the IEEE should note
+% that the IEEE rarely uses double column equations and that authors should try
+% to avoid such use. Do not be tempted to use the cuted.sty or midfloat.sty
+% packages (also by Sigitas Tolusis) as the IEEE does not format its papers in
+% such ways.
+% Do not attempt to use stfloats with fixltx2e as they are incompatible.
+% Instead, use Morten Hogholm'a dblfloatfix which combines the features
+% of both fixltx2e and stfloats:
+%
+% \usepackage{dblfloatfix}
+% The latest version can be found at:
+% http://www.ctan.org/pkg/dblfloatfix
+
+%\ifCLASSOPTIONcaptionsoff
+%  \usepackage[nomarkers]{endfloat}
+% \let\MYoriglatexcaption\caption
+% \renewcommand{\caption}[2][\relax]{\MYoriglatexcaption[#2]{#2}}
+%\fi
+% endfloat.sty was written by James Darrell McCauley, Jeff Goldberg and 
+% Axel Sommerfeldt. This package may be useful when used in conjunction with 
+% IEEEtran.cls'  captionsoff option. Some IEEE journals/societies require that
+% submissions have lists of figures/tables at the end of the paper and that
+% figures/tables without any captions are placed on a page by themselves at
+% the end of the document. If needed, the draftcls IEEEtran class option or
+% \CLASSINPUTbaselinestretch interface can be used to increase the line
+% spacing as well. Be sure and use the nomarkers option of endfloat to
+% prevent endfloat from "marking" where the figures would have been placed
+% in the text. The two hack lines of code above are a slight modification of
+% that suggested by in the endfloat docs (section 8.4.1) to ensure that
+% the full captions always appear in the list of figures/tables - even if
+% the user used the short optional argument of \caption[]{}.
+% IEEE papers do not typically make use of \caption[]'s optional argument,
+% so this should not be an issue. A similar trick can be used to disable
+% captions of packages such as subfig.sty that lack options to turn off
+% the subcaptions:
+% For subfig.sty:
+% \let\MYorigsubfloat\subfloat
+% \renewcommand{\subfloat}[2][\relax]{\MYorigsubfloat[]{#2}}
+% However, the above trick will not work if both optional arguments of
+% the \subfloat command are used. Furthermore, there needs to be a
+% description of each subfigure *somewhere* and endfloat does not add
+% subfigure captions to its list of figures. Thus, the best approach is to
+% avoid the use of subfigure captions (many IEEE journals avoid them anyway)
+% and instead reference/explain all the subfigures within the main caption.
+% The latest version of endfloat.sty and its documentation can obtained at:
+% http://www.ctan.org/pkg/endfloat
+%
+% The IEEEtran \ifCLASSOPTIONcaptionsoff conditional can also be used
+% later in the document, say, to conditionally put the References on a 
+% page by themselves.
+
+% *** PDF, URL AND HYPERLINK PACKAGES ***
+\usepackage{xurl}
+% url.sty was written by Donald Arseneau. It provides better support for
+% handling and breaking URLs. url.sty is already installed on most LaTeX
+% systems. The latest version and documentation can be obtained at:
+% http://www.ctan.org/pkg/url
+% Basically, \url{my_url_here}.
+
+\usepackage{orcidlink}
+\usepackage{soul}
+\usepackage{xcolor}
+\usepackage{siunitx}
+
+% *** Do not adjust lengths that control margins, column widths, etc. ***
+% *** Do not use packages that alter fonts (such as pslatex).         ***
+% There should be no need to do such things with IEEEtran.cls V1.6 and later.
+% (Unless specifically asked to do so by the journal or conference you plan
+% to submit to, of course. )
+
+% correct bad hyphenation here
+% \hyphenation{Optimized V2I Precaching Scheme based on MLP in Content-Centric Vehicular Networks}
+
+\begin{document}
+% paper title
+% Titles are generally capitalized except for words such as a, an, and, as,
+% at, but, by, for, in, nor, of, on, or, the, to and up, which are usually
+% not capitalized unless they are the first or last word of the title.
+% Linebreaks \\ can be used within to get better formatting as desired.
+% Do not put math or special symbols in the title.
+\title{Uncertainty-Aware Precaching Scheme based on ST-CVAE in Content-Centric Internet of Vehicles}
+% author names and IEEE memberships
+% note positions of commas and nonbreaking spaces ( ~ ) LaTeX will not break
+% a structure at a ~ so this keeps an author's name from being broken across
+% two lines.
+% use \thanks{} to gain access to the first footnote area
+% a separate \thanks must be used for each paragraph as LaTeX2e's \thanks
+% was not built to handle multiple paragraphs
+\newcommand{\orcidauthorA}{0000-0003-3971-0715} % Youngju Nam
+\newcommand{\orcidauthorB}{0000-0002-0422-0647} % Euisin Lee
+\newcommand{\orcidauthorC}{0000-0001-8209-5944} % Jeong-Hun Kim
+
+\author{Youngju Nam, Euisin Lee, and Jeong-Hun Kim
+
+\thanks{Manuscript received April 00, 2026; revised August 00, 2026.
+This work was supported by a National Research Foundation of Korea (NRF) grant funded by the Korean government (Ministry of Science and ICT (MSIT)) (No. 2022R1A2C1010121). \textit{(Corresponding author: Jeong-Hun Kim.)}}
+\thanks{Youngju Nam is with the School of Software, Kunsan National University, Gunsan, Republic of Korea (e-mail: imnyj@kunsan.ac.kr).}
+\thanks{Euisin Lee is with the School of Information and Communication Engineering, Chungbuk National University, Cheongju, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}
+\thanks{Jeong-Hun Kim is with the Department of Computer Science and Information Engineering, Kunsan National University, Gunsan, Republic of Korea (e-mail: kimjh@kunsan.ac.kr).}
+\thanks{Digital Object Identifier 10.0000/JIOT.2026.0000000}}
+
+% note the % following the last \IEEEmembership and also \thanks - 
+% these prevent an unwanted space from occurring between the last author name
+% and the end of the author line. i.e., if you had this:
+% \author{....lastname \thanks{...} \thanks{...} }
+%                     ^------------^------------^----Do not want these spaces!
+% a space would be appended to the last name and could cause every name on that
+% line to be shifted left slightly. This is one of those "LaTeX things". For
+% instance, "\textbf{A} \textbf{B}" will typeset as "A B" not "AB". To get
+% "AB" then you have to do: "\textbf{A}\textbf{B}"
+% \thanks is no different in this regard, so shield the last } of each \thanks
+% that ends a line with a % and do not let a space in before the next \thanks.
+% Spaces after \IEEEmembership other than the last one are OK (and needed) as
+% you are supposed to have spaces between the names. For what it is worth,
+% this is a minor point as most people would not even notice if the said evil
+% space somehow managed to creep in.
+
+% The paper headers
+\markboth{IEEE Internet of Things Journal,~Vol.~00, No.~0, April~2026}%
+{Youngju Nam \MakeLowercase{\textit{et al.}}: Uncertainty-Aware Precaching Scheme based on ST-CVAE in Content-Centric Internet of Vehicles}
+% The only time the second header will appear is for the odd numbered pages
+% after the title page when using the twoside option.
+% *** Note that you probably will NOT want to include the author's ***
+% *** name in the headers of peer review papers.                   ***
+% You can use \ifCLASSOPTIONpeerreview for conditional compilation here if
+% you desire.
+
+% If you want to put a publisher's ID mark on the page you can do it like
+% this:
+\IEEEpubid{0000--0000/00\$00.00~\copyright~2026 IEEE}
+% Remember, if you use this you must call \IEEEpubidadjcol in the second
+% column for its text to clear the IEEEpubid mark.
+
+% use for special paper notices
+%\IEEEspecialpapernotice{(Invited Paper)}
+
+% make the title area
+\maketitle
+\begin{abstract}
+The proliferation of autonomous driving and immersive multimedia services in vehicular networks has led to an exponential increase in data traffic, challenging the capacity of limited backhaul links.
+While precaching at Roadside Units (RSUs) has emerged as a promising solution to mitigate latency, existing mobility-aware schemes often suffer from deterministic prediction errors and inefficient data collection, leading to either service interruptions or excessive wasted traffic.
+In this paper, we propose a novel precaching scheme based on \hl{an} ST-CVAE that captures the stochastic and multi-modal nature of vehicular mobility.
+Unlike traditional approaches requiring continuous trajectory tracking, our scheme utilizes instantaneous communication snapshots, reducing wireless congestion.
+The ST-CVAE, enhanced with cyclical temporal encoding, generates probabilistic dwell time estimates, allowing RSUs to determine conservative precaching thresholds that handle uncertainty.
+Furthermore, we implement a decentralized learning framework with an asynchronous model update mechanism, ensuring that RSUs can adapt to local traffic conditions without central aggregation or service downtime.
+\hl{Simulation results demonstrate that our proposed scheme achieves an $R^{2}$-score of 0.8153 for dwell time prediction, outperforming all ten baseline models, while reducing access delay by 18.8\% and wasted backhaul traffic by 8.9\% compared to the best-performing alternative.}
+The source code of ST-CVAE is available at https://github.com/ksnu-kimjh/ST-CVAE.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Content-Centric Internet of Vehicles, Content Precaching, Spatio-Temporal Conditional Variational Autoencoder, Uncertainty Quantification, Conformal Prediction.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+\section{Introduction} \label{sec:introduction}
+\IEEEPARstart{T}{he} proliferation of autonomous and connected vehicles has catalyzed an exponential surge in data traffic, driven by immersive multimedia applications, high-definition sensor feeds, and real-time mapping \cite{Zhe2020, yuan2018}. 
+As data volumes soar, which are projected to reach 280 EB per month globally by 2030 \cite{Ericsson}, conventional IP-based cellular infrastructures struggle with end-to-end delays and risk playback stalls as well as critical safety hazards in dense urban areas. 
+To circumvent these bottlenecks, Content-centric Internet of Vehicles (CIoV) leverages Roadside Units (RSUs) as edge caching nodes that decouple data from central servers. 
+By proactively distributing content to RSUs based on predicted mobility, a process known as precaching, CIoV smooths handovers and guarantees seamless service continuity \cite{Li2017, Hichri2021}. 
+However, naive or static precaching policies fail to adapt to rapidly changing vehicular trajectories and unpredictable user preferences, often leading to cache misses or wasted bandwidth in dynamic urban grids.
+To overcome static heuristic limitations, machine learning (ML) has been extensively integrated into precaching pipelines, empowering RSUs to make data-driven caching decisions \cite{Ding2022, Wu2022, AlNagar2022}. 
+These models forecast per-vehicle dwell times, intelligently adapting chunk allocations to mobility dynamics. 
+Yet, existing ML-driven precaching schemes face critical practical hurdles. 
+High-fidelity models demand continuous and heavy data streaming from vehicles, exacerbating wireless congestion. 
+More fundamentally, most approaches treat dwell time prediction as a deterministic task. 
+In highly stochastic urban environments, deterministic predictions inevitably falter against erratic congestion or traffic signal delays, causing RSUs to overestimate target metrics, exponentially wasting backhaul bandwidth and cache space, or underestimate them, causing playback stalls and service interruptions.
+\IEEEpubidadjcol
+In this paper, we propose a novel Uncertainty-Aware Precaching Scheme based on a Spatio-Temporal Conditional Variational Autoencoder (ST-CVAE), designed to explicitly capture the stochastic and multi-modal nature of vehicular mobility. 
+Unlike deterministic models, our generative framework learns the full conditional probability distribution of dwell times from instantaneous communication snapshots, significantly reducing wireless surveillance overhead. 
+Enhanced by a Cyclical Encoding module that preserves traffic signal phase continuity and a \hl{Rectified Gated Linear Unit (ReGLU)}-augmented Residual Backbone, each RSU dynamically establishes conservative precaching thresholds equipped with safety buffers. 
+Furthermore, we introduce a decentralized and event-driven feedback mechanism where RSUs asynchronously update models locally using actual mobility outcomes, ensuring zero downtime and mitigating the privacy and latency risks of centralized training.
+The main contributions of this work are summarized as follows.
+\begin{itemize}
+    \item \textbf{Snapshot-based Efficient Data Collection:} Unlike traditional forecasting that demands continuous trajectory tracking, our approach utilizes instantaneous communication snapshots captured only during request events, significantly reducing wireless congestion.
+    \item \textbf{Uncertainty-aware Generative Modeling with ST-CVAE:} We propose an ST-CVAE that explicitly models the multi-modal distribution of dwell times, using conformal prediction to set conservative \hl{precaching thresholds with uncertainty-driven safety margins that minimize backhaul waste}.
+    \item \textbf{Decentralized and Localized Learning:} We implement a fully decentralized framework where each RSU independently trains its model, adapting to regional traffic patterns without centralized server aggregation.
+    \item \textbf{Seamless Model Update Mechanism:} To guarantee service availability, RSUs perform asynchronous background training and hot-swap the old model without interrupting active content delivery.
+    \item \textbf{Lightweight Precaching Protocol Design:} We develop a practical and low-overhead communication protocol that successfully coordinates chunk allocation across neighboring RSUs in resource-constrained edge infrastructure.
+\end{itemize}
+
+The remainder of the paper is organized as follows.
+Section \ref{sec2} reviews the related work on content delivery and precaching schemes in CIoV.
+In Section \ref{sec.net}, we describe the vehicular network environment and provide an overview of the proposed ST-CVAE-based precaching scheme.
+Then, Section \ref{sec.prop} details the core operations of the proposed scheme, including decentralized feature acquisition, probabilistic dwell time estimation, and the asynchronous model update mechanism.
+To validate the performance of the proposed scheme, Section \ref{sec.s} conducts extensive simulations reflecting realistic urban traffic conditions to evaluate both prediction accuracy and network-level efficiency.
+Finally, Section \ref{sec.c} concludes the paper.
+
+\section{Related Work} \label{sec2}
+Initial precaching strategies in vehicular networks focused on optimizing content placement based on popularity thresholds or deterministic mobility metrics \cite{Ostrovskaya2018, Amadeo2021, Dua2019, Park2019}. 
+Multi-metric policies evaluated freshness, temporal necessity, and spatial relevance to retain only locally relevant items. 
+In parallel, mobility-aware approaches heuristically precached content along expected trajectories using shortest-path calculations or simple Markov-based probabilities of intersections \cite{Ahani2018, AlNagar2019, Liang2018, Grewe2018, Ikram2021}. 
+While these methods reduced retrieval latency under ideal conditions, such rigid and heuristic designs fundamentally failed to adapt dynamically to real-world vehicular irregularities, such as sudden congestion or traffic signal delays, frequently resulting in wasted precaching at unused RSUs.
+
+\begin{table*}[ht]
+\centering
+\caption{Comparison of Representative ML-Based Precaching Approaches in Vehicular Networks.}
+\begin{tabular}{|m{2.8cm}<{\centering}|m{3cm}<{\centering}|m{1.5cm}<{\centering}|m{1.5cm}<{\centering}|m{6.5cm}|}
+\hline
+\textbf{Approach (Year)} & \textbf{ML Technique} & \textbf{Precaching Type} & \textbf{Mobility Prediction} & \textbf{Short Description / Contributions} \\
+\hline\hline
+Wang and Grace \cite{Wang2023} & Contextual Multi-Armed Bandit (Reinforcement Learning) & V2I & O & Hybrid proactive caching system at RSUs; predicts next RSU association and prepositions content accordingly; achieves up to 95\% RSU prediction accuracy in structured traffic. \\
+\hline
+Elsayed et al. \cite{Elsayed2022} & LSTM (PSO-trained) + heuristic caching & V2V / VANET & O & Predictive Proactive Caching Framework (PPCF); uses LSTM for travel time prediction and caching at parked vehicles; improves cache hit ratio by $\sim$29\% and boosts user satisfaction by 60\%. \\
+\hline
+Jiang et al. \cite{Jiang2024} & Asynchronous Federated Learning + Deep Reinforcement Learning & V2I & O & Mobility-aware edge caching; vehicles train local autoencoders, RSUs apply DRL to decide caching without raw data sharing; edge hit rate $\sim$21\% higher than LRU. \\
+\hline
+Maale et al. \cite{Maale2023} & Deep Federated Echo State Learning (DeepFESL) & V2I / UAV-assisted & O & UAV-assisted proactive caching; distributed echo state networks with federated aggregation predict content demand and mobility; improves cache utilization and QoE while preserving privacy. \\
+\hline
+Khanal et al. \cite{Khanal2022} & Hierarchical Federated Learning + Self-Attention LSTM & V2I (Autonomous Vehicles) & O & Multi-level federated model aggregation (vehicle $\rightarrow$ RSU $\rightarrow$ cloud); self-attention LSTM predicts popularity; increases local cache hit ratio and reduces retrieval costs. \\
+\hline
+Wang et al. \cite{Wang2025} & Spatial-Temporal Informer (Transformer-based) & V2I & O & Uses Informer to capture long-range spatial-temporal dependencies for trajectory-aware caching; reduces trajectory prediction error by 34.6\%, cache hit ratio up 18.9\%, delay reduced 6.1\%. \\
+\hline
+Zhang et al. \cite{Zhang2024} & LDA Topic Modeling + Contrastive Learning & V2I (Mobile Networks) & X & Diversity-driven proactive caching; balances content diversity and popularity to optimize cache contents; improves hit ratio and reduces network traffic load. \\
+\hline
+\end{tabular}
+\label{ta:rw}
+\end{table*}
+
+The limitations of heuristic popularity-driven or trajectory-based precaching have led researchers to adopt ML as a foundation for intelligent cache management in CIoV.
+Unlike static schemes, ML-based methods can continuously learn from mobility traces, traffic states, and content request patterns, enabling more accurate and adaptive predictions.
+By framing caching as either a supervised learning or a reinforcement learning decision process, recent works have demonstrated that ML can improve cache hit ratios, reduce delivery latency, and lower wasted traffic by accounting for the highly dynamic nature of the IoV.
+Table~\ref{ta:rw} summarizes representative ML-based precaching approaches in vehicular networks, categorizing them by their applied ML techniques such as reinforcement learning \cite{Wang2023, Elsayed2022}, federated learning \cite{Jiang2024, Maale2023, Khanal2022}, transformer-based models \cite{Wang2025}, and unsupervised learning methods \cite{Zhang2024}.
+\hl{In the Mobility Prediction column of the table, O indicates that the approach incorporates mobility prediction, while X indicates that it does not.}
+Although these papers substantiate the efficacy of ML in enhancing vehicular precaching, several limitations remain.
+First, \hl{centralized or semi-centralized} learning approaches introduce heavy communication overhead.
+Second, continuous mobility trace packets from vehicles consume limited wireless resources.
+Finally, deterministic predictors often mispredict real-world dwell times in highly stochastic environments, leading to wasted precached chunks.
+These challenges highlight the necessity for distributed, lightweight, and uncertainty-aware models that can optimize prediction accuracy while preserving resource efficiency.
+\hl{Orthogonal to the prediction model itself, recent advances in uncertainty quantification have introduced conformal prediction (CP) as a distribution-free framework for constructing statistically valid prediction intervals} \cite{x11}.
+\hl{Unlike Bayesian approaches that require distributional assumptions, CP provides finite-sample coverage guarantees under minimal exchangeability conditions.
+Conformalized Quantile Regression (CQR) extends this framework by combining quantile regression with a calibration step, producing adaptive prediction intervals that are narrower in low-uncertainty regions and wider in high-uncertainty regions} \cite{Angelopoulos2023}.
+\hl{While CP has been successfully applied in domains such as autonomous driving perception} \cite{Lindemann2023} \hl{and time series forecasting} \cite{Zaffran2022}, \hl{its integration into vehicular precaching systems for uncertainty-aware resource allocation remains unexplored.
+We bridge this gap by leveraging CQR to derive principled safety margins for precaching decisions.}
+
+\section{Network Model and Scheme Overview} \label{sec.net}
+In this section, we first present the considered network model and then describe the overview of the proposed scheme in the following subsections, respectively.
+
+\subsection{Vehicular Network Environment}
+In this subsection, we describe the considered network model, which consists of the vehicular environment, the communication infrastructure, and the content delivery and precaching mechanism.
+The model integrates \hl{Content-Centric Networking (CCN)}-based message exchange with ML-driven dwell time prediction and includes mechanisms to monitor average speed and communication throughput at each RSU to support accurate and adaptive precaching.
+
+Vehicles request data via nearby RSUs, which are interconnected by a high-speed fiber backhaul to content servers.
+Vehicles move through a Manhattan-style grid of city streets, following shortest paths toward random destinations as defined by a \hl{Simulation of Urban Mobility (SUMO)} traffic simulation.
+Each RSU is a fixed wireless access point deployed along the roads (e.g., at intersections) that provides dedicated short-range communication coverage (802.11p WAVE \cite{WAVE}) to vehicles within a few hundred meters.
+As a vehicle enters an RSU's coverage, it associates with that RSU and can exchange messages while moving in the range.
+All RSUs serve as relays between vehicles and the broader network, and they are interconnected through a reliable wired backhaul linking them to each other and to a central content server.
+This infrastructure ensures that when a vehicle requests content, the request can be serviced either locally or via rapid fetch from other RSUs or the content server over fiber.
+The high capacity and low latency of the wired backbone, combined with caching at the RSUs, \hl{alleviate} strain on the core network by keeping popular content closer to the edge.
+
+To reflect dynamic traffic conditions, each RSU maintains two local monitoring mechanisms.
+First, the RSU tracks the average vehicle speed in its coverage.
+For every vehicle, the entry and exit times are recorded in the RSU's queue.
+When the queue reaches its maximum size, older records are discarded.
+The RSU derives the average speed by dividing the average dwell time of vehicles by the communication diameter of its coverage.
+Second, the RSU tracks the average communication speed.
+Each time a vehicle downloads content, the measured throughput is stored in a queue up to a fixed maximum size.
+The average value is then computed and used as an indicator of available link capacity.
+This value shows the average number of requester vehicles within its coverage.
+These two statistics, the average vehicle speed and the average communication speed, are continuously updated and supplied as input features to the prediction model.
+They are also used directly when calculating the amount of content deliverable during a predicted dwell time and the quantity of content that should be proactively cached at the next RSU.
+
+\subsection{CCN-based Content Delivery and Precaching Protocol}
+The proposed system adopts a CCN paradigm for vehicle content requests.
+In this model, all data is referenced by content names rather than host addresses, and each RSU employs the standard CCN packet handling structures: 
+1) a Content Store (CS) for caching; 
+2) a Pending Interest Table (PIT) for tracking outstanding requests; 
+3) a Forwarding Information Base (FIB) for routing interests.
+
+When a smart vehicle's application requires a content item (e.g., a video segment or map update), it issues an \(Interest\) packet naming that content, which is routed to the local RSU via WAVE.
+Upon receiving an \(Interest\) packet, the RSU checks its CS for a cached copy of the content.
+If the content is found locally, the RSU immediately returns a \(Data\) packet to the vehicle, satisfying the request with minimal latency.
+If the content is not in the local cache, the RSU creates a PIT entry to remember the requesting vehicle and interface and forwards the \(Interest\) packet over the fiber backhaul using its FIB.
+The FIB directs the \(Interest\) packet either to a neighboring RSU that is likely to have the content or to the central content server, following the content-centric routing policies.
+Because all RSUs are interconnected and share the content-centric naming scheme, any RSU with the data can respond.
+The first node (another RSU or the server) that has the content will return a \(Data\) packet following the reverse path (PIT state ensures it traces back to the requesting RSU and vehicle).
+As the \(Data\) packet travels back, each intermediate RSU may cache a copy in its CS for future use and inform its cached status to neighboring RSUs to update their FIBs.
+Finally, the local RSU delivers the \(Data\) packet to the vehicle, satisfying the origin request.
+This CCN approach naturally supports in-network caching and reduces redundant data transmissions, since popular content may be served by the nearest cache rather than always from the origin.
+
+\paragraph{Local Monitoring of Vehicular and Communication States}
+Each RSU continuously maintains two statistical indicators to enhance its prediction capability for dwell time and content transmission.
+First, the RSU records the entry and exit times of all vehicles within its coverage to derive the average vehicular speed $v_{av}$ over the last hour.
+This moving average is periodically updated every minute to reflect the most recent traffic conditions.
+Second, the RSU tracks its average communication throughput $C_{av}$ over the past hour by logging the instantaneous throughput allocated to each requester.
+Both metrics are maintained using a sliding-window approach and discarded beyond a one-hour horizon to avoid outdated information.
+\hl{This interval aligns with the standard aggregation periods used in macroscopic traffic monitoring, while the fine-grained temporal dynamics of individual requests are captured by the per-snapshot features ($v_{req}$, $S_{cur}$, $t_{sig,cur}$) described in Section}~\ref{subsec:1}.
+
+These two locally computed indicators allow the RSU to estimate realistic network dynamics, such as congestion and wireless contention.
+They are subsequently used as part of the feature set for supervised dwell-time prediction and for determining the appropriate chunk allocation between the current and next RSUs during precaching.
+
+\subsection{Scheme Overview}
+\begin{figure*}[htp] \centering
+    \includegraphics[width=\linewidth]{./figure/overview.png}
+    \caption{The overview of the proposed scheme: (a) Request procedure to get content and information, (b) Reply procedure to give information, (c) Content delivery decision procedure for providing the content and letting the next RSU \hl{precache} it, and (d) Results procedure for storing the prediction results.} \label{fig:ov}
+\end{figure*}
+Fig. \ref{fig:ov} illustrates the overall workflow of the proposed scheme.
+When a vehicle enters the coverage of an RSU, it issues an \(Interest\) packet to request content (Fig. \ref{fig:ov}(a)). 
+Upon receiving this request, the current RSU immediately serves the content if available in its local cache.
+Then, it gathers necessary spatial and temporal features to predict the vehicle's dwell time.
+This prediction determines the optimal amount of content to precache at the next RSU.
+To ensure accurate predictions, the current RSU exchanges contextual information with neighboring RSUs via the next RSU (Fig. \ref{fig:ov}(b)).
+
+Based on the predicted dwell time, the current RSU issues a \(Precaching~Instruction\) packet to the next RSU (Fig. \ref{fig:ov}(c)).
+The next RSU then prepares the designated content chunks in advance.
+When the vehicle eventually hands over to the next RSU, the precached content is immediately delivered, guaranteeing a seamless service continuation.
+Finally, once the vehicle departs, a \(Result\) message containing the actual mobility outcomes (e.g., actual dwell time) is sent back to the previous RSU (Fig. \ref{fig:ov}(d)).
+This true label is stored in the local dataset and asynchronously used to train and update the RSU's prediction model, ensuring continuous self-improvement without interrupting active content delivery.
+
+\section{Proposed Scheme} \label{sec.prop}
+This section presents the proposed RSU-driven precaching scheme designed to support seamless content delivery in CIoV environments.
+The proposed scheme leverages locally learned dwell-time estimation models to enable proactive yet conservative precaching decisions without relying on any centralized controller.
+Each RSU independently performs feature acquisition, inference, precaching execution, and model updating based solely on locally available information and limited coordination with neighboring RSUs.
+This decentralized design reduces backhaul dependency, preserves data locality, and improves scalability under dense vehicular traffic.
+The overall workflow of the proposed scheme is organized into four tightly coupled stages.
+First, subsection~\ref{subsec:1} describes how an RSU handles incoming content requests and constructs contextual feature vectors by collecting both local observations and neighboring RSU information.
+These features are stored as incomplete samples in a local Dataset Table and serve as inputs to the prediction model.
+Subsection~\ref{subsec:2} introduces the ST-CVAE framework, which explicitly models the stochastic and multi-modal nature of vehicular dwell time by learning the conditional probability distribution from the acquired features.
+Based on the estimated dwell times, subsection~\ref{subsec:3} explains how each RSU determines whether precaching is necessary and executes the corresponding precaching operation to support seamless RSU handover.
+Finally, subsection~\ref{subsec:4} details how actual mobility outcomes are reported by vehicles to complete labeled training samples and how each RSU updates its local prediction model asynchronously without interrupting ongoing content delivery.
+
+\subsection{Request Handling and Feature Acquisition}\label{subsec:1}
+When a vehicle generates an \(Interest\) packet for content, it includes not only the standard content identifier but also the vehicle's current mobility state and a \(chunk\_no\) field.
+The \(chunk\_no\) serves to distinguish between new sessions (0) and ongoing streams ($>0$), enabling accurate feedback tracking later.
+Upon receiving the request, the RSU $R_{cur}$ first attempts to serve content from its local cache following standard CCN procedures described in Section \ref{sec.net}. 
+However, simultaneously with this delivery process, $R_{cur}$ triggers the predictive precaching module.
+The primary task of this module is to construct a comprehensive feature vector that captures the mobility context of the requester vehicle, including its current position $P_{req}$, velocity $v_{req}$, and travel direction $dir_{req}$.
+Specifically, $dir_{req}$ is defined as a binary indicator, set to 1 if the vehicle has not yet crossed the intersection, and 0 if it has already passed through it.
+\hl{This binary encoding is deliberately chosen because, in the considered network where RSUs are deployed at intersections, the dominant factor governing dwell time variability is whether the vehicle will encounter a traffic signal stop.
+A vehicle that has not yet crossed the intersection may be required to wait for a red phase, resulting in a significantly longer dwell time, whereas a vehicle that has already passed proceeds without delay.
+While richer directional encodings (e.g., cardinal direction or heading angle) could provide additional information, the spatial distance features $D_{lev,cur}$, $D_{arr,nxt}$, and $D_{lev,nxt}$ already implicitly capture the directional context by encoding the remaining travel distances from the vehicle's current position to each RSU boundary.}
+
+\hl{It is important to clarify the source and collection mechanism of each feature.
+The features about a requesting vehicle ($P_{req}$, $v_{req}$, $dir_{req}$) are extracted directly from the standard WAVE beacon message that accompanies the} \(Interest\) \hl{packet at the moment of the content request without continuous trajectory tracking.
+The features about a current RSU ($N_{cur}$, $v_{av,cur}$, $C_{av,cur}$, $S_{cur}$, $t_{sig,cur}$) are locally maintained statistics as described in Section}~\ref{sec.net} \hl{and are available without any additional communication.
+The features about a next-hop RSU ($N_{nxt}$, $v_{av,nxt}$, $C_{av,nxt}$, $S_{nxt}$, $t_{sig,nxt}$, $\sum N_{n\rightarrow nxt}$) are collected through a single round of} \(Info Request/Reply\) \hl{exchange over the wired backhaul.
+Consequently, the entire feature acquisition process is event-driven, triggered only when a content request occurs, and incurs no persistent wireless overhead beyond the initial request packet.}
+
+To build a complete feature vector, $R_{cur}$ first collects its local environmental data, such as the number of concurrently connected vehicles $N_{cur}$, the average vehicular speed $v_{av, cur}$, the average communication throughput $C_{av, cur}$, and the current traffic signal state $S_{cur}$ along with the remaining time until the next phase $t_{sig, cur}$.
+Subsequently, it appends the requester vehicle's spatial parameters: the remaining distance to exit $R_{cur}$ ($D_{lev, cur}$), the distance to enter $R_{nxt}$ ($D_{arr, nxt}$), and the distance to exit $R_{nxt}$ ($D_{lev, nxt}$).
+However, these local data alone are insufficient for accurate dwell time prediction.
+Hence, after storing the local data in its data table alongside the identifier of the requester vehicle, $R_{cur}$ initiates a distributed information exchange with the next RSU $R_{nxt}$ to gather next-hop contextual data.
+Through a backhaul connection, $R_{cur}$ sends an \(Info Request\) packet containing the identifiers of the requester vehicle and $R_{cur}$.
+Upon receiving this packet, $R_{nxt}$ contacts all RSUs connected by incoming road segments leading into its coverage area.
+Each neighboring RSU examines its own communication range and counts the number of vehicles that are currently expected to move toward $R_{nxt}$.
+
+%\begin{figure}[htp] \centering
+%    \includegraphics[width=\linewidth]{./figure/feature.png}
+%    \caption{The completed feature vector.} \label{fig:feature}
+%\end{figure}
+Then, it returns this information through an \(Info Reply\) packet.
+After receiving all replies, $R_{nxt}$ compiles the data, including the number of incoming vehicles from each direction $\sum N_{n\rightarrow nxt}$, the total number of vehicles within its own coverage $N_{nxt}$, the average vehicular speed $v_{av, nxt}$, the average communication throughput $C_{av, nxt}$, and the current traffic signal state $S_{nxt}$ along with the remaining time until the next phase $t_{sig, nxt}$.
+This aggregated data is encapsulated into a single \(Info\) packet including the stored identifier of the requester vehicle and $R_{cur}$, which is transmitted back to $R_{cur}$ through the wired backhaul.
+Once $R_{cur}$ receives the $Info$ packet, it merges the next-hop data with the stored local data in its data table based on the identifier of the requester vehicle to complete the feature vector.
+At this stage, the feature set represents the spatial and temporal dynamics of both the current and the next RSU, including mobility, connectivity, and traffic signal parameters.
+% Formally, the completed feature vector can be expressed as shown in Figure \ref{fig:feature}.
+The completed feature vector is stored in the Dataset Table, indexed by the vehicle ID and content ID.
+If the request represents the start of a new session (\(chunk\_no = 0\)), the RSU proceeds with content delivery and prediction but does not expect a \(Result\) packet later.
+For ongoing sessions, this entry will later be paired with the actual time reported from the next RSU when the vehicle departs, completing a labeled dataset for supervised model updates.
+
+\subsection{Uncertainty-aware generative modeling framework}\label{subsec:2}
+In CIoV, optimizing the volume of precached data chunks at an RSU fundamentally depends on the accurate prediction of the vehicle's dwell time, denoted as the target variable $Y \in \mathbb{R}^{+}$.
+This prediction relies on the comprehensive feature vector $X$ constructed in Subsection \ref{subsec:1}. The vector integrates numerical features (e.g., vehicular velocity, distance to RSU exit, communication throughput), categorical features (e.g., RSU ID, travel direction), and cyclic temporal features (e.g., remaining traffic light phase time).
+Existing predictive models typically formulate this task as a deterministic mapping $\hat{Y}=f(X)$ aimed at minimizing the Mean Squared Error (MSE).
+However, mathematically, the MSE forces the model to predict the conditional expected value $\mathbb{E}[Y|X]$.
+
+\begin{figure}[htp] \centering
+    \includegraphics[width=\linewidth]{./graph/Uncertainty.png}
+    \caption{Empirical conditional probability density of dwell times according to the distance to the next RSU coverage exit. Distributions are presented for (a) current dwell time and (b) next dwell time, partitioned into ten equal-frequency deciles based on the remaining distance from the vehicle's current location to the next RSU coverage boundary. Each decile contains an equal number of observations, with the corresponding physical distance intervals indicated in parentheses.} \label{fig:uncertainty}
+\end{figure}
+As empirically demonstrated in Fig. \ref{fig:uncertainty}, urban traffic dynamics are inherently stochastic, and the actual dwell time distribution conditioned on the distance to an intersection exhibits severe conditional multi-modality.
+For instance, vehicles at the exact same distance might either pass through a green light (forming a short dwell time mode) or stop at a red light (forming a long dwell time mode).
+By predicting the mathematical average of these modes, deterministic models output a medium dwell time that falls into a low-probability region between the peaks.
+In CIoV precaching, this mode averaging error is catastrophic: underestimating the long mode leads to service stalls, while overestimating the short mode causes massive backhaul traffic waste.
+To address this, we redefine the problem as conditional density estimation $p(Y|X)$ and propose a ST-CVAE to explicitly capture the true multi-modal distribution without averaging the underlying dynamics.
+
+\begin{figure*}[htp] \centering
+    \includegraphics[width=\linewidth]{./figure/Architecture.jpg}
+    \caption{The overall architecture of the proposed ST-CVAE framework. The input $X$ and true target $Y$ are processed to approximate the true posterior via $q_{\Phi}(Z^{*}|X, Y)$. Simultaneously, the prior encoder $p_{\Psi}(Z|X)$ infers the latent variable solely from $X$. The decoder $p_{\theta}(Y|X,Z)$ generates the final multi-modal predictions from the stochastically sampled latent space.} \label{fig:arch}
+\end{figure*}
+
+The overall architecture of the proposed ST-CVAE is illustrated in Fig. \ref{fig:arch}.
+Rather than relying on generic off-the-shelf neural networks, the ST-CVAE incorporates custom modules meticulously designed to process heterogeneous vehicular tabular data and extract meaningful spatio-temporal representations.
+To accurately predict vehicle dwell times, the model must seamlessly comprehend periodic temporal features, primarily the remaining phase time of traffic lights.
+In conventional approaches, this scalar time $t$ is directly fed into the network.
+However, utilizing a raw linear timer over a cycle length $T$ creates a mathematical discontinuity at the phase boundaries--namely, the abrupt numerical collapse from $T$ back to zero.
+This topological disruption severely destabilizes gradient descent optimization.
+To resolve this structural flaw, we propose a CYE module.
+This module mathematically maps the one-dimensional scalar time into a two-dimensional trigonometric space using the transformation $(\sin(2\pi t/T), \cos(2\pi t/T))$.
+By projecting the temporal feature onto a continuous unit circle, this encoding rigorously preserves topological continuity.
+Consequently, the neural network can smoothly learn the periodic nature of traffic signal transitions without being misdirected by artificial boundary drops.
+
+Following the temporal encoding, the architecture requires a robust mechanism to capture complex inter-dependencies among heterogeneous tabular inputs, which encompass spatial coordinates, numerical velocities, and categorical travel direction.
+Unlike image or text data, these tabular features inherently lack spatial locality and translation invariance.
+Standard Multi-Layer Perceptrons (MLPs) process these inputs through simple additive combinations followed by conventional activation functions (e.g., ReLU).
+This purely additive mechanism fundamentally restricts the network's capacity to learn explicit feature interactions.
+To overcome this limitation, we designed a custom Deep Residual Backbone (ResBlock).
+Each ResBlock sequences layer normalization, a linear projection, a Rectified Gated Linear Unit (ReGLU) activation \cite{x1}, dropout, and a final linear projection, all connected via a residual path.
+The mathematical superiority of this structural design for vehicular tabular data is formalized as follows.
+
+\textbf{Proposition 1 (Representation efficiency of ReGLU-augmented ResBlock).}
+Let $x$ be the intermediate tabular representation within the network.
+\hl{Our} ResBlock splits the representation $x$ into two halves and computes $x_{1}\bigodot ReLU(x_{2})$, where $\bigodot$ denotes the Hadamard product.
+This mathematical operation explicitly models non-linear multiplicative interactions, allowing the network to naturally learn synergistic spatio-temporal effects (e.g., the multiplied combinatorial impact of vehicle velocity and cyclical signal phase).
+Furthermore, the residual connection $x'=x+\mathcal{F}(x)$ ensures that the Jacobian matrix of the layer incorporates an identity matrix $I$.
+This strictly bounds the singular values of the gradients near one, effectively mitigating the vanishing gradient problem inherent in deep tabular networks and guaranteeing stable optimization dynamics.
+
+\textbf{Probabilistic Generative Formulation.}
+Even with optimal feature extraction via the ResBlock backbone, unobservable factors (e.g., hidden traffic congestion upstream, sudden driver hesitation) inject irreducible stochasticity into the dwell time.
+To encapsulate this unobservable noise, we introduce a stochastic latent variable $Z\in \mathbb{R}^{d_{z}}$.
+
+\textbf{Definition 1 (Conditional latent variable model).}
+The generative process assumes that the target dwell time $Y$ is produced from the joint distribution $p_{\theta, \Psi}(Y,Z|X)=p_{\theta}(Y|X,Z)p_{\Psi}(Z|X)$.
+Here, $p_{\Psi}(Z|X)$ is the prior encoder parameterized by $\Psi$ that infers the latent distribution solely from $X$, and $p_{\theta}(Y|X,Z)$ is the generative decoder parameterized by $\theta$.
+However, directly optimizing this likelihood requires calculating the true posterior distribution $p(Z|X,Y)=\cfrac{p_{\theta}(Y|X,Z)p_{\Psi}(Z|X)}{p(Y|X)}$, which \hl{is} analytically intractable.
+Thus, we approximate it using a parameterized posterior encoder $q_{\Phi}(Z^{*}|X,Y)$ that observes both $X$ and $Y$ during the training phase.
+
+\textbf{Theorem 1 ($\beta$-ELBO objective).}
+The marginal log-likelihood of the observed data $\log p(Y|X)$ is strictly lower-bounded by the modified Evidence Lower Bound ($\beta$-ELBO), denoted as $\mathcal{L}_{\beta}$.
+Maximizing this objective minimizes the Kullback-Leibler (KL) divergence between the approximate and true posteriors, compelling the decoder to generate multi-modal distributions.
+\begin{equation}\begin{split}
+    \mathcal{L}_{\beta}=&\mathbb{E}_{Z^{*}\sim q_{\Phi}(Z^{*}|X,Y)} \left[ \log p_{\theta}(Y|X,Z^{*})  \right]\\
+    & - \beta D_{KL} \left[ q_{\Phi}(Z^{*}|X,Y)||p_{\Psi}(Z|X)\right].
+\end{split}\end{equation}
+
+\textbf{Proof.}
+By decomposing the marginal log-likelihood using the exact mathematical definition of the KL divergence between the variational approximation $q_{\Phi}$ and the true posterior $p(Z|X,Y)$, we obtain:
+\begin{equation} \begin{split}
+    D_{KL}\left(q_{\Phi}||p(Z|X,Y)\right)&=\mathbb{E}_{q_{\Phi}}\left[\log q_{\Phi}(Z^{*}|X,Y) \cfrac{}{}\right.\\
+    & \left. - \log\left( \cfrac{p_{\theta}(Y|X,Z^{{*}})p_{\Psi}(Z|X)}{p(Y|X)} \right) \right].
+\end{split}\end{equation}
+Rearranging the terms yields:
+\begin{equation}\begin{split}
+    &\log p(Y|X) - D_{KL}\left(q_{\Phi}||p(Z|X,Y)\right) \\
+    & = \mathbb{E}_{q_{\Phi}}\left[ \log p_{\theta}(Y|X,Z^{*}) \right] - D_{KL}[q_{\Phi}(Z^{*}|X,Y)||p_{\Psi}(Z|X)].
+\end{split}\end{equation}
+Since the KL divergence is strictly non-negative ($D_{KL}\ge 0$), the right side of the equation forms a rigorous lower bound on $\log p(Y|X)$.
+The hyperparameter $\beta$ is introduced as a weighting factor to regulate the capacity of the latent bottleneck, preventing posterior collapse--a critical issue when training generative models on tabular data.
+
+\hl{\textbf{Conformalized Quantile Regression (CQR).}}
+\hl{To ensure that the predictive intervals produced by the ST-CVAE satisfy finite-sample coverage guarantees, we apply CQR} \cite{x11} \hl{as a post-hoc calibration step. The overall procedure is as follows. First, the dataset is partitioned into a training set, a calibration set, and a test set. The ST-CVAE is trained exclusively on the training set. For each sample $i$ in the calibration set, we compute the nonconformity score:}
+\begin{equation}
+    s_i = \max\left(\hat{q}_{\alpha/2}(X_i) - Y_i,\; Y_i - \hat{q}_{1-\alpha/2}(X_i)\right),
+\end{equation}
+\hl{where $\hat{q}_{\alpha/2}(X_i)$ and $\hat{q}_{1-\alpha/2}(X_i)$ are the lower and upper quantile predictions from the ST-CVAE, and $Y_i$ is the true label. The calibration quantile $\hat{Q}$ is then determined as the $\lceil(1-\alpha)(1+|\mathcal{D}_{cal}|)\rceil / |\mathcal{D}_{cal}|$-th empirical quantile of the nonconformity scores $\{s_i\}$. At inference, the final prediction interval for a new input $X$ is computed as:}
+\begin{equation}
+    C(X) = \left[\hat{q}_{\alpha/2}(X) - \hat{Q},\; \hat{q}_{1-\alpha/2}(X) + \hat{Q}\right].
+\end{equation}
+\hl{Regarding the exchangeability assumption required by CQR, we note that while vehicular request snapshots exhibit temporal correlations, each snapshot is captured from a distinct vehicle at a distinct location, providing substantial spatial and contextual diversity. Moreover, the empirical PICP results confirm that the nominal coverage level is consistently achieved, validating the practical applicability of CQR in this setting.}
+
+\textbf{Proposition 2 (Gaussian reparameterization).}
+To make the stochastic sampling process differentiable, both encoders are designed to output the parameters of a multivariate Gaussian: the mean vector $\mu$ and standard deviation vector $\sigma$.
+We employ the reparameterization trick $Z^{*}=\mu_{\Phi}+\sigma_{\Phi}\bigodot\epsilon$, where $\epsilon\sim\mathcal{N}(0,I)$ is an independent standard Gaussian noise vector.
+This isolates the non-differentiable stochasticity into $\epsilon$, allowing deterministic gradients to backpropagate through $\mu$ and $\sigma$ for end-to-end optimization.
+
+
+\subsection{Precaching Decision and Execution} \label{subsec:3}
+This subsection explains how the precaching decisions determined in the previous stage are executed in practice to ensure seamless content delivery during RSU handover.
+Given the dwell time prediction results produced by the trained local prediction model, $R_{cur}$ determines whether precaching is required for the ongoing content session.
+If the predicted remaining dwell time at the $R_{cur}$, denoted as $t_{dw,cur}$, is sufficient to transmit the entire requested content before the vehicle departs, the content delivery proceeds following the standard CCN mechanism without invoking precaching.
+In this case, all content chunks are delivered directly from $R_{cur}$, and no coordination with $R_{nxt}$ is necessary.
+%
+When the predicted dwell time at $R_{cur}$ is insufficient to complete content delivery, 
+$R_{cur}$ computes how many chunks can be delivered locally and how many must be prepared in advance at the next RSU $R_{nxt}$.
+This decision relies on the dwell time estimates and the locally maintained average communication throughput.
+Specifically, the number of chunks that can be transmitted within the current RSU coverage is calculated as:
+\begin{equation}
+    m = \cfrac{C_{av, cur} \times t_{dw, cur}}{S_{chunk}}, \label{eq:m}
+\end{equation}
+where $C_{av, cur}$ denotes the average communication throughput at $R_{cur}$ and $S_{chunk}$ is the size of each content chunk.
+Based on the predicted arrival and departure times at $R_{nxt}$, the number of chunks expected to be delivered within the coverage of $R_{nxt}$ is computed as:
+\begin{equation}
+    n = \cfrac{C_{av, nxt} \times \left( t_{lev, nxt} - t_{arr, nxt} \right)}{S_{chunk}}, \label{eq:n}
+\end{equation}
+where $C_{av, nxt}$ represents the average communication throughput at $R_{nxt}$.
+Collectively, $m$ and $n$ determine the allocation boundary between chunks delivered at $R_{cur}$.
+%
+To account for residual estimation uncertainty, a safety buffer denoted as the \textit{micro-base} ($\delta$) is explicitly added to the calculated requirement.
+While $n$ represents the expected number of chunks deliverable during the predicted dwell time at $R_{nxt}$, the actual precaching instruction requests $N_{precache}$ chunks, defined as:
+\begin{equation}
+    N_{precache} = n + \delta, \label{eq:n_precache}
+\end{equation}
+where $\delta$ is a bounded integer (e.g., 5-10 chunks) sufficient to cover minor arrival time deviations.
+Consequently, the \(Precaching Instruction\) packet generated by $R_{cur}$ requests the range of chunks corresponding to $m$ (served locally) up to $m + n + \delta$ (preloaded at $R_{nxt}$). This explicit buffering ensures that even if handover occurs earlier than predicted, the vehicle encounters no service gap.
+
+After determining the chunk allocation, $R_{cur}$ generates a \(Precaching Instruction\) packet and transmits it to $R_{nxt}$ via the fiber backhaul.
+The packet contains the vehicle ID, content ID, the starting chunk number, and the total number of chunks to be precached.
+Upon receiving the instruction, $R_{nxt}$ checks its Content Store to verify whether the specified chunks are already cached.
+If the chunks are unavailable, $R_{nxt}$ issues a corresponding \(Interest\) packet following the standard CCN forwarding procedure.
+These requests may be satisfied by neighboring RSUs or, if necessary, by the content server.
+All retrieved chunks are cached at $R_{nxt}$ before the vehicle enters its coverage area.
+Meanwhile, $R_{cur}$ continues delivering the first $m$ chunks to the vehicle without interruption.
+When the vehicle exits $R_{cur}$ and enters the coverage of $R_{nxt}$, content delivery seamlessly resumes from the precached chunks.
+Since the required chunks, including the micro-base, are already stored at $R_{nxt}$, the vehicle can immediately receive \(Data\) packets in response to its \(Interest\) packet.
+This implicit handover eliminates access delay and avoids explicit session migration.
+If the vehicle remains at $R_{nxt}$ longer than conservatively estimated, additional chunks beyond the precached range can be retrieved through standard CCN forwarding.
+This situation corresponds to normal cache-miss handling and does not compromise service continuity, as the initial precached content guarantees uninterrupted delivery during the handover phase.
+Through this execution process, the proposed scheme translates dwell time estimation results into effective precaching actions while balancing service continuity and traffic efficiency.
+
+
+
+\subsection{Feedback Reporting and Local Model Update}\label{subsec:4}
+This subsection describes how actual dwell time measurements are collected and reported to construct labeled training samples, and how each RSU updates its local prediction model without disrupting ongoing content delivery.
+Unlike centralized learning schemes that require continuous mobility tracking or raw data aggregation, the proposed framework adopts an event-driven feedback mechanism in which the requesting vehicle itself acts as a lightweight label generator.
+This design significantly reduces signaling overhead while preserving the accuracy and reliability of ground-truth annotations.
+During content delivery within the coverage of $R_{cur}$, the vehicle locally records the start time associated with each content request.
+Each request is uniquely identified by the tuple $(VID, CID, chunk\_no)$, \hl{where $VID$ denotes the Vehicle Identifier and $CID$ denotes the Content Identifier. This tuple corresponds to an independent inference instance stored at the RSU.}
+Accordingly, the vehicle maintains a separate timer for each active request.
+This design guarantees that dwell time measurements remain unambiguous even when multiple content requests for the same vehicle and content coexist with different starting chunk numbers.
+When the vehicle exits the coverage of $R_{cur}$, it records the actual departure time corresponding to each active request.
+Subsequently, upon entering the coverage of the next RSU $R_{nxt}$, the vehicle records the arrival time at $R_{nxt}$.
+Finally, when the vehicle leaves the coverage of $R_{nxt}$, it records the departure time from $R_{nxt}$.
+Collectively, these timestamps constitute the ground-truth mobility information required to evaluate the accuracy of the dwell-time estimation used during precaching decisions.
+
+After leaving the coverage of $R_{nxt}$, the vehicle generates a \(Result\) message that encapsulates the measured timing information.
+The report includes the vehicle ID, content ID, the identifier of the previous RSU $R_{cur}$, the requested chunk number, the actual dwell time at $R_{cur}$, the arrival time at $R_{nxt}$, and the departure time from $R_{nxt}$.
+At the time of report generation, the RSU currently serving the vehicle acts as the new current RSU.
+Therefore, the report is first delivered to this RSU and subsequently forwarded to the previous RSU $R_{cur}$ through the backhaul network.
+Upon receiving the \(Result\) packet, $R_{cur}$ uses the tuple $(VID, CID, chunk\_no)$ to locate the corresponding incomplete entry in its Dataset Table.
+Since each inference instance is stored independently based on the requested chunk number, the RSU can uniquely match the reported actual values with the previously stored feature vector and predicted dwell-time outputs.
+The dataset entry is then completed by appending the actual dwell time measurements, forming a labeled training sample consisting of input features, model predictions, and observed outcomes.
+Each RSU accumulates completed training samples in a local buffer.
+When the number of stored samples reaches a predefined batch threshold, the RSU initiates a local model update procedure.
+To ensure that content delivery and precaching operations remain uninterrupted, model training is executed asynchronously in a separate background thread.
+During this process, the RSU continues to handle incoming content requests and perform dwell time prediction using the currently deployed model.
+
+Once the training process is completed, the updated model seamlessly replaces the previous one.
+All subsequent requests are processed using the updated model parameters, while requests that arrived during the training phase remain unaffected.
+This asynchronous update mechanism ensures service continuity and avoids introducing additional latency or instability during learning.
+Through this feedback-driven learning loop, each RSU continuously refines its local prediction model using directly observed mobility behavior.
+As a result, the learned models naturally adapt to location-specific traffic patterns, intersection characteristics, and communication conditions.
+By decoupling learning from content delivery and avoiding centralized data aggregation, the proposed scheme achieves scalable, privacy-preserving, and robust online learning tailored to highly dynamic vehicular environments.
+
+
+
+\section{Performance Evaluation} \label{sec.s}
+In this section, we evaluate the performance of the proposed ST-CVAE based precaching scheme.
+We first describe the simulation environment and the constructed dataset in Subsection \ref{sec.s0}.
+Then, we verify the prediction accuracy and uncertainty quantification capability of the proposed model in Subsection \ref{sec.s1}.
+Finally, we assess the network-level performance in terms of service latency and traffic efficiency in Subsection \ref{sec.s2}.
+
+\subsection{Simulation Environment and Datasets} \label{sec.s0}
+We constructed a realistic V2I simulation environment utilizing the SUMO traffic simulator and TraCI interface on a dense Manhattan grid topology (25 km $\times$ 25 km).
+To continuously evaluate the network performance, the simulation was executed for 3600 seconds.
+\hl{The detailed simulation parameters are summarized in Table}~\ref{table1}.
+\hl{The network topology consists of a $5 \times 5$ Manhattan grid with 25 RSUs deployed at intersections.
+To reflect diverse and realistic traffic conditions, the vehicle density varies between 5 and 20 vehicles per km-lane.
+Vehicles operate under a 60 km/h speed limit, though actual speeds dynamically adapt to traffic signals and leading vehicles.
+Each vehicle generates content requests following a Poisson process with a mean inter-arrival time of 600 seconds, representing typical multimedia streaming sessions.
+Content sizes range from 150 MB to 2 GB, divided into uniform 2 MB chunks.
+The content catalog comprises 1,000,000 unique items whose popularity follows a Zipf distribution with exponent $\alpha=0.75$.
+For the wireless environment, we adopt the 802.11p WAVE standard operating over a Nakagami-$m$ fading channel, which is widely recognized for accurately modeling multipath scattering in urban vehicular scenarios.
+Each RSU is equipped with a 1 TB Content Store managed by the standard least recently used policy.}
+
+\begin{table}[ht]\centering
+    \caption{\hl{Simulation Parameters.}}
+    \begin{tabular}{lc}
+        \hline
+        \textbf{Parameter} & \textbf{Value} \\
+        \hline
+        Network topology & $5 \times 5$ Manhattan grid (25 RSUs) \\
+        Vehicle density & 5 -- 20 vehicles / km-lane \\
+        Vehicle speed limit & 60 km/h \\
+        Request generation & Poisson (mean interval\,=\,600\,s) \\
+        Wireless channel & 802.11p WAVE, Nakagami-$m$ fading \\
+        Backhaul link capacity & 1 Gbps (1 ms latency) \\
+        RSU transmission range & 1 km \\
+        Content catalog size & 1,000,000 items \\
+        Content size & [150 MB, 2 GB] \\
+        Content popularity & Zipf ($\alpha=0.75$) \\
+        Chunk size & 2 MB \\
+        Vehicle's CS capacity & 256 GB \\
+        RSU's CS capacity & 1 TB \\
+        Cache replacement policy & LRU \\
+        \hline
+    \end{tabular}
+    \label{table1}
+\end{table}
+
+Crucially, rather than relying on continuous trajectory tracking, our dataset was curated exclusively by capturing instantaneous communication request snapshots recorded at the exact moment a vehicle enters an RSU’s coverage and initiates a transaction.
+This methodology yielded a robust dataset of 375,400 independent request snapshots.
+As defined in Section \ref{subsec:2}, the input variables $X$ encompass numerical features, categorical features, and temporal features.
+The associated prediction targets $Y$ evaluated in this study are dwell time, next entry time, and exit time.
+
+\subsection{Model Verification} \label{sec.s1}
+\textbf{Baselines.}
+To comprehensively validate the ST-CVAE, we established a rigorous benchmark encompassing 10 distinct predictive architectures.
+The ML baselines include Linear regression (LR), Random Forests (RF) \cite{x2}, XGBoost \cite{x3}, CatBoost \cite{x4}, and NGBoost (which natively outputs probabilistic parameters) \cite{x5}. The deep learning (DL) baselines consist of a standard MLP, a tabular-adapted ResNet \cite{x6}, Transformer with feature tokenizer (FTT) \cite{x6}, TabR (a state-of-the-art retrieval-based tabular model) \cite{x7}, and TabPFN (a prior-data fitted network capable of in-context learning) \cite{x8}.
+
+\begin{table*}[ht]
+    \centering
+    \caption{Performance comparison of the ST-CVAE against baseline ML and DL models. Bold formatting indicates the best performance, and underlining indicates the second-best. The hyphens indicate that the metrics are not applicable to deterministic (point-to-point) models.}
+    \label{tab:table2}
+    \begin{tabular}{cccccccccc}
+        \toprule
+        \multirow{2}{4em}{\textbf{Model}} & \multicolumn{3}{c}{\textbf{Dwell time}} & \multicolumn{3}{c}{\textbf{Next entry time}} & \multicolumn{3}{c}{\textbf{Exit time}} \\
+         \cmidrule(rl){2-10}
+         & $R^{2}$-score & PICP$_{0.9}$ & NMPIW & $R^{2}$-score & PICP$_{0.9}$ & NMPIW & $R^{2}$-score & PICP$_{0.9}$ & NMPIW \\
+        \midrule
+        \multicolumn{1}{l}{\textbf{Traditional ML}}&&&&&&&&&\\
+        LR       & 0.3363 & -      & -      & 0.3342 & -      & -      & 0.2696 & -      & -      \\
+        RF       & 0.6277 & -      & -      & 0.6224 & -      & -      & 0.5790 & -      & -      \\
+        XGBoost  & 0.6659 & -      & -      & 0.6650 & -      & -      & 0.6111 & -      & -      \\
+        CatBoost & 0.7459 & -      & -      & 0.7402 & -      & -      & 0.6412 & -      & -      \\
+        NGBoost  & 0.5979 & 0.8673 & 0.1000 & 0.6240 & 0.8043 & 0.0858 & 0.5825 & 0.7900 & \underline{0.1303} \\
+        %\hline
+        \multicolumn{1}{l}{\textbf{Deep learning (DL)}}&&&&&&&&&\\
+        MLP            & 0.7746 & -      & -      & 0.7669 & -      & -      & 0.6548 & -      & -      \\
+        Resnet         & 0.7801 & -      & -      & 0.7729 & -      & -      & 0.6649 & -      & -      \\
+        FTT            & 0.7759 & -      & -      & 0.7662 & -      & -      & 0.6431 & -      & -      \\
+        TabR           & 0.7347 & -      & -      & 0.7289 & -      & -      & 0.6071 & -      & -      \\
+        TabPFN         & 0.4983 & -      & -      & 0.5189 & -      & -      & 0.4954 & -      & -      \\
+        ST-CVAE (Ours) & \textbf{0.8153} & 0.8772 & \textbf{0.0662} & \textbf{0.8092} & 0.8297 & \textbf{0.0687} & \textbf{0.7082} & 0.8165 & \textbf{0.1211} \\
+        \multicolumn{1}{l}{\textbf{DL + CQR}}&&&&&&&&&\\
+        MLP + CQR      & 0.7627 & 0.9001 & 0.0845 & 0.7497 & 0.9009 & 0.0938 & 0.5944 & 0.8999 & 0.1542 \\
+        Resnet + CQR   & 0.7505 & 0.8966 & 0.0888 & 0.7420 & 0.8986 & 0.0993 & 0.5901 & 0.9010 & 0.1702 \\
+        FTT + CQR      & 0.5383 & 0.9014 & 0.1167 & 0.5395 & 0.8994 & 0.1270 & 0.4495 & 0.9024 & 0.2037 \\
+        TabR + CQR     & 0.7401 & 0.8996 & 0.0824 & 0.7328 & 0.8996 & 0.0941 & 0.5670 & 0.9008 & 0.1715 \\
+        TabPFN + CQR   & 0.3961 & 0.9018 & 0.1321 & 0.4223 & 0.9022 & 0.1482 & 0.4069 & 0.8958 & 0.2116 \\
+        ST-CVAE + CQR  & \underline{0.8062} & 0.9001 & \underline{0.0728} & \underline{0.8009} & 0.9002 & \underline{0.0754} & \underline{0.6967} & 0.9009 & 0.1356 \\
+        \bottomrule
+    \end{tabular}
+\end{table*}
+
+\begin{table*}[ht]
+    \centering
+    \caption{Ablation study results dissecting the impact of the proposed architectural modules.}
+    \label{tab:table3}
+    \begin{tabular}{ccccccccccccc}
+        \toprule
+        \multirow{2}{3em}{\textbf{Backbone}} & \multirow{2}{4em}{\textbf{$\beta$-ELBO}} & \multirow{2}{2em}{\textbf{CYE}} & \multirow{2}{2em}{\textbf{CQR}} & \multicolumn{3}{c}{\textbf{Dwell time}} & \multicolumn{3}{c}{\textbf{Next entry time}} & \multicolumn{3}{c}{\textbf{Exit time}} \\
+         \cmidrule(rl){5-13}
+         &&&& $R^{2}$-score & PICP$_{0.9}$ & IS & $R^{2}$-score & PICP$_{0.9}$ & IS & $R^{2}$-score & PICP$_{0.9}$ & IS \\
+        \midrule
+        MLP       & \ding{55} & \ding{55} & \ding{55} & 0.7858 & 0.0159 & 998.2162 & 0.7766 & 0.0145 & 1119.0608 & 0.6580 & 0.0117 & 2255.6685 \\
+        ResBlock  & \ding{51} & \ding{55} & \ding{55} & 0.8043 & 0.8552 & 277.0743 & 0.7989 & 0.8464 & 314.3899 & 0.6949 & 0.8011 & 590.9372 \\
+        ResBlock  & \ding{51} & \ding{51} & \ding{55} & \textbf{0.8153} & 0.8772 & \textbf{258.2454} & \textbf{0.8092} & 0.8297 & \textbf{296.5060} & \textbf{0.7082} & 0.8165 & \underline{581.5090} \\
+        ResBlock  & \ding{51} & \ding{51} & \ding{51} & \underline{0.8062} & 0.9001 & \underline{273.8947} & \underline{0.8009} & 0.9002 & \underline{302.5929} & \underline{0.6967} & 0.9009 & \textbf{573.5336} \\
+        MLP       & \ding{51} & \ding{51} & \ding{51} & 0.7310 & 0.9004 & 330.1639 & 0.7225 & 0.9004 & 352.7143 & 0.6153 & 0.8971 & 649.9913 \\
+        \bottomrule
+    \end{tabular}
+\end{table*}
+
+\textbf{Implementation details.}
+All experimental pipelines were implemented using the PyTorch framework and executed on a workstation equipped with an NVIDIA RTX 5090 GPU.
+The ML baselines utilized \hl{the} scikit-learn library along with their respective official open-source libraries \cite{a1, a2, a3}.
+The DL baselines leveraged their official implementations provided by the original authors \cite{a4, a5, a6}.
+
+All DL baselines, including ST-CVAE, were optimized using the AdamW optimizer \cite{x9} for a maximum of 200 epochs with a batch size of 512, employing early stopping with a patience of 20 epochs.
+To ensure a strictly fair evaluation of uncertainty quantification (UQ), deterministic DL models (MLP, ResNet, FTT, TabR) were fundamentally modified.
+Their single-node output layers were expanded to simultaneously predict three distinct quantiles (lower, median, and upper), and the conventional MSE loss was replaced by a Pinball loss \cite{x10}.
+This architectural adaptation enables the application of \hl{CQR} \cite{x11}.
+Conversely, NGBoost, TabPFN, and the proposed ST-CVAE inherently output full probability distributions; thus, CQR was seamlessly applied to their generated predictive distributions without requiring architectural modifications.
+Finally, to eliminate hyperparameter bias, the Optuna framework \cite{x12} was utilized to execute 30 trials for every ML and DL baseline, guaranteeing all comparative evaluations were conducted under their optimal configurations.
+
+\textbf{Comparative performance analysis.}
+Table \ref{tab:table2} details the quantitative evaluation results, including prediction accuracy ($R^{2}$-score), Prediction Interval Coverage Probability (PICP) \cite{x13}, and Normalized Mean Prediction Interval Width (NMPIW) \cite{x14}.
+Here, PICP and NMPIW are representative measures to evaluate the reliability of uncertainty intervals.
+As theorized in Section \ref{subsec:2}, deterministic ML and DL models inherently suffer from mode averaging on multi-modal traffic data, mathematically stalling their $R^{2}$-scores.
+The ST-CVAE mitigates this fundamental limitation by learning the unobserved traffic dynamics via the generative latent variables Z, achieving the highest $R^{2}$-score (0.8153 for dwell time) and decisively outperforming state-of-the-art models.
+Furthermore, assessing the UQ calibration, the ST-CVAE perfectly satisfies the nominal 90\% confidence target with a PICP of 0.9001, while simultaneously maintaining an extremely tight NMPIW of 0.0728.
+In CIoV precaching operations, this indicates that our model provides mathematically guaranteed safety bounds without excessively widening the predictive intervals, directly enabling the RSU to minimize wasted backhaul bandwidth.
+
+\begin{figure*}[htp] \centering
+    \includegraphics[width=\linewidth]{./graph/Graph1.png}
+    \caption{Winkler interval score across different target percentiles for various models: (a) baseline models, and (b) models applying CQR. The y-axis denotes the interval score on a logarithmic scale, where lower values indicate better performance in providing narrow and accurate prediction intervals.} \label{fig:graph1}
+\end{figure*}
+
+\textbf{Ablation study.}
+To isolate the impact of our specific architectural innovations, Table \ref{tab:table3} details a structural ablation study.
+The empirical results directly validate the design rationale proposed in Section \ref{subsec:2}.
+Replacing the ReGLU-augmented ResBlock backbone with a generic MLP triggers a substantial degradation in the $R^{2}$-score (from 0.8153 to 0.7858).
+This proves that explicitly formulating multiplicative feature interactions is strictly necessary for decoding heterogeneous tabular features.
+Additionally, the removal of cyclical encoding significantly impairs predictive performance, confirming that preserving the topological continuity of temporal signal phases is critical for spatio-temporal regression.
+Applying CQR degrades the $R^{2}$-score but fits the PICP accurately to the confidence intervals.
+
+\textbf{Uncertainty quantification.}
+Figure \ref{fig:graph1} evaluates the precision of the generated uncertainty intervals using the Winkler Interval Score (IS) \cite{x15}, which simultaneously penalizes non-coverage and excessive interval width.
+The ST-CVAE consistently achieves \hl{the} best IS across all target percentiles compared to highly robust probabilistic baselines like NGBoost.
+A low IS mathematically implies that the model attains the mandated safety coverage using significantly narrower predictive boundaries.
+In practical edge computing, this high-quality uncertainty quantification prevents the RSU from allocating resource-wasting data buffers for safe content transmission.
+
+\textbf{Sensitivity and robustness analysis.}
+Figure \ref{fig:graph2} investigates the stability of the ST-CVAE concerning structural and learning parameters via sensitivity heatmaps. The contiguous dark blue regions, which represent low predictive errors, verify the robustness of the proposed framework. The left panel illustrates that once the hidden dimension ($d_{h}$) and the latent dimension ($d_{z}$) exceed a certain threshold, the predictive performance stabilizes significantly. Similarly, the right panel demonstrates a broad optimal area, indicating that predictive accuracy is maintained in a wide range of learning rates ($\eta$) and KL-divergence weights ($\beta$). These results confirm that the optimal performance of the ST-CVAE is not hypersensitive to slight variations in structural configurations or learning constraints. Consequently, this intrinsic robustness suggests that the framework can guarantee reliable performance without requiring extensive and computationally expensive hyperparameter optimization.
+
+\begin{figure}[ht] \centering
+    \includegraphics[width=\linewidth]{./graph/Graph2.png}
+    \caption{Sensitivity analysis heatmaps evaluating the impact of structural parameters (hidden dimension $d_{h}$ and latent dimension $d_{z}$) and learning parameters (learning rate $\eta$ and KL-divergence weight $\beta$) on the predictive performance of the ST-CVAE.} \label{fig:graph2}
+\end{figure}
+
+\textbf{Distributional fidelity.}
+To visually verify the multi-modal capture capability guaranteed by Theorem 1, we conducted a residual analysis in Figure \ref{fig:graph3}.
+Unlike deterministic baselines that regress toward a single mean, the ST-CVAE’s scatter points tightly align along the ideal $y=x$ diagonal.
+Crucially, the marginal probability density distributions projected on the external axes reveal that the density generated by the ST-CVAE overlays the ground-truth distribution.
+It successfully reconstructs the complex bi-modal peaks and the heavy tails of the real traffic data, explicitly proving the efficacy of the generative framework in preventing model collapse.
+
+\begin{figure*}[htp] \centering
+    \includegraphics[width=\linewidth]{./graph/Graph3.png}
+    \caption{Residual analysis for (a) dwell time, (b) next entry time, and (c) exit time. The black dashed line marks the ideal scenario ($y=x$), and the red solid line shows the best linear regression fit. The marginal plots along the axes display the kernel density estimation (KDE) of the predicted (top) and real (right) distributions.} \label{fig:graph3}
+\end{figure*}
+
+\textbf{Out-of-distribution analysis.}
+The safety of a CIoV system relies on the model’s awareness of its own ignorance. This epistemic self-awareness is validated in Figure \ref{fig:graph4}.
+To rigorously evaluate the model under unrecorded anomalies, we partitioned the testing dataset, defining out-of-distribution (OOD) samples as the extreme top and bottom 10\% of the dwell time and next dwell time distributions, designating the remaining 80\% as in-distribution (ID).
+As illustrated in Figure \ref{fig:graph4}, when evaluating unfamiliar OOD samples, the sampling variance ($\sum \sigma^{2}_{\Psi}$) of the ST-CVAE’s prior encoder spikes compared to the stable ID samples. This clear mathematical separation demonstrates that the ST-CVAE explicitly recognizes anomalous traffic conditions–-it “knows what it does not know.” In an operational CIoV architecture, when the RSU detects this variance spike, it can instantly abort risky precaching decisions and trigger a proactive fail-safe fallback to macro-cellular networks, thereby guaranteeing uninterrupted service continuity.
+
+\begin{figure}[ht] \centering
+    \includegraphics[width=\linewidth]{./graph/Graph4.png}
+    \caption{Robustness analysis comparing the prior encoder’s epistemic uncertainty for in-distribution (ID) and out-of-distribution (OOD) datasets.} \label{fig:graph4}
+\end{figure}
+
+\subsection{Network Performance Evaluation} \label{sec.s2}
+This section evaluates the system-level impact of the proposed precaching scheme.
+We compare our ST-CVAE based approach against the ten baseline models verified in Subsection \ref{sec.s1} (i.e., LR, RF, XGBoost, CatBoost, NGBoost, MLP, ResNet, FTT, TabR, and TabPFN).
+In all scenarios, the underlying CCN communication protocol and network topology remain identical; only the dwell time prediction model and the corresponding precaching decision logic vary.
+Specifically, deterministic models (LR, RF, XGBoost, CatBoost, MLP, ResNet, FTT, TabR) utilize point estimates for precaching, while probabilistic models (NGBoost, TabPFN) and our ST-CVAE leverage the predicted distribution to determine the optimal precaching volume.
+
+To assess the effectiveness of the schemes, we continuously measured two key performance metrics during the simulation:
+\begin{itemize}
+    \item \textbf{Access Delay:} The average time elapsed between a vehicle issuing an \(Interest\) packet and receiving the first chunk of the content.
+    This metric directly reflects service latency and user experience.
+    \item \textbf{Wasted Traffic:} The total volume of content chunks that were precached at RSUs but were never consumed by the target vehicles (e.g., due to early departure or path deviation).
+    This metric indicates the efficiency of backhaul resource usage.
+\end{itemize}
+
+Both metrics are heavily influenced by the accuracy of dwell time prediction.
+Underestimated dwell times lead to insufficient precaching and higher access delays at the next RSU, while overestimated dwell times result in excessive precaching and wasted backhaul bandwidth.
+
+\begin{figure} \centering
+    \includegraphics[width=\linewidth]{./graph/NetPerf.png}
+    \caption{Network performance evaluation comparison: (a) Overall average access delay across models, (b) Overall wasted traffic volume, (c) Access delay variation with respect to vehicle speed, and (d) Wasted traffic volume variation with respect to vehicle speed.} \label{fig:g1}
+\end{figure}
+
+Figure \ref{fig:g1} presents the comprehensive network performance results, comparing the proposed ST-CVAE scheme against ten baseline models including CatBoost, FTT, LR, MLP, NGBoost, ResNet, RF, TabPFN, TabR, and XGBoost.
+Figures \ref{fig:g1}(a) and (b) illustrate the overall average access delay and wasted traffic volume, respectively.
+The proposed method consistently achieves the lowest access delay among all schemes, demonstrating its superior capability in accurately predicting dwell times and ensuring seamless content delivery during handovers.
+Although the introduction of a safety buffer (micro-base $\delta$) induces a slight increase in potential traffic overhead, Figure \ref{fig:g1}(b) confirms that the proposed scheme maintains a highly competitive level of wasted traffic, lower than deterministic models that suffer from frequent over-prediction.
+
+Figures \ref{fig:g1}(c) and (d) further analyze the performance dynamics with respect to vehicle speed, which serves as a proxy for mobility uncertainty.
+As shown in Figure \ref{fig:g1}(c), access delay generally decreases as vehicle speed increases but exhibits a parabolic trend.
+At low speeds (below 30 km/h), vehicles are heavily influenced by traffic signals and congestion, leading to high dwell time volatility and increased prediction difficulty, which in turn elevates access delay for all models.
+Conversely, at high speeds (above 60 km/h), the latency between the snapshot capture and actual arrival becomes significant, introducing prediction errors due to rapid state changes.
+Notably, while linear models like LR show a continuous increase in delay with speed due to their inability to capture non-linear dynamics, the proposed ST-CVAE maintains the lowest delay across the entire speed range, highlighting its robustness.
+
+Regarding wasted traffic in Figure \ref{fig:g1}(d), we observe a general downward trend as vehicle speed increases.
+Faster vehicles have shorter dwell times, naturally reducing the total volume of chunks that can vary between valid precaching and waste.
+However, a distinct crossover point is observed at approximately 32.5 km/h.
+Below this threshold, the standard MLP appears to waste less traffic than the proposed scheme.
+However, this is not due to superior efficiency but rather under-prediction, as evidenced by \hl{the} MLP's higher access delay in the same speed range (Fig. \ref{fig:g1}(c)), indicating that it failed to precache enough content.
+Beyond 32.5 km/h, the proposed ST-CVAE achieves lower wasted traffic than MLP while maintaining superior service quality, proving that its uncertainty-aware decision logic balances the trade-off between latency and resource efficiency.
+
+\section{Conclusion} \label{sec.c}
+In this paper, we proposed a novel V2I precaching scheme based on a Spatio-Temporal Conditional Variational Autoencoder to address the challenges of content delivery in highly dynamic urban vehicular networks.
+Unlike traditional deterministic approaches, our scheme models the multi-modal distribution of vehicle dwell times, capturing distinct traffic behaviors such as stopping at red lights or passing through intersections.
+By leveraging a snapshot-based data collection strategy, we minimized wireless communication overhead while maintaining high prediction accuracy through cyclical temporal encoding and a specialized residual backbone.
+Furthermore, we introduced an uncertainty-aware precaching decision algorithm that utilizes conformal prediction intervals to determine conservative yet sufficient data chunks for preloading.
+Simulation results demonstrated that the proposed scheme outperforms existing baseline models, achieving the lowest average access delay and reducing wasted backhaul traffic across various vehicle speeds.
+
+\hl{We acknowledge that the current evaluation is conducted on a Manhattan grid topology with shortest-path routing, which represents an idealized urban mobility scenario.
+In real-world deployments, vehicles may deviate from shortest paths due to GPS re-routing, road closures, or driver preferences.
+However, we emphasize that the ST-CVAE operates on instantaneous feature vectors (e.g., position, speed, distance to RSU boundaries) rather than on the topology itself.
+Therefore, the model does not explicitly encode grid-specific assumptions and is expected to generalize to other road layouts, provided that the same feature set can be extracted.
+Nonetheless, empirical validation on heterogeneous topologies, such as highway interchanges and irregular urban grids, is an important direction for future work.}
+
+\begin{thebibliography}{00}
+% Introduction
+\bibitem{Zhe2020} Z. Zhang, C. -H. Lung, M. St-Hilaire and I. Lambadaris,  ``Smart Proactive Caching: Empower the Video Delivery for Autonomous Vehicles in ICN-Based Networks,'' \emph{IEEE Trans. Veh. Technol.}, vol. 69, no. 7, pp. 7955--7965, Jul. 2020.
+\bibitem{yuan2018} Q. Yuan, H. Zhou, J. Li, Z. Liu, F. Yang and X. S. Shen,  ``Toward Efficient Content Delivery for Automated Driving Services: An Edge Computing Solution,'' \emph{IEEE Netw.}, vol. 32, no. 1, pp. 80--86, Jan.-Feb. 2018.
+%\bibitem{Kumer2013} V. Kumar, S. Mishra and N. Chand,  ``Applications of VANETs: Present \& Future,'' \emph{Commun. and Netw.}, vol. 5, no. 1B, pp. 12--15, Feb. 2013.
+%\bibitem{Pranav2019} P.K. Singh, S.K. Nandi and S. Nandi,  ``A tutorial survey on vehicular communication state of the art, and future research directions,'' \emph{Veh. Commun.}, vol. 18, pp. 100164, Aug. 2019.
+%\bibitem{Reichardt2002} D. Reichardt, M. Miglietta, L. Moretti, P. Morsink and W. Schulz,  ``CarTALK 2000: safe and comfortable driving based upon inter-vehicle-communication,'' \emph{Intell. Veh. Symp., 2002. IEEE}, vol. 2, pp. 545--550, Jun. 2002.
+%\bibitem{Yen2020} Y. -T. Yen, J. -J. Chou, C. -S. Shih, C. -W. Chen and P. -K. Tsung,  ``Proactive Car-Following Using Deep-Reinforcement Learning,'' presented at the \emph{23\textsuperscript{rd} Int. Conf. Intell. Transp. Syst.}, Rhodes, Greece, Sep. 20--23, 2020.
+
+% Intro: Traffic growth
+\bibitem{Ericsson}
+Ericsson Mobility Report. [Online]. Available: \underline{https://www.ericsson.}\\\underline{com/en/reports-and-papers/mobility-report/dataforecasts/mobile-traffic-}\\\underline{forecast}, Accessed on: Apr. 03, 2023.
+
+% Intro: CCN
+%\bibitem{Jacobson2009} V. Jacobson, D.K. Smetters, J.D. Thornton, M.F. Plass, N.H. Briggs and R.L. Braynard,  ``Networking Named Content,'' presented at the \emph{5\textsuperscript{th} Int. Conf. Emerging Networking Expt and Technol.,} Rome, Italy, Dec. 1--4, 2009.
+%\bibitem{zhang2014} L. Zhang, A. Afanasyev, J. Burke, V. Jacobson, K. Claffy, P. Crowley, C. Papadopoulos, L. Wang and B. Zhang, ``Named data networking,'' \emph{ACM SIGCOMM Comput. Commun. Review}, vol. 44, no. 3, pp. 66-–73, Jul. 2014.
+
+% Intro: CIoV
+\bibitem{Li2017} Z. Li, Y. Chen, D. Liu and X. Li, ``Performance analysis for an enhanced architecture of IoV via Content--Centric Networking,'' \emph{EURASIP J. Wireless Commun. Netw.}, vol. 2017, no. 1, pp. 1--7, Dec. 2017.
+\bibitem{Hichri2021} Y. Hichri, S. Dahi and H. Fathallah, ``Candidate architectures for emerging IoV: a survey and comparative study,'' \emph{Des. Autom. Embed. Syst.}, vol. 25, pp. 237-–263, Aug. 2021.
+
+% Intro: Precaching in CIoV
+\bibitem{Ding2022} H. Ding, Y. Ma, C. Zhang, X. Li, B. Lin, Y. Fang, and S. Chen, ``Probabilistic Data Prefetching for Data Transportation in Smart Cities,'' \emph{IEEE IoT J.}, vol. 9, no. 3, pp. 1655--1666, Feb. 2022.
+\bibitem{Wu2022} Y. Wu, X. Fang, C. Luo and G. Min, ``Intelligent Content Precaching Scheme for Platoon--Based Edge Vehicular Networks,'' \emph{IEEE IoT J.}, vol. 9, no. 20, pp. 20503--20518, Oct. 2022.
+\bibitem{AlNagar2022} Y. AlNagar, R. H. Gohary, S. Hosny and A. A. El-Sherif, ``Mobility--Aware Edge Caching for Minimizing Latency in Vehicular Networks,'' \emph{IEEE Open J. Veh. Technol.}, vol. 3, pp. 68--84, Feb. 2022.
+
+
+% ********** Related Work **********
+% RW: CCVN, VCCN, CIoV
+%\bibitem{Amadeo12n} M. Amadeo, C. Campolo and A. Molinaro, ``Content--centric vehicular networking: An evaluation study,'' in \emph{Proc. Int. Conf. Netw. Future (NOF)}, Tunis, Tunisia, Nov. 2012, pp. 1--5.
+%\bibitem{Wang2019}X. Wang and X. Wang, ``Vehicular Content--Centric Networking Framework,'' \emph{IEEE Syst. J.}, vol. 13, no. 1, pp. 519--529, Mar. 2019.
+%\bibitem{Su2017} Z. Su, Y. Hui and Q. Yang,  ``The Next Generation Vehicular Networks: A Content-Centric Framework,'' \emph{IEEE Wirel. Commun.}, vol. 24, no. 1, pp. 60--66, Feb. 2017.
+%\bibitem{Amadeo12s} M. Amadeo, C. Campolo and A. Molinaro, ``CRoWN: Content-Centric Networking in Vehicular Ad Hoc Networks,'' \emph{IEEE Commun. Letters}, vol. 16, no. 9, pp. 1380--1383, Sep. 2012.
+%\bibitem{Amadeo13} M. Amadeo, C. Campolo and A. Molinaro, ``Enhancing content-centric networking for vehicular environments,'' \emph{Comput. Netw.}, vol. 57, no. 16, pp. 3222--3234, Nov. 2013.
+
+% RW: Pop - Precaching in CIoV
+\bibitem{Ostrovskaya2018} S. Ostrovskaya et al.,  ``Towards Multi-metric Cache Replacement Policies in Vehicular Named Data Networks,'' presented at the \emph{29\textsuperscript{th} Annual Int. Symp. Personal, Indoor and Mobile Radio Commun.,} Bologna, Italy, Sep. 09--12, 2018.
+\bibitem{Amadeo2021} M. Amadeo, G. Ruggeri, C. Campolo and A. Molinaro, ``Diversity--improved caching of popular transient contents in Vehicular Named Data Networking,'' \emph{Comput. Netw.}, vol. 184, pp. 107625, Jan. 2021.
+\bibitem{Dua2019} A. Dua, M. Shishodia, N. Kumar, G. S. Aujla and N. Kumar, ``Bloom Filter Based Efficient Caching Scheme for Content Distribution in Vehicular Networks,'' in \emph{Proc. IEEE 17th Int. Conf. Commun. Workshops (ICC Workshops)}, Shanghai, China, May 2019, pp. 20--24.
+\bibitem{Park2019} S. Park, S. Oh, Y. Nam, J. Bang and E. Lee,  ``Mobility-aware Distributed Proactive Caching in Content-Centric Vehicular Networks,'' presented at the \emph{12\textsuperscript{th} IFIP Wireless and Mobile Networking Conf.,} Paris, France, Sep. 11--13, 2019.
+
+% RW: Mob - Precaching in CIoV
+\bibitem{Ahani2018} G. Ahani and D. Yuan, ``On Optimal Proactive and Retention-Aware Caching with User Mobility,'' presented at the \emph{88\textsuperscript{th} Veh. Technol. Conf. (VTC-Fall)}, Chicago, IL, USA, 2018, pp. 1--5.
+\bibitem{AlNagar2019} Y. AlNagar, S. Hosny and A. A. El-Sherif, ``Towards Mobility-Aware Proactive Caching for Vehicular Ad hoc Networks,'' \emph{2019 IEEE Wireless Commun. and Networking Conf. Workshop (WCNCW)}, Marrakech, Morocco, 2019, pp. 1--6.
+\bibitem{Liang2018} C. Liang, F. R. Yu, N. Dao, G. Senarath and H. Farmanbar, ``Enabling Adaptive Data Prefetching in 5G Mobile Networks with Edge Caching,'' \emph{2018 IEEE Global Commun. Conf. (GLOBECOM)}, Abu Dhabi, United Arab Emirates, 2018, pp. 1--6.
+\bibitem{Grewe2018} D. Grewe, S. Schildt, M. Wagner and H. Frey, ``ADePt: Adaptive Distributed Content Prefetching for Information--Centric Connected Vehicles,'' in \emph{Proc. IEEE 87th Veh. Technol. Conf. (VTC Spring)}, Porto, Portugal, Jun. 2018, pp. 1--5.
+\bibitem{Ikram2021} I. Ud Din, B. Ahmad, A. Almogren, H. Almajed, I. Mohiuddin and J. J. P. C. Rodrigues, ``Left--Right--Front Caching Strategy for Vehicular Networks in ICN--Based Internet of Things,'' \emph{IEEE Access}, vol. 9, pp. 595--605, Dec. 2021.
+
+% RW: ML Precaching in CIoV
+\bibitem{Wang2023} S. Wang and D. Grace, ``A Hybrid Proactive Caching System in Vehicular Networks Based on Contextual Multi-Armed Bandit Learning,'' \emph{IEEE Access},  vol. 11, pp. 29074-29090, Mar. 2023.
+\bibitem{Elsayed2022} H. Elsayed, M. Ibrahim, H. Khedr and M. El-Shafie, ``Predictive Proactive Caching in VANETs for Social Networking,'' \emph{ IEEE Trans. Veh. Technol.}, vol. 71, no. 5, pp. 5298--5313, Feb. 2022.
+\bibitem{Jiang2024} K. Jiang, Y. Cao, Y. Song, H. Zhou, S. Wan and X. Zhang, ``Asynchronous Federated and Reinforcement Learning for Mobility-Aware Edge Caching in IoV,'' \emph{IEEE IoT J.}, vol. 11, no. 9, pp. 15334--15347, Jan. 2024.
+\bibitem{Maale2023} G. T. Maale, G. Sun, N. A. E. Kuandey, T. Kwantwi, R. Ou and G. Liu, , ``DeepFESL: Deep Federated Echo State Learning-Based Proactive Content Caching in UAV-Assisted Networks,'' \emph{IEEE Trans. Veh. Technol.}, vol. 72, no. 9, pp. 12208--12220, Apr. 2023.
+\bibitem{Khanal2022} S. Khanal, K. Thar and E. Huh, ``Route-Based Proactive Content Caching Using Self-Attention in Hierarchical Federated Learning,'' \emph{IEEE Access}, vol. 10, pp. 2169--3536, Mar. 2022.
+\bibitem{Wang2025} C. Wang, J. Peng, L, Cai, W. Liu, Z, Zhao, H. He and Z. Huang, ``Mobility and Context-Aware Precaching Strategy Using Spatial-Temporal Informer for Vehicular Service,'' \emph{IEEE IoT J.}, vol. 12, no. 11, pp. 16053--16066, Jan. 2025.
+\bibitem{Zhang2024} Y. Zhang, R. Wang, Y. Wang, M. Chen and M. Guizani, ``Diversity-Driven Proactive Caching for Mobile Networks,'' \emph{IEEE Trans. Mobile Comput.}, vol. 23, no. 7, pp. 7878--7894, Dec. 2023.
+
+\bibitem{Angelopoulos2023} \hl{A. N. Angelopoulos and S. Bates, ``Conformal prediction: A gentle introduction,'' \emph{Found. Trends Mach. Learn.}, vol. 16, no. 4, pp. 494--591, 2023.}
+\bibitem{Lindemann2023} \hl{L. Lindemann, M. Cleaveland, G. Shim, and G. J. Pappas, ``Safe planning in dynamic environments using conformal prediction,'' \emph{IEEE Robot. Autom. Lett.}, vol. 8, no. 8, pp. 5116--5123, Aug. 2023.}
+\bibitem{Zaffran2022} \hl{M. Zaffran, O. F\'{e}ron, Y. Goude, J. Josse, and A. Dieuleveut, ``Adaptive conformal predictions for time series,'' in \emph{Proc. 39th Int. Conf. Mach. Learn. (ICML)}, Baltimore, MD, USA, pp. 25834--25866, 2022.}
+
+
+% ********** Simulation **********
+\bibitem{WAVE} A. Paier, R. Tresch, A. Alonso, D. Smely, P. Meckel, Y. Zhou and N. Czink, ``Average Downstream Performance of Measured IEEE 802.11p Infrastructure-to-Vehicle Links,'' presented at the \emph{Int. Conf. Communications Workshops,} Cape Town, South Africa, May 23--27, 2010.
+
+% \bibitem{Manhattan} A. Hanggoro and R. F. Sari, ``Performance evaluation of the manhattan mobility model in vehicular ad-hoc networks for high mobility vehicle,'' presented at the \emph{2\textsuperscript{nd} Int. Conf. Communication, Networks and Satellite,} Yogyakarta, Indonesia, Dec. 03--04, 2013.
+
+\bibitem{x1} N. Shazeer, ``Glu variants improve transformer,'' \emph{arXiv preprint}, 2020.
+\bibitem{x2} L. Breiman, ``Random forests,'' \emph{Machine Learning}, vol. 45, pp. 5--32, Oct. 2001.
+\bibitem{x3} T. Chen and C. Guestrin, ``XGBoost: A Scalable Tree Boosting System,'' in \emph{Proc. 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining,} San Francisco, California, USA, pp. 785--794, 2016.
+\bibitem{x4} L. Prokhorenkova, G. Gusev, A. Vorobev, A.V. Dorogush, and A. Gulin, ``CatBoost: unbiased boosting with categorical features,'' \emph{NIPS'18}, Montr\'{e}al, Canada, pp. 6639–-6649, 2018.
+\bibitem{x5} T. Duan, A. Anand, D.Y. Ding, K.K. Thai, S. Basu, A. Ng, and A. Schuler, ``Ngboost: Natural gradient boosting for probabilistic prediction,'' \emph{ICML 2020}, pp. 2690--2700, 2020.
+\bibitem{x6} Y. Gorishniy, I. Rubachev, V. Khrulkov, and A. Babenko, ``Revisiting deep learning models for tabular data,'' \emph{NIPS'21}, pp. 18932--18943, 2021.
+\bibitem{x7} Y. Gorishniy, I. Rubachev, N. Kartashev, D. Shlenskii, A. Kotelnikov, and A. Babenko, ``Tabr: Tabular deep learning meets nearest neighbors in 2023,'' in \emph{The Twelfth International Conference on Learning Representations (ICLR)}, 2023.
+\bibitem{x8} N. Hollmann, S. Müller, L. Purucker, A. Krishnakumar, M. Körfer, S.B. Hoo, R.T. Schirrmeister, and F. Hutter, ``Accurate predictions on small data with a tabular foundation model.'' \emph{Nature}, vol. 637, no. 8045, pp. 319--326, 2025.
+
+
+\bibitem{a1} XGBoost Library. [Online]. Available:  \url{https://github.com/dmlc/xgboost}, Accessed on: Apr. 14, 2026.
+\bibitem{a2} CatBoost Library. [Online]. Available: \url{https://github.com/catboost/catboost}, Accessed on: Apr. 14, 2026.
+\bibitem{a3} NGBoost Library. [Online]. Available: \url{https://github.com/stanfordmlgroup/ngboost}, Accessed on: Apr. 14, 2026.
+\bibitem{a4} Revisiting Deep Learning Models Library. [Online]. Available: \url{https://github.com/yandex-research/rtdl-revisiting-models}, Accessed on: Apr. 14, 2026.
+\bibitem{a5} TabR Library. [Online]. Available: \url{https://github.com/yandex-research/}\\\url{tabular-dl-tabr}, Accessed on: Apr. 14, 2026.
+\bibitem{a6} TabPFN Library. [Online]. Available: \url{https://github.com/PriorLabs/TabPFN}, Accessed on: Apr. 14, 2026.
+
+\bibitem{x9} I. Loshchilov and F. Hutter, ``Decoupled weight decay regularization,'' \emph{International Conference on Learning Representation (ICLR)}, 2019.
+\bibitem{x10} I. Steinwart and A. Christmann, ``Estimating conditional quantiles with the help of the pinball loss,'' \emph{Bernoulli}, vol. 17, no. 1, pp. 211–225, 2011.
+\bibitem{x11} Y. Romano, E. Patterson, and E. Candes, ``Conformalized quantile regression,'' \emph{NIPS'19}, pp. 3543--3553, 2019.
+\bibitem{x12} T. Akiba, S. Sano, T. Yanase, T. Ohta, and M. Koyama, ``Optuna: A next-generation hyperparameter optimization framework,'' in \emph{Proc. the 25th ACM SIGKDD International Conference on Knowledge Discovery \& Data Mining}, Anchorage, AK, USA, pp. 2623–-2631, 2019.
+\bibitem{x13} L. Sluijterman, E. Cator, and T. Heskes, ``How to evaluate uncertainty estimates in machine learning for regression?,'' \emph{Neural Netw.}, vol. 173, no. C, 2024.
+\bibitem{x14} A. Khosravi, S. Nahavandi, and D. Creighton, ``A prediction interval-based approach to determine optimal structures of neural network metamodel,'' \emph{Expert Systems with Applications}, vol. 37, no. 3, pp. 2377--2387, 2010.
+\bibitem{x15} J.R. Brehmer and T. Gneiting, ``Scoring interval forecasts: Equal-tailed, shortest, and modal interval,'' \emph{Bernoulli}, vol. 27, no. 3, pp. 1993-2010, 2021.
+
+\end{thebibliography}
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{./photo/YoungjuNam.jpg}}]
+{Youngju Nam} received the B.S., M.S., and Ph.D. degrees from the School of Information and Communication Engineering, Chungbuk National University, Cheongju, South Korea, in 2017, 2019, and 2023, respectively. He joined the School of Software, Kunsan National University, in 2024, where he is currently working as an Assistant Professor. His research interests include computer communication and networking, wireless sensor networks, content-centric vehicular networks, content precaching, optimization, and social networks.
+\end{IEEEbiography}
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{./photo/EuisinLee.jpg}}]
+{Euisin Lee} received the B.S., M.S., and Ph.D. degrees in computer engineering from Chungnam National University, Daejeon, South Korea, in 2005, 2007, and 2012, respectively. He studied as a Postdoctoral Researcher with the Department of Computer Science, University of California at Los Angeles, from 2012 to 2014. He joined the School of Information and Communication Engineering, Chungbuk National University, in 2014, where he is currently working as a Professor. His research interests include computer communication and networking, routing, multicasting, mobility management, location service, QoS (real-time and reliability) in mobile ad hoc networks (MANETs), wireless sensor networks (WSNs), vehicular ad hoc networks (VANETs), and Internet of Things (IoT). 
+\end{IEEEbiography}
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{./photo/JeonghunKim.jpg}}]
+{Jeong-Hun Kim} received the B.Sc., M.Sc., and Ph.D. degrees from the Chungbuk National University, South Korea. He was also a Postdoctoral Researcher with the Bigdata Research Institute, Chungbuk National University, from 2023 to 2024, after receiving the Ph.D. degree. He is currently an Assistant Professor with the Department of Computer Science and Information Engineering, Kunsan National University, South Korea. His research interests include data mining and analysis, machine learning, artificial intelligence, pattern recognition, computer vision, databases, and big data systems.
+\end{IEEEbiography}
+
+\end{document}

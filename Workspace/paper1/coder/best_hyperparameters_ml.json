@@ -1,0 +1,22 @@
+{
+    "RF": {
+        "n_estimators": 243,
+        "max_depth": 23,
+        "min_samples_split": 5,
+        "min_samples_leaf": 6
+    },
+    "XGB": {
+        "n_estimators": 322,
+        "max_depth": 14,
+        "learning_rate": 0.05516608195961822,
+        "subsample": 0.6642596723654336,
+        "colsample_bytree": 0.9991501557823868,
+        "gamma": 0.16731111566135104
+    },
+    "CatBoost": {
+        "iterations": 259,
+        "depth": 7,
+        "learning_rate": 0.1785196213812397,
+        "l2_leaf_reg": 7.886541241605254
+    }
+}

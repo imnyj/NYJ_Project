@@ -1,0 +1,365 @@
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import pandas as pd
+import os
+import sys
+import pickle
+from torch.utils.data import TensorDataset, DataLoader
+
+# Add Command/core to path for lock manager and audit logger
+sys.path.append("/home/imnyj/Command/core")
+from lock_manager import LockManager
+from audit_logger import AuditLogger
+
+from dataset import get_dataloaders
+from models import (
+    H_ST_MBAN, 
+    H_ST_MBAN_noAttn, 
+    H_ST_MBAN_EarlyFusion, 
+    H_ST_MBAN_noS, 
+    H_ST_MBAN_noT, 
+    H_ST_MBAN_noK
+)
+
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DATA_DIRS = [
+    "/home/imnyj/SumoNetSim1.1.6/data",
+    "/home/imnyj/papers/paper1/paper/data(Desk01)",
+    "/home/imnyj/papers/paper1/paper/data(Desk02)"
+]
+EPOCHS = 200
+BATCH_SIZE = 2048
+OUT_CSV_TEMP = "/home/imnyj/Workspace/paper1/worker/G2_ablation_learning_curves_temp.csv"
+OUT_CSV_FINAL = "/home/imnyj/Workspace/paper1/worker/G2_ablation_learning_curves.csv"
+FIG_PATH_STUDY = "/home/imnyj/Workspace/paper1/visualizer/G2_ablation_study.png"
+FIG_PATH_CURVES = "/home/imnyj/Workspace/paper1/visualizer/G2_ablation_learning_curves.png"
+
+def train_and_eval_curve(model_name, model, all_xk, all_xt, all_xs, all_y, val_xk, val_xt, val_xs, val_y, xgb_oof_by_epoch, xgb_val_by_epoch, has_hybrid=False):
+    model = model.to(DEVICE)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    criterion = nn.L1Loss()
+    
+    history = []
+    
+    # Move datasets to GPU beforehand for massive speedup
+    all_xk_g = all_xk.to(DEVICE)
+    all_xt_g = all_xt.to(DEVICE)
+    all_xs_g = all_xs.to(DEVICE)
+    all_y_g = all_y.to(DEVICE)
+    
+    val_xk_g = val_xk.to(DEVICE)
+    val_xt_g = val_xt.to(DEVICE)
+    val_xs_g = val_xs.to(DEVICE)
+    val_y_g = val_y.to(DEVICE)
+    
+    xgb_oof_g = torch.tensor(xgb_oof_by_epoch, dtype=torch.float32, device=DEVICE)
+    xgb_val_g = torch.tensor(xgb_val_by_epoch, dtype=torch.float32, device=DEVICE)
+    
+    # --- Epoch 0 (Untrained state) ---
+    model.eval()
+    val_mae_0 = 0.0
+    val_size = val_xk_g.size(0)
+    count_0 = val_size * 2
+    
+    with torch.no_grad():
+        for start_idx in range(0, val_size, BATCH_SIZE):
+            end_idx = min(start_idx + BATCH_SIZE, val_size)
+            x_k = val_xk_g[start_idx:end_idx]
+            x_t = val_xt_g[start_idx:end_idx]
+            x_s = val_xs_g[start_idx:end_idx]
+            xp = xgb_val_g[0, start_idx:end_idx]
+            y = val_y_g[start_idx:end_idx]
+            
+            if has_hybrid:
+                preds = model(x_k, x_t, x_s, ml_preds=xp)
+            else:
+                preds = model(x_k, x_t, x_s)
+            val_mae_0 += torch.sum(torch.abs(preds - y)).item()
+            
+    mae_0 = val_mae_0 / count_0
+    history.append({"Model": model_name, "Epoch": 0, "MAE": mae_0})
+    print(f"[{model_name}] Epoch 0/{EPOCHS} (Untrained) Val MAE: {mae_0:.4f}")
+    
+    # --- Epoch Loop ---
+    dataset_size = all_xk_g.size(0)
+    for ep in range(1, EPOCHS + 1):
+        model.train()
+        indices = torch.randperm(dataset_size, device=DEVICE)
+        
+        for start_idx in range(0, dataset_size, BATCH_SIZE):
+            end_idx = min(start_idx + BATCH_SIZE, dataset_size)
+            batch_idx = indices[start_idx:end_idx]
+            
+            x_k = all_xk_g[batch_idx]
+            x_t = all_xt_g[batch_idx]
+            x_s = all_xs_g[batch_idx]
+            xp = xgb_oof_g[ep, batch_idx]
+            y = all_y_g[batch_idx]
+            
+            optimizer.zero_grad()
+            if has_hybrid:
+                preds = model(x_k, x_t, x_s, ml_preds=xp)
+            else:
+                preds = model(x_k, x_t, x_s)
+                
+            loss = criterion(preds, y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            
+        # Validation at end of epoch
+        model.eval()
+        val_mae = 0.0
+        with torch.no_grad():
+            for start_idx in range(0, val_size, BATCH_SIZE):
+                end_idx = min(start_idx + BATCH_SIZE, val_size)
+                x_k = val_xk_g[start_idx:end_idx]
+                x_t = val_xt_g[start_idx:end_idx]
+                x_s = val_xs_g[start_idx:end_idx]
+                xp = xgb_val_g[ep, start_idx:end_idx]
+                y = val_y_g[start_idx:end_idx]
+                
+                if has_hybrid:
+                    preds = model(x_k, x_t, x_s, ml_preds=xp)
+                else:
+                    preds = model(x_k, x_t, x_s)
+                val_mae += torch.sum(torch.abs(preds - y)).item()
+        
+        mae = val_mae / count_0
+        history.append({"Model": model_name, "Epoch": ep, "MAE": mae})
+        if ep % 20 == 0 or ep == 1:
+            print(f"[{model_name}] Epoch {ep}/{EPOCHS} Val MAE: {mae:.4f}")
+            
+    return history
+
+def safe_write_csv(df, path, agent_id="worker_g2"):
+    lm = LockManager()
+    logger = AuditLogger()
+    if lm.acquire(path, agent_id):
+        try:
+            df.to_csv(path, index=False)
+            logger.log_action(agent_id, "MODIFY", path, f"Wrote CSV results to {path}")
+        finally:
+            lm.release(path, agent_id)
+
+def safe_save_fig(plt, path, agent_id="worker_g2", dpi=300):
+    lm = LockManager()
+    logger = AuditLogger()
+    if lm.acquire(path, agent_id):
+        try:
+            plt.savefig(path, dpi=dpi)
+            logger.log_action(agent_id, "MODIFY", path, f"Saved figure to {path}")
+        finally:
+            lm.release(path, agent_id)
+
+def main():
+    print("Loading datasets for Ablation Study...")
+    train_loader, val_loader, scaler = get_dataloaders(DATA_DIRS, batch_size=BATCH_SIZE)
+    
+    print("Loading XGBoost parameters...")
+    xgb_params = {"n_estimators": 200, "learning_rate": 0.05, "max_depth": 6}
+    try:
+        import json
+        with open("/home/imnyj/papers/paper1/code/best_hyperparameters_ml.json", "r") as f:
+            hp = json.load(f)
+            if "XGB" in hp:
+                xgb_params = hp["XGB"]
+                if 'max_depth' in xgb_params: xgb_params['max_depth'] = int(xgb_params['max_depth'])
+    except Exception as e:
+        print(f"Could not load XGB hyperparameters, using default: {e}")
+
+    # Prepare flat arrays for XGBoost
+    X_train_flat = []
+    all_xk, all_xt, all_xs, all_y = [], [], [], []
+    for x_k, x_t, x_s, y in train_loader:
+        all_xk.append(x_k)
+        all_xt.append(x_t)
+        all_xs.append(x_s)
+        all_y.append(y)
+        X_train_flat.append(torch.cat([x_k, x_t, x_s], dim=1).numpy())
+    
+    X_train_flat = np.vstack(X_train_flat)
+    Y_train_flat = torch.cat(all_y).numpy()
+    
+    all_xk = torch.cat(all_xk)
+    all_xt = torch.cat(all_xt)
+    all_xs = torch.cat(all_xs)
+    all_y = torch.cat(all_y)
+    
+    X_val_flat = []
+    val_xk, val_xt, val_xs, val_y = [], [], [], []
+    for x_k, x_t, x_s, y in val_loader:
+        val_xk.append(x_k)
+        val_xt.append(x_t)
+        val_xs.append(x_s)
+        val_y.append(y)
+        X_val_flat.append(torch.cat([x_k, x_t, x_s], dim=1).numpy())
+        
+    X_val_flat = np.vstack(X_val_flat)
+    Y_val_flat = torch.cat(val_y).numpy()
+    
+    val_xk = torch.cat(val_xk)
+    val_xt = torch.cat(val_xt)
+    val_xs = torch.cat(val_xs)
+    val_y = torch.cat(val_y)
+
+    # Precompute progressive predictions (0 to EPOCHS)
+    print("Precomputing Progressive Out-Of-Fold XGBoost predictions...")
+    from sklearn.model_selection import KFold
+    from xgboost import XGBRegressor
+    
+    xgb_oof_by_epoch = np.zeros((EPOCHS + 1, len(Y_train_flat), 2))
+    xgb_val_by_epoch = np.zeros((EPOCHS + 1, len(Y_val_flat), 2))
+    
+    xgb_oof_by_epoch[0] = 0.0
+    xgb_val_by_epoch[0] = 0.0
+    
+    xgb_params["n_estimators"] = EPOCHS
+    kf = KFold(n_splits=2, shuffle=True, random_state=42)
+    
+    print("Training fold XGBoost models once...")
+    fold_models = []
+    for train_idx, val_idx in kf.split(X_train_flat):
+        fold_y1 = XGBRegressor(**xgb_params, eval_metric="mae", n_jobs=-1)
+        fold_y2 = XGBRegressor(**xgb_params, eval_metric="mae", n_jobs=-1)
+        fold_y1.fit(X_train_flat[train_idx], Y_train_flat[train_idx, 0])
+        fold_y2.fit(X_train_flat[train_idx], Y_train_flat[train_idx, 1])
+        fold_models.append((train_idx, val_idx, fold_y1, fold_y2))
+        
+    print("Training base XGBoost models once...")
+    base_y1 = XGBRegressor(**xgb_params, eval_metric="mae", n_jobs=-1)
+    base_y2 = XGBRegressor(**xgb_params, eval_metric="mae", n_jobs=-1)
+    base_y1.fit(X_train_flat, Y_train_flat[:, 0])
+    base_y2.fit(X_train_flat, Y_train_flat[:, 1])
+    
+    print("Generating progressive predictions across epochs using iteration_range...")
+    for ep in range(1, EPOCHS + 1):
+        for train_idx, val_idx, fold_y1, fold_y2 in fold_models:
+            p1 = fold_y1.predict(X_train_flat[val_idx], iteration_range=(0, ep))
+            p2 = fold_y2.predict(X_train_flat[val_idx], iteration_range=(0, ep))
+            xgb_oof_by_epoch[ep, val_idx] = np.column_stack([p1, p2])
+            
+        p1_val = base_y1.predict(X_val_flat, iteration_range=(0, ep))
+        p2_val = base_y2.predict(X_val_flat, iteration_range=(0, ep))
+        xgb_val_by_epoch[ep] = np.column_stack([p1_val, p2_val])
+        
+        if ep % 20 == 0 or ep == 1:
+            print(f"Precomputed XGBoost predictions for Epoch {ep}/{EPOCHS}")
+
+    ablation_models = {
+        "w/o Hybrid": (H_ST_MBAN(), False),
+        "w/o Attention": (H_ST_MBAN_noAttn(), True),
+        "Early Fusion": (H_ST_MBAN_EarlyFusion(), True),
+        "w/o Social (S)": (H_ST_MBAN_noS(), True),
+        "w/o Traffic (T)": (H_ST_MBAN_noT(), True),
+        "w/o Kinematic (K)": (H_ST_MBAN_noK(), True)
+    }
+
+    all_history = []
+    
+    for name, (model, use_hybrid) in ablation_models.items():
+        print(f"\n--- Training {name} ---")
+        history = train_and_eval_curve(
+            name, model, 
+            all_xk, all_xt, all_xs, all_y, 
+            val_xk, val_xt, val_xs, val_y, 
+            xgb_oof_by_epoch, xgb_val_by_epoch, 
+            has_hybrid=use_hybrid
+        )
+        all_history.extend(history)
+        
+        temp_df = pd.DataFrame(all_history)
+        safe_write_csv(temp_df, OUT_CSV_TEMP)
+        
+    print("\nAblation variants training complete.")
+    
+    # Load H-ST-MBAN from G1
+    print("Loading H-ST-MBAN G1 curves...")
+    g1_h_st_mban_path = "/home/imnyj/Workspace/paper1/worker/G1_learning_curves.csv"
+    g1_all_df = pd.read_csv(g1_h_st_mban_path)
+    g1_df = g1_all_df[g1_all_df["Model"] == "H-ST-MBAN"].copy()
+    g1_df = g1_df.rename(columns={"Step": "Epoch"})
+    # Let's make sure model name matches
+    g1_df["Model"] = "H-ST-MBAN (Proposed)"
+    
+    # Combine data
+    ablation_df = pd.DataFrame(all_history)
+    
+    # Map model names to final names
+    name_mapping = {
+        "w/o Hybrid": "w/o XGB",
+        "w/o Attention": "w/o Attn",
+        "Early Fusion": "Early Fusion",
+        "w/o Social (S)": "w/o Social (S)",
+        "w/o Traffic (T)": "w/o Traffic (T)",
+        "w/o Kinematic (K)": "w/o Kinematic (K)"
+    }
+    ablation_df["Model"] = ablation_df["Model"].map(name_mapping)
+    
+    final_df = pd.concat([g1_df, ablation_df], ignore_index=True)
+    safe_write_csv(final_df, OUT_CSV_FINAL)
+    print(f"Saved final ablation learning curves to {OUT_CSV_FINAL}")
+    
+    # Let's plot the curves
+    print("Plotting learning curves...")
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    
+    plt.figure(figsize=(10, 6))
+    sns.set_theme(style="whitegrid")
+    
+    # Define exact colors
+    color_palette = {
+        "H-ST-MBAN (Proposed)": "#FF0000",   # Red
+        "w/o XGB": "#ED7D31",                # Orange
+        "w/o Attn": "#3399FF",               # Blue
+        "Early Fusion": "#70AD47",           # Green
+        "w/o Social (S)": "#800080",         # Purple
+        "w/o Traffic (T)": "#FFD700",         # Gold/Yellow
+        "w/o Kinematic (K)": "#008080"       # Teal
+    }
+    
+    # Re-order models for consistent legend
+    model_order = [
+        "H-ST-MBAN (Proposed)",
+        "w/o XGB",
+        "w/o Attn",
+        "Early Fusion",
+        "w/o Social (S)",
+        "w/o Traffic (T)",
+        "w/o Kinematic (K)"
+    ]
+    
+    # Filter final_df to only include models in our model_order in case of NaN mapping
+    final_df = final_df[final_df["Model"].isin(model_order)]
+    
+    sns.lineplot(
+        data=final_df, 
+        x="Epoch", 
+        y="MAE", 
+        hue="Model", 
+        hue_order=model_order,
+        palette=color_palette,
+        linewidth=2.0
+    )
+    
+    plt.xlim(0, 100) # Show 0-100 Epochs for convergence detail
+    plt.ylim(0, 260)
+    plt.xlabel("Epochs", fontsize=12)
+    plt.ylabel("Validation MAE (seconds)", fontsize=12)
+    plt.title("G2 Ablation Study - Convergence Curves (Untrained @ Epoch 0)", fontsize=14)
+    plt.legend(title="Ablation Variants", loc="upper right", frameon=True)
+    plt.grid(True, linestyle="--", alpha=0.6)
+    plt.tight_layout()
+    
+    safe_save_fig(plt, FIG_PATH_STUDY)
+    safe_save_fig(plt, FIG_PATH_CURVES)
+    plt.close()
+    print("Plotting complete and figures saved.")
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,89 @@
+{
+  "validation_id": "VAL-2026-04-29-SUMO-INTEGRITY",
+  "timestamp": "2026-04-29T00:00:00Z",
+  "validator": "Reviewer (ad-hoc)",
+  "mode": "Validator",
+  "purpose": "SUMO 통합 진위 검증 (사용자 직접 요청)",
+  "files_reviewed": [
+    "/home/imnyj/papers/paper3/paper/experiment/code/sim_core.py",
+    "/home/imnyj/papers/paper3/paper/experiment/code/run_scenario.py",
+    "/home/imnyj/papers/paper3/paper/experiment/code/algorithms.py",
+    "/home/imnyj/papers/paper3/paper/experiment/code/utils.py"
+  ],
+  "sumo_config_files_found": {
+    "directory": "/home/imnyj/paper-ai.v1/SumoNetSim1.1.6/src/sumo/",
+    "files": [
+      "generated.sumocfg (584B)",
+      "generated.net.xml (291.6KB)",
+      "generated.rou.xml (49.4KB)",
+      "generated.add.xml (5.3KB)",
+      "rsu.poi.xml (1.6KB)",
+      "generated.nod.xml (2.5KB)",
+      "generated.edg.xml (9.0KB)"
+    ]
+  },
+  "checklist": {
+    "1_import_libsumo": {
+      "status": "PASS",
+      "detail": "sim_core.py에 'import libsumo as sumo' 존재. ImportError 시 SystemExit(1). traci 단독 import 없음."
+    },
+    "2_import_sumolib": {
+      "status": "PASS_WITH_WARNING",
+      "detail": "sim_core.py에 'import sumolib' 존재. 그러나 sumolib API 호출 없음 (dead import). RSU 파싱은 xml.etree.ElementTree로 수행."
+    },
+    "3_sumo_config_loading": {
+      "status": "PASS",
+      "detail": "sumo.start(['sumo', '-c', self._sumocfg, '--seed', ...]) 호출 확인. _FALLBACK_SUMO_DIR=/home/imnyj/paper-ai.v1/SumoNetSim1.1.6/src/sumo 경로의 파일들 실제 존재."
+    },
+    "4_simulation_loop": {
+      "status": "PASS",
+      "detail": "sumo.simulationStep() 호출이 for t in range(self.duration) 루프 내에 존재. 매 스텝 vehicle.getIDList()/getPosition()/getSpeed()/getAngle() 호출."
+    },
+    "5_vehicle_state_source": {
+      "status": "PASS",
+      "detail": "차량 위치/속도/방향은 libsumo API에서 획득. numpy.random으로 생성하는 코드 없음."
+    },
+    "6_fake_simulation_patterns": {
+      "status": "PASS",
+      "detail": "mock/fake/stub/synthetic 패턴 없음. libsumo import가 실제로 활용됨."
+    },
+    "7_sumolib_utilization": {
+      "status": "WARNING",
+      "detail": "sumolib import는 있으나 sumolib.net.readNet() 등 실제 API 호출 없음. Dead import 상태."
+    }
+  },
+  "result": "PASS",
+  "issues": [
+    {
+      "id": "I-01",
+      "location": "sim_core.py:module-level",
+      "severity": "WARNING",
+      "description": "sumolib이 import되어 있으나 실제로 사용되지 않음 (dead import). sumolib.net.readNet() 또는 edge/lane 정보 파싱에 활용하지 않음. RSU 위치는 xml.etree.ElementTree로 직접 파싱함.",
+      "suggestion": "sumolib.net.readNet(net_xml_path)를 활용하여 네트워크 edge/lane 정보를 파싱하거나, 불필요하면 import를 제거하되 설계 의도를 명시할 것."
+    },
+    {
+      "id": "I-02",
+      "location": "sim_core.py:_resolve_sumo_dir",
+      "severity": "INFO",
+      "description": "_DEFAULT_SUMO_DIR은 sim_core.py 기준 상대 경로(../../../../SumoNetSim1.1.6/src/sumo)이며, code/ 위치에서 4단계 상위인 /home/imnyj/paper-ai.v1/SumoNetSim1.1.6/src/sumo와 일치함. _FALLBACK_SUMO_DIR은 절대 경로로 동일 위치를 가리킴. 실제 파일들은 해당 경로에 존재함.",
+      "suggestion": "특이사항 없음. 경로 해결 로직이 정상 작동하며 실제 파일도 존재함."
+    },
+    {
+      "id": "I-03",
+      "location": "sim_core.py:CIoVSim.__init__",
+      "severity": "INFO",
+      "description": "density_per_cell 파라미터는 인터페이스 호환성을 위해 유지되나, 실제 차량 수는 .rou.xml에서 결정됨. 이는 설계 문서에 명시되어 있음.",
+      "suggestion": "특이사항 없음."
+    },
+    {
+      "id": "I-04",
+      "location": "algorithms.py:youn2026_decision",
+      "severity": "INFO",
+      "description": "Youn2026 알고리즘은 실제 SAC-RL 학습 없이 훈련된 정책을 근사(simulated policy)로 구현함. 이는 코드 주석에 명시되어 있음.",
+      "suggestion": "알고리즘 설계상 의도적인 근사임. 논문에서 비교 베이스라인으로 사용 시 이 한계를 명시할 것."
+    }
+  ],
+  "summary": "libsumo 기반 SUMO 시뮬레이션이다 (PASS).\n\n검증 결과:\n① import 검증: sim_core.py에서 'import libsumo as sumo' 및 'import sumolib' 모두 확인됨. traci 단독 사용 없음.\n② SUMO 설정 파일: /home/imnyj/paper-ai.v1/SumoNetSim1.1.6/src/sumo/ 경로에 generated.sumocfg, generated.net.xml(291.6KB), generated.rou.xml(49.4KB), rsu.poi.xml(1.6KB) 등 모든 SUMO 입력 파일이 실제 디스크에 존재함.\n③ 시뮬레이션 루프: sumo.start([...\"-c\", sumocfg...]) → sumo.simulationStep() 반복 → sumo.vehicle.getIDList()/getPosition()/getSpeed()/getAngle() 호출 → sumo.close() 패턴이 완전히 구현됨. 차량 위치/속도는 libsumo API에서 획득함.\n④ 가짜 시뮬레이션 패턴 없음: np.random으로 차량 상태를 생성하는 코드 없음. mock/fake/stub 패턴 없음. libsumo는 dead import 아님(실제 호출됨).\n⑤ sumolib: import는 있으나 실제 호출(sumolib.net.readNet 등)은 없음 — WARNING 수준의 dead import. RSU 위치 파싱은 xml.etree.ElementTree로 직접 수행함.\n\n결론: 시뮬레이션은 실제 SUMO 네트워크(SumoNetSim1.1.6) 위에서 동작하며, libsumo API를 통해 차량 상태를 획득하는 정상적인 SUMO 통합 구현임. sumolib dead import는 경미한 코드 품질 이슈이나 시뮬레이션의 진위에는 영향 없음.",
+  "data_integrity": "N/A (코드 검증 위주; 데이터 무결성 검증 대상 아님)",
+  "note": "ad-hoc SUMO integrity check (정식 데이터 검증 파이프라인의 일부가 아님)"
+}

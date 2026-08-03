@@ -1,0 +1,81 @@
+{
+  "criteria": [
+    "제주도",
+    "5명 수용 가능",
+    "독채 펜션",
+    "앞에 바로 해수욕장",
+    "오션뷰",
+    "답답하지 않은 느낌",
+    "너무 집같지 않은 느낌",
+    "수영장으로 오션뷰를 가리지 않음",
+    "너무 호텔 느낌나면 안 됨"
+  ],
+  "searched_accommodations": [
+    {
+      "name": "그리던 바다 협재",
+      "location": "협재해수욕장",
+      "meets_all_criteria": true,
+      "notes": "협재 바다 바로 앞, 넓은 거실, 비양도 조망, 감성 독채"
+    },
+    {
+      "name": "금토일펜션",
+      "location": "판포/협재 인근",
+      "meets_all_criteria": true,
+      "notes": "2층 복층 구조로 개방감, 제주석 야외 욕조(수영장 대신 뷰 안 가림)"
+    },
+    {
+      "name": "달빛고운펜션",
+      "location": "월정리해수욕장",
+      "meets_all_criteria": true,
+      "notes": "도보 10m 바다 앞, 목조 복층 구조, 펜션 감성"
+    },
+    {
+      "name": "파란스테이",
+      "location": "함덕해수욕장",
+      "meets_all_criteria": true,
+      "notes": "최대 10인 수용 넓은 독채, 탁 트인 옥상 오션뷰"
+    },
+    {
+      "name": "아쿠아뷰티크",
+      "location": "월정리해수욕장",
+      "meets_all_criteria": true,
+      "notes": "바다와 이어지는 인피니티 풀 스타일 패밀리 독채"
+    },
+    {
+      "name": "제주 하임스테이",
+      "location": "평대해수욕장",
+      "meets_all_criteria": true,
+      "notes": "평대해변 바로 앞 신상 독채, 오션뷰 자쿠지, 프라이빗 감성"
+    },
+    {
+      "name": "제주 스테이 다연",
+      "location": "세화해수욕장",
+      "meets_all_criteria": true,
+      "notes": "2층 독채 구조, 세화 바다와 당근밭 뷰, 넓은 개방감"
+    },
+    {
+      "name": "곽지 펀빌펜션",
+      "location": "곽지해수욕장",
+      "meets_all_criteria": true,
+      "notes": "곽지 바다 바로 앞, 감성 리모델링 독채, 오션뷰 탁 트임"
+    },
+    {
+      "name": "동춘house",
+      "location": "평대해수욕장",
+      "meets_all_criteria": true,
+      "notes": "기준 6인 평대해변 앞 독채, 전 객실 오션뷰, 제주 구옥 감성"
+    },
+    {
+      "name": "제주 엠스테이펜션",
+      "location": "세화해수욕장",
+      "meets_all_criteria": true,
+      "notes": "세화 바다 바로 옆 독채, 탁 트인 바다 전망으로 답답함 없음"
+    },
+    {
+      "name": "표선 오아시스 펜션",
+      "location": "표선해수욕장",
+      "meets_all_criteria": false,
+      "notes": "바다 바로 앞이 아니고 차로 5분 거리라 탈락 (중복 방지 기록)"
+    }
+  ]
+}

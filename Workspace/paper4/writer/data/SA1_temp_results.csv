@@ -1,0 +1,2 @@
+sweep_id,param_name,param_value,seed,AoI_mean,CBR_mean,PDR_mean,energy_efficiency,ETSI_compliance,runtime_sec,n_cam_events,status,error
+SA1_temp,n_vehicles,10,42,257.813,0.2139,80.2,1.9808,100.0,20.24,78375,ok,,Proposed

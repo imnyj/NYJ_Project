@@ -1,0 +1,9 @@
+Method,Latency_ms,Memory_KB
+DQL-DCC (MLP),0.8,3.5
+DecTree,0.5,15.0
+PPO (MLP),0.8,3.5
+SAC (Actor-Critic),1.6,7.0
+TD3 (Actor-Critic),1.6,7.0
+Heuristic (Rules),0.2,1.0
+GRU (RNN),14.5,120.0
+ResNet,25.0,450.0

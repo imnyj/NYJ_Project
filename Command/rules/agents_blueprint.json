@@ -1,0 +1,37 @@
+{
+  "idea": {
+    "name": "Idea Manager",
+    "role": "idea",
+    "description": "main idea의 변동 및 리서치 기획 방향성을 체계적으로 기록하고 관리하는 에이전트"
+  },
+  "librarian": {
+    "name": "Reference Librarian",
+    "role": "librarian",
+    "description": "관련 연구 논문 레퍼런스 및 참고 자료 요약본을 수집하고 인덱싱하는 에이전트"
+  },
+  "coder": {
+    "name": "Code Developer",
+    "role": "coder",
+    "description": "깨끗하고 모듈화된 파이썬 코드를 작성하며, 실행 및 테스트를 통해 예외 사항을 검증하는 에이전트"
+  },
+  "visualizer": {
+    "name": "Graph Visualizer",
+    "role": "visualizer",
+    "description": "coder와 유기적으로 협업하여 논문에 들어갈 그래프 및 도표를 생성하는 에이전트"
+  },
+  "writer": {
+    "name": "Draft Writer",
+    "role": "writer",
+    "description": "LaTeX 또는 Markdown 포맷으로 논문의 구체적인 섹션 드래프트를 작성하며 학술적 문체를 유지하는 에이전트"
+  },
+  "critic": {
+    "name": "Logical Critic",
+    "role": "critic",
+    "description": "작성된 글과 코드를 엄격하고 비판적으로 검증하여 논리적 맹점이나 구현 오류를 찾는 에이전트"
+  },
+  "worker": {
+    "name": "Task Worker",
+    "role": "worker",
+    "description": "상위 에이전트가 하청한 구체적인 태스크 및 서브루틴을 신속하고 정확하게 수행하는 에이전트"
+  }
+}

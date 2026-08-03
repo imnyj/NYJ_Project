@@ -1,0 +1,5 @@
+이 위치의 tinymlp_model.pkl 은 2026-05-14 E4-2-redo2 보고 시점에 학습된 모델이지만,
+사용된 데이터셋이 stale oracle_dataset.csv (alpha=0.5, class collapse 잔존) 이므로
+신뢰할 수 없습니다. class_distribution_train = {0:128975, 2:499451, 3:371574} 만 사용.
+올바른 모델은 oracle_dataset_alpha02.csv 로 재학습 필요.
+Commander 2026-05-14

@@ -1,0 +1,156 @@
+# G6 & G7 Plots Visualization Plan and Specification
+
+This document defines the visual design specification and implementation checklist for the G6 (average cache metrics comparison) and G7 (cache metrics by vehicle density) plots in the caching paper. It ensures strict consistency in model ordering, color mapping, layout constraints, font sizes, and compliance with general visualization rules.
+
+---
+
+## 📋 General Visualization Rules (from GEMINI.md)
+* **RULE 10**: Absolutely NO titles inside any subplots or the main figure (do not use `plt.title`, `ax.set_title`, or `fig.suptitle`). All descriptions must be handled in the LaTeX caption.
+* **Font Sizes**: 
+  - Axis labels: **20pt**
+  - Tick labels (X and Y axis): **18pt** (or **16pt** for dense X-ticks if necessary for readability)
+  - Legend font size: **18pt**
+* **DPI**: Save all images at **300 DPI** using `bbox_inches='tight'`.
+* **Output Directories**: Save the generated graphs to:
+  1. `/home/imnyj/Workspace/paper1/visualizer/`
+  2. `/home/imnyj/Workspace/paper1/writer/draft/figure/`
+  3. `/home/imnyj/.gemini/antigravity-cli/brain/bd55b32a-994c-49a9-a934-ac0a05baf976/` (Main agent's brain directory)
+
+---
+
+## 🎨 Model Order and Color Consistency
+To ensure uniform representation across all figures, every subplot and legend must strictly follow the standard model ordering and color mapping.
+
+### 1. Standard Model Ordering
+The 13 models must always appear in the following sequence (from left to right in bar charts, and in the legend):
+1. `LR`
+2. `RF`
+3. `XGBoost`
+4. `CatBoost`
+5. `NGBoost`
+6. `TabPFN`
+7. `MLP`
+8. `ResNet`
+9. `LSTM`
+10. `GRU`
+11. `FTT`
+12. `TabR`
+13. `H-ST-MBAN`
+
+### 2. Hex Color Mapping
+Each model is mapped to a specific color. **H-ST-MBAN** must be represented by a solid bright red color.
+* **H-ST-MBAN**: `#FF0000`
+* **XGBoost**: `#1f77b4`
+* **CatBoost**: `#ff7f0e`
+* **TabR**: `#9467bd`
+* **MLP**: `#bcbd22`
+* **FTT**: `#8c564b`
+* **GRU**: `#e377c2`
+* **TabPFN**: `#98df8a`
+* **ResNet**: `#17becf`
+* **LSTM**: `#aec7e8`
+* **LR**: `#ffbb78`
+* **NGBoost**: `#2ca02c`
+* **RF**: `#7f7f7f`
+
+---
+
+## 📊 Graph G6: Average Cache Metrics Comparison
+* **Target Filename**: `G6_cache_metrics_avg.png`
+* **Plot Type**: 1x3 Subplot of Bar Charts (1 row, 3 columns).
+* **Data Source**: `/home/imnyj/Workspace/paper1/worker/G6_cache_metrics_all13.csv`
+
+### 1. Subplot Layout & Y-Axis Labels
+* **Canvas Size**: `figsize=(18, 6)` or `figsize=(20, 6.5)`
+* **Subplot 1 (Left)**: Cache Hit Ratio
+  - Data column: `Hit_Rate`
+  - Y-axis label: **`Cache Hit Ratio (%)`** (fontsize=20)
+* **Subplot 2 (Center)**: Average Access Delay
+  - Data column: `Avg_Delay`
+  - Y-axis label: **`Average Access Delay (s)`** (fontsize=20)
+* **Subplot 3 (Right)**: Wasted Traffic
+  - Data column: `Wasted_Traffic`
+  - Y-axis label: **`Wasted Traffic (MB)`** (fontsize=20)
+
+### 2. Bar Chart Specifications
+* **X-Ticks**: Model names (`LR` to `H-ST-MBAN`) in standard order. Ticks should be rotated 45 degrees for legibility (`fontsize=16` or `18`).
+* **Y-Ticks**: Font size 18pt.
+* **Bar Colors**: Must follow the hex color mapping.
+* **Redundant Legends**: All legends inside individual subplots must be disabled (`legend=False` in Seaborn/Matplotlib barplot).
+* **Grid**: Enable vertical Y-axis light-grey grid lines (`ax.grid(axis='y', color='grey', linestyle='--', alpha=0.5)`).
+
+### 3. Unified Global Legend
+* **Placement**: Place a single, unified legend for all 13 models horizontally below the subplots.
+* **Implementation Details**:
+  - Disable local legends in subplots.
+  - Add the global legend using:
+    ```python
+    fig.legend(handles, labels, loc='lower center', ncol=7, bbox_to_anchor=(0.5, -0.18), fontsize=18)
+    ```
+  - Ensure the bounding box does not crop the legend by using `plt.savefig(..., bbox_inches='tight')`.
+
+---
+
+## 📈 Graph G7: Cache Metrics by Vehicle Density
+* **Target Filename**: `G7_cache_metrics_density.png`
+* **Plot Type**: 1x3 Subplot of Line Charts (1 row, 3 columns).
+* **Data Source**: `/home/imnyj/Workspace/paper1/worker/G7_cache_metrics_density.csv`
+
+### 1. Subplot Layout & Y-Axis Labels
+* **Canvas Size**: `figsize=(18, 6)` or `figsize=(20, 6.5)`
+* **Subplot 1 (Left)**: Cache Hit Ratio
+  - Data column: `cache_hit` (Scale by 100.0 to convert to percentage)
+  - Y-axis label: **`Cache Hit Ratio (%)`** (fontsize=20)
+* **Subplot 2 (Center)**: Average Access Delay
+  - Data column: `delay` (Scale by 1.0)
+  - Y-axis label: **`Average Access Delay (s)`** (fontsize=20)
+* **Subplot 3 (Right)**: Wasted Traffic
+  - Data column: `traffic` (Scale by 1.0)
+  - Y-axis label: **`Wasted Traffic (MB)`** (fontsize=20)
+
+### 2. Line Chart Specifications
+* **X-Axis (Vehicle Density)**:
+  - Label: **`Vehicle Density (veh/km/lane)`** (fontsize=20)
+  - Ticks: Bins `(5.0, 7.5]`, `(7.5, 10.0]`, `(10.0, 12.5]`, `(12.5, 15.0]`, `(15.0, 17.5]`, `(17.5, 20.0]`, `(20.0, 22.5]`, `(22.5, 25.0]` (8 bins).
+  - Ticks: Rotated 45 degrees for readability, font size 16pt or 18pt.
+  - Limits: No left or right margins. Set limits using `ax.set_xlim(0, len(bin_names) - 1)` so curves span border-to-border.
+* **Y-Ticks**: Font size 18pt.
+* **Line Colors & Widths**:
+  - **H-ST-MBAN**: Thick red line (`color='#FF0000'`, `linewidth=3.0`, `zorder=10`).
+  - **All other models**: Standard thickness (`linewidth=1.2`, `zorder=2`), colored according to the color mapping.
+* **Grid**: Full light-grey grid (`ax.grid(color='grey', linestyle='--', alpha=0.5)`).
+
+### 3. Unified Global Legend
+* **Placement**: Place a single, unified legend for all 13 models horizontally below the subplots.
+* **Implementation Details**:
+  - Disable local legends inside the subplots (previously G7 had a legend inside subplot 1).
+  - Use consistent placement like G6:
+    ```python
+    fig.legend(handles, labels, loc='lower center', ncol=7, bbox_to_anchor=(0.5, -0.18), fontsize=18)
+    ```
+
+---
+
+## 🛠️ Implementation Checklist for the Caching Worker
+
+The following checklist guides the execution script modification (e.g., `G5_G6_run_online_caching_v2.py` and `G7_run_density_caching.py`):
+
+- [ ] **Locking and Logging**:
+  - Import `LockManager` and `AuditLogger`.
+  - Wrap file operations (CSV reads/writes, plot saves) in file locks under target filepaths.
+  - Log modifications to `/tmp/agent_audit.log` with detailed messages.
+- [ ] **Latest Files & Backup**:
+  - Keep only the latest file in the destination folders.
+  - Automatically copy previous versions into a nested `backup/` subdirectory before overwriting (automatically handled if using `LockManager` acquire and save, or explicitly implement `backup_file` helper).
+- [ ] **G6 Single Image Replot**:
+  - Modify `G5_G6_run_online_caching_v2.py` to compile `Hit_Rate`, `Avg_Delay`, and `Wasted_Traffic` into a single 1x3 subplot figure.
+  - Disable local subplot titles and individual legends.
+  - Add the global horizontal 13-model legend at the bottom center.
+  - Save the combined figure as `G6_cache_metrics_avg.png`.
+- [ ] **G7 Single Image Legend & Margin Fix**:
+  - Modify `G7_run_density_caching.py` to remove the legend from the first subplot (`axes[0]`).
+  - Add the global horizontal 13-model legend at the bottom center (making it consistent with G6).
+  - Ensure the X-axis bounds are tightly set to `[0, len(bin_names)-1]` with no margins.
+  - Save the updated figure as `G7_cache_metrics_density.png`.
+- [ ] **LaTeX Document Integration**:
+  - Update `main.tex` to point G6 to the new combined image `G6_cache_metrics_avg.png` instead of the three separate files, using `width=\textwidth`.\n

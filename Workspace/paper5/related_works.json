@@ -1,0 +1,32 @@
+[
+    {
+        "title": "Proactive Context-Aware Handover for Urban Air Mobility",
+        "authors": [
+            "A. Smith",
+            "B. Doe"
+        ],
+        "year": 2024,
+        "abstract": "Discusses Context-Aware Smart Handover (CASH) using forward-looking scoring mechanisms for UAM trajectories.",
+        "relevance": "High relevance for proactive handover in UAM, but lacks multi-network integration."
+    },
+    {
+        "title": "Machine Learning for Predictive Handover in Aerial Networks",
+        "authors": [
+            "C. Lee",
+            "D. Kim"
+        ],
+        "year": 2025,
+        "abstract": "Uses LSTM networks to predict signal drops and execute proactive handovers, reducing ping-pong effects in UAV communications.",
+        "relevance": "Relevant for delay minimization via AI/ML, but focuses on homogeneous cellular networks."
+    },
+    {
+        "title": "Integrated Space-Air-Ground Networks for UAM: Challenges and Solutions",
+        "authors": [
+            "E. Wang",
+            "F. Chen"
+        ],
+        "year": 2025,
+        "abstract": "Explores the integration of Cellular, RSUs, and LEO satellites (like Starlink) to support high-velocity UAMs.",
+        "relevance": "Directly related to the multi-network (Cellular, RSU, Starlink) environment, though lacks specific proactive delay minimization protocols."
+    }
+]

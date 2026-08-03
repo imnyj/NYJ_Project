@@ -1,0 +1,250 @@
+{
+  "runbook": "E4-1-redo3",
+  "file_path": "/home/imnyj/papers/paper4/paper/data/oracle_dataset.csv",
+  "file_size_mb": 662.3,
+  "meta": {
+    "cost_function_version": "3term_v3_9action_main",
+    "weights": {
+      "alpha": 0.3,
+      "beta": 0.6,
+      "gamma": 0.1
+    },
+    "cbr_target": 0.55,
+    "grid_size": 9,
+    "p_tx_grid": [
+      0.0,
+      15.0,
+      30.0
+    ],
+    "t_grid": [
+      0.1,
+      0.3,
+      1.0
+    ],
+    "n_actions": 9,
+    "generated_at": "2026-05-15T00:37:34",
+    "note": "P_TX_GRID = ETSI EN 302 663 compliant (within [0,+30] dBm). Cost: 3-term (alpha*AoI_norm + beta*|CBR_pred-target| + gamma*E_tx_norm), independent weights. PATCH 2026-05-14: per-vehicle prev-action exploration policy (VehicleOracleState.maybe_resample every EXPLORE_RESAMPLE_STEPS steps) injects uniform coverage of (prev_T, prev_p) over the active action grid to prevent label collapse observed in redo/redo2/redo3. Option C (2026-05-14): default grid_size=9 (3\u00d73) right-sized main scheme.",
+    "explore_resample_steps": 50
+  },
+  "header": [
+    "vid",
+    "sim_time",
+    "cbr_global",
+    "n_neighbors",
+    "v_norm",
+    "dt_since_last_cam",
+    "cbr_smoothed",
+    "action_idx",
+    "T_GenCam_chosen",
+    "p_tx_chosen",
+    "cost",
+    "alpha",
+    "beta",
+    "gamma"
+  ],
+  "n_rows_total": 9195822,
+  "sample_step": 100,
+  "n_sampled": 91959,
+  "action_dist": {
+    "0": 39790,
+    "1": 24791,
+    "2": 5727,
+    "3": 5256,
+    "4": 8774,
+    "5": 7621,
+    "6": 0,
+    "7": 0,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0
+  },
+  "action_mapping_table": {
+    "0": {
+      "T_GenCam": 0.1,
+      "p_tx_dBm": 0.0,
+      "p_tx_mW": 1.0,
+      "count_sampled": 39790,
+      "pct": 43.269
+    },
+    "1": {
+      "T_GenCam": 0.1,
+      "p_tx_dBm": 15.0,
+      "p_tx_mW": 31.62,
+      "count_sampled": 24791,
+      "pct": 26.959
+    },
+    "2": {
+      "T_GenCam": 0.1,
+      "p_tx_dBm": 30.0,
+      "p_tx_mW": 1000.0,
+      "count_sampled": 5727,
+      "pct": 6.228
+    },
+    "3": {
+      "T_GenCam": 0.3,
+      "p_tx_dBm": 0.0,
+      "p_tx_mW": 1.0,
+      "count_sampled": 5256,
+      "pct": 5.716
+    },
+    "4": {
+      "T_GenCam": 0.3,
+      "p_tx_dBm": 15.0,
+      "p_tx_mW": 31.62,
+      "count_sampled": 8774,
+      "pct": 9.541
+    },
+    "5": {
+      "T_GenCam": 0.3,
+      "p_tx_dBm": 30.0,
+      "p_tx_mW": 1000.0,
+      "count_sampled": 7621,
+      "pct": 8.287
+    },
+    "6": {
+      "T_GenCam": 1.0,
+      "p_tx_dBm": 0.0,
+      "p_tx_mW": 1.0,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "7": {
+      "T_GenCam": 1.0,
+      "p_tx_dBm": 15.0,
+      "p_tx_mW": 31.62,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "8": {
+      "T_GenCam": 1.0,
+      "p_tx_dBm": 30.0,
+      "p_tx_mW": 1000.0,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "9": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "10": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "11": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "12": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "13": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "14": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    },
+    "15": {
+      "T_GenCam": null,
+      "p_tx_dBm": null,
+      "p_tx_mW": null,
+      "count_sampled": 0,
+      "pct": 0.0
+    }
+  },
+  "n_unique_actions_used": 6,
+  "top1_count_sampled": 39790,
+  "top1_action": 0,
+  "top1_pct": 43.2693,
+  "top3_pct": 79.7692,
+  "top3_actions": [
+    0,
+    1,
+    4
+  ],
+  "cost_stats": {
+    "mean": 0.27068,
+    "std": 0.074887,
+    "min": 0.0465,
+    "max": 0.3601,
+    "n_nan_sampled": 0
+  },
+  "p_tx_marginal_dBm": {
+    "0dBm": 45046,
+    "15dBm": 33565,
+    "30dBm": 13348
+  },
+  "t_gencam_marginal_s": {
+    "0.1s": 70308,
+    "0.3s": 21651,
+    "1.0s": 0
+  },
+  "pass_criteria": {
+    "grid_size": 9,
+    "thresholds": {
+      "unique_min": 6,
+      "top1_max_pct": 40.0,
+      "top3_max_pct": 75.0,
+      "entropy_min_bits": 2.0
+    },
+    "n_rows_ge_100k": true,
+    "top1_pct": {
+      "value": 43.2693,
+      "threshold": 40.0,
+      "pass": false
+    },
+    "top3_pct": {
+      "value": 79.7692,
+      "threshold": 75.0,
+      "pass": false
+    },
+    "n_unique_actions": {
+      "value": 6,
+      "threshold": 6,
+      "pass": true
+    },
+    "shannon_entropy_bits": {
+      "value": 2.1394,
+      "threshold": 2.0,
+      "pass": true
+    },
+    "cost_nan_zero": {
+      "n_nan": 0,
+      "pass": true
+    },
+    "meta_sanity_ok": true
+  },
+  "overall_verdict": "FAIL",
+  "vs_redo_comparison": {
+    "redo_alpha": 0.5,
+    "redo3_alpha": 0.3,
+    "redo_top3_pct": 99.97,
+    "redo_unique_actions": 4,
+    "redo_verdict": "FAIL"
+  }
+}

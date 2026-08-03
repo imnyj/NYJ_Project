@@ -1,0 +1,72 @@
+# 0. 섹션 초입
+본 섹션에서는 H-ST-MBAN을 기반으로 content precaching이 어떻게 진행되는지와 해당 모델의 구조 등을 상세히 설명함.
+첫 서브섹션에서 content요청으로 인해 feature vector가 어떻게 생성되는지 설명함
+두번째 서브섹션에서 feature로 인해 inference가 어떻게 수행되어 dwell time이 예측되는지 설명함
+세번째 서브섹션에서 예측된 dwell time으로 content precaching이 어떻게 수행되는지 설명함
+네번째 서브섹션에서 시나리오 종료 후 true 값을 어떻게 해서 dataset에 추가하는지와 학습이 어떻게 수행되는지 설명함
+
+# 1. content 요청
+차량은 원하는 content가 발생하면, RSU 통신 범위 내에 위치할 경우 즉각적으로 interest packet을 전송하여 content를 요청함.
+RSU 통신 범위 밖인 경우 대기 상태를 유지함.
+interest packet에는 차량 ID, content ID, 차량의 위치, 속도, 앞 차량과의 간격, 필요 차선 변경 횟수, 다음 RSU까지의 경로, 요청된 content의 요청 시작 청크 번호가 포함됨.
+RSU는 해당 패킷을 수신한 후 CCN 절차에 따라 content 제공을 개시함.
+동시에, RSU는 수신한 정보를 바탕으로 pending data table(PDT)에 차량 ID와 content ID를 key 값으로 하여 차량의 위치, 속도를 기록함.
+이때 RSU는 즉시 입력 가능한 정보인 신호등 상태, 신호 변경 잔여 시간, 통신 범위 내 차량들의 평균 속도, RSU의 통신 반경을 PDT에 추가함.
+더불어 위치와 속도를 바탕으로 산출한 RSU 중심점까지의 거리($d_{rsu}$) 및 예상 도달 시간($t_{est}$)을 계산하여 PDT에 기입함.
+또한 차량의 이동 방향을 구분하여 기록함: 차량이 신호등에 설치된 RSU를 기 통과한 경우(RSU로부터 멀어지는 방향)는 1, 통과 이전인 경우(RSU로 접근하는 방향)는 0으로 표기함.
+요청 차량이 소속된 차선(lane)을 식별하여 앞 차량의 순간/평균 속도, 요청 차량 전방의 차량 수, 해당 차선의 대기열(queue) 길이 및 점유율을 수집함.
+이후 차량 경로 정보를 바탕으로 현재 RSU 범위 내 체류 잔여 거리, 다음 RSU 진입 시점까지의 거리, 다음 RSU 이탈 시점까지의 거리를 산출하여 PDT에 갱신함.
+비콘 메시지 기반 평균 차량 속도 관리 메커니즘을 통해, 아직 집계되지 않은 통신 범위 내 체류 차량 대수를 파악하여 PDT에 반영함.
+
+다음 RSU로부터 추가 정보를 획득하기 위해 `[INFO REQ]` 패킷을 송신함.
+해당 패킷에는 현재 RSU ID, 차량 ID, content ID가 포함됨.
+`[INFO REQ]` 패킷을 수신한 다음 RSU는 pending request table에 해당 패킷을 등록함.
+다음 RSU는 수신 확인 후, 패킷의 RSU ID를 자신의 ID로 갱신하여 이웃 RSU들에게 `[INFO HELLO]` 패킷 형태로 브로드캐스트함.
+`[INFO HELLO]` 패킷을 수신한 이웃 RSU는 평균 속도 관리 테이블을 참조하여, 차량 중 다음 RSU ID를 목적지로 가지며 이웃 교차로 등에서 해당 경로로 진입/병합이 예상되는 차량 수($n_{merge,nxt}$)를 집계하고, 요청 차량 ID 및 content ID와 함께 `[INFO REP]` 패킷을 통해 다음 RSU로 회신함.
+동시에 다음 RSU는 자체적으로 보유한 신호등 상태, 신호 변경 잔여 시간, 평균 차량 속도, 요청 차량 진입 방향 차선의 대기열 길이 및 점유율, 그리고 해당 차량이 진입할 경로상의 선행 차량 수($n_{ahead,nxt}$)를 산출함. 
+이후 이웃 RSU로부터 수신한 $n_{merge,nxt}$를 취합하여, pending request table에 저장된 원래의 요청 RSU ID를 목적지로 삼아 `[INFO REP]` 패킷을 송신(회신)함.
+최종적으로 초기 요청 RSU가 수신하는 `[INFO REP]` 패킷에는 다음 RSU의 평균 차량 속도, 통신 범위 내 차량 수, 신호등 상태, 신호 변경 잔여 시간, 해당 차량 경로상의 선행 차량 수($n_{ahead,nxt}$), 그리고 이웃 RSU로부터 진입이 예상되는 차량 수($n_{merge,nxt}$)가 포함됨.
+
+초기 RSU는 수신한 `[INFO REP]` 패킷 데이터를 차량 ID와 content ID를 key로 하여 PDT에 병합함.
+각 정보의 특성을 효과적으로 반영하기 위하여, 수집된 요소(element)들은 카테고리화(categorized)됨.
+완성된 feature vector 및 각 요소의 카테고리는 표 1과 같이 정의됨. (feature vector 정리한 표 추가)
+Content 제공이 이루어지는 동안 소형 패킷 기반 snapshot 형태로 feature를 구성하므로, 시계열 기반 연속 생성 방식 대비 통신망 부하를 저감할 수 있음.
+또한, content 데이터 전송과 feature 수집이 독립적으로 수행되므로 서비스 품질 저하를 방지함.
+요소별 카테고리화를 통해 데이터 특성 반영의 효율을 높일 수 있음.
+궁극적으로 중앙 서버 의존 없이 국소적(local) 정보 수집을 수행하여, 서버 병목 현상을 완화함.
+
+# 2. Inference & Precaching
+모델이 없는 경우에는 평균속도와 통신반경 등을 통하여 계산
+PDT에 완성된 feature를 기반으로 t_{cur, dw}과 t_{nxt, dw} 추론
+자세한 모델 설명은 서브섹션4에서 진행.
+
+계산 및 추론된 값을 기반으로 precaching 수행하는 절차
+추론된 또는 계산된 t_{cur, dw}과 t_{nxt, dw}.
+추론된 $t_{cur, dw}$을 기반으로 현재 RSU($R_{cur}$)는 평균 통신 속도($B_{avg}^{cur}$)를 기반으로 전달 가능한 총량을 계산.
+이때 계산의 용이성뿐만 아니라, "라우터 Content Store의 메모리 단편화(Fragmentation) 방지로 인한 O(1) 캐시 관리 효율성 및 하위 계층 MTU(Maximum Transmission Unit) 한계로 인한 패킷 분할 방지"를 위해 CCN 단일 청크 크기($S_{chunk}$)는 모두 같다고 고정하여 가정함.
+전달 가능한 청크 수($N_{cur, chunk}$)를 계산할 때는 통신 마진을 반영하는 적응형 안전 계수 $\eta$를 도입함.
+$\eta$는 단순 상수가 아닌, 채널 환경에 동적으로 적응하도록 최근 평균 패킷 성공률($\bar{P}_{success}$)과 채널 SNR 분산($\sigma_{channel}^2$)을 반영하여 $\eta(t) = \alpha \cdot \bar{P}_{success}(t) - \beta \cdot f(\sigma_{channel}^2(t))$ 수식을 통해 결정됨.
+최종적으로 $R_{cur}$가 전송 가능한 청크 수는 $N_{cur, chunk} = \lfloor \frac{\eta \cdot B_{avg}^{cur} \cdot t_{cur, dw}}{S_{chunk}} \rfloor$ 공식을 통해 산출.
+요청된 시작 chunk no.를 기반으로 현 RSU에서 받을 수 있는 마지막 청크 번호를 계산.
+$R_{cur}$는 다음 RSU($R_{nxt}$)에게 Precache Packet을 보냄.
+해당 패킷에는 Content ID, 다음 청크의 번호, 추론된 $t_{nxt, dw}$가 포함됨.
+해당 패킷을 받은 $R_{nxt}$는 받은 $t_{nxt, dw}$을 통해 같은 방식으로 전달 가능한 청크의 수를 계산.
+다음 청크의 번호부터 precaching해야 할 청크들을 Interest packet을 통해 CCN의 절차에 따라 다운로드.
+프리캐싱된 청크에는 자율주행 차량의 경로 이탈 등 예외 상황 시 라우터의 "PIT(Pending Interest Table) 고갈 마비(Exhaustion) 방지" 및 "잘못된 과거 정보(Stale data)에 의한 판단 오류 방지를 위한 Data Freshness 보장"을 위해 TTL(Time-To-Live) 기반 캐시 만료(Eviction) 정책을 적용하여 Cache Pollution을 방어함.
+
+요청 차량은 R_{cur}를 나가면서 R_{cur}의 ID와 t_{cur, dw}의 정답값을 기록.
+Interest Packet을 주기적으로 보내 Content 다운로드를 시도함.
+R_{nxt}의 통신 범위에 진입했을 경우, Interest packet이 해당 RSU에게 전송되며, 이전 RSU에서의 과정과는 별도로 현재 RSU에서 또 다른 content provision process가 시작됨.
+이 별도의 process는 서브섹션1부터 다시 시작함.
+동시에 요청 차량은 t_{nxt, dw}을 측정하기 위한 타이머를 동작시키며, RSU로부터 precached chunk를 즉시 제공받을 수 있음.
+오차로 인하여 precached되지 않은 chunk는 CCN의 절차에 의해 주위 RSU나 Content server로부터 받아와 짐.
+이후 요청 차량은 지금 머무르고 있는 RSU로부터 벗어나며 t_{nxt, dw}을 집계함.
+요청 차량은 차량의 ID, Content ID, RSU를 나가기 직전 저장되어 있던 이전 RSU의 ID, 측정된 t_{cur, dw}, t_{nxt, dw}을 포함한 Report Packet을 현 RSU에게 전달함.
+해당 패킷을 받은 RSU는 RSU ID를 비교하고, 본인이 아닐 경우 RSU ID를 기반으로 해당 패킷을 포워딩함.
+포워딩을 통해 Report packet을 받은 RSU는 PDT에 저장되어 있는 항목 중 차량 ID와 Content ID가 매칭 되는 항목을 검색.
+해당 항목의 완성된 feature vector와 함께 t_{cur, dw}, t_{nxt, dw}을 묶어서 해당 data를 dataset queue에 추가함.
+
+# 3. Pre-training & Fine-tuning
+모델이 없는 경우, RSU들으는 데이터를 local 서버에 전송하고 dataset이 충분히 쌓인 경우 pre-training (이 논문에서는 60만개 data로 pre-training 진행. 성능평가에서 설명)
+pre-trained model이 있는 경우, local RSU에서 dataset이 충분히 쌓이는 대로 fine-tuning 진행 (이 논문에서는 5000. 성능평가에서 설명)
+제안 모델(H-ST-MBAN) 설명.

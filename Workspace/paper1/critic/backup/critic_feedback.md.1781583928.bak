@@ -1,0 +1,61 @@
+# Critic Feedback Report for `main.tex`
+
+- **Target File**: `/home/imnyj/papers/paper1/paper/draft/main.tex`
+- **Date**: 2026-06-16
+- **Agent ID**: `critic_paper1`
+- **Verification Status**: **REVISION REQUIRED (스타일 교정본 롤백 유실로 인한 재수정 필요)**
+
+---
+
+## 1. 종합 검수 결과 요약
+`reference_sorter` 에이전트의 레퍼런스 정렬 및 Purge 작업은 정상적으로 완료되었으나, 이 과정에서 `writer_paper1` 에이전트가 수행했던 **5차 스타일 교정본 내용이 완전히 롤백(유실)되는 심각한 형상 관리 오류**가 발생하였습니다. 이에 따라 원고를 **최종 승인(PASS)할 수 없으며**, 유실된 스타일 수정을 재적용해야 합니다.
+
+---
+
+## 2. 세부 검증 결과
+
+### 2.1 레퍼런스 및 인용 일치성 (PASS)
+- 본문 인용 키 정렬 및 미인용 참고문헌 44개 목록의 완전 삭제(Purge)는 요청한 가이드대로 정상 반영되었습니다. (`\begin{thebibliography}{31}`로 갱신 완료 및 본문 1:1 매핑 완료)
+
+### 2.2 스타일 및 문장 구조 규정 위반 (FAIL - 롤백 유실)
+이전 라운드에서 완전히 교정되었던 스타일 수정 사항들이 구버전 원본으로 롤백되어 대량 복구되었습니다.
+
+#### ① 금지 부사 및 상투적 접속사 대량 복구
+- **`robust` / `robustness` (다시 3회 검출)**: Line 238, 531, 634에 다시 출현함.
+- **`consequently` (다시 12회 남용 검출)**: Line 109, 116, 135, 168, 303, 398, 420, 433, 442, 470, 480, 634 등 전원 복구됨.
+- **`furthermore` (다시 7회 남용 검출)**: Line 166, 174, 176, 322, 545, 592, 632 등 전원 복구됨.
+- **`efficiently` (다시 4회 검출)**: Line 487, 531, 544, 698에 다시 복구됨.
+- **기타 금지어**: `significantly`(Line 203), `comprehensive`(Line 340), `superiority`(Line 631, 632), `substantial`(Line 634, 685), `consistently`(Line 632), `notably`(Line 549) 등이 다시 검출됨.
+
+#### ② 소괄호 `()` 남용 복구
+- **71개 라인에서 소괄호가 다시 검출**되었습니다. (이전 스타일 5차 교정 시 모두 산문화하여 제거했으나 롤백됨)
+- 대표적인 중복/부연설명 소괄호 복구 위치:
+  - **Line 78**: `(Hybrid Spatio-Temporal...)`
+  - **Line 79**: `(K)`, `(T)`, `(S)`
+  - **Line 80**: `(ResBlock)`
+  - **Line 202**: `(e.g., \cite{6,7,3})`
+  - **Line 228**: `(Simulation of Urban MObility)`
+  - **Line 297, 298**: 변수 나열 괄호 복구
+  - **Line 327**: `(e.g., 3,000 samples)`
+  - **Line 411**: `(XGBoost)` 등 중복 괄호 복구
+  - **Line 427, 431, 435**: Subsection 헤더의 괄호 복구
+
+#### ③ 문단 길이 미달 복구 (최소 5문장 제한 위반)
+- 스타일 교정 시 문장 보강 및 병합을 거쳐 5문장 이상으로 늘려놓았던 문단들이 구버전 짧은 문단(2~4문장)으로 모두 원복되었습니다. (총 13개 본문 문단 위반 상태로 복구)
+  - **Lines 105-109 (4문장)**: 서론 첫 도입부
+  - **Lines 274-278 (3문장)**: Section IV 도입부
+  - **Lines 333-340 (3문장)**: Section IV-B 도입부
+  - **Lines 519-520 (4문장)**: Section V 도입부
+  - **Lines 541-545 (3문장)**: Section V-C 첫 문단
+  - **Lines 547-552 (3문장)**: Section V-C 두 번째 문단
+  - **Lines 589-596 (4문장)**: Section V-D 첫 문단
+  - **Lines 638-638 (4문장)**: Section V-E 세 번째 문단
+  - **Lines 640-640 (2문장)**: Section V-E 네 번째 문단
+  - **Lines 675-675 (3문장)**: Section V-F 첫 문단
+  - **Lines 696-700 (3문장)**: Section VI (Conclusion) 첫 문단 등
+
+---
+
+## 3. Actionable Revision Guidelines (수정 지침)
+1. **버전 병합**: `reference_sorter`가 정리한 참고문헌 정렬(31개) 결과물 위에, 이전에 `writer_paper1`이 스타일 5차 교정을 통해 부사 제거, 소괄호 산문화, 13개 문단 5문장 이상으로 보강했던 텍스트 내용을 병합(Merge)하여 덮어쓰십시오.
+2. **최종 정합성 확보**: 스타일 교정본 내용이 온전히 반영되고 레퍼런스 31개 정렬본이 최종 결합된 상태의 `main.tex`를 제출해야 최종 승인(PASS)을 획득할 수 있습니다.

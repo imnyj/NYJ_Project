@@ -1,0 +1,76 @@
+# Critic Feedback Report for `main.tex`
+
+- **Target File**: `/home/imnyj/papers/paper1/paper/draft/main.tex`
+- **Date**: 2026-06-15
+- **Agent ID**: `critic_paper1`
+- **Verification Status**: **REVISION REQUIRED (스타일 및 레퍼런스 정밀 교정 필요)**
+
+---
+
+## 1. 수치적 일관성 검증 (Numerical Consistency Check) - [PASS]
+본문 텍스트 내에서 언급되는 성능 및 환경 수치와 테이블(Table I, Table III), 그래프(G6, G7) 간의 수치적 일관성을 전수 검토하였습니다.
+- **Table I (tab:accuracy)**: 541행 본문에 기술된 H-ST-MBAN(MAE 44.32s), ResNet(MAE 47.10s), LSTM(96.90s), GRU(101.75s) 등의 수치는 Table I의 수치와 완벽히 일치합니다. 이전 버전의 오기(58.19s, 59.93s 등)는 모두 올바르게 수정되었습니다.
+- **Table III (tab:finetune_accuracy)**: 631행 및 633행 본문에 기술된 H-ST-MBAN의 로컬 파인튜닝 평균 MAE(20.33s), 최종 MAE(17.58s), 표준편차(4.12s) 및 타 모델(MLP 100.91s, ResNet 103.58s, TabR 106.38s, LSTM 52.06s 등)의 수치들은 Table III에 명시된 수치와 일관성을 유지하고 있습니다.
+- **G6/G7 및 결론 (Conclusion) 수치**: 본문 674행(hit ratio 90.70%, access delay 0.1196s, wasted traffic 17.70MB), 684행(hit ratio 91.64%), 결론부 701-703행(hit ratio 91.64%, average hit ratio 90.70%)의 수치들은 상호 모순 없이 일치합니다.
+
+---
+
+## 2. 레퍼런스 및 인용 일치성 검증 (Citation Mismatch) - [FAIL]
+본문 인용 키와 참고문헌 목록(`\begin{thebibliography}`) 간의 심각한 불일치가 발견되었습니다. 다음 지침에 따라 즉시 수정하십시오.
+- **정의되지 않은 인용 키 (Undefined Citations)**:
+  - **Line 439**: `\cite{Hu2018SENet}` (SENet 논문: J. Hu, L. Shen, G. Sun, "Squeeze-and-Excitation Networks", CVPR 2018)
+  - **Line 452**: `\cite{Vaswani2017}` (Transformer 논문: A. Vaswani et al., "Attention is all you need", NIPS 2017)
+  - **Line 597**: `\cite{its_standard}` (ITS 권장 표준 문서)
+  - *지침*: 위 3개 인용 키는 참고문헌 목록의 `\bibitem`에 정의되어 있지 않아 LaTeX 컴파일 시 `undefined citation` 경고/오류가 발생합니다. 해당 논문들을 참고문헌 목록 마지막(예: 73번, 74번, 75번)에 `\bibitem{73}` 등으로 추가하고 본문의 인용 키를 숫자로 정정하거나, 기존 1~72번 중 매핑 가능한 항목이 있는지 재확인하여 번호로 교체해야 합니다.
+- **미인용 참고문헌 (Unused Bibitems)**:
+  - 참고문헌 목록의 **29번부터 72번까지 총 44개의 bibitem이 본문에서 단 한 번도 인용되지 않았습니다.**
+  - *지침*: 본문 작성 시 참고문헌 정렬이 어긋났거나 누락되었을 수 있으므로, 사용하지 않는 bibitem을 정리하고 본문에서 필요한 곳에 인용 번호를 정확히 매핑하십시오.
+
+---
+
+## 3. 글 스타일 검증 (Style Audit) - [FAIL]
+규칙에 정의된 AI적 표현 차단, 문단 길이 조건, 부사 사용 제한을 기준으로 검토한 결과 아래의 위반 사항이 식별되었습니다.
+
+### 3.1 부사 잔존 (Forbidden Adverb)
+- **Line 486**: `...This tree-based ensemble efficiently captures the discontinuous...`
+  - *지침*: 부사 `efficiently`가 본문에 1회 잔존해 있습니다. `This tree-based ensemble captures the discontinuous...`로 수정하여 부사를 완전히 배제하십시오.
+
+### 3.2 소괄호 `()` 남용 (Parentheses Overuse)
+소괄호는 "축약어를 최초 정의할 때 단 한 번만 사용하는 것이 원칙"입니다. 그 외 설명조, 부연 설명, 변수 나열 괄호는 모두 산문형 문맥으로 풀어 쓰십시오.
+- **중복 정의 및 부연 설명용 괄호 위반**:
+  - **Line 252, 258**: `(\tau_{\text{cur}})`, `(\tau_{\text{nxt}})` $ightarrow$ `represented by \tau_{\text{cur}}`, `denoted as \tau_{\text{nxt}}` 등으로 산문화하십시오.
+  - **Line 297, 298, 305**: `(\text{direct}, d_{l,c}, ...)` $ightarrow$ 변수 나열 시 소괄호를 씌우지 말고 `including spatial variables such as \text{direct}, d_{l,c}, ...` 형태로 산문화하십시오.
+  - **Line 302**: `(n_{t,0} to n_{t,3})` $ightarrow$ `ranging from n_{t,0} to n_{t,3}`로 수정하십시오.
+  - **Line 308, 312**: `(\hat{\tau}_{\text{cur}}, \hat{\tau}_{\text{nxt}})`, `(\tau_{\text{cur}}^{\text{true}}, \tau_{\text{nxt}}^{\text{true}})` $ightarrow$ 소괄호를 제거하고 산문 형태로 서술하십시오.
+  - **Line 411**: `(XGBoost)` $ightarrow$ 앞단에서 이미 등장한 중복 정의 괄호이므로 지우거나 풀어서 쓰십시오.
+  - **Line 427, 431, 435**: Subsection 헤더의 `($Z_k$)`, `($Z_t$)`, `($Z_s$)` $ightarrow$ `Kinematic Encoder representing Z_k` 등으로 괄호 없이 수정하십시오.
+  - **Line 518**: `(e.g., Desk02 dataset)`, `(G1 to G7)` $ightarrow$ `such as the Desk02 dataset`, `from G1 to G7`로 괄호를 없애고 산문화하십시오.
+  - **Line 519**: `(e.g., boosting rounds)` $ightarrow$ `such as boosting rounds`로 산문화하십시오.
+  - **Line 524, 535, 583, 679, 689**: Figure 캡션 내의 괄호 `(Learning Curves)`, `(Ablation Study)` 등 $ightarrow$ `Learning Curves showing...` 과 같이 괄호 없이 설명문으로 서술하십시오.
+  - **Line 548**: `(\hat{\tau}_\text{nxt})`, `(\hat{\tau}_\text{cur})` $ightarrow$ 소괄호 제거.
+  - **Line 609**: `(SEM)` $ightarrow$ 앞 라인(597행)에서 이미 정의된 중복 괄호이므로 지우거나 풀어서 쓰십시오.
+  - **Line 712**: `(NRF)`, `(MSIT)` $ightarrow$ 앞단에서 이미 정의된 중복 괄호이므로 제거하십시오.
+
+### 3.3 문단 길이 미달 (Short Paragraphs)
+본문의 모든 문단은 **최소 5문장 이상**이어야 합니다. 아래의 13개 본문 문단들은 문장 수가 부족하므로, 문장을 자연스럽게 보완하여 늘리거나 인접 문단과 병합하십시오.
+1. **Lines 105-109 (4문장)**: 서론 첫 도입 문단 (`\IEEEPARstart{T}{he} advancement...`)
+2. **Lines 274-278 (3문장)**: Section IV 도입 문단 (`In this section, we present the proposed RSU-driven...`)
+3. **Lines 333-340 (3문장)**: Section IV-B 첫 문단 (`The input vector \mathbf{X} aggregates...`)
+4. **Lines 518-519 (4문장)**: Section V 도입 문단 (`We evaluate the proposed H-ST-MBAN architecture...`)
+5. **Lines 540-544 (3문장)**: Section V-C 첫 문단 (`Table~\ref{tab:accuracy} summarizes...`)
+6. **Lines 546-551 (3문장)**: Section V-C 두 번째 문단 (`Figure~\ref{fig:G3} visualizes...`)
+7. **Lines 588-595 (4문장)**: Section V-D 첫 문단 (`The global pre-training phase is executed...`)
+8. **Lines 597-597 (4문장)**: Section V-D 두 번째 문단 (`As shown in Figure~\ref{fig:G4-1}...`)
+9. **Lines 637-637 (4문장)**: Section V-E 세 번째 문단 (`During the online fine-tuning process...`)
+10. **Lines 639-639 (2문장)**: Section V-E 네 번째 문단 (`To overcome these vulnerabilities...`)
+11. **Lines 674-674 (3문장)**: Section V-F 첫 문단 (`Figure~\ref{fig:G6} presents...`)
+12. **Lines 684-684 (4문장)**: Section V-G 첫 문단 (`Figure~\ref{fig:G7} illustrates...`)
+13. **Lines 695-699 (3문장)**: Section VI (Conclusion) 첫 문단 (`In this paper, we proposed H-ST-MBAN...`)
+
+---
+
+## 4. Actionable Revision Guidelines (수정 지침 요약)
+1. **부사 완전 제거**: 486행의 `efficiently` 부사를 삭제하십시오.
+2. **레퍼런스 정비**: 본문의 문자열 인용 키(`Hu2018SENet`, `Vaswani2017`, `its_standard`)에 해당하는 레퍼런스를 `\bibitem` 목록에 추가하고 번호로 치환하십시오. 또한, 본문에서 전혀 인용되지 않는 29~72번 `\bibitem`들을 정리하거나 적절히 인용 매핑하십시오.
+3. **중복/부연 소괄호 산문화**: 252행, 297행, 427행, 518행 등 명시된 소괄호 위반 부분을 지침에 따라 괄호 없는 산문으로 교체하십시오.
+4. **문단 보완**: 문장 수 기준에 미달하는 13개 문단에 문장을 추가 보완하여 최소 5문장 이상으로 재구성하십시오.

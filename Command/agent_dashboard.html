@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent System Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/atom-one-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --surface: rgba(255, 255, 255, 0.03);
+      --surface-hover: rgba(255, 255, 255, 0.08);
+      --border: rgba(255, 255, 255, 0.1);
+      --accent: #3b82f6;
+      --accent-glow: rgba(59, 130, 246, 0.5);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background-image: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+    }
+
+    .glass-panel {
+      background: var(--surface);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Screen 1: Project List */
+    #screen-projects {
+      width: 900px;
+      max-width: 90%;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      gap: 30px;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    .btn {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    .btn:hover {
+      box-shadow: 0 0 15px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .project-card {
+      padding: 24px;
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .project-card:hover {
+      background: var(--surface-hover);
+      border-color: rgba(255, 255, 255, 0.2);
+      transform: translateY(-3px);
+    }
+
+    .project-title {
+      font-size: 18px;
+      font-weight: 500;
+    }
+
+    .project-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Screen 2: Workspace */
+    #screen-workspace {
+      width: 100vw;
+      height: 100vh;
+      display: none;
+      grid-template-columns: 280px 1fr 320px;
+      animation: fadeIn 0.5s ease;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      background: rgba(0,0,0,0.2);
+    }
+
+    .tree-item {
+      padding: 8px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.2s;
+    }
+
+    .tree-item:hover, .tree-item.active {
+      background: var(--surface-hover);
+    }
+
+    .tree-indent {
+      margin-left: 20px;
+      border-left: 1px solid var(--border);
+      padding-left: 10px;
+    }
+
+    .chat-area {
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 20px 30px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255,255,255,0.01);
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 30px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      scroll-behavior: smooth;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .msg-agent {
+      align-self: flex-start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+
+    /* Markdown Styles within msg-agent */
+    .msg-agent p {
+      margin-bottom: 1em;
+    }
+    .msg-agent p:last-child {
+      margin-bottom: 0;
+    }
+    .msg-agent pre {
+      background: #282c34;
+      border-radius: 8px;
+      padding: 12px;
+      margin: 10px 0;
+      overflow-x: auto;
+    }
+    .msg-agent code {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+    }
+    .msg-agent ul, .msg-agent ol {
+      margin-left: 20px;
+      margin-bottom: 1em;
+    }
+
+    .chat-input-wrapper {
+      padding: 20px 30px;
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px 20px;
+      border-radius: 12px;
+      color: white;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.2s;
+      resize: none;
+      overflow-y: hidden;
+      min-height: 24px;
+      max-height: 200px;
+      line-height: 1.5;
+    }
+
+    .chat-input:focus {
+      border-color: var(--accent);
+    }
+
+    .right-panel {
+      border-left: 1px solid var(--border);
+      padding: 20px;
+      background: rgba(0,0,0,0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .session-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .session-card:hover {
+      border-color: var(--accent);
+    }
+
+    .session-title {
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    .session-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #60a5fa;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.98); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+  </style>
+</head>
+<body>
+
+  <!-- Screen 1: Project List -->
+  <div id="screen-projects" class="glass-panel">
+    <div class="header-top">
+      <h1>프로젝트 세션 관리</h1>
+      <button class="btn" onclick="createNewProject()">+ 새 프로젝트 생성</button>
+    </div>
+    
+    <div class="project-grid" id="project-list-container">
+      <!-- 프로젝트 목록이 동적으로 로드됩니다. -->
+      <div style="color: var(--text-muted); font-size: 14px;">프로젝트 목록을 불러오는 중...</div>
+    </div>
+  </div>
+
+  <!-- Screen 2: Workspace -->
+  <div id="screen-workspace">
+    <!-- Left Sidebar: Agent Tree -->
+    <div class="sidebar">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; justify-content: center;">
+            <h2 style="font-size: 16px; margin-right: 10px;" id="workspace-title">Project Name</h2>
+            <button class="btn" style="font-size: 12px; padding: 4px 8px;" onclick="renameSession()">이름 변경</button>
+        </div>
+        <button onclick="closeWorkspace()" style="background: none; border: none; color: var(--text-muted); cursor: pointer;">나가기</button>
+      </div>
+      
+      <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">에이전트 계층도</div>
+      
+      <div id="agent-tree-container">
+        <!-- 동적으로 에이전트 목록이 로드됩니다. -->
+      </div>
+    </div>
+
+    <!-- Main: Chat Area -->
+    <div class="chat-area">
+      <div class="chat-header">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h2 id="current-agent-name" style="font-size: 18px;">최상위 매니저</h2>
+          <button class="btn" style="font-size: 11px; padding: 2px 6px; background: rgba(255,255,255,0.1);" onclick="renameCurrentAgent()">이름 변경</button>
+          <span class="badge">현재 세션 연결됨</span>
+        </div>
+        <button class="btn" style="padding: 6px 12px; font-size: 12px;" onclick="openAgentModal()">+ 하위 에이전트 생성</button>
+      </div>
+      
+      <div class="chat-messages" id="chat-box">
+        <div class="message msg-user">
+          각 비교 방안 별로 추론 시간을 측정해서 그래프로 만들어줘.
+        </div>
+        <div class="message msg-agent">
+          작업을 접수했습니다. 해당 작업은 하위 에이전트인 '모델 관리 에이전트'와 '그래프 표현 에이전트'에게 분배하여 진행하도록 지시했습니다. 세션 이력에 등록해두었습니다.
+        </div>
+      </div>
+      
+      <div class="chat-input-wrapper">
+        <textarea id="chat-input-field" class="chat-input" placeholder="선택된 에이전트에게 직접 수정 요청이나 지시를 입력하세요... (Shift+Enter로 줄바꿈)" onkeypress="handleInput(event)" oninput="autoResizeInput(this)" rows="1"></textarea>
+      </div>
+    </div>
+
+    <!-- Right Sidebar: Session History -->
+    <div class="right-panel">
+      <h3 style="font-size: 14px; margin-bottom: 10px;">세션 및 업무 이력</h3>
+      
+      <div id="session-history-container" style="display: flex; flex-direction: column; gap: 10px;">
+        <!-- 동적으로 세션이 로드됩니다. -->
+      </div>
+      <button class="btn" style="margin-top: auto;" onclick="createNewSession()">+ 새 세션 추가</button>
+    </div>
+  </div>
+
+  <!-- Agent Creation Modal -->
+  <div id="agent-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); justify-content:center; align-items:center; z-index:1000;">
+    <div class="glass-panel" style="width: 400px; padding: 20px; border-radius: 8px;">
+      <h3 style="margin-bottom: 15px;">새 하위 에이전트 생성 (Agent Factory)</h3>
+      <div style="margin-bottom: 10px;">
+        <label style="font-size: 12px; color: var(--text-muted);">에이전트 이름 (역할)</label>
+        <input type="text" id="new-agent-name" class="chat-input" style="padding: 10px; margin-top: 5px; width: 100%; box-sizing: border-box;" placeholder="예: 웹 검색 에이전트">
+      </div>
+      <div style="margin-bottom: 15px;">
+        <label style="font-size: 12px; color: var(--text-muted);">시스템 프롬프트 (임무 부여)</label>
+        <textarea id="new-agent-prompt" class="chat-input" style="padding: 10px; margin-top: 5px; height: 80px; resize: none; width: 100%; box-sizing: border-box;" placeholder="수행해야 할 구체적인 역할과 권한을 입력하세요."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn" style="background: transparent; border: 1px solid var(--border);" onclick="document.getElementById('agent-modal').style.display='none'">취소</button>
+        <button class="btn" onclick="submitNewAgent()">생성하기</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSessionId = null;
+    let mainProjectId = null;
+    let currentAgentId = 'manager';
+    let currentWorkspaceDetails = null;
+    let ws = null;
+    let currentAgentMessageDiv = null;
+    let currentAgentText = "";
+
+    function openAgentModal() {
+        document.getElementById('agent-modal').style.display = 'flex';
+    }
+
+    async function submitNewAgent() {
+        const name = document.getElementById('new-agent-name').value;
+        const prompt = document.getElementById('new-agent-prompt').value;
+        if (!name) { alert("에이전트 이름을 입력하세요."); return; }
+
+        try {
+            await fetch(`/api/workspace/${mainProjectId}/agents`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: name, system_prompt: prompt})
+            });
+            document.getElementById('agent-modal').style.display = 'none';
+            document.getElementById('new-agent-name').value = '';
+            document.getElementById('new-agent-prompt').value = '';
+            loadWorkspaceDetails(mainProjectId);
+        } catch (e) {
+            alert("생성 실패");
+        }
+    }
+
+    async function fetchProjects() {
+      try {
+        const res = await fetch('/api/projects');
+        const data = await res.json();
+        const container = document.getElementById('project-list-container');
+        container.innerHTML = '';
+        
+        data.projects.forEach(proj => {
+          const card = document.createElement('div');
+          card.className = 'project-card glass-panel';
+          card.onclick = () => openWorkspace(proj.id, proj.title);
+          card.innerHTML = `
+            <div class="project-title">${proj.title}</div>
+            <div class="project-meta">
+              <span>${proj.status}</span>
+              <span>수정: ${proj.last_updated}</span>
+            </div>
+          `;
+          container.appendChild(card);
+        });
+      } catch(e) {
+        document.getElementById('project-list-container').innerHTML = 
+          `<div style="color: red;">서버 연결 실패 (프로젝트 목록을 불러올 수 없습니다)</div>`;
+      }
+    }
+
+    async function createNewProject() {
+      const title = prompt("새로운 프로젝트의 이름을 입력하세요:");
+      if (!title) return;
+      
+      try {
+        await fetch('/api/projects', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({title: title})
+        });
+        fetchProjects(); // 새로고침
+      } catch(e) {
+        alert("프로젝트 생성 실패");
+      }
+    }
+
+    window.onload = fetchProjects;
+
+    async function openWorkspace(sessionId, projectName) {
+      currentSessionId = sessionId;
+      mainProjectId = sessionId;
+      document.getElementById('screen-projects').style.display = 'none';
+      const ws = document.getElementById('screen-workspace');
+      ws.style.display = 'grid';
+      document.getElementById('workspace-title').textContent = projectName;
+      
+      const chatContainer = document.getElementById('chat-box');
+      chatContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">대화 세션을 불러오는 중...</div>';
+      
+      await loadSessionChat(sessionId);
+
+      await loadWorkspaceDetails(sessionId);
+    }
+
+    async function loadWorkspaceDetails(sessionId) {
+      try {
+        const detailRes = await fetch(`/api/workspace/${sessionId}/details`);
+        const details = await detailRes.json();
+        currentWorkspaceDetails = details;
+        
+        const treeContainer = document.getElementById('agent-tree-container');
+        treeContainer.innerHTML = '';
+        if (details.agents) {
+            details.agents.forEach(agent => {
+                const item = document.createElement('div');
+                item.className = 'tree-item';
+                if (agent.id === currentAgentId || (agent.is_root && currentAgentId === 'manager')) {
+                    item.classList.add('active');
+                    document.getElementById('current-agent-name').textContent = agent.name;
+                    currentAgentId = agent.id;
+                } else if (!agent.is_root) {
+                    item.classList.add('tree-indent');
+                }
+                
+                // 적용: 뎁스에 비례하여 들여쓰기 마진 추가
+                if (agent.depth && agent.depth > 1) {
+                    item.style.marginLeft = (20 * agent.depth) + 'px';
+                }
+                item.onclick = function() { switchAgent(agent.name, agent.id, this); };
+                item.innerHTML = `<span>${agent.name}</span>`;
+                treeContainer.appendChild(item);
+            });
+        }
+
+        renderSessionsForAgent(currentAgentId);
+      } catch(e) {
+        console.error("워크스페이스 정보를 불러오는데 실패했습니다.", e);
+      }
+    }
+
+    function renderSessionsForAgent(agentId) {
+        const sessionContainer = document.getElementById('session-history-container');
+        sessionContainer.innerHTML = '';
+        if (!currentWorkspaceDetails || !currentWorkspaceDetails.topic_sessions) return;
+        
+        const sessions = currentWorkspaceDetails.topic_sessions[agentId] || [];
+        sessions.forEach(sub => {
+            const card = document.createElement('div');
+            card.className = 'session-card';
+            card.style.borderColor = 'var(--accent)';
+            card.onclick = () => {
+                currentSessionId = sub.id;
+                loadSessionChat(sub.id);
+            };
+            card.innerHTML = `
+                <div class="session-title">${sub.title}</div>
+                <div class="session-meta">
+                    상태: ${sub.status} <br><br>
+                    <button style="background: rgba(255,255,255,0.1); border:none; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px;">불러오기</button>
+                </div>
+            `;
+            sessionContainer.appendChild(card);
+        });
+        
+        if (sessions.length > 0) {
+            // Only auto-load if we don't have a current session or if we are switching agents
+            if (!currentSessionId || !sessions.find(s => s.id === currentSessionId)) {
+                currentSessionId = sessions[0].id;
+                loadSessionChat(currentSessionId);
+            }
+        } else {
+            document.getElementById('chat-box').innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">세션이 없습니다. 새 주제를 추가해주세요.</div>';
+            currentSessionId = null;
+        }
+    }
+
+    function closeWorkspace() {
+      document.getElementById('screen-workspace').style.display = 'none';
+      document.getElementById('screen-projects').style.display = 'flex';
+    }
+
+    async function renameSession() {
+      const currentTitle = document.getElementById('workspace-title').textContent;
+      const newTitle = prompt("새로운 이름을 입력하세요:", currentTitle);
+      if (!newTitle || newTitle === currentTitle) return;
+      
+      try {
+        const res = await fetch(`/api/sessions/${mainProjectId}/rename`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({title: newTitle})
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          document.getElementById('workspace-title').textContent = newTitle;
+          fetchProjects();
+        } else {
+          alert("이름 변경 실패: " + data.message);
+        }
+      } catch (e) {
+        alert("이름 변경 중 오류가 발생했습니다.");
+      }
+    }
+
+    async function renameCurrentAgent() {
+        if (currentAgentId === 'manager') {
+            alert("최상위 매니저의 이름은 프로젝트 이름과 동일한 격벽을 가집니다. 프로젝트 이름을 변경해주세요.");
+            return;
+        }
+        const currentName = document.getElementById('current-agent-name').textContent;
+        const cleanName = currentName.replace(/[🤖└\s]/g, '').trim();
+        const newTitle = prompt("에이전트의 새로운 이름을 입력하세요:", cleanName);
+        if (!newTitle || newTitle === cleanName) return;
+        
+        try {
+            const res = await fetch(`/api/sessions/${currentAgentId}/rename`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({title: newTitle})
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                await loadWorkspaceDetails(mainProjectId);
+            } else {
+                alert("이름 변경 실패: " + data.message);
+            }
+        } catch (e) {
+            alert("이름 변경 중 오류가 발생했습니다.");
+        }
+    }
+
+    async function createNewSession() {
+        const title = prompt("새 주제/목적을 입력하세요 (예: 전체 흐름 검토):");
+        if (!title) return;
+        
+        try {
+            const res = await fetch(`/api/workspace/${mainProjectId}/topics`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({agent_id: currentAgentId, title: title})
+            });
+            const data = await res.json();
+            if (data.status === 'success') {
+                currentSessionId = data.topic_id;
+                await loadWorkspaceDetails(mainProjectId);
+            }
+        } catch (e) {
+            alert("주제 세션 생성 실패");
+        }
+    }
+
+    async function loadSessionChat(sessionId) {
+      const chatContainer = document.getElementById('chat-box');
+      try {
+        const res = await fetch(`/api/sessions/${sessionId}`);
+        const data = await res.json();
+        chatContainer.innerHTML = '';
+        
+        if (data.history && data.history.length > 0) {
+            const recentHistory = data.history.slice(-100);
+            recentHistory.forEach(msg => {
+                const className = msg.role === 'user' ? 'message msg-user' : 'message msg-agent';
+                const msgEl = document.createElement('div');
+                msgEl.className = className;
+                if (msg.role === 'agent') {
+                    try {
+                        msgEl.innerHTML = marked.parse(msg.content || "");
+                        msgEl.querySelectorAll('pre code').forEach((block) => {
+                            try { hljs.highlightElement(block); } catch(he) {}
+                        });
+                    } catch (renderError) {
+                        msgEl.textContent = msg.content;
+                    }
+                } else {
+                    msgEl.textContent = msg.content || "";
+                }
+                chatContainer.appendChild(msgEl);
+            });
+            setTimeout(() => {
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }, 100);
+        } else {
+            chatContainer.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">대화 기록이 없습니다.</div>';
+        }
+
+        // 웹소켓 연결
+        try {
+            if (ws) {
+                ws.close();
+            }
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/sessions/${sessionId}`);
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'start') {
+                    currentAgentMessageDiv = document.createElement('div');
+                    currentAgentMessageDiv.className = 'message msg-agent';
+                    currentAgentMessageDiv.innerHTML = '<span style="color:var(--text-muted)">명령어 실행 중... 잠시만 기다려주세요.</span>';
+                    chatContainer.appendChild(currentAgentMessageDiv);
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } else if (data.type === 'stream') {
+                    // ignore stream because CLI dumps entire transcript
+                } else if (data.type === 'end') {
+                    currentAgentMessageDiv = null;
+                    loadSessionChat(currentSessionId);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log("WebSocket disconnected.");
+            };
+        } catch(wsError) {
+            console.error("WebSocket connection failed", wsError);
+        }
+        
+      } catch(e) {
+        console.error("Session load error:", e);
+        chatContainer.innerHTML = `<div style="color: red; text-align: center; padding: 20px;">세션 기록을 불러오지 못했습니다. (${e.message})</div>`;
+      }
+    }
+
+    function switchAgent(agentName, agentId, element) {
+      document.querySelectorAll('.tree-item').forEach(el => el.classList.remove('active'));
+      if (element) element.classList.add('active');
+      document.getElementById('current-agent-name').innerText = agentName;
+      currentAgentId = agentId;
+      
+      renderSessionsForAgent(agentId);
+    }
+
+    function autoResizeInput(element) {
+        element.style.height = 'auto';
+        element.style.height = (element.scrollHeight) + 'px';
+        if (element.scrollHeight > 200) {
+            element.style.overflowY = 'auto';
+        } else {
+            element.style.overflowY = 'hidden';
+        }
+    }
+
+    async function handleInput(event) {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        const input = event.target;
+        const msg = input.value.trim();
+        if (!msg) return;
+
+        const chatBox = document.getElementById('chat-box');
+        chatBox.innerHTML += `<div class="message msg-user">${msg.replace(/\n/g, '<br>')}</div>`;
+        input.value = '';
+        input.style.height = 'auto'; // 입력창 높이 초기화
+        
+        if (!currentSessionId) {
+            alert("세션이 선택되지 않았습니다.");
+            return;
+        }
+        
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            alert("서버와 웹소켓이 연결되지 않았습니다. 잠시 후 다시 시도해주세요.");
+            return;
+        }
+        
+        ws.send(JSON.stringify({
+            agent_role: currentAgentId,
+            prompt: msg
+        }));
+        
+        setTimeout(() => {
+          chatBox.scrollTop = chatBox.scrollHeight;
+        }, 100);
+      }
+    }
+
+    async function renameSession() {
+        if (!currentSessionId) return;
+        const newName = prompt("새로운 프로젝트(세션) 이름을 입력하세요:", document.getElementById('workspace-title').textContent);
+        if (!newName) return;
+        
+        try {
+            const response = await fetch(`/api/sessions/${currentSessionId}/rename`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name: newName})
+            });
+            if(response.ok) {
+                document.getElementById('workspace-title').textContent = newName;
+                fetchProjects(); // 사이드바 새로고침
+            } else {
+                alert("세션 이름 변경에 실패했습니다.");
+            }
+        } catch (e) {
+            alert("서버 오류로 이름 변경에 실패했습니다.");
+        }
+    }
+  </script>
+</body>
+</html>

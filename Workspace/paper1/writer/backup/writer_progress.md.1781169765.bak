@@ -1,0 +1,155 @@
+# Writer Agent Progress Report (paper1)
+
+**Date**: 2026-06-11
+**Agent ID**: `writer_paper1`
+**Workspace**: `/home/imnyj/Workspace/paper1`
+**Target File**: `/home/imnyj/papers/paper1/paper/draft/main.tex`
+
+## 1. Data Loading and Metric Extraction
+- **G6 Cache Metrics (`G6_cache_metrics_all13.csv`)**:
+  - Extracted H-ST-MBAN and baseline cache metrics (Set B).
+  - H-ST-MBAN: Hit Rate = 90.70%, Average Delay = 0.1225s, Wasted Traffic = 18.27MB (Updated).
+- **G5 Fine-Tuning MAE (`G5_all_mae_by_round.csv`)**:
+  - Calculated the average MAE across Round 0 to Round 11 for all 13 models.
+  - H-ST-MBAN average MAE is 20.82s (Updated from 20.40s).
+  - Updated Table III sorted by ascending average MAE.
+- **G7 Cache Metrics by Density (`G7_cache_metrics_density.csv`)**:
+  - Confirmed H-ST-MBAN cache hit rate in the highest density bin `(22.5, 25.0]` is 92.70% (Updated from 91.70%).
+- **Q=5000 SEM update (G4-2)**:
+  - Confirmed the updated SEM value from the latest coder run is 0.29s (specifically `\(\sim\)0.29~\text{s}`).
+
+## 2. Concurrency Control and Backup
+- File lock on `main.tex` was acquired via `/home/imnyj/Command/core/lock_manager.py` under the owner `writer_paper1`.
+- A backup copy was successfully generated at `/home/imnyj/Workspace/paper1/backup/` (latest: `main.tex` backup).
+- File lock on `writer_progress.md` was acquired and backup was generated at `/home/imnyj/Workspace/paper1/writer/backup/`.
+- Lock was released after completing edits.
+
+## 3. TeX Modifications (Final Checklists Handled)
+- **Table III (`tab:finetune_accuracy`)**:
+  - Updated H-ST-MBAN's Average MAE to `20.82` (previously `20.40`).
+  - Sorted rows by MAE in ascending order (FTT 20.62 is 1st, H-ST-MBAN 20.82 is 2nd, LSTM 21.35 is 3rd, etc.).
+  - Rephrased the caption to: "H-ST-MBAN avoids catastrophic forgetting and achieves competitive average error."
+- **Section G5 (`Section V.G5`)**:
+  - Updated text to reflect H-ST-MBAN's competitive MAE of `20.82` (comparable to FTT) and its position.
+- **Section G6 & Conclusion**:
+  - Updated H-ST-MBAN's average cache Hit Ratio to `90.70\%` (previously `90.66\%`).
+  - Updated average access delay to `0.1225~\text{s}` (previously `0.1205s`).
+  - Updated wasted traffic to `18.27~\text{MB}` (previously `17.75MB`).
+- **Section G7 & Conclusion**:
+  - Modified cache Hit Ratio in the high-density interval `(22.5, 25.0]` to `92.70\%` (previously `91.70\%`).
+  - Integrated the description of this high-density performance in Section G7, maintaining the 5-sentence paragraph structure and formal academic tone.
+- **Q=5000 SEM update (Section V.D)**: Updated `0.52~s` to `0.29~s` to synchronize with latest G4-2 curve figures.
+- **Global MAE alignment (G3 & Table I)**: Synchronized Section V.G3 text MAE values with Table I:
+  - H-ST-MBAN: MAE `58.19 s` -> `44.32 s`.
+  - ResNet: MAE `59.93 s` -> `47.10 s`.
+  - LSTM & GRU: Rephrased to use explicit values (`96.90 s` and `101.75 s` respectively) instead of `MAE > 104 s`.
+- **Cache Hit Rate Logic Expansion (Conclusion)**: Added an explanation of why vehicle dwell time increases during congestion at high density and how this provides edge nodes enough time to prefetch and maintain a high hit rate (92.70%) surpassing the average (90.70%).
+- **AI expression and Adverb Neutering**: Removed adverbs like `successfully`, `safely`, `effectively`, `significantly`, and `actively`.
+- **Duplicate Parentheses & Abbreviation Cleanup**:
+  - Initialized `CCVNs` and `H-ST-MBAN` abbreviations only once in the Abstract. Removed secondary parentheses expansions from Introduction and Conclusion.
+  - Rephrased the Table II (`tab:features`) description column to replace nested parentheses expressions with plain text descriptions.
+  - Substituted the ST-CVAE parentheses structure in Section VI with a comma structure.
+- **Paragraph Length Compliance (5-sentence enforcement)**: Expanded 5 specific paragraphs to at least 5 sentences by adding technical details on:
+  - Snapshot composition and edge constraints (Subsection IV.A 1st paragraph)
+  - Privacy and bandwidth benefits of edge learning (Subsection IV.A 4th paragraph)
+  - Architectural comparison between H-ST-MBAN and ResNet (Subsection V.G3 1st paragraph)
+  - Caching scheduler correction factors for next RSU branching uncertainty (Subsection V.G3 2nd paragraph)
+  - Hardware physical and real-time constraints of RSU edges (Subsection V.D 1st paragraph)
+- **Related Work formatting**:
+  - Restructured the inline `(D1)...(D6)` list into a continuous, cohesive paragraph.
+  - Replaced hardcoded category bold headers with the official `\paragraph` macro.
+- **G5 Fine-Tuning Spike Analysis (Section V.G5)**:
+  - Appended a 10-sentence paragraph details the early convergence under steady-state data, subsequent spikes due to dynamic road anomaly outliers (> 300s) causing gradient pollution and catastrophic forgetting in DL baselines (MLP, ResNet, TabR), and H-ST-MBAN's protection mechanisms.
+  - Formulated three concrete defensive proposals for DL baselines: outlier filtering (Z-score/Isolation Forest), regularization (weight decay/cosine annealing), and prior anchor loss constraints.
+
+## 4. Final Official Results Update (Option 1)
+- **Table III (`tab:finetune_accuracy`)**:
+  - Updated H-ST-MBAN's Average MAE to `20.33` (now 1st place).
+  - Updated all baseline MAE values (FTT: 40.62, NGBoost: 42.26, LR: 51.87, LSTM: 52.06, TabPFN: 65.55, XGBoost: 71.44, CatBoost: 75.03, RF: 84.50, MLP: 100.91, ResNet: 103.58, GRU: 105.29, TabR: 106.38).
+  - Reordered the rows based on ascending MAE (H-ST-MBAN 20.33 -> FTT 40.62 -> NGBoost 42.26 -> ...).
+  - Modified the caption to: "Average MAE During Online Fine-Tuning (25 Rounds). H-ST-MBAN avoids catastrophic forgetting and achieves the lowest average MAE."
+- **Section G5 (`Section V.G5`)**:
+  - Updated text to reflect H-ST-MBAN's 1st place ranking, explicitly highlighting that it significantly outperforms the FTT model with an average MAE of 20.33s.
+- **Section G6 & Conclusion**:
+  - Updated average access delay to `0.1196~\text{s}` (previously `0.1225s`).
+  - Updated wasted traffic to `17.70~\text{MB}` (previously `18.27MB`).
+  - Kept average cache Hit Ratio as `90.70\%`.
+- **Section G7 & Conclusion**:
+  - Updated the cache Hit Ratio in the high-density interval `(22.5, 25.0]` to `91.64\%` (previously `92.70\%`) to ensure logical consistency across the paper.
+- **Academic Writing Compliance**:
+  - Maintained paragraph constraints (minimum 5 sentences) for all modified sections.
+  - Ensured objective academic tone and eliminated any AI-like buzzwords or expressions.
+
+## 5. Concurrency & Audit Logging
+- File lock on `main.tex` was acquired via `/home/imnyj/Command/core/lock_manager.py` and backup was stored in `/home/imnyj/Workspace/paper1/backup/` prior to modification.
+- Logged the edit action to `/tmp/agent_audit.log` via `/home/imnyj/Command/core/audit_logger.py` under agent ID `writer_paper1`.
+- Released the file lock upon completion.
+
+
+## 6. Analysis Deepening on Baseline Spike and H-ST-MBAN Superiority (2026-06-11)
+- **File Lock & Backup**:
+  - Acquired file lock on `main.tex` and manually created backup inside `/home/imnyj/papers/paper1/paper/backup/`.
+- **Text Enrichment in Section V.G5 (line 778)**:
+  - Replaced the single-paragraph explanation of G5 adaptation with a multi-paragraph deep analysis.
+  - **4 Causes of Weight Spike & Degradation**: Analyzed local overfitting (small $Q=5000$), catastrophic forgetting of global knowledge, gradient pollution from extreme outliers (> 300s), and optimization trajectory divergence due to full parameter fine-tuning.
+  - **4 Countermeasures & H-ST-MBAN Design**: Highlighted the utility of PEFT (linked to gating fusion structures in H-ST-MBAN), weight anchoring, cosine annealing with weight decay, and RSU-level steady-state filtering.
+  - **V2I Protocol Alignment**: Clarified the RSU's process of capturing $X_v$ from uplink request packets, storing in the queue, executing local gradient updates, and passing final dwell predictions to the prefetching queue scheduler.
+  - **Academic Compliance**: Enforced 5-sentence paragraph constraints and completely avoided AI-like phrasing, buzzwords, list-based layouts, and superfluous parentheses.
+- **Verification**: Verified Table III (average MAE values) and G6 metrics to ensure all numerical data remain perfectly intact.
+- **Lock Release & Audit Logging**:
+  - Logged MODIFY action to `audit_logger.py` with agent_id `writer_paper1`.
+  - Released lock on `main.tex` and `writer_progress.md`.
+
+## 7. Model Complexity and RSU Edge Feasibility Update (2026-06-11)
+- **File Lock & Backup**:
+  - Acquired file lock on `main.tex` and backed up the original file to `/home/imnyj/Workspace/paper1/backup/`.
+- **Text Enrichment in Section V.D (line 736)**:
+  - Mentioned the empirical 1st round local fine-tuning metrics: training time of 1.93 seconds and peak memory consumption of 47.69 MB.
+  - Added sentences explaining that this lightweight resource footprint fits within the strict thermal and electrical constraints of standard RSU hardware units, making real-time localized adaptation computationally feasible.
+  - Ensured the paragraph length is at least 5 sentences and strictly followed academic tone rules.
+- **Table Complexity Update (tab:complexity)**:
+  - Updated H-ST-MBAN's Parameters (M) to `1.385` (previously `1.319`).
+  - Added Model Size (MB) as `5.32`.
+  - Replaced Inference Time (ms) with `Training Time (s)` and set the value to `1.93`.
+  - Updated Peak Memory (MB) to `47.69` (previously `14.61`).
+  - Updated FLOPs (M) to `198,750` (previously `2.65`) representing the total calculation of 1 round.
+  - Renamed caption to: "Fine-Tuning Complexity and RSU Edge Feasibility (1 Round, Q=5000)" (previously "Model Complexity and RSU Edge Feasibility").
+- **Lock Release & Audit Logging**:
+  - Logged MODIFY action to `audit_logger.py` with agent_id `writer_paper1`.
+  - Released lock on `main.tex` and `writer_progress.md`.
+
+## 8. Multi-Model Complexity Table Expansion and Fine-Tuning Performance Update (2026-06-11)
+- **File Lock & Backup**:
+  - Acquired file lock on `main.tex` and backed up the original file to `/home/imnyj/papers/paper1/paper/draft/backup/`.
+- **Table III Update (`tab:finetune_accuracy`)**:
+  - Updated Table III to a 4-column layout including Global MAE (s), Final MAE (s), and Average MAE (s) $\pm$ Std. Dev.
+  - Set the actual values for H-ST-MBAN (Global MAE = 58.39, Final MAE = 17.58, Average MAE = 20.33, Std. Dev = 4.12) and 12 baselines, keeping the rows sorted in ascending order of Average MAE.
+- **Section G5 Text Enrichment**:
+  - Appended a detailed explanation of the updated metrics in Section V.G5 (line 778).
+  - Explicitly contrasted the highly stable performance of H-ST-MBAN (Global MAE 58.39s to Final MAE 17.58s with 4.12s Std. Dev.) against the standard deep learning baselines (MLP, ResNet, TabR), which exhibit Average MAEs > 100s and Std. Devs > 20s due to local overfitting and gradient instability (weight spiking).
+  - Ensured academic tone and paragraph length (at least 5 sentences).
+- **Table IV Update (`tab:complexity`)**:
+  - Expanded Table IV to compare the hardware complexity (Parameters, Model Size, Training Time, Peak Memory, FLOPs) of all deep learning baselines (H-ST-MBAN, FTT, LSTM, GRU, ResNet, TabR, MLP) using the empirical measurements from `/home/imnyj/Workspace/paper1/worker/complexity_comparison.csv`.
+- **Section G4 Text Enrichment**:
+  - Appended physical and architectural analysis for the memory profiles in Section V.G4 (line 736).
+  - Explained that despite a larger parameter count (1.385M), H-ST-MBAN has a highly efficient peak memory footprint (46.69MB) compared to FTT (357.34MB, ~7.6x) and LSTM (86.36MB, ~1.8x).
+  - Addressed the structural reasons for the high memory of FTT (massive intermediate activation graphs from independent Feature Tokenizer self-attention) and LSTM (sequential cell loop graph accumulation).
+  - Ensured academic tone and paragraph length (at least 5 sentences).
+- **Lock Release & Audit Logging**:
+  - Logged MODIFY actions to `audit_logger.py` with agent_id `writer_paper1` and parent_id `bf65d6ec-fca9-406c-842c-a2944b776510`.
+  - Released all locks.
+
+## 9. Rollback of Table IV Complexity and Section G4 Text (2026-06-11)
+- **File Lock & Backup**:
+  - Acquired file lock on `main.tex` and backed up the original file to `/home/imnyj/papers/paper1/paper/draft/backup/`.
+- **Table IV Rollback (`tab:complexity`)**:
+  - Reverted the 6-column complexity comparison table back to a 2-column table focusing solely on H-ST-MBAN.
+  - Reinstated the original values: Parameters (M) = 1.385, Model Size (MB) = 5.32, Training Time (s) = 1.93, Peak Memory (MB) = 47.69, FLOPs (M) = 198,750.
+- **Section G4 Text Rollback (line 736)**:
+  - Deleted the paragraph analyzing the memory footprints of other deep learning baselines (FTT, LSTM) and their physical causes.
+  - Restored the original RSU-only hardware feasibility text block.
+- **Table III & Section G5 Preservation**:
+  - Preserved the 4-column layout of Table III (`tab:finetune_accuracy`) and the enriched analysis of local overfitting and gradient instability (weight spiking) in Section G5.
+- **Lock Release & Audit Logging**:
+  - Logged MODIFY actions to `audit_logger.py` with agent_id `writer_paper1` and parent_id `bf65d6ec-fca9-406c-842c-a2944b776510`.
+  - Released all locks.

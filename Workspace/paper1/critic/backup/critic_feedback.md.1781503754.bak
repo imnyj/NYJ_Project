@@ -1,0 +1,95 @@
+# Critic Feedback Report for `main.tex`
+- **Target File**: `/home/imnyj/papers/paper1/paper/draft/main.tex`
+- **Date**: 2026-06-11
+- **Agent ID**: `critic_paper1`
+
+---
+
+## 1. Numerical Consistency Check (수치 일관성 검증)
+
+### 1.1 Global Prediction Accuracy (Table I vs. Text)
+`main.tex`의 687~690행의 설명 텍스트에 표기된 성능 수치가 Table I (`tab:accuracy`)의 수치와 일치하지 않습니다.
+
+| 모델 (Model) | 본문 텍스트 표기 (Lines 687-690) | Table I (`tab:accuracy`) 실제 수치 | 일치 여부 |
+| :--- | :--- | :--- | :--- |
+| **H-ST-MBAN** | MAE: **58.19 s** | MAE: **44.32 s**, RMSE: **90.54 s** | ❌ 불일치 |
+| **ResNet** | MAE: **59.93 s** | MAE: **47.10 s**, RMSE: **92.27 s** | ❌ 불일치 |
+| **LSTM** | MAE > **104 s** (Traditional sequential) | MAE: **96.90 s**, RMSE: **196.65 s** | ❌ 불일치 |
+| **GRU** | MAE > **104 s** (Traditional sequential) | MAE: **101.75 s**, RMSE: **201.36 s** | ❌ 불일치 |
+
+**수정 지침**: 본문 텍스트(687~690행)를 Table I의 실제 결과 수치(H-ST-MBAN 44.32s, ResNet 47.10s, LSTM 96.90s, GRU 101.75s)에 맞게 수정하십시오. 또한 LSTM과 GRU는 104s 미만이므로 "Traditional sequential models (LSTM, GRU) show higher error (MAE $>$ 96~s and 101~s, respectively)..." 등으로 수정해야 합니다.
+
+### 1.2 Table III (`tab:finetune_accuracy`) Online Fine-Tuning Accuracy
+- **분석**: Table III의 모델별 수치와 본문 텍스트 내에서 언급되는 파인튜닝 MAE 성능 수치를 대조한 결과, 본문 텍스트(767-770행 부근)에는 Table III의 개별 수치가 직접적으로 적혀 있지 않습니다.
+- **수정 지침**: 수치적 오류는 없으나 독자의 이해를 돕기 위해, 본문 텍스트 내에서 H-ST-MBAN의 평균 파인튜닝 MAE 성능(20.40s)을 명시적으로 한 번 언급해 주는 것을 권장합니다.
+
+### 1.3 Cache Performance Metrics Consistency (G6 vs. G7 vs. Conclusion)
+- **분석**:
+  - G6 본문(804행): H-ST-MBAN의 평균 캐시 힛 레이트를 **90.66%**로 기술.
+  - 결론(831행): H-ST-MBAN의 캐시 힛 레이트를 고밀도 환경에서 **91.70%**로 기술.
+  - **모순 가능성 검토**: 일반적으로 차량 밀도가 증가하면(G7) 혼잡 및 큐 대기 시간의 복잡성으로 인해 예측 오차가 커져 캐시 힛 레이트가 다소 감소하거나 유지되는 것이 일반적입니다. 하지만 고밀도 하의 힛 레이트(91.70%)가 평균 힛 레이트(90.66%)보다 더 높게 기술되어 있습니다. 만약 이것이 실험 데이터에 부합하는 사실이라면 본문에서 그 이유(예: 고밀도 상황에서 큐 데이터 축적으로 인해 예측력이 향상되었다는 등)를 간략히 설명해야 하며, 단순 오기라면 두 수치를 일치시켜야 합니다.
+
+---
+
+## 2. Style & Formatting Check (스타일 및 서식 검증)
+
+### 2.1 AI적 과장 및 부사 표현 (AI-like Expressions & Adverbs)
+`critic.md` 규칙에 따라 과장된 표현과 기계적인 부사 사용을 피해야 합니다. 논문 전반에서 다음과 같은 부사와 형용사가 과도하게 남용되었습니다.
+
+- **`successfully` / `safely` / `actively` / `effectively` / `strongly` / `significantly` / `highly competitive`**
+  - **Line 313**: "...dedicated encoding branches, **successfully** preventing gradient conflicts..."
+    - *수정안*: "...dedicated encoding branches, which prevents gradient conflicts..." (부사 삭제)
+  - **Line 734**: "...standard deviation (SEM) is **safely** below 1.0...", "...placing the update frequency **safely** in the middle..."
+    - *수정안*: "...standard deviation (SEM) is below 1.0...", "...placing the update frequency in the middle..." (과장된 안심 표현 `safely` 삭제)
+  - **Line 769**: "...proposed dual-model fine-tuning mechanism **effectively** updates the local weights..."
+    - *수정안*: "...proposed dual-model fine-tuning mechanism updates the local weights..." (`effectively` 삭제)
+  - **Line 804**: "...demonstrating **highly competitive** precaching performance...", "...proposed approach **significantly** reduces..."
+    - *수정안*: "...demonstrating competitive precaching performance...", "...proposed approach reduces..." (과장 표현 완화)
+  - **Line 831**: "...H-ST-MBAN **actively** supports proactive caching..."
+    - *수정안*: "...H-ST-MBAN supports proactive caching..." (`actively` 삭제)
+  - **Line 834**: "...proposed method **actively** circumvents..."
+    - *수정안*: "...proposed method circumvents..." (`actively` 삭제)
+
+### 2.2 소괄호 남용 (Abuse of Parentheses)
+규칙에 따르면 "소괄호는 축약어를 처음에 설명할 때 한 번이면 충분"합니다. 하지만 본문에서는 동일한 약어를 여러 번 소괄호로 중복 정의하거나 불필요한 설명을 괄호 안에 넣고 있습니다.
+
+- **중복 정의된 축약어**:
+  - `CCVNs` (Content-Centric Vehicular Networks): 초록(76행), 서론(106행), 결론(825행)에서 반복적으로 소괄호로 정의됨. 최초 정의 이후에는 약어만 사용하십시오.
+  - `H-ST-MBAN` (Hybrid Spatio-Temporal Multi-Branch Attention Network): 초록(78행), 서론(127행), 결론(825행)에서 반복 정의됨.
+- **불필요한 설명적 괄호**:
+  - **Line 826**: "...generative approaches (such as ST-CVAE)..." -> "...generative approaches, such as ST-CVAE, ..." (소괄호 대신 쉼표 사용)
+  - **Table II (tab:features)**: 피처 설명 열에서 `(fixed at 800m)`, `(-1: approaching; +1: departing)`, `(historical queue average)`, `(cyclically encoded)`, `(halting vehicle count)`, `(\in [0,1])` 등 소괄호 설명이 너무 빈번합니다. 소괄호를 제거하고 산문 형태로 다듬거나 기호를 간소화하십시오.
+
+### 2.3 문단 길이 위반 (Paragraph Length Violation)
+모든 문단은 최소 5문장 이상으로 구성되어야 합니다. 다음 문단들은 문장 수가 5개 미만이므로 보완이 필요합니다.
+
+1. **Line 322-328 (Subsection IV.A 1st paragraph)**: **4문장**
+   - *현황*: Inference in H-ST-MBAN... (1) / When a vehicle v... (2) / No historical sequence... (3) / The snapshot is... (4)
+   - *수정 지침*: 한 문장을 더 추가하여 RSU 내부에서 스냅샷이 실시간으로 구성되는 과정의 의의를 보완하십시오.
+2. **Line 349-355 (Subsection IV.A 4th paragraph)**: **3문장**
+   - *현황*: First, inference is... (1) / Second, because the... (2) / Each RSU fine-tunes... (3)
+   - *수정 지침*: 분산 로컬 학습의 보안적 이점이나 대역폭 절감 효과에 대한 문장을 최소 2개 더 추가하여 5문장 이상으로 만드십시오.
+3. **Line 687-691 (Subsection V.G3 1st paragraph)**: **3문장**
+   - *현황*: Table I summarizes... (1) / H-ST-MBAN yields... (2) / Traditional sequential... (3)
+   - *수정 지침*: 수치 불일치 교정과 함께 모델별 오차의 구체적인 특징 분석을 추가하여 5문장 이상으로 보강하십시오.
+4. **Line 692-695 (Subsection V.G3 2nd paragraph)**: **4문장**
+   - *현황*: Figure 3 visualizes... (1) / In these plots... (2) / Notably, the prediction... (3) / This occurs because... (4)
+   - *수정 지침*: 차기 RSU 예측 난이도 증가에 따른 향후 개선 가능성이나 스케줄러 보완책에 대한 문장을 추가하십시오.
+5. **Line 730-733 (Subsection V.G4 1st paragraph)**: **2문장**
+   - *현황*: The global pre-training... (1) / To evaluate edge... (2)
+   - *수정 지침*: RSU 하드웨어 명세나 엣지 컴퓨팅의 자원 제약에 대한 구체적 설명을 덧붙여 최소 5문장 이상으로 서술하십시오.
+
+### 2.4 리스트 남용 및 서식 (List Abuse)
+- **Line 163-169**: 관련 연구의 6대 분류 기준을 문장 중간에 `(D1) ... (D2) ...` 형태로 나열하고 있습니다. 이는 가독성을 해치고 리스트를 억지로 욱여넣은 느낌을 줍니다. 자연스러운 서술형 문장으로 풀어서 서술하십시오.
+- **Line 171-194**: 관련 연구의 카테고리들을 `\textbf{Category 1: ...}` 형태의 문단으로 하드코딩 리스트처럼 구성했습니다. 이를 지양하고, LaTeX의 정식 문단 구분(`\paragraph{...}`)이나 일반 산문 문맥으로 자연스럽게 전환하십시오.
+
+---
+
+## 3. Actionable Revision Guidelines for Writer (수정 가이드 요약)
+
+1. **수치적 정합성 확보**: `main.tex` 689~690행의 MAE 수치들을 Table I에 기재된 값(44.32s, 47.10s, 96.90s, 101.75s)으로 반드시 일치시킬 것.
+2. **평균 vs. 고밀도 캐시 힛 레이트 검증**: 평균(90.66%)과 고밀도(91.70%) 수치의 모순 여부를 재확인하고 타당한 해설을 본문에 추가할 것.
+3. **문단 최소 길이 준수**: 지적된 5개 문단(줄 번호 322, 349, 687, 692, 730 부근)에 적절한 문장을 추가하여 모두 5문장 이상으로 재구성할 것.
+4. **스타일 개선**: `successfully`, `safely`, `actively`, `effectively`, `significantly` 등의 단어를 제거하거나 중립적인 표현으로 대체할 것.
+5. **소괄호 정리**: 초록, 서론, 결론의 중복 축약어 정의 소괄호를 제거하고, Table II 내의 과도한 괄호 설명을 간소화할 것.
+6. **리스트 서식 수정**: 관련 연구 섹션의 문장 내 넘버링 `(D1)-(D6)` 및 카테고리 하드코딩을 산문 또는 표준 문단 형태로 변경할 것.

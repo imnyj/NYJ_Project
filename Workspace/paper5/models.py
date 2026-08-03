@@ -1,0 +1,916 @@
+"""
+models.py - eVTOL Vehicle, 3D Route Planning, and Communication Environment Models
+Paper 5 Simulation Environment
+"""
+
+import math
+from config_loader import load_config
+import numpy as np
+from enum import Enum
+from typing import List, Tuple, Dict, Optional, Union
+
+# ==========================================
+# 1. Building & Vertiport Models
+# ==========================================
+
+class Building:
+    """
+    3D Bounding Box model for urban buildings.
+    """
+    def __init__(
+        self,
+        building_id: str,
+        x_min: float,
+        x_max: float,
+        y_min: float,
+        y_max: float,
+        height: float,
+        z_min: float = 0.0
+    ):
+        self.building_id = building_id
+        self.x_min = min(x_min, x_max)
+        self.x_max = max(x_min, x_max)
+        self.y_min = min(y_min, y_max)
+        self.y_max = max(y_min, y_max)
+        self.z_min = z_min
+        self.height = height
+        self.z_max = z_min + height
+
+    @property
+    def center(self) -> Tuple[float, float, float]:
+        return (
+            (self.x_min + self.x_max) / 2.0,
+            (self.y_min + self.y_max) / 2.0,
+            (self.z_min + self.z_max) / 2.0
+        )
+
+    def contains_point(self, point: Tuple[float, float, float], margin: float = 0.0) -> bool:
+        x, y, z = point
+        return (
+            (self.x_min - margin <= x <= self.x_max + margin) and
+            (self.y_min - margin <= y <= self.y_max + margin) and
+            (self.z_min - margin <= z <= self.z_max + margin)
+        )
+
+    def intersects_line_2d(
+        self,
+        p1: Tuple[float, float],
+        p2: Tuple[float, float],
+        margin: float = 0.0
+    ) -> bool:
+        """
+        Check if 2D line segment p1-p2 intersects building 2D bounding box extended by margin.
+        """
+        x1, y1 = p1
+        x2, y2 = p2
+
+        min_x = self.x_min - margin
+        max_x = self.x_max + margin
+        min_y = self.y_min - margin
+        max_y = self.y_max + margin
+
+        # Quick bounding box overlap check
+        if max(x1, x2) < min_x or min(x1, x2) > max_x:
+            return False
+        if max(y1, y2) < min_y or min(y1, y2) > max_y:
+            return False
+
+        # Liang-Barsky line clipping
+        dx = x2 - x1
+        dy = y2 - y1
+
+        p = [-dx, dx, -dy, dy]
+        q = [x1 - min_x, max_x - x1, y1 - min_y, max_y - y1]
+
+        u1 = 0.0
+        u2 = 1.0
+
+        for i in range(4):
+            if p[i] == 0:
+                if q[i] < 0:
+                    return False
+            else:
+                t = q[i] / p[i]
+                if p[i] < 0:
+                    u1 = max(u1, t)
+                else:
+                    u2 = min(u2, t)
+
+        return u1 <= u2
+
+    def intersects_segment_3d(
+        self,
+        p1: Tuple[float, float, float],
+        p2: Tuple[float, float, float],
+        margin: float = 0.0
+    ) -> bool:
+        """
+        Check if 3D line segment p1-p2 intersects 3D building bounding box (with safety margin).
+        """
+        # First check vertical range
+        z_min_seg = min(p1[2], p2[2])
+        z_max_seg = max(p1[2], p2[2])
+
+        b_zmin = self.z_min - margin
+        b_zmax = self.z_max + margin
+
+        if z_max_seg < b_zmin or z_min_seg > b_zmax:
+            return False
+
+        # Check 2D projection intersection
+        return self.intersects_line_2d((p1[0], p1[1]), (p2[0], p2[1]), margin=margin)
+
+    def get_corners_2d(self, margin: float = 0.0) -> List[Tuple[float, float]]:
+        """
+        Return 4 outer corners in 2D with safety margin.
+        """
+        return [
+            (self.x_min - margin, self.y_min - margin),
+            (self.x_max + margin, self.y_min - margin),
+            (self.x_max + margin, self.y_max + margin),
+            (self.x_min - margin, self.y_max + margin),
+        ]
+
+
+class Vertiport:
+    """
+    Vertiport model for eVTOL takeoff/landing with time-slot scheduling.
+    """
+    def __init__(self, vertiport_id: str, position: Tuple[float, float, float], capacity: int = 2):
+        self.vertiport_id = vertiport_id
+        self.position = np.array(position, dtype=float)
+        self.capacity = capacity
+        self.reservations: List[Tuple[float, float, str]] = []  # (start_time, end_time, vehicle_id)
+
+    def is_available(self, start_time: float, duration: float) -> bool:
+        end_time = start_time + duration
+        overlapping = [
+            res for res in self.reservations
+            if not (end_time <= res[0] or start_time >= res[1])
+        ]
+        return len(overlapping) < self.capacity
+
+    def reserve_slot(self, start_time: float, duration: float, vehicle_id: str) -> bool:
+        if self.is_available(start_time, duration):
+            self.reservations.append((start_time, start_time + duration, vehicle_id))
+            return True
+        return False
+
+
+# ==========================================
+# 2. 3D Route Planner
+# ==========================================
+
+class RoutePlanner:
+    """
+    3D Route Planner for eVTOLs avoiding building bounding boxes.
+    Generates 3D waypoints including takeoff, cruise detour, and landing stages.
+    """
+    def __init__(
+        self,
+        default_cruise_altitude: float = 200.0,
+        safety_margin_horizontal: float = 30.0,
+        safety_margin_vertical: float = 30.0
+    ):
+        self.default_cruise_altitude = default_cruise_altitude
+        self.safety_margin_h = safety_margin_horizontal
+        self.safety_margin_v = safety_margin_vertical
+
+    def calculate_required_altitude(
+        self,
+        start_pos: Tuple[float, float, float],
+        dest_pos: Tuple[float, float, float],
+        buildings: List[Building]
+    ) -> float:
+        """
+        Calculate minimum required cruise altitude along direct flight path to safely clear buildings.
+        """
+        max_b_height = 0.0
+        p1_2d = (start_pos[0], start_pos[1])
+        p2_2d = (dest_pos[0], dest_pos[1])
+
+        for b in buildings:
+            if b.intersects_line_2d(p1_2d, p2_2d, margin=self.safety_margin_h):
+                if b.z_max > max_b_height:
+                    max_b_height = b.z_max
+
+        req_altitude = max(self.default_cruise_altitude, max_b_height + self.safety_margin_v)
+        return req_altitude
+
+    def plan_3d_route(
+        self,
+        start_pos: Tuple[float, float, float],
+        dest_pos: Tuple[float, float, float],
+        buildings: List[Building],
+        cruise_altitude: Optional[float] = None
+    ) -> List[Tuple[float, float, float]]:
+        """
+        Generate 3D waypoints:
+        1. Vertical takeoff from start_pos to cruise_altitude
+        2. Horizontal detour navigation around building bounding boxes
+        3. Vertical descent from cruise_altitude to dest_pos
+        """
+        if cruise_altitude is None:
+            cruise_altitude = self.calculate_required_altitude(start_pos, dest_pos, buildings)
+
+        start_x, start_y, start_z = start_pos
+        dest_x, dest_y, dest_z = dest_pos
+
+        waypoints = []
+
+        # 1. Start point
+        waypoints.append((start_x, start_y, start_z))
+
+        # 2. Takeoff waypoint (vertical climb to cruise altitude)
+        waypoints.append((start_x, start_y, cruise_altitude))
+
+        # 3. Horizontal segment planning at cruise altitude
+        current_2d = (start_x, start_y)
+        target_2d = (dest_x, dest_y)
+
+        # Check if buildings collide with flight path at cruise altitude
+        colliding_buildings = [
+            b for b in buildings
+            if b.z_max + self.safety_margin_v > cruise_altitude and
+               b.intersects_line_2d(current_2d, target_2d, margin=self.safety_margin_h)
+        ]
+
+        if colliding_buildings:
+            # Generate detour waypoints around colliding buildings
+            detour_2d = self._generate_detours_2d(current_2d, target_2d, colliding_buildings)
+            for dx, dy in detour_2d:
+                waypoints.append((dx, dy, cruise_altitude))
+        else:
+            # Direct cruise waypoint before descent
+            waypoints.append((dest_x, dest_y, cruise_altitude))
+
+        # 4. Final landing waypoint (vertical descent to destination)
+        waypoints.append((dest_x, dest_y, dest_z))
+
+        return waypoints
+
+    def _generate_detours_2d(
+        self,
+        start_2d: Tuple[float, float],
+        dest_2d: Tuple[float, float],
+        colliding_buildings: List[Building]
+    ) -> List[Tuple[float, float]]:
+        """
+        Simple geometric detour generation around building bounding box corners.
+        """
+        waypoints_2d = []
+        curr = start_2d
+
+        for b in colliding_buildings:
+            if not b.intersects_line_2d(curr, dest_2d, margin=self.safety_margin_h):
+                continue
+
+            corners = b.get_corners_2d(margin=self.safety_margin_h)
+            b_center = (b.center[0], b.center[1])
+            
+            v_line = (dest_2d[0] - curr[0], dest_2d[1] - curr[1])
+            v_b = (b_center[0] - curr[0], b_center[1] - curr[1])
+            cross_prod = v_line[0] * v_b[1] - v_line[1] * v_b[0]
+
+            selected_corners = []
+            for cx, cy in corners:
+                v_c = (cx - curr[0], cy - curr[1])
+                cp = v_line[0] * v_c[1] - v_line[1] * v_c[0]
+                if cross_prod >= 0 and cp > 0:
+                    selected_corners.append((cx, cy))
+                elif cross_prod < 0 and cp < 0:
+                    selected_corners.append((cx, cy))
+
+            if not selected_corners:
+                selected_corners = corners
+
+            best_corner = min(
+                selected_corners,
+                key=lambda c: math.hypot(c[0] - curr[0], c[1] - curr[1]) + math.hypot(dest_2d[0] - c[0], dest_2d[1] - c[1])
+            )
+
+            waypoints_2d.append(best_corner)
+            curr = best_corner
+
+        waypoints_2d.append(dest_2d)
+        return waypoints_2d
+
+
+# ==========================================
+# 3. eVTOL Vehicle Model
+# ==========================================
+
+class VehicleState(Enum):
+    IDLE = "IDLE"
+    TAKEOFF = "TAKEOFF"
+    CLIMB = "CLIMB"
+    CRUISE = "CRUISE"
+    DESCENT = "DESCENT"
+    LANDING = "LANDING"
+    ARRIVED = "ARRIVED"
+
+
+class EVTOLVehicle:
+    """
+    eVTOL Vehicle class with realistic horizontal/vertical speed constraints and kinematic updates.
+    """
+    def __init__(
+        self,
+        vehicle_id: str,
+        max_horizontal_speed: Optional[float] = None,
+        max_climb_rate: Optional[float] = None,
+        max_descent_rate: Optional[float] = None,
+        acceleration: Optional[float] = None,
+        waypoint_arrival_radius: Optional[float] = None
+    ):
+        self.vehicle_id = vehicle_id
+        cfg = load_config().get("VEHICLE", {})
+        self.max_h_speed = max_horizontal_speed if max_horizontal_speed is not None else cfg.get("MAX_HORIZONTAL_SPEED", 50.0)
+        self.max_climb_rate = max_climb_rate if max_climb_rate is not None else cfg.get("MAX_CLIMB_RATE", 5.0)
+        self.max_descent_rate = max_descent_rate if max_descent_rate is not None else cfg.get("MAX_DESCENT_RATE", 3.0)
+        self.acceleration = acceleration if acceleration is not None else cfg.get("ACCELERATION", 2.5)
+        self.arrival_radius = waypoint_arrival_radius if waypoint_arrival_radius is not None else cfg.get("ARRIVAL_RADIUS", 5.0)
+
+        self.position = np.array([0.0, 0.0, 0.0], dtype=float)
+        self.velocity = np.array([0.0, 0.0, 0.0], dtype=float)
+        self.speed = 0.0
+        self.heading_rad = 0.0
+
+        self.waypoints: List[np.ndarray] = []
+        self.current_wp_idx: int = 0
+        self.state: VehicleState = VehicleState.IDLE
+
+        self.connected_node_id: Optional[str] = None
+        self.connected_comm_type: Optional[str] = None
+        self.handover_history: List[Dict] = []
+        self.telemetry_history: List[Dict] = []
+        self.total_flight_time: float = 0.0
+        self.total_flight_distance: float = 0.0
+
+    def set_route(self, waypoints: List[Tuple[float, float, float]], start_time: float = 0.0):
+        self.waypoints = [np.array(wp, dtype=float) for wp in waypoints]
+        if self.waypoints:
+            self.position = self.waypoints[0].copy()
+            self.current_wp_idx = 1 if len(self.waypoints) > 1 else 0
+            self.state = VehicleState.TAKEOFF
+        self.total_flight_time = start_time
+
+    def update(self, dt: float) -> VehicleState:
+        """
+        Kinematic position update moving vehicle towards current target waypoint.
+        Enforces distinct horizontal and vertical speed limits.
+        """
+        if self.state in (VehicleState.IDLE, VehicleState.ARRIVED) or not self.waypoints:
+            return self.state
+
+        if self.current_wp_idx >= len(self.waypoints):
+            self.state = VehicleState.ARRIVED
+            self.velocity = np.array([0.0, 0.0, 0.0])
+            return self.state
+
+        self.total_flight_time += dt
+        target_wp = self.waypoints[self.current_wp_idx]
+        delta = target_wp - self.position
+        dist_3d = np.linalg.norm(delta)
+
+        # Check waypoint arrival
+        if dist_3d <= self.arrival_radius:
+            self.current_wp_idx += 1
+            if self.current_wp_idx >= len(self.waypoints):
+                self.state = VehicleState.ARRIVED
+                self.velocity = np.array([0.0, 0.0, 0.0])
+                return self.state
+            target_wp = self.waypoints[self.current_wp_idx]
+            delta = target_wp - self.position
+            dist_3d = np.linalg.norm(delta)
+
+        delta_xy = delta[:2]
+        dist_xy = np.linalg.norm(delta_xy)
+        delta_z = delta[2]
+
+        # Determine flight phase/state and velocity bounds
+        if abs(delta_z) > 1.0 and dist_xy < 10.0:
+            if delta_z > 0:
+                self.state = VehicleState.CLIMB
+                target_vz = min(self.max_climb_rate, delta_z / dt)
+            else:
+                self.state = VehicleState.DESCENT
+                target_vz = max(-self.max_descent_rate, delta_z / dt)
+            target_vx = 0.0
+            target_vy = 0.0
+        else:
+            self.state = VehicleState.CRUISE
+            if dist_xy > 0:
+                dir_xy = delta_xy / dist_xy
+                target_h_speed = min(self.max_h_speed, dist_xy / dt)
+                target_vx = dir_xy[0] * target_h_speed
+                target_vy = dir_xy[1] * target_h_speed
+                self.heading_rad = math.atan2(dir_xy[1], dir_xy[0])
+            else:
+                target_vx, target_vy = 0.0, 0.0
+
+            if delta_z > 0:
+                target_vz = min(self.max_climb_rate, delta_z / dt)
+            elif delta_z < 0:
+                target_vz = max(-self.max_descent_rate, delta_z / dt)
+            else:
+                target_vz = 0.0
+
+        target_velocity = np.array([target_vx, target_vy, target_vz], dtype=float)
+
+        # Smooth velocity acceleration update
+        vel_diff = target_velocity - self.velocity
+        vel_diff_norm = np.linalg.norm(vel_diff)
+        if vel_diff_norm > 0:
+            acc_step = min(self.acceleration * dt, vel_diff_norm)
+            self.velocity += (vel_diff / vel_diff_norm) * acc_step
+
+        # Update position
+        move_step = self.velocity * dt
+        self.position += move_step
+        step_dist = np.linalg.norm(move_step)
+        self.total_flight_distance += step_dist
+        self.speed = np.linalg.norm(self.velocity)
+
+        # Record telemetry
+        self.telemetry_history.append({
+            "timestamp": self.total_flight_time,
+            "x": self.position[0],
+            "y": self.position[1],
+            "z": self.position[2],
+            "speed": self.speed,
+            "state": self.state.value,
+            "comm_node": self.connected_node_id,
+            "comm_type": self.connected_comm_type
+        })
+
+        return self.state
+
+    def get_status(self) -> Dict:
+        return {
+            "vehicle_id": self.vehicle_id,
+            "position": self.position.tolist(),
+            "velocity": self.velocity.tolist(),
+            "speed": float(self.speed),
+            "altitude": float(self.position[2]),
+            "state": self.state.value,
+            "connected_node": self.connected_node_id,
+            "comm_type": self.connected_comm_type,
+            "flight_time": self.total_flight_time,
+            "flight_distance": self.total_flight_distance
+        }
+
+
+# ==========================================
+# 4. Communication Models (5G, RSU, Starlink)
+# ==========================================
+
+class CommType(Enum):
+    CELLULAR_5G = "5G"
+    RSU = "RSU"
+    STARLINK = "STARLINK"
+
+
+class BaseCommNode:
+    """
+    Base class for communication nodes in the UAM environment.
+    """
+    def __init__(
+        self,
+        node_id: str,
+        node_type: CommType,
+        position: Tuple[float, float, float],
+        frequency_ghz: float,
+        tx_power_dbm: float,
+        max_range: float,
+        bandwidth_mhz: float,
+        base_data_rate_mbps: float,
+        base_latency_ms: float,
+        max_altitude: float = 1000.0
+    ):
+        self.node_id = node_id
+        self.node_type = node_type
+        self.position = np.array(position, dtype=float)
+        self.frequency_ghz = frequency_ghz
+        self.tx_power_dbm = tx_power_dbm
+        self.max_range = max_range
+        self.bandwidth_mhz = bandwidth_mhz
+        self.base_data_rate_mbps = base_data_rate_mbps
+        self.base_latency_ms = base_latency_ms
+        self.max_altitude = max_altitude
+
+    def calculate_distance_3d(self, target_pos: Tuple[float, float, float]) -> float:
+        return float(np.linalg.norm(self.position - np.array(target_pos)))
+
+    def calculate_path_loss(self, distance_m: float) -> float:
+        """
+        Free Space Path Loss (FSPL) model in dB.
+        PL(dB) = 20 log10(d_km) + 20 log10(f_GHz) + 92.45
+        """
+        d_km = max(distance_m / 1000.0, 0.001)
+        pl_db = 20.0 * math.log10(d_km) + 20.0 * math.log10(self.frequency_ghz) + 92.45
+        return pl_db
+
+    def calculate_snr(self, distance_m: float, is_los: bool = True) -> float:
+        """
+        Calculate Signal-to-Noise Ratio (SNR) in dB.
+        """
+        pl_db = self.calculate_path_loss(distance_m)
+        if not is_los:
+            pl_db += 20.0  # NLOS building attenuation penalty
+
+        bw_hz = self.bandwidth_mhz * 1e6
+        noise_floor_dbm = -174.0 + 10.0 * math.log10(bw_hz) + 5.0  # 5dB Noise figure
+        rx_power_dbm = self.tx_power_dbm - pl_db
+        snr_db = rx_power_dbm - noise_floor_dbm
+        return snr_db
+
+    def calculate_link_quality(
+        self,
+        target_pos: Tuple[float, float, float],
+        is_los: bool = True
+    ) -> Dict[str, float]:
+        """
+        Calculate link parameters: distance, SNR, data rate (Shannon limit), and latency.
+        """
+        dist = self.calculate_distance_3d(target_pos)
+        target_alt = target_pos[2]
+
+        if dist > self.max_range or target_alt > self.max_altitude:
+            return {
+                "distance": dist,
+                "snr_db": -999.0,
+                "data_rate_mbps": 0.0,
+                "latency_ms": 999.0,
+                "in_range": False
+            }
+
+        snr_db = self.calculate_snr(dist, is_los=is_los)
+        snr_linear = max(10.0 ** (snr_db / 10.0), 1e-6)
+
+        shannon_rate_mbps = (self.bandwidth_mhz) * math.log2(1.0 + snr_linear)
+        achievable_rate = min(self.base_data_rate_mbps, shannon_rate_mbps)
+
+        prop_delay_ms = (dist / 3e8) * 1000.0
+        total_latency = self.base_latency_ms + prop_delay_ms
+        if not is_los:
+            total_latency += 10.0
+
+        return {
+            "distance": dist,
+            "snr_db": snr_db,
+            "data_rate_mbps": max(0.0, float(achievable_rate)),
+            "latency_ms": float(total_latency),
+            "in_range": True
+        }
+
+
+class Cellular5G(BaseCommNode):
+    """
+    Sub-6GHz / mmWave 5G Base Station model for aerial vehicle communication.
+    Standard Specs: 3.5 GHz, 100 MHz BW, 46 dBm Tx Power, ~1.5 km range, ~500 Mbps max rate, ~8ms latency.
+    """
+    def __init__(
+        self,
+        node_id: str,
+        position: Tuple[float, float, float],
+        frequency_ghz: float = 3.5,
+        tx_power_dbm: float = 46.0,
+        max_range: float = 1500.0,
+        bandwidth_mhz: float = 100.0,
+        base_data_rate_mbps: float = 500.0,
+        base_latency_ms: float = 8.0,
+        max_altitude: float = 400.0
+    ):
+        super().__init__(
+            node_id=node_id,
+            node_type=CommType.CELLULAR_5G,
+            position=position,
+            frequency_ghz=frequency_ghz,
+            tx_power_dbm=tx_power_dbm,
+            max_range=max_range,
+            bandwidth_mhz=bandwidth_mhz,
+            base_data_rate_mbps=base_data_rate_mbps,
+            base_latency_ms=base_latency_ms,
+            max_altitude=max_altitude
+        )
+
+
+class RSU(BaseCommNode):
+    """
+    Road Side Unit (C-V2X / DSRC) deployed at ground intersections.
+    Standard Specs: 5.9 GHz, 20 MHz BW, 23 dBm Tx Power, ~350m range, ~30 Mbps max rate, ~2ms latency.
+    """
+    def __init__(
+        self,
+        node_id: str,
+        position: Tuple[float, float, float],
+        frequency_ghz: float = 5.9,
+        tx_power_dbm: float = 23.0,
+        max_range: float = 350.0,
+        bandwidth_mhz: float = 20.0,
+        base_data_rate_mbps: float = 30.0,
+        base_latency_ms: float = 2.0,
+        max_altitude: float = 120.0
+    ):
+        super().__init__(
+            node_id=node_id,
+            node_type=CommType.RSU,
+            position=position,
+            frequency_ghz=frequency_ghz,
+            tx_power_dbm=tx_power_dbm,
+            max_range=max_range,
+            bandwidth_mhz=bandwidth_mhz,
+            base_data_rate_mbps=base_data_rate_mbps,
+            base_latency_ms=base_latency_ms,
+            max_altitude=max_altitude
+        )
+
+
+class Starlink(BaseCommNode):
+    """
+    Starlink LEO Satellite Communication model.
+    Standard Specs: 12.0 GHz (Ku-band), 250 MHz BW, ~150 Mbps max rate, ~35ms latency.
+    Continuous overhead line-of-sight coverage up to high altitude.
+    """
+    def __init__(
+        self,
+        node_id: str,
+        position: Tuple[float, float, float] = (0.0, 0.0, 550000.0),
+        frequency_ghz: float = 12.0,
+        tx_power_dbm: float = 38.0,
+        max_range: float = 800000.0,
+        bandwidth_mhz: float = 250.0,
+        base_data_rate_mbps: float = 150.0,
+        base_latency_ms: float = 35.0,
+        max_altitude: float = 10000.0
+    ):
+        super().__init__(
+            node_id=node_id,
+            node_type=CommType.STARLINK,
+            position=position,
+            frequency_ghz=frequency_ghz,
+            tx_power_dbm=tx_power_dbm,
+            max_range=max_range,
+            bandwidth_mhz=bandwidth_mhz,
+            base_data_rate_mbps=base_data_rate_mbps,
+            base_latency_ms=base_latency_ms,
+            max_altitude=max_altitude
+        )
+
+    def calculate_distance_3d(self, target_pos: Tuple[float, float, float]) -> float:
+        horizontal_dist = math.hypot(target_pos[0] - self.position[0], target_pos[1] - self.position[1])
+        altitude_diff = self.position[2] - target_pos[2]
+        return math.hypot(horizontal_dist, altitude_diff)
+
+
+# ==========================================
+# 5. Communication Environment Manager
+# ==========================================
+
+class CommunicationEnvironment:
+    """
+    Manages all wireless communication infrastructure (5G BSs, RSUs, Starlink)
+    and handles link evaluation, line-of-sight checks, and proactive handover triggering.
+    """
+    def __init__(self, buildings: Optional[List[Building]] = None):
+        self.nodes: Dict[str, BaseCommNode] = {}
+        self.buildings: List[Building] = buildings if buildings else []
+
+    def add_node(self, node: BaseCommNode):
+        self.nodes[node.node_id] = node
+
+    def check_line_of_sight(
+        self,
+        pos1: Tuple[float, float, float],
+        pos2: Tuple[float, float, float]
+    ) -> bool:
+        """
+        Check if line between pos1 and pos2 is clear of building obstructions.
+        """
+        for b in self.buildings:
+            if b.intersects_segment_3d(pos1, pos2):
+                return False
+        return True
+
+    def get_available_links(
+        self,
+        vehicle_pos: Tuple[float, float, float]
+    ) -> List[Dict]:
+        """
+        Returns list of all in-range communication nodes and their link metrics.
+        """
+        available = []
+        for node_id, node in self.nodes.items():
+            is_los = self.check_line_of_sight(vehicle_pos, tuple(node.position))
+            metrics = node.calculate_link_quality(vehicle_pos, is_los=is_los)
+            if metrics["in_range"] and metrics["snr_db"] > -10.0:
+                available.append({
+                    "node_id": node_id,
+                    "node_type": node.node_type.value,
+                    "distance": metrics["distance"],
+                    "snr_db": metrics["snr_db"],
+                    "data_rate_mbps": metrics["data_rate_mbps"],
+                    "latency_ms": metrics["latency_ms"],
+                    "is_los": is_los
+                })
+        return available
+
+    def find_best_connection(
+        self,
+        vehicle_pos: Tuple[float, float, float],
+        preference_weights: Optional[Dict[str, float]] = None
+    ) -> Optional[Dict]:
+        """
+        Select best network connection based on weighted data rate, latency, and SNR.
+        """
+        links = self.get_available_links(vehicle_pos)
+        if not links:
+            return None
+
+        if preference_weights is None:
+            preference_weights = {"data_rate": 0.5, "latency": 0.3, "snr": 0.2}
+
+        best_score = -float('inf')
+        best_link = None
+
+        for link in links:
+            rate_score = min(link["data_rate_mbps"] / 500.0, 1.0)
+            lat_score = max(0.0, 1.0 - (link["latency_ms"] / 100.0))
+            snr_score = min(max((link["snr_db"] + 10.0) / 40.0, 0.0), 1.0)
+
+            score = (
+                preference_weights["data_rate"] * rate_score +
+                preference_weights["latency"] * lat_score +
+                preference_weights["snr"] * snr_score
+            )
+
+            if score > best_score:
+                best_score = score
+                best_link = link
+
+        return best_link
+
+    def evaluate_handover(
+        self,
+        vehicle: EVTOLVehicle,
+        current_time: float,
+        handover_hysteresis_db: float = 3.0
+    ) -> Optional[Dict]:
+        """
+        Evaluates whether vehicle should initiate a handover.
+        Returns handover record if a handover occurs.
+        """
+        pos = tuple(vehicle.position)
+        best_link = self.find_best_connection(pos)
+
+        if not best_link:
+            return None
+
+        current_node_id = vehicle.connected_node_id
+
+        if current_node_id is None:
+            vehicle.connected_node_id = best_link["node_id"]
+            vehicle.connected_comm_type = best_link["node_type"]
+            record = {
+                "timestamp": current_time,
+                "event": "INITIAL_CONNECT",
+                "target_node": best_link["node_id"],
+                "comm_type": best_link["node_type"],
+                "metrics": best_link
+            }
+            vehicle.handover_history.append(record)
+            return record
+
+        if current_node_id != best_link["node_id"]:
+            curr_node = self.nodes.get(current_node_id)
+            if curr_node:
+                is_los = self.check_line_of_sight(pos, tuple(curr_node.position))
+                curr_metrics = curr_node.calculate_link_quality(pos, is_los=is_los)
+
+                if not curr_metrics["in_range"] or (best_link["snr_db"] > curr_metrics["snr_db"] + handover_hysteresis_db):
+                    old_node = current_node_id
+                    vehicle.connected_node_id = best_link["node_id"]
+                    vehicle.connected_comm_type = best_link["node_type"]
+
+                    record = {
+                        "timestamp": current_time,
+                        "event": "HANDOVER",
+                        "from_node": old_node,
+                        "to_node": best_link["node_id"],
+                        "comm_type": best_link["node_type"],
+                        "metrics": best_link
+                    }
+                    vehicle.handover_history.append(record)
+                    return record
+
+        return None
+
+
+# ==========================================
+# 6. Grid Environment Simulation Helper
+# ==========================================
+
+def generate_grid_environment(
+    num_grid_cells_x: int = 3,
+    num_grid_cells_y: int = 3,
+    cell_size: float = 3000.0,       # 3km between intersections
+    border_size: float = 1500.0,     # 1.5km border road
+    num_buildings: int = 20,
+    seed: int = 42
+) -> Tuple[List[Building], CommunicationEnvironment]:
+    """
+    Generates grid simulation environment based on sketch.md specs:
+    - 3km distance between intersections with 1.5km outer roads
+    - RSU at every intersection
+    - 5G Base Stations across sectors
+    - Starlink LEO Satellite continuous coverage
+    - Non-overlapping building bounding boxes
+    """
+    np.random.seed(seed)
+    buildings = []
+    comm_env = CommunicationEnvironment(buildings=buildings)
+
+    intersection_coords = []
+    rsu_idx = 0
+
+    total_width = border_size * 2 + num_grid_cells_x * cell_size
+    total_height = border_size * 2 + num_grid_cells_y * cell_size
+
+    for ix in range(num_grid_cells_x + 1):
+        x = border_size + ix * cell_size
+        for iy in range(num_grid_cells_y + 1):
+            y = border_size + iy * cell_size
+            intersection_coords.append((x, y))
+
+            rsu = RSU(
+                node_id=f"RSU_{rsu_idx}",
+                position=(x, y, 10.0)
+            )
+            comm_env.add_node(rsu)
+            rsu_idx += 1
+
+    bs_idx = 0
+    gnode_spacing = cell_size / 2.0
+    for bx in np.arange(border_size / 2, total_width, gnode_spacing):
+        for by in np.arange(border_size / 2, total_height, gnode_spacing):
+            gnode = Cellular5G(
+                node_id=f"5G_BS_{bs_idx}",
+                position=(float(bx), float(by), 30.0)
+            )
+            comm_env.add_node(gnode)
+            bs_idx += 1
+
+    starlink = Starlink(
+        node_id="Starlink_LEO_1",
+        position=(total_width / 2.0, total_height / 2.0, 550000.0)
+    )
+    comm_env.add_node(starlink)
+
+    road_width = 40.0
+    attempts = 0
+    b_id = 0
+
+    while len(buildings) < num_buildings and attempts < 1000:
+        attempts += 1
+        bw = np.random.uniform(50.0, 150.0)
+        bl = np.random.uniform(50.0, 150.0)
+        bh = np.random.uniform(30.0, 180.0)
+
+        bx = np.random.uniform(border_size, total_width - border_size - bw)
+        by = np.random.uniform(border_size, total_height - border_size - bl)
+
+        new_b = Building(
+            building_id=f"Building_{b_id}",
+            x_min=bx,
+            x_max=bx + bw,
+            y_min=by,
+            y_max=by + bl,
+            height=bh
+        )
+
+        near_road = False
+        for ix_x, ix_y in intersection_coords:
+            if abs(new_b.center[0] - ix_x) < (bw / 2 + road_width) and abs(new_b.center[1] - ix_y) < (bl / 2 + road_width):
+                near_road = True
+                break
+
+        if near_road:
+            continue
+
+        overlap = False
+        for existing in buildings:
+            if not (
+                new_b.x_max + 10.0 < existing.x_min or
+                new_b.x_min - 10.0 > existing.x_max or
+                new_b.y_max + 10.0 < existing.y_min or
+                new_b.y_min - 10.0 > existing.y_max
+            ):
+                overlap = True
+                break
+
+        if not overlap:
+            buildings.append(new_b)
+            b_id += 1
+
+    return buildings, comm_env

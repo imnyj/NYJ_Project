@@ -1,0 +1,29 @@
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+Best params: {'lr': 0.00127328073402658, 'gamma': 0.9466364642773654, 'eps_clip': 0.17017451930187485, 'k_epochs': 8, 'batch_size': 128}
+Episode 1 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
+Metrics -> AoI: 177.286, CBR: 0.018, PDR: 100.000
+Episode 2 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
+Metrics -> AoI: 152.069, CBR: 0.019, PDR: 100.000
+Episode 3 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
+Metrics -> AoI: 172.992, CBR: 0.013, PDR: 100.000
+Episode 4 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
+Metrics -> AoI: 0.000, CBR: 0.009, PDR: 100.000
+Episode 5 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
+Metrics -> AoI: 246.970, CBR: 0.013, PDR: 100.000
+Model saved.
+EVAL -> PDR: 100.000, CBR: 0.022, AoI: 337.886

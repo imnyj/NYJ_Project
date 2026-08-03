@@ -1,0 +1,150 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import pandas as pd
+import os
+from dataset import get_dataloaders
+from G1_learning import DATA_DIRS, DEVICE
+import pickle
+
+from models import (
+    H_ST_MBAN, 
+    H_ST_MBAN_noAttn, 
+    H_ST_MBAN_EarlyFusion, 
+    H_ST_MBAN_noS, 
+    H_ST_MBAN_noT, 
+    H_ST_MBAN_noK
+)
+
+EPOCHS = 200
+
+def train_and_eval(model_name, model, train_loader, val_loader, has_hybrid=False):
+    model = model.to(DEVICE)
+    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    criterion = nn.L1Loss()
+    
+    best_val_mae = float('inf')
+    best_val_rmse = float('inf')
+    
+    # Fast evaluation loop
+    for ep in range(1, EPOCHS + 1):
+        model.train()
+        for batch in train_loader:
+            x_k, x_t, x_s, xp, y = [b.to(DEVICE) for b in batch]
+            optimizer.zero_grad()
+            
+            if has_hybrid:
+                preds = model(x_k, x_t, x_s, ml_preds=xp)
+            else:
+                preds = model(x_k, x_t, x_s)
+                
+            loss = criterion(preds, y)
+            loss.backward()
+            optimizer.step()
+            
+        # Validation
+        model.eval()
+        val_mae = 0.0
+        val_mse = 0.0
+        count = 0
+        with torch.no_grad():
+            for batch in val_loader:
+                x_k, x_t, x_s, xp, y = [b.to(DEVICE) for b in batch]
+                if has_hybrid:
+                    preds = model(x_k, x_t, x_s, ml_preds=xp)
+                else:
+                    preds = model(x_k, x_t, x_s)
+                val_mae += torch.sum(torch.abs(preds - y)).item()
+                val_mse += torch.sum((preds - y)**2).item()
+                count += y.numel()
+        
+        val_mae /= count
+        val_rmse = np.sqrt(val_mse / count)
+        
+        if val_mae < best_val_mae:
+            best_val_mae = val_mae
+            best_val_rmse = val_rmse
+            
+        if ep % 20 == 0:
+            print(f"[{model_name}] Epoch {ep}/{EPOCHS} Val MAE: {val_mae:.4f} (Best: {best_val_mae:.4f})")
+            
+    return best_val_mae, best_val_rmse
+
+def main():
+    print("Loading datasets for Ablation Study...")
+    train_loader, val_loader, scaler = get_dataloaders(DATA_DIRS, batch_size=2048)
+    
+    print("Loading XGBoost prior models...")
+    with open("/home/imnyj/papers/paper1/code/saved_models/XGB_Hybrid_Base_y1_best.pkl", "rb") as f:
+        xgb_y1 = pickle.load(f)
+    with open("/home/imnyj/papers/paper1/code/saved_models/XGB_Hybrid_Base_y2_best.pkl", "rb") as f:
+        xgb_y2 = pickle.load(f)
+
+    # Precompute XGBoost predictions
+    print("Precomputing XGBoost predictions for Train Set...")
+    X_train_flat = []
+    all_xk, all_xt, all_xs, all_y = [], [], [], []
+    for x_k, x_t, x_s, y in train_loader:
+        all_xk.append(x_k)
+        all_xt.append(x_t)
+        all_xs.append(x_s)
+        all_y.append(y)
+        X_train_flat.append(torch.cat([x_k, x_t, x_s], dim=1).numpy())
+    
+    X_train_flat = np.vstack(X_train_flat)
+    p1 = xgb_y1.predict(X_train_flat)
+    p2 = xgb_y2.predict(X_train_flat)
+    xp_train = torch.tensor(np.column_stack((p1, p2)), dtype=torch.float32)
+    
+    all_xk = torch.cat(all_xk)
+    all_xt = torch.cat(all_xt)
+    all_xs = torch.cat(all_xs)
+    all_y = torch.cat(all_y)
+    from torch.utils.data import TensorDataset, DataLoader
+    train_loader_hybrid = DataLoader(TensorDataset(all_xk, all_xt, all_xs, xp_train, all_y), batch_size=2048, shuffle=True)
+    
+    print("Precomputing XGBoost predictions for Validation Set...")
+    X_val_flat = []
+    val_xk, val_xt, val_xs, val_y = [], [], [], []
+    for x_k, x_t, x_s, y in val_loader:
+        val_xk.append(x_k)
+        val_xt.append(x_t)
+        val_xs.append(x_s)
+        val_y.append(y)
+        X_val_flat.append(torch.cat([x_k, x_t, x_s], dim=1).numpy())
+        
+    X_val_flat = np.vstack(X_val_flat)
+    p1_val = xgb_y1.predict(X_val_flat)
+    p2_val = xgb_y2.predict(X_val_flat)
+    xp_val = torch.tensor(np.column_stack((p1_val, p2_val)), dtype=torch.float32)
+    
+    val_xk = torch.cat(val_xk)
+    val_xt = torch.cat(val_xt)
+    val_xs = torch.cat(val_xs)
+    val_y = torch.cat(val_y)
+    val_loader_hybrid = DataLoader(TensorDataset(val_xk, val_xt, val_xs, xp_val, val_y), batch_size=2048, shuffle=False)
+
+    ablation_models = {
+        "H-ST-MBAN (Proposed)": (H_ST_MBAN(), True),
+        "w/o Hybrid": (H_ST_MBAN(), False),
+        "w/o Attention": (H_ST_MBAN_noAttn(), True),
+        "Early Fusion": (H_ST_MBAN_EarlyFusion(), True),
+        "w/o Social (S)": (H_ST_MBAN_noS(), True),
+        "w/o Traffic (T)": (H_ST_MBAN_noT(), True),
+        "w/o Kinematic (K)": (H_ST_MBAN_noK(), True)
+    }
+
+    results = []
+    for name, (model, use_hybrid) in ablation_models.items():
+        print(f"\nTraining {name}...")
+        mae, rmse = train_and_eval(name, model, train_loader_hybrid, val_loader_hybrid, has_hybrid=use_hybrid)
+        results.append({"Model": name, "MAE": mae, "RMSE": rmse})
+        print(f"-> {name} Final MAE: {mae:.4f}, RMSE: {rmse:.4f}")
+
+    df = pd.DataFrame(results)
+    df.to_csv("/home/imnyj/papers/paper1/data/G2_ablation_results.csv", index=False)
+    print("\nSaved ablation results to /home/imnyj/papers/paper1/data/G2_ablation_results.csv")
+
+if __name__ == "__main__":
+    main()

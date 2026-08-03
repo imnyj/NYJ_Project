@@ -1,0 +1,31 @@
+{
+  "file": "paper/data/oracle_dataset.csv",
+  "rows_total": 9195822,
+  "action_idx_distribution": {
+    "0": 1186977,
+    "1": 0,
+    "2": 3000,
+    "3": 3410934,
+    "4": 0,
+    "5": 0,
+    "6": 0,
+    "7": 4594911,
+    "8": 0,
+    "9": 0,
+    "10": 0,
+    "11": 0,
+    "12": 0,
+    "13": 0,
+    "14": 0,
+    "15": 0
+  },
+  "top1_pct": 49.9674,
+  "top3_pct": 99.9674,
+  "unique_actions": 4,
+  "cost_mean": 0.219107,
+  "cost_min": 0.125,
+  "cost_max": 0.325,
+  "cost_nan_count": 0,
+  "alpha_value_sample": 0.5,
+  "_analysis_note": "sampled every 1000th row; 9196 samples / 9195822 total rows; counts scaled"
+}

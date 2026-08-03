@@ -1,0 +1,618 @@
+{
+  "meta": {
+    "paper_id": "paper1",
+    "title": "ST-MBAN: Spatio-Temporal Multi-Branch Attention Network for RSU Dwell Time Prediction in CCVN V2I Precaching",
+    "stage": "design",
+    "created_by": "Experimenter",
+    "created_at": "2026-04-30T14:23:46",
+    "target_journal": "IEEE Internet of Things Journal",
+    "dataset_pending": true,
+    "dataset_note": "데이터셋 미수집 상태. RSU 1개당 ~200K 샘플 목표. SUMO 시뮬레이션 기반 V2I 교차로 격자 시나리오. 데이터 도착 시 Stage 2(implement)에서 dataset.py의 FEATURE_COLS / TARGET_COLS 컬럼 매핑을 따름.",
+    "column_mapping_ref": "/home/imnyj/papers/paper1/paper/idea/research_overview.md",
+    "do_not_overwrite": [
+      "/home/imnyj/papers/paper1/paper/experiment/st_cvae_baseline/"
+    ]
+  },
+  "objective": {
+    "primary": "RSU 체류 시간(dwell_cur, dwell_nxt) 예측 정확도 최대화 — MAE·RMSE·MAPE 기준 ST-MBAN이 모든 baseline을 유의미하게 상회함을 증명.",
+    "secondary": "dwell time 예측 정확도 향상이 V2I Precaching hit-rate 및 content delivery success rate 개선으로 직결됨을 시뮬레이션으로 검증.",
+    "tertiary": "RSU-Local Snapshot 기반 분산 학습 패러다임에서도 충분한 일반화 성능을 유지함을 보임."
+  },
+  "scenarios": [
+    {
+      "id": "S1",
+      "name": "urban_grid_peak",
+      "description": "도시 교차로 격자 — 출퇴근 혼잡 시간대 (07:00~09:00, 17:00~19:00). RSU 다수 배치, 신호등 포함. 차량 밀도 HIGH.",
+      "topology": "4×4 RSU 격자, 신호 제어 교차로 16개",
+      "rsu_coverage_radius_m": 800,
+      "rsu_spacing_m": 2400,
+      "shadow_zone_m": 800,
+      "vehicle_density": "high",
+      "time_period": "peak",
+      "traffic_signal_cycle_s": [
+        60,
+        90,
+        120
+      ],
+      "sensitivity_params": {
+        "rsu_coverage_radius_m": [
+          400,
+          600,
+          800,
+          1000
+        ],
+        "vehicle_density_scale": [
+          0.5,
+          1.0,
+          1.5,
+          2.0
+        ],
+        "signal_cycle_s": [
+          60,
+          90,
+          120
+        ]
+      }
+    },
+    {
+      "id": "S2",
+      "name": "urban_grid_offpeak",
+      "description": "도시 교차로 격자 — 비혼잡 시간대 (10:00~16:00, 20:00~06:00). 동일 토폴로지, 차량 밀도 LOW~MEDIUM.",
+      "topology": "4×4 RSU 격자, 신호 제어 교차로 16개",
+      "rsu_coverage_radius_m": 800,
+      "rsu_spacing_m": 2400,
+      "shadow_zone_m": 800,
+      "vehicle_density": "low_to_medium",
+      "time_period": "off-peak",
+      "traffic_signal_cycle_s": [
+        60,
+        90,
+        120
+      ],
+      "sensitivity_params": {
+        "rsu_coverage_radius_m": [
+          400,
+          600,
+          800,
+          1000
+        ],
+        "vehicle_density_scale": [
+          0.25,
+          0.5,
+          0.75,
+          1.0
+        ],
+        "signal_cycle_s": [
+          60,
+          90,
+          120
+        ]
+      }
+    },
+    {
+      "id": "S3",
+      "name": "sensitivity_rsu_radius",
+      "description": "RSU 통신반경 민감도 분석. S1 환경 고정, r_cov만 변동 (400m, 600m, 800m, 1000m).",
+      "base_scenario": "S1",
+      "variable": "rsu_coverage_radius_m",
+      "values": [
+        400,
+        600,
+        800,
+        1000
+      ]
+    },
+    {
+      "id": "S4",
+      "name": "sensitivity_vehicle_density",
+      "description": "차량 밀도 민감도 분석. S1 환경 고정, 차량 수 배율 변동 (×0.5, ×1.0, ×1.5, ×2.0).",
+      "base_scenario": "S1",
+      "variable": "vehicle_density_scale",
+      "values": [
+        0.5,
+        1.0,
+        1.5,
+        2.0
+      ]
+    },
+    {
+      "id": "S5",
+      "name": "sensitivity_signal_cycle",
+      "description": "신호 주기 민감도 분석. S1 환경 고정, 신호 주기 변동 (60s, 90s, 120s).",
+      "base_scenario": "S1",
+      "variable": "traffic_signal_cycle_s",
+      "values": [
+        60,
+        90,
+        120
+      ]
+    }
+  ],
+  "algorithms": [
+    {
+      "id": "A0",
+      "name": "ST-MBAN",
+      "type": "proposed",
+      "description": "Spatio-Temporal Multi-Branch Attention Network. 3개 독립 Branch (Kinematic/Traffic Control/Social) → Multi-Head Feature Attention Fusion → ResBlock Decoder → dwell_cur, dwell_nxt 결정론적 예측. Huber Loss + RSU-Local Snapshot 학습.",
+      "reference_ids": [],
+      "cite_keys": [],
+      "implementation_path": "/home/imnyj/papers/paper1/paper/experiment/st_cvae_baseline/model_stmban.py",
+      "needs_reference": false
+    },
+    {
+      "id": "A1",
+      "name": "Constant-Velocity Heuristic",
+      "type": "baseline",
+      "category": "heuristic",
+      "description": "구현: 입력 시점의 차량 속도(v_c_a)만으로 dwell time을 d_l_c / v_c_a로 추정. 신호등·사회적 요인 미반영. 비교 이유: 아무런 ML 없이 물리 법칙만으로 가능한 최하위 기준선 설정.",
+      "reference_ids": [],
+      "cite_keys": [],
+      "needs_reference": true,
+      "note": "단순 물리 휴리스틱 — 별도 논문 인용 불필요하나 실험 섹션에서 '물리적 하한선'으로 정의."
+    },
+    {
+      "id": "A2",
+      "name": "Linear Regression (LR)",
+      "type": "baseline",
+      "category": "classical_ml",
+      "description": "구현: sklearn MultiOutputRegressor + LinearRegression. 전체 30개 입력 변수를 단일 선형 모델로 매핑. 비교 이유: 선형 모델 대비 ST-MBAN의 비선형 표현력 이점을 정량화. 이미 baselines.py에 LRBaseline으로 구현되어 있음.",
+      "reference_ids": [],
+      "cite_keys": [],
+      "needs_reference": true,
+      "note": "Classical ML baseline — 외부 논문 직접 인용 불필요. baselines.py:LRBaseline 참조."
+    },
+    {
+      "id": "A3",
+      "name": "Popularity-Only Precaching",
+      "type": "baseline",
+      "category": "popularity",
+      "description": "구현: 콘텐츠 인기도(요청 빈도 기반 Zipf 분포 가정) 통계만으로 캐시 우선순위 결정. Dwell time 예측은 고정 평균값 사용. 비교 이유: 이동성 정보 없이 순수 인기도만으로 precaching 할 때의 hit-rate 한계 시연. 관련 논문: id=1(Chen et al., JSAC 2017 — UAV proactive caching with popularity), id=4(Su et al., TVT 2018 — edge caching scheme), id=57(Xie et al., TGCN 2026 — popularity-based content prefetching).",
+      "reference_ids": [
+        1,
+        4,
+        57
+      ],
+      "cite_keys": [
+        "chen2017caching",
+        "su2018edge",
+        "xie2026cache"
+      ],
+      "needs_reference": false
+    },
+    {
+      "id": "A4",
+      "name": "LSTM Trajectory Predictor (Mobility-Only)",
+      "type": "baseline",
+      "category": "mobility_prediction",
+      "description": "구현: 차량 속도·위치 시계열(v_c_a, d_l_c, dirct 등 운동학 변수)만을 LSTM에 입력하여 dwell time 예측. Popularity 정보 미사용. 비교 이유: 운동학 특성만으로 dwell time 예측 시 교통 제어·사회적 맥락 누락이 야기하는 오차 정량화. 관련 논문: id=18(Feng et al., TCOMM 2023 — proactive caching via trajectory prediction), id=43(Yu et al., TITS 2024 — UAV caching + mobility prediction), id=42(Wang et al., IoTJ 2025 — spatial-temporal Informer for vehicular service).",
+      "reference_ids": [
+        18,
+        42,
+        43
+      ],
+      "cite_keys": [
+        "feng2023proactive",
+        "wang2025mobility",
+        "yu2024joint"
+      ],
+      "needs_reference": false
+    },
+    {
+      "id": "A5",
+      "name": "Hybrid Precaching (Asynchronous FL + DRL)",
+      "type": "baseline",
+      "category": "hybrid",
+      "description": "구현: 인기도와 이동성을 결합한 비동기 연합 학습(Asynchronous FL) + 심층 강화학습(DRL) 기반 캐시 결정. Dwell time은 고정값 또는 간단한 추정치 사용. 비교 이유: 인기도·이동성 병합 hybrid 방식과 ST-MBAN의 정밀 dwell time 예측 방식의 precaching 효율 비교. 관련 논문: id=21(Jiang et al., IoTJ 2024 — AFL for mobility-aware edge caching), id=46(Liao et al., IoTJ 2025 — context-aware proactive edge caching via AFL), id=63(Xu et al., IoTJ 2025 — adaptive video segment precaching with varying travel duration).",
+      "reference_ids": [
+        21,
+        46,
+        63
+      ],
+      "cite_keys": [
+        "jiang2024asynchronous",
+        "liao2025context",
+        "xu2025adaptive"
+      ],
+      "needs_reference": false
+    },
+    {
+      "id": "A6",
+      "name": "ST-CVAE (Prior Paper Baseline)",
+      "type": "baseline",
+      "category": "prior_model",
+      "description": "구현: 기존 모델. [X,Y]→Posterior(KL)→Z*→Decoder 구조의 Conditional VAE. Inference 시 Prior에서 Z_mu 결정론적 추출 또는 Z_1~Z_N 스토캐스틱 샘플링 후 CQR 보정. baselines.py와 별도로 model.py + train.py에 완전 구현됨. 비교 이유: 제안 모델(ST-MBAN)의 직전 버전. 생성 모델 vs. 결정론적 Multi-Branch 구조의 성능 차이 확인.",
+      "reference_ids": [],
+      "cite_keys": [],
+      "implementation_path": "/home/imnyj/papers/paper1/paper/experiment/st_cvae_baseline/model.py",
+      "needs_reference": true,
+      "note": "Prior paper (자체 참조) — references.json에는 미수록. 논문 내 자기 인용(self-citation) 처리 예정."
+    },
+    {
+      "id": "A7",
+      "name": "FT-Transformer (Tabular DL Baseline)",
+      "type": "baseline",
+      "category": "deep_learning",
+      "description": "구현: Feature Tokenizer + Transformer (Gorishniy et al., NeurIPS 2021). 각 피처를 d_token 차원으로 임베딩, [CLS] token을 통해 최종 예측. baselines.py:FTTransformer로 구현됨. 비교 이유: 단일 통합 Transformer가 Multi-Branch Attention 구조 대비 tabular 예측에서 열위임을 보임 (feature 이질성 처리 능력 비교). 관련 논문: id=7(Song et al., TVT 2021 — DRL-based QoE-driven edge caching), id=59(Elrahim et al., ATNT 2024 — hybrid neural network for traffic prediction), id=62(Zheng et al., IoTJ 2025 — spatio-temporal request prediction).",
+      "reference_ids": [
+        7,
+        59,
+        62
+      ],
+      "cite_keys": [
+        "song2021qoe",
+        "elrahim2024efficient",
+        "zheng2025proactive"
+      ],
+      "needs_reference": false
+    },
+    {
+      "id": "A8",
+      "name": "Snapshot-based RSU-Local Learning (Federated Baseline)",
+      "type": "baseline",
+      "category": "snapshot_distributed",
+      "description": "구현: 각 RSU가 자체 수집 데이터로만 학습하는 간단한 분산 MLP (중앙 집계 없음). 전역 모델 없이 RSU-Local 학습만으로 달성 가능한 성능 하한을 측정. 비교 이유: ST-MBAN과 동일한 RSU-Local 학습 조건에서 architecture 차이만으로 얼마나 성능이 향상되는지 분리 검증. 관련 논문: id=27(Liu & Pan, IoTJ 2024 — CRS privacy-preserving two-layered distributed ML for IoV), id=48(Zhao et al., TVT 2025 — deep RL for multi-hop distributed collaborative task offloading), id=39(Yang & Yoo, TITS 2024 — hierarchical RL with grouped RSU in urban VANETs).",
+      "reference_ids": [
+        27,
+        48,
+        39
+      ],
+      "cite_keys": [
+        "liu2024crs",
+        "zhao2025deep",
+        "yang2024hierarchical"
+      ],
+      "needs_reference": false
+    }
+  ],
+  "metrics": {
+    "prediction": [
+      {
+        "name": "MAE_cur",
+        "description": "dwell_cur 예측의 평균 절대 오차 (초)",
+        "unit": "seconds",
+        "primary": true
+      },
+      {
+        "name": "MAE_nxt",
+        "description": "dwell_nxt 예측의 평균 절대 오차 (초)",
+        "unit": "seconds",
+        "primary": true
+      },
+      {
+        "name": "RMSE_cur",
+        "description": "dwell_cur 예측의 제곱근 평균 제곱 오차 (초)",
+        "unit": "seconds",
+        "primary": true
+      },
+      {
+        "name": "RMSE_nxt",
+        "description": "dwell_nxt 예측의 제곱근 평균 제곱 오차 (초)",
+        "unit": "seconds",
+        "primary": true
+      },
+      {
+        "name": "MAPE_cur",
+        "description": "dwell_cur 예측의 평균 절대 백분율 오차 (%)",
+        "unit": "percent",
+        "primary": true
+      },
+      {
+        "name": "MAPE_nxt",
+        "description": "dwell_nxt 예측의 평균 절대 백분율 오차 (%)",
+        "unit": "percent",
+        "primary": true
+      }
+    ],
+    "calibration": [
+      {
+        "name": "Pinball_Loss",
+        "description": "분위 예측 정확도 (quantile q=0.1, 0.5, 0.9). 불확실성 정량화 필요 시 사용.",
+        "unit": "dimensionless",
+        "primary": false,
+        "condition": "ST-CVAE 또는 확률적 baseline과의 비교 시 선택적 사용"
+      },
+      {
+        "name": "Coverage",
+        "description": "예측 구간이 실제 값을 포함하는 비율 (90% 목표). Conformal Prediction / CQR 적용 시.",
+        "unit": "percent",
+        "primary": false,
+        "condition": "선택적"
+      }
+    ],
+    "precaching": [
+      {
+        "name": "cache_hit_ratio",
+        "description": "V2I Precaching 요청 중 캐시에서 직접 서비스된 비율. dwell time 예측 정확도가 hit-rate에 미치는 영향 분석.",
+        "unit": "ratio [0,1]",
+        "primary": true
+      },
+      {
+        "name": "content_delivery_success_rate",
+        "description": "Chunk 단위 precaching이 차량이 RSU 통신범위를 벗어나기 전에 완료된 비율.",
+        "unit": "ratio [0,1]",
+        "primary": true
+      },
+      {
+        "name": "latency_reduction_pct",
+        "description": "Precaching 없는 On-demand 방식 대비 평균 콘텐츠 접근 지연 감소율 (%).",
+        "unit": "percent",
+        "primary": false
+      }
+    ],
+    "efficiency": [
+      {
+        "name": "inference_time_ms",
+        "description": "샘플 1개당 추론 시간 (ms). 실시간 V2I 조건 (100ms 이하 목표).",
+        "unit": "milliseconds",
+        "primary": true
+      },
+      {
+        "name": "model_size_MB",
+        "description": "모델 파라미터 크기 (MB). RSU 내장 컴퓨팅 자원 제약 고려.",
+        "unit": "MB",
+        "primary": false
+      },
+      {
+        "name": "training_time_epoch_s",
+        "description": "에포크당 평균 학습 시간 (초). RSU-Local 학습 실현 가능성 판단 기준.",
+        "unit": "seconds",
+        "primary": false
+      }
+    ]
+  },
+  "input_variables": {
+    "kinematic_branch": {
+      "dim": 13,
+      "columns": [
+        "r_cov",
+        "dirct",
+        "d_l_c",
+        "d_e_n",
+        "d_l_n",
+        "d_rsu",
+        "v_c_a",
+        "v_n_a",
+        "v_ahead_avg",
+        "dist_leader",
+        "v_leader",
+        "est_travel_time",
+        "route_lane_changes"
+      ]
+    },
+    "traffic_control_branch": {
+      "dim": 6,
+      "columns": [
+        "tls_c",
+        "tls_n",
+        "tlt_c",
+        "tlt_n",
+        "q_len_cur",
+        "q_len_nxt"
+      ],
+      "note": "tls_c, tls_n은 Cyclical Encoding 적용 (sin/cos 변환)"
+    },
+    "social_branch": {
+      "dim": 11,
+      "columns": [
+        "n_t_0",
+        "n_t_1",
+        "n_t_2",
+        "n_t_3",
+        "n_cur",
+        "n_nxt",
+        "n_ahead_cur",
+        "n_ahead_nxt",
+        "occ_cur",
+        "occ_nxt",
+        "n_merge_nxt"
+      ]
+    },
+    "total_input_dim": 30,
+    "target_columns": [
+      "dwell_cur",
+      "dwell_nxt"
+    ],
+    "column_mapping_reference": "research_overview.md Section 3 (입력 변수 재정의 및 카테고리 분류)"
+  },
+  "training_config": {
+    "learning_paradigm": "RSU-Local Snapshot (분산, 비연합)",
+    "samples_per_rsu": "~200K",
+    "train_val_test_split": "70 / 15 / 15",
+    "split_strategy": "시계열 순서 유지 (shuffle 없음 — 시뮬 시간 자기상관 방지)",
+    "normalization": "StandardScaler (train fit, val/test transform)",
+    "loss_function": "Huber Loss (delta=1.0)",
+    "optimizer": "Adam",
+    "lr_scheduler": "ReduceLROnPlateau",
+    "seed": 42
+  },
+  "output_files": [
+    {
+      "path": "data/S1_peak_prediction_metrics.csv",
+      "description": "S1 peak 시나리오: 알고리즘별 MAE_cur, MAE_nxt, RMSE_cur, RMSE_nxt, MAPE_cur, MAPE_nxt",
+      "columns": [
+        "algorithm",
+        "MAE_cur",
+        "MAE_nxt",
+        "RMSE_cur",
+        "RMSE_nxt",
+        "MAPE_cur",
+        "MAPE_nxt"
+      ]
+    },
+    {
+      "path": "data/S2_offpeak_prediction_metrics.csv",
+      "description": "S2 off-peak 시나리오: 알고리즘별 예측 메트릭",
+      "columns": [
+        "algorithm",
+        "MAE_cur",
+        "MAE_nxt",
+        "RMSE_cur",
+        "RMSE_nxt",
+        "MAPE_cur",
+        "MAPE_nxt"
+      ]
+    },
+    {
+      "path": "data/S1_peak_precaching_metrics.csv",
+      "description": "S1 peak 시나리오: 알고리즘별 cache_hit_ratio, content_delivery_success_rate, latency_reduction_pct",
+      "columns": [
+        "algorithm",
+        "cache_hit_ratio",
+        "content_delivery_success_rate",
+        "latency_reduction_pct"
+      ]
+    },
+    {
+      "path": "data/S2_offpeak_precaching_metrics.csv",
+      "description": "S2 off-peak 시나리오: 알고리즘별 precaching 메트릭",
+      "columns": [
+        "algorithm",
+        "cache_hit_ratio",
+        "content_delivery_success_rate",
+        "latency_reduction_pct"
+      ]
+    },
+    {
+      "path": "data/S1_peak_efficiency_metrics.csv",
+      "description": "S1 peak: 알고리즘별 inference_time_ms, model_size_MB, training_time_epoch_s",
+      "columns": [
+        "algorithm",
+        "inference_time_ms",
+        "model_size_MB",
+        "training_time_epoch_s"
+      ]
+    },
+    {
+      "path": "data/S3_sensitivity_rsu_radius.csv",
+      "description": "RSU 통신반경 민감도: r_cov × 알고리즘 교차 MAE_cur, cache_hit_ratio",
+      "columns": [
+        "r_cov_m",
+        "algorithm",
+        "MAE_cur",
+        "MAE_nxt",
+        "cache_hit_ratio"
+      ]
+    },
+    {
+      "path": "data/S4_sensitivity_vehicle_density.csv",
+      "description": "차량 밀도 민감도: density_scale × 알고리즘 교차 MAE_cur, cache_hit_ratio",
+      "columns": [
+        "density_scale",
+        "algorithm",
+        "MAE_cur",
+        "MAE_nxt",
+        "cache_hit_ratio"
+      ]
+    },
+    {
+      "path": "data/S5_sensitivity_signal_cycle.csv",
+      "description": "신호 주기 민감도: signal_cycle_s × 알고리즘 교차 MAE_cur, cache_hit_ratio",
+      "columns": [
+        "signal_cycle_s",
+        "algorithm",
+        "MAE_cur",
+        "MAE_nxt",
+        "cache_hit_ratio"
+      ]
+    },
+    {
+      "path": "data/ablation_branch_contribution.csv",
+      "description": "Ablation: Branch 제거 실험 — K-only, T-only, S-only, K+T, K+S, T+S, K+T+S(full). 메트릭: MAE_cur, MAE_nxt",
+      "columns": [
+        "branch_config",
+        "MAE_cur",
+        "MAE_nxt",
+        "RMSE_cur",
+        "RMSE_nxt"
+      ]
+    },
+    {
+      "path": "data/ablation_fusion_mechanism.csv",
+      "description": "Ablation: Feature Fusion 방식 비교 — Concat-only vs. Attention-Fusion. 메트릭: MAE_cur, MAE_nxt",
+      "columns": [
+        "fusion_type",
+        "MAE_cur",
+        "MAE_nxt",
+        "RMSE_cur",
+        "RMSE_nxt"
+      ]
+    }
+  ],
+  "dataset_dependencies": {
+    "dataset_pending": true,
+    "simulator": "SUMO (Simulation of Urban MObility)",
+    "expected_data_format": "rsu_<rsu_id>.csv (한 RSU당 1개 파일)",
+    "expected_columns": {
+      "features": [
+        "r_cov",
+        "dirct",
+        "d_l_c",
+        "d_e_n",
+        "d_l_n",
+        "d_rsu",
+        "v_c_a",
+        "v_n_a",
+        "v_ahead_avg",
+        "dist_leader",
+        "v_leader",
+        "est_travel_time",
+        "route_lane_changes",
+        "tls_c",
+        "tls_n",
+        "tlt_c",
+        "tlt_n",
+        "q_len_cur",
+        "q_len_nxt",
+        "n_t_0",
+        "n_t_1",
+        "n_t_2",
+        "n_t_3",
+        "n_cur",
+        "n_nxt",
+        "n_ahead_cur",
+        "n_ahead_nxt",
+        "occ_cur",
+        "occ_nxt",
+        "n_merge_nxt"
+      ],
+      "targets": [
+        "dwell_cur",
+        "dwell_nxt"
+      ],
+      "identifiers": [
+        "veh_id",
+        "cur_rsu",
+        "nxt_rsu"
+      ]
+    },
+    "inf_clip_value": 5000.0,
+    "negative_target_filter": true,
+    "stage2_implement_notes": "데이터 도착 시 dataset.py의 FEATURE_COLS를 상기 컬럼 목록으로 확인 후 Stage 2(implement) 진행. 컬럼 매핑 상세는 research_overview.md Section 3 참조."
+  },
+  "ablation_plan": [
+    {
+      "id": "AB1",
+      "name": "Branch Contribution Ablation",
+      "description": "Kinematic(K), Traffic(T), Social(S) Branch를 각각 제거/조합하여 각 Branch의 기여도 분석. 총 7개 구성: K-only, T-only, S-only, K+T, K+S, T+S, Full(K+T+S).",
+      "output_file": "data/ablation_branch_contribution.csv"
+    },
+    {
+      "id": "AB2",
+      "name": "Fusion Mechanism Ablation",
+      "description": "Multi-Head Feature Attention Fusion vs. 단순 Concatenation 비교. Attention의 병목 지배 요인 자동 식별 효과 검증.",
+      "output_file": "data/ablation_fusion_mechanism.csv"
+    },
+    {
+      "id": "AB3",
+      "name": "Loss Function Ablation",
+      "description": "Huber Loss vs. MSE vs. MAE Loss 비교. 정체 구간 이상값(outlier)에서의 Huber 강건성 검증.",
+      "output_file": "data/ablation_loss_function.csv"
+    }
+  ],
+  "prohibitions": [
+    "실제 시뮬레이션 코드 실행 금지 (Stage 1은 design only)",
+    "그래프/플롯 생성 금지",
+    "st_cvae_baseline/ 디렉토리 덮어쓰기 금지",
+    "references.json에 없는 baseline을 참조 인용할 경우 needs_reference: true 명시"
+  ]
+}

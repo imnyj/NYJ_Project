@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>현실적 대출 상환 시뮬레이터</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #f3f4f6;
+            --glass-bg: rgba(255, 255, 255, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.4);
+            --text-main: #1f2937;
+            --text-muted: #4b5563;
+            --accent: #4f46e5;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #818cf8;
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+        body {
+            background: var(--bg);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0; padding: 20px; transition: all 0.3s ease;
+            position: relative; min-height: 100vh; overflow-x: hidden;
+        }
+        .bg-blob { position: fixed; border-radius: 50%; filter: blur(80px); z-index: -1; opacity: 0.6; }
+        .blob1 { width: 400px; height: 400px; background: #ff9a9e; top: -100px; left: -100px; }
+        .blob2 { width: 500px; height: 500px; background: #a18cd1; bottom: -100px; right: -100px; }
+        .blob3 { width: 300px; height: 300px; background: #84fab0; top: 40%; left: 50%; transform: translate(-50%, -50%); }
+        [data-theme="dark"] .blob1 { background: #312e81; }
+        [data-theme="dark"] .blob2 { background: #831843; }
+        [data-theme="dark"] .blob3 { background: #064e3b; }
+        
+        .container { max-width: 1200px; margin: 0 auto; position: relative; z-index: 1; }
+        .glass {
+            background: var(--glass-bg); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border); border-radius: 20px;
+            box-shadow: var(--card-shadow); padding: 30px; margin-bottom: 24px;
+        }
+        h1 { text-align: center; margin-bottom: 10px; font-weight: 800; letter-spacing: -1px; }
+        .subtitle { text-align: center; color: var(--text-muted); margin-bottom: 30px; font-size: 0.95em; }
+        
+        .input-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 25px; }
+        .form-group { margin-bottom: 0; }
+        .form-group label { display: flex; justify-content: space-between; margin-bottom: 8px; font-weight: 600; color: var(--text-muted); font-size: 0.9em; }
+        .form-group input[type="number"], .form-group select {
+            width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.2); color: var(--text-main); box-sizing: border-box;
+            font-size: 1.05em; outline: none; transition: 0.3s;
+        }
+        [data-theme="dark"] .form-group input[type="number"],
+        [data-theme="dark"] .form-group select { background: rgba(0,0,0,0.2); }
+        .form-group input[type="number"]:focus, .form-group select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2); }
+        .form-group input[type="range"] { width: 100%; margin-top: 8px; accent-color: var(--accent); }
+        .value-display { font-weight: bold; color: var(--accent); }
+        
+        .result-box { padding: 20px; background: rgba(0,0,0,0.03); border-radius: 12px; border: 1px solid var(--glass-border); }
+        [data-theme="dark"] .result-box { background: rgba(255,255,255,0.03); }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .stat-card {
+            padding: 18px; border-radius: 14px; border: 1px solid var(--glass-border);
+            background: rgba(255,255,255,0.1); text-align: center; transition: 0.3s;
+        }
+        [data-theme="dark"] .stat-card { background: rgba(0,0,0,0.1); }
+        .stat-card:hover { transform: scale(1.03); }
+        .stat-label { font-size: 0.8em; color: var(--text-muted); margin-bottom: 5px; font-weight: 600; }
+        .stat-value { font-size: 1.3em; font-weight: 800; }
+        .stat-sub { font-size: 0.75em; color: var(--text-muted); margin-top: 4px; }
+        
+        .chart-container { position: relative; width: 100%; margin-bottom: 20px; }
+        
+        .section-title { font-size: 1.1em; font-weight: 700; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 2px solid var(--glass-border); }
+        .section-title .emoji { margin-right: 8px; }
+        
+        .input-section { margin-bottom: 15px; }
+        .input-section-title { font-size: 0.85em; font-weight: 700; color: var(--accent); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px; }
+        
+        .theme-toggle { position: fixed; top: 20px; right: 20px; background: var(--glass-bg); backdrop-filter: blur(10px); border: 1px solid var(--glass-border); font-size: 24px; cursor: pointer; border-radius: 50%; width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; box-shadow: var(--card-shadow); z-index: 100; transition: 0.3s; }
+        .theme-toggle:hover { transform: rotate(15deg) scale(1.1); }
+        
+        .warning-box { padding: 15px; border-radius: 10px; background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.3); margin-top: 15px; font-size: 0.9em; }
+        .danger-box { padding: 15px; border-radius: 10px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); margin-top: 15px; font-size: 0.9em; }
+        .success-box { padding: 15px; border-radius: 10px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); margin-top: 15px; font-size: 0.9em; }
+        
+        .monthly-table-wrap { max-height: 400px; overflow-y: auto; border-radius: 10px; border: 1px solid var(--glass-border); margin-top: 15px; }
+        .monthly-table { width: 100%; border-collapse: collapse; font-size: 0.8em; }
+        .monthly-table th { position: sticky; top: 0; background: var(--accent); color: white; padding: 10px 8px; text-align: right; font-weight: 600; }
+        .monthly-table th:first-child { text-align: center; }
+        .monthly-table td { padding: 8px; text-align: right; border-bottom: 1px solid var(--glass-border); }
+        .monthly-table td:first-child { text-align: center; font-weight: 600; }
+        .monthly-table tr:hover { background: rgba(79, 70, 229, 0.05); }
+        .monthly-table tr.bonus-row { background: rgba(16, 185, 129, 0.08); font-weight: 600; }
+        .monthly-table tr.shortfall-row { background: rgba(239, 68, 68, 0.08); }
+        
+        @media (max-width: 768px) {
+            .input-grid { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-blob blob1"></div>
+    <div class="bg-blob blob2"></div>
+    <div class="bg-blob blob3"></div>
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">🌙</button>
+
+    <div class="container">
+        <h1>🏠 현실적 대출 상환 시뮬레이터</h1>
+        <p class="subtitle">매월 납입 가능 금액 + 반기별 교연비/수당으로 대출을 얼마나 빠르게 갚을 수 있는지 시뮬레이션합니다.</p>
+
+        <!-- 입력 섹션 -->
+        <div class="glass">
+            <div class="section-title"><span class="emoji">⚙️</span>대출 조건 설정</div>
+            
+            <div class="input-section">
+                <div class="input-section-title">🏘️ 아파트 & 대출 기본</div>
+                <div class="input-grid">
+                    <div class="form-group">
+                        <label>아파트 가격 <span class="value-display" id="apt-val">4억 5,000만원</span></label>
+                        <input type="range" id="apt-price" min="300000000" max="500000000" step="1000000" value="450000000" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>보유 자금 (고정)</label>
+                        <input type="number" id="cash" value="230000000" step="10000000" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>매입 시작 월 <span class="value-display" id="start-month-val">4월</span></label>
+                        <input type="range" id="start-month" min="1" max="12" step="1" value="4" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>최대 상환 기간 <span class="value-display" id="max-years-val">30년</span></label>
+                        <input type="range" id="max-years" min="10" max="40" step="5" value="30" oninput="calculate()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-section">
+                <div class="input-section-title">💰 금리 설정</div>
+                <div class="input-grid">
+                    <div class="form-group">
+                        <label>초기 금리 (보금자리론) <span class="value-display" id="rate1-val">4.20%</span></label>
+                        <input type="range" id="rate1" min="2.0" max="6.0" step="0.1" value="4.2" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>전환 후 금리 (신생아특례) <span class="value-display" id="rate2-val">2.00%</span></label>
+                        <input type="range" id="rate2" min="1.0" max="4.0" step="0.1" value="2.0" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>신생아 대출 전환 시점 <span class="value-display" id="switch-val">3년 뒤</span></label>
+                        <input type="range" id="switch-year" min="1" max="10" step="1" value="3" oninput="calculate()">
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-section">
+                <div class="input-section-title">📅 월별 & 반기별 납입 설정</div>
+                <div class="input-grid">
+                    <div class="form-group">
+                        <label>매달 납입 가능 금액 (원)</label>
+                        <input type="number" id="monthly-payment" value="500000" step="50000" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>2월 교연비 납입액 (원)</label>
+                        <input type="number" id="feb-bonus" value="5000000" step="500000" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>8월 교연비 납입액 (원)</label>
+                        <input type="number" id="aug-bonus" value="5000000" step="500000" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>1월 추가수당 납입액 (원)</label>
+                        <input type="number" id="jan-extra" value="0" step="100000" oninput="calculate()">
+                    </div>
+                    <div class="form-group">
+                        <label>7월 추가수당 납입액 (원)</label>
+                        <input type="number" id="jul-extra" value="0" step="100000" oninput="calculate()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 결과 요약 -->
+        <div class="glass">
+            <div class="section-title"><span class="emoji">📊</span>상환 결과 요약</div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">필요 대출 금액</div>
+                    <div class="stat-value" id="stat-loan" style="color: var(--accent);">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">총 상환 기간</div>
+                    <div class="stat-value" id="stat-duration" style="color: var(--success);">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">총 납입 이자</div>
+                    <div class="stat-value" id="stat-interest" style="color: var(--danger);">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">총 납입액 (원금+이자)</div>
+                    <div class="stat-value" id="stat-total" style="color: var(--text-main);">-</div>
+                </div>
+            </div>
+            <div id="status-message"></div>
+        </div>
+
+        <!-- 메인 이중축 그래프 -->
+        <div class="glass">
+            <div class="section-title"><span class="emoji">📈</span>월별 상환 추이 & 대출 잔액 (이중축 그래프)</div>
+            <p style="font-size:0.85em; color:var(--text-muted); margin-top:-5px; margin-bottom:15px;">왼쪽 축: 월 이자/납입액 | 오른쪽 축: 대출 잔액 · 선: 추세 · 막대: 보너스 투입</p>
+            <div class="chart-container">
+                <canvas id="mainChart" height="600"></canvas>
+            </div>
+        </div>
+
+        <!-- 상세 월별 표 -->
+        <div class="glass">
+            <div class="section-title"><span class="emoji">🗓️</span>월별 상세 내역</div>
+            <div class="monthly-table-wrap">
+                <table class="monthly-table" id="monthly-table">
+                    <thead>
+                        <tr>
+                            <th>시점</th>
+                            <th>월 납입액</th>
+                            <th>이자</th>
+                            <th>원금상환</th>
+                            <th>보너스 투입</th>
+                            <th>미납이자 누적</th>
+                            <th>대출 잔액</th>
+                        </tr>
+                    </thead>
+                    <tbody id="table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    let mainChart = null;
+
+    function formatKRW(n) {
+        if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(1) + '억';
+        if (Math.abs(n) >= 10000) return (n / 10000).toFixed(0) + '만';
+        return n.toLocaleString();
+    }
+    function formatFull(n) { return Math.round(n).toLocaleString() + '원'; }
+
+    function toggleTheme() {
+        const body = document.body;
+        const btn = document.getElementById('themeBtn');
+        if (body.getAttribute('data-theme') === 'dark') {
+            body.removeAttribute('data-theme');
+            btn.textContent = '🌙';
+        } else {
+            body.setAttribute('data-theme', 'dark');
+            btn.textContent = '☀️';
+        }
+        calculate();
+    }
+
+    function calculate() {
+        // Read inputs
+        const aptPrice = parseInt(document.getElementById('apt-price').value);
+        const cash = parseInt(document.getElementById('cash').value);
+        const startMonth = parseInt(document.getElementById('start-month').value);
+        const maxYears = parseInt(document.getElementById('max-years').value);
+        const rate1 = parseFloat(document.getElementById('rate1').value) / 100;
+        const rate2 = parseFloat(document.getElementById('rate2').value) / 100;
+        const switchYear = parseInt(document.getElementById('switch-year').value);
+        const monthlyPayment = parseInt(document.getElementById('monthly-payment').value);
+        const febBonus = parseInt(document.getElementById('feb-bonus').value);
+        const augBonus = parseInt(document.getElementById('aug-bonus').value);
+        const janExtra = parseInt(document.getElementById('jan-extra').value);
+        const julExtra = parseInt(document.getElementById('jul-extra').value);
+
+        // Update display values
+        document.getElementById('apt-val').textContent = formatKRW(aptPrice) + '원';
+        document.getElementById('start-month-val').textContent = startMonth + '월';
+        document.getElementById('max-years-val').textContent = maxYears + '년';
+        document.getElementById('rate1-val').textContent = (rate1 * 100).toFixed(1) + '%';
+        document.getElementById('rate2-val').textContent = (rate2 * 100).toFixed(1) + '%';
+        document.getElementById('switch-val').textContent = switchYear + '년 뒤';
+
+        const loanAmount = aptPrice - cash;
+        if (loanAmount <= 0) {
+            document.getElementById('stat-loan').textContent = '대출 불필요!';
+            document.getElementById('stat-duration').textContent = '-';
+            document.getElementById('stat-interest').textContent = '-';
+            document.getElementById('stat-total').textContent = '-';
+            document.getElementById('status-message').innerHTML = '<div class="success-box">✅ 보유 자금이 아파트 가격 이상입니다! 대출이 필요 없습니다.</div>';
+            return;
+        }
+
+        document.getElementById('stat-loan').textContent = formatKRW(loanAmount) + '원';
+
+        // Monthly simulation
+        let currentLoan = loanAmount;
+        let accumulatedShortfall = 0;
+        let totalInterestPaid = 0;
+        let totalPrincipalPaid = 0;
+        let totalBonusPaid = 0;
+        const maxMonths = maxYears * 12;
+
+        const labels = [];
+        const interestData = [];      // 실제 납입한 이자
+        const interestFullData = [];  // 해당 월 발생 이자 (실제 내야 할 금액)
+        const principalData = [];
+        const bonusData = [];         // 보너스로 상환한 원금 (바 그래프)
+        const bonusShortfallData = []; // 보너스로 청산한 미납이자 (바 그래프)
+        const balanceData = [];
+        const paymentLineData = [];   // 매달 납입 가능 금액 기준선
+        const tableRows = [];
+
+        let currentCalendarMonth = startMonth; // 1-12
+        let monthsElapsed = 0;
+        let finished = false;
+        let finishMonth = -1;
+
+        for (let m = 0; m < maxMonths; m++) {
+            if (currentLoan <= 0) {
+                if (!finished) { finished = true; finishMonth = m; }
+                break;
+            }
+
+            monthsElapsed = m;
+            const calMonth = ((startMonth - 1 + m) % 12) + 1;
+            const yearNum = Math.floor(m / 12) + 1;
+            const yearLabel = Math.floor((startMonth - 1 + m) / 12) + 1;
+            
+            // Determine rate
+            const currentRate = (m < switchYear * 12) ? rate1 : rate2;
+            const monthlyInterest = currentLoan * (currentRate / 12);
+
+            let principalPaidThisMonth = 0;
+            let interestPaidThisMonth = 0;
+            let shortfallThisMonth = 0;
+            let bonusThisMonth = 0;
+
+            // Monthly payment logic
+            if (monthlyPayment >= monthlyInterest) {
+                interestPaidThisMonth = monthlyInterest;
+                principalPaidThisMonth = monthlyPayment - monthlyInterest;
+                currentLoan -= principalPaidThisMonth;
+            } else {
+                interestPaidThisMonth = monthlyPayment;
+                shortfallThisMonth = monthlyInterest - monthlyPayment;
+                accumulatedShortfall += shortfallThisMonth;
+            }
+
+            totalInterestPaid += interestPaidThisMonth;
+            totalPrincipalPaid += principalPaidThisMonth;
+
+            // Bonus payments (Feb=2, Aug=8, Jan=1, Jul=7)
+            let bonusAmount = 0;
+            let bonusLabel = '';
+            let shortfallCleared = 0;
+            if (calMonth === 2) bonusAmount += febBonus;
+            if (calMonth === 8) bonusAmount += augBonus;
+            if (calMonth === 1) bonusAmount += janExtra;
+            if (calMonth === 7) bonusAmount += julExtra;
+            const originalBonus = bonusAmount;
+
+            if (bonusAmount > 0) {
+                // First pay off accumulated shortfall
+                if (accumulatedShortfall > 0) {
+                    if (bonusAmount >= accumulatedShortfall) {
+                        shortfallCleared = accumulatedShortfall;
+                        totalInterestPaid += accumulatedShortfall;
+                        bonusAmount -= accumulatedShortfall;
+                        accumulatedShortfall = 0;
+                    } else {
+                        shortfallCleared = bonusAmount;
+                        totalInterestPaid += bonusAmount;
+                        accumulatedShortfall -= bonusAmount;
+                        bonusAmount = 0;
+                    }
+                }
+                // Remaining goes to principal
+                if (bonusAmount > 0) {
+                    if (bonusAmount > currentLoan) bonusAmount = currentLoan;
+                    currentLoan -= bonusAmount;
+                    totalPrincipalPaid += bonusAmount;
+                    bonusThisMonth = bonusAmount;
+                    totalBonusPaid += bonusAmount;
+                }
+                // Build label
+                let parts = [];
+                if (shortfallCleared > 0) parts.push('미납이자 ' + formatFull(Math.round(shortfallCleared)) + ' 청산');
+                if (bonusThisMonth > 0) parts.push('원금 ' + formatFull(Math.round(bonusThisMonth)) + ' 상환');
+                bonusLabel = parts.join(' + ');
+            }
+
+            // End of period: if shortfall remains, add to loan (negative amortization) at the end of each year (every 12th month)
+            if ((m + 1) % 12 === 0) {
+                if (accumulatedShortfall > 0) {
+                    currentLoan += accumulatedShortfall;
+                    accumulatedShortfall = 0;
+                }
+            }
+
+            if (currentLoan < 0) currentLoan = 0;
+
+            const label = `${yearLabel}년 ${calMonth}월`;
+            labels.push(label);
+            interestData.push(Math.round(interestPaidThisMonth));
+            interestFullData.push(Math.round(monthlyInterest));
+            principalData.push(Math.round(principalPaidThisMonth));
+            bonusData.push(Math.round(bonusThisMonth));
+            bonusShortfallData.push(Math.round(shortfallCleared));
+            balanceData.push(Math.round(currentLoan));
+            paymentLineData.push(monthlyPayment);
+
+            // Table row
+            const isBonus = bonusThisMonth > 0 || (calMonth === 2 || calMonth === 8 || calMonth === 1 || calMonth === 7);
+            const isShortfall = shortfallThisMonth > 0;
+            let rowClass = '';
+            if (bonusThisMonth > 0) rowClass = 'bonus-row';
+            else if (isShortfall) rowClass = 'shortfall-row';
+
+            tableRows.push({
+                label: label,
+                payment: formatFull(monthlyPayment),
+                interest: formatFull(Math.round(monthlyInterest)),
+                principal: formatFull(Math.round(principalPaidThisMonth)),
+                bonus: bonusLabel || (originalBonus > 0 ? '전액 미납이자 처리' : '-'),
+                shortfall: accumulatedShortfall > 0 ? formatFull(Math.round(accumulatedShortfall)) : '-',
+                balance: formatFull(Math.round(currentLoan)),
+                rowClass: rowClass
+            });
+        }
+
+        // Update stats
+        const totalMonths = finished ? finishMonth : monthsElapsed + 1;
+        const years = Math.floor(totalMonths / 12);
+        const months = totalMonths % 12;
+
+        if (currentLoan <= 0 || finished) {
+            document.getElementById('stat-duration').textContent = `${years}년 ${months}개월`;
+            document.getElementById('status-message').innerHTML = `<div class="success-box">✅ <strong>${years}년 ${months}개월</strong> 만에 대출 완납 가능합니다!</div>`;
+        } else {
+            document.getElementById('stat-duration').textContent = `${maxYears}년+ (미완납)`;
+            const remainText = formatKRW(currentLoan);
+            document.getElementById('status-message').innerHTML = `<div class="danger-box">⚠️ ${maxYears}년 이내에 상환 완료되지 않습니다. 잔여 대출: <strong>${remainText}원</strong></div>`;
+        }
+
+        document.getElementById('stat-interest').textContent = formatKRW(Math.round(totalInterestPaid)) + '원';
+        document.getElementById('stat-total').textContent = formatKRW(Math.round(totalPrincipalPaid + totalInterestPaid)) + '원';
+
+        // Render dual-axis combined chart
+        const isDark = document.body.getAttribute('data-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
+        const fontColor = isDark ? '#94a3b8' : '#4b5563';
+
+        if (mainChart) mainChart.destroy();
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        mainChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    // === 바 그래프: 보너스 투입 (1월/7월 수당, 2월/8월 교연비) ===
+                    {
+                        label: '보너스 → 원금상환',
+                        data: bonusData,
+                        type: 'bar',
+                        backgroundColor: isDark ? 'rgba(16, 185, 129, 0.75)' : 'rgba(16, 185, 129, 0.65)',
+                        borderColor: 'rgba(16, 185, 129, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'yLeft',
+                        order: 3,
+                        barPercentage: 0.9,
+                    },
+                    {
+                        label: '보너스 → 미납이자 청산',
+                        data: bonusShortfallData,
+                        type: 'line',
+                        backgroundColor: isDark ? 'rgba(245, 158, 11, 0.75)' : 'rgba(245, 158, 11, 0.65)',
+                        borderColor: 'rgba(245, 158, 11, 1)',
+                        borderWidth: 1,
+                        yAxisID: 'yLeft',
+                        order: 3,
+                        barPercentage: 0.9,
+                    },
+                    // === 선 그래프: 월별 추세 ===
+                    {
+                        label: '월 발생 이자 (내야 할 금액)',
+                        data: interestFullData,
+                        type: 'line',
+                        borderColor: isDark ? '#f87171' : '#dc2626',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        tension: 0.3,
+                        yAxisID: 'yLeft',
+                        order: 1,
+                    },
+                    {
+                        label: '매달 납입 가능액 (기준선)',
+                        data: paymentLineData,
+                        type: 'line',
+                        borderColor: isDark ? '#60a5fa' : '#2563eb',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        borderDash: [8, 4],
+                        pointRadius: 0,
+                        pointHoverRadius: 0,
+                        tension: 0,
+                        yAxisID: 'yLeft',
+                        order: 1,
+                    },
+                    // === 선 그래프: 대출 잔액 (오른쪽 Y축) ===
+                    {
+                        label: '대출 잔액',
+                        data: balanceData,
+                        type: 'line',
+                        borderColor: isDark ? '#fbbf24' : '#d97706',
+                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : 'rgba(217, 119, 6, 0.08)',
+                        fill: true,
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        pointHoverRadius: 5,
+                        tension: 0.3,
+                        yAxisID: 'yRight',
+                        order: 0,
+                    },
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: fontColor,
+                            font: { weight: 'bold', size: 11 },
+                            usePointStyle: true,
+                            pointStyle: function(ctx) {
+                                return ctx.datasetIndex < 2 ? 'rect' : 'line';
+                            },
+                            padding: 15,
+                        },
+                        position: 'top',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(ctx) {
+                                const label = ctx.dataset.label || '';
+                                if (ctx.raw === 0 && ctx.datasetIndex < 2) return null;
+                                return label + ': ' + formatFull(ctx.raw);
+                            }
+                        },
+                        filter: function(item) { return item.raw !== 0; }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: fontColor, maxRotation: 90, minRotation: 45,
+                            font: { size: 10 },
+                            callback: function(val, index) {
+                                return index % 6 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        },
+                        grid: { color: gridColor }
+                    },
+                    yLeft: {
+                        type: 'linear',
+                        position: 'left',
+                        title: {
+                            display: true,
+                            text: '월 이자 / 납입액 / 보너스 (원)',
+                            color: fontColor,
+                            font: { weight: 'bold', size: 11 }
+                        },
+                        ticks: {
+                            color: fontColor,
+                            callback: function(v) { return formatKRW(v) + '원'; }
+                        },
+                        grid: { color: gridColor }
+                    },
+                    yRight: {
+                        type: 'linear',
+                        position: 'right',
+                        title: {
+                            display: true,
+                            text: '대출 잔액 (원)',
+                            color: isDark ? '#fbbf24' : '#d97706',
+                            font: { weight: 'bold', size: 11 }
+                        },
+                        ticks: {
+                            color: isDark ? '#fbbf24' : '#d97706',
+                            callback: function(v) { return formatKRW(v) + '원'; }
+                        },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+
+        // Render table
+        const tbody = document.getElementById('table-body');
+        tbody.innerHTML = '';
+        tableRows.forEach(r => {
+            const tr = document.createElement('tr');
+            if (r.rowClass) tr.className = r.rowClass;
+            tr.innerHTML = `<td>${r.label}</td><td>${r.payment}</td><td>${r.interest}</td><td>${r.principal}</td><td>${r.bonus}</td><td>${r.shortfall}</td><td>${r.balance}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+
+    // Initialize
+    document.body.setAttribute('data-theme', 'dark');
+    document.getElementById('themeBtn').textContent = '☀️';
+    calculate();
+    </script>
+</body>
+</html>

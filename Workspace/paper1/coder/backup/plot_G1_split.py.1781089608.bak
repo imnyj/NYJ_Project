@@ -1,0 +1,81 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os
+
+CSV_PATH = "/home/imnyj/papers/paper1/data/G1_learning_curves.csv"
+OUT_DIR = "/home/imnyj/papers/paper1/figure"
+
+COLORS = {
+    "LR": "#6D6A6A",           # (0,0,0)
+    "RF": "#ED7D31",           # (237,125,49)
+    "XGBoost": "#FF9966",      # (255,153,102)
+    "CatBoost": "#FFC000",     # (255,192,0)
+    "NGBoost": "#CCCC00",      # (204,204,0)
+    "MLP": "#70AD47",          # (112,173,71)
+    "FTT": "#00CC99",          # (0,204,153)
+    "ResNet": "#3399FF",       # (51,153,255)
+    "LSTM": "#0066FF",         # (0,102,255)
+    "GRU": "#6666FF",          # (102,102,255)
+    "TabR": "#CC66FF",         # (204,102,255)
+    "TabPFN": "#FF66FF",       # (255,102,255)
+    "H-ST-MBAN": "#FF0000"     # (255,0,0)
+}
+
+MODEL_ORDER = [
+    "LR", "RF", "XGBoost", "CatBoost", "NGBoost",
+    "MLP", "FTT", "ResNet", "LSTM", "GRU", "TabR", "TabPFN", "H-ST-MBAN"
+]
+
+DL_MODELS = ["H-ST-MBAN", "MLP", "ResNet", "LSTM", "GRU", "FTT", "TabR"]
+ML_MODELS = ["LR", "RF", "XGBoost", "CatBoost", "NGBoost", "TabPFN"]
+
+def plot_curves(df, models_to_plot, filename):
+    plt.figure(figsize=(10, 6))
+    sns.set_theme(style="whitegrid")
+    
+    subset = df[df["Model"].isin(models_to_plot)]
+    
+    sns.lineplot(
+        data=subset,
+        x="Step",
+        y="MAE",
+        hue="Model",
+        hue_order=[m for m in MODEL_ORDER if m in models_to_plot],
+        palette=COLORS,
+        linewidth=2
+    )
+    
+    plt.xlabel("Epochs", fontsize=14)
+    plt.ylabel("Validation MAE", fontsize=14)
+    plt.ylim(0, 250)
+    plt.xlim(0, 200) # Attach to Y-axis and cut at 200
+    plt.margins(x=0) # Remove X-axis margins completely
+    plt.legend(loc="upper right", fontsize=10)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, filename), dpi=300)
+    plt.close()
+
+def main():
+    if not os.path.exists(OUT_DIR):
+        os.makedirs(OUT_DIR)
+        
+    import glob
+    csv_files = glob.glob("/home/imnyj/papers/paper1/data/G1/*.csv")
+    dfs = [pd.read_csv(f) for f in csv_files]
+    df = pd.concat(dfs, ignore_index=True)
+    
+    # 1. All Models
+    plot_curves(df, MODEL_ORDER, "G1_learning_curves_All.png")
+    
+    # 2. Deep Learning Models
+    plot_curves(df, DL_MODELS, "G1_learning_curves_DL.png")
+    
+    # 3. Machine Learning Models
+    plot_curves(df, ML_MODELS, "G1_learning_curves_ML.png")
+    
+    print("Graphs generated successfully.")
+
+if __name__ == "__main__":
+    main()

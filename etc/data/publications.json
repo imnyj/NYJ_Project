@@ -1,0 +1,233 @@
+[
+    {
+        "title": "Traffic Optimized Content Precaching Scheme Based on Tolerable Delay Time in Content-Centric Vehicular Networks",
+        "authors": [
+            "Youngju Nam",
+            "Hyunseok Choi",
+            "Yongje Shin",
+            "Euisin Lee"
+        ],
+        "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+        "container-title": "IEEE Access",
+        "year": 2023,
+        "doi": "10.1109/access.2023.3279730",
+        "volume": "11",
+        "issue": "",
+        "page": "53862-53879"
+    },
+    {
+        "title": "Content Storage Management and Precaching Scheme in Content-Centric-Network-Based Internet of Vehicles",
+        "authors": [
+            "Youngju Nam",
+            "Hyeonseok Choi",
+            "Euisin Lee"
+        ],
+        "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+        "container-title": "IEEE Internet of Things Journal",
+        "year": 2025,
+        "doi": "10.1109/jiot.2024.3522322",
+        "volume": "12",
+        "issue": "9",
+        "page": "12927-12947"
+    },
+    {
+        "title": "Data delivery protocol using the trajectory information on a road map in VANETs",
+        "authors": [
+            "Yongje Shin",
+            "Hyunseok Choi",
+            "Youngju Nam",
+            "Euisin Lee"
+        ],
+        "publisher": "Elsevier BV",
+        "container-title": "Ad Hoc Networks",
+        "year": 2020,
+        "doi": "10.1016/j.adhoc.2020.102260",
+        "volume": "107",
+        "issue": "",
+        "page": "102260"
+    },
+    {
+        "title": "Particle Swarm Optimization Video Streaming Service in Vehicular Ad-Hoc Networks",
+        "authors": [
+            "Yongje Shin",
+            "Hyun-Seok Choi",
+            "Youngju Nam",
+            "Hyunchong Cho",
+            "Euisin Lee"
+        ],
+        "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+        "container-title": "IEEE Access",
+        "year": 2022,
+        "doi": "10.1109/access.2022.3206786",
+        "volume": "10",
+        "issue": "",
+        "page": "102710-102723"
+    },
+    {
+        "title": "The partial cloud member replacement for reconstructing vehicular clouds in VANETs: Reactive and proactive schemes",
+        "authors": [
+            "Hyunseok Choi",
+            "Youngju Nam",
+            "Yongje Shin",
+            "Euisin Lee"
+        ],
+        "publisher": "Elsevier BV",
+        "container-title": "Ad Hoc Networks",
+        "year": 2022,
+        "doi": "10.1016/j.adhoc.2022.102959",
+        "volume": "136",
+        "issue": "",
+        "page": "102959"
+    },
+    {
+        "title": "Particle Swarm Optimization-Based Content Delivery Protocol for UAV VAENTs",
+        "authors": [
+            "Yongje Shin",
+            "Hyun-Seok Choi",
+            "Youngju Nam",
+            "Euisin Lee"
+        ],
+        "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+        "container-title": "IEEE Access",
+        "year": 2025,
+        "doi": "10.1109/access.2024.3519702",
+        "volume": "13",
+        "issue": "",
+        "page": "1594-1608"
+    },
+    {
+        "title": "Multi-hop Vehicular Cloud Construction with Connection Time based Resource Allocation in VANETs",
+        "authors": [
+            "Hyunseok Choi",
+            "Youngju Nam",
+            "Jaejeong Bang",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2018 24th Asia-Pacific Conference on Communications (APCC)",
+        "year": 2018,
+        "doi": "10.1109/apcc.2018.8633558",
+        "volume": "",
+        "issue": "",
+        "page": "100-105"
+    },
+    {
+        "title": "Efficient Multipath Routing Protocol Against Path Failures in Wireless Sensor Networks",
+        "authors": [
+            "Jinhyuk Yim",
+            "Jaejeong Bang",
+            "Youngju Nam",
+            "Yongje Shin",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2019 12th IFIP Wireless and Mobile Networking Conference (WMNC)",
+        "year": 2019,
+        "doi": "10.23919/wmnc.2019.8881435",
+        "volume": "",
+        "issue": "",
+        "page": "136-140"
+    },
+    {
+        "title": "Mobility-aware Distributed Proactive Caching in Content-Centric Vehicular Networks",
+        "authors": [
+            "Sungjin Park",
+            "Seungmin Oh",
+            "Youngju Nam",
+            "Jaejeong Bang",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2019 12th IFIP Wireless and Mobile Networking Conference (WMNC)",
+        "year": 2019,
+        "doi": "10.23919/wmnc.2019.8881585",
+        "volume": "",
+        "issue": "",
+        "page": "175-180"
+    },
+    {
+        "title": "RSU-driven Cloud Construction and Management Mechanism in VANETs",
+        "authors": [
+            "Yoonhyeong Lee",
+            "Hyunseok Choi",
+            "Youngju Nam",
+            "Sungjin Park",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2019 IEEE 8th International Conference on Cloud Networking (CloudNet)",
+        "year": 2019,
+        "doi": "10.1109/cloudnet47604.2019.9064111",
+        "volume": "",
+        "issue": "",
+        "page": "1-4"
+    },
+    {
+        "title": "Cooperative Content Downloading Protocol Based on the Mobility Information of Vehicles in Intermittently Connected Vehicular Networks",
+        "authors": [
+            "Jaejeong Bang",
+            "Youngju Nam",
+            "Hyunseok Choi",
+            "Euisin Lee",
+            "Seungmin Oh"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2020 International Conference on Information Networking (ICOIN)",
+        "year": 2020,
+        "doi": "10.1109/icoin48656.2020.9016565",
+        "volume": "",
+        "issue": "",
+        "page": "273-277"
+    },
+    {
+        "title": "Delay Tolerable Precaching Scheme in Content-Centric Vehicular Networks",
+        "authors": [
+            "Youngju Nam",
+            "Hyunseok Choi",
+            "Yongje Shin",
+            "Dick Mugerwa",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2023 IEEE 20th Consumer Communications &amp; Networking Conference (CCNC)",
+        "year": 2023,
+        "doi": "10.1109/ccnc51644.2023.10060765",
+        "volume": "",
+        "issue": "",
+        "page": "849-854"
+    },
+    {
+        "title": "Set Ranking-Based Precaching Protocol in Vehicular Ad hoc Networks",
+        "authors": [
+            "Youngju Nam",
+            "Hyunseok Choi",
+            "Jaejeong Bang",
+            "Yongje Shin",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2023 IEEE 20th Consumer Communications &amp; Networking Conference (CCNC)",
+        "year": 2023,
+        "doi": "10.1109/ccnc51644.2023.10060617",
+        "volume": "",
+        "issue": "",
+        "page": "963-964"
+    },
+    {
+        "title": "Enhanced Hybrid Energy-Efficient Distributed Clustering Protocol for IoT-Based WSNs with Multiple Sinks",
+        "authors": [
+            "Dick Mugerwa",
+            "Youngju Nam",
+            "Hyunseok Choi",
+            "Youngmi Kwon",
+            "Euisin Lee"
+        ],
+        "publisher": "IEEE",
+        "container-title": "2023 IEEE Sensors Applications Symposium (SAS)",
+        "year": 2023,
+        "doi": "10.1109/sas58821.2023.10254043",
+        "volume": "",
+        "issue": "",
+        "page": "1-6"
+    }
+]

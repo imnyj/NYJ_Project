@@ -1,0 +1,52 @@
+# Writer Agent Progress Report (paper1)
+
+**Date**: 2026-06-11
+**Agent ID**: `writer_paper1`
+**Workspace**: `/home/imnyj/Workspace/paper1`
+**Target File**: `/home/imnyj/papers/paper1/paper/draft/main.tex`
+
+## 1. Data Loading and Metric Extraction
+- **G6 Cache Metrics (`G6_cache_metrics_all13.csv`)**:
+  - Extracted H-ST-MBAN and baseline cache metrics (Set B).
+  - H-ST-MBAN: Hit Rate = 90.66%, Average Delay = 0.1205s, Wasted Traffic = 17.75MB.
+- **G5 Fine-Tuning MAE (`G5_all_mae_by_round.csv`)**:
+  - Calculated the average MAE across Round 0 to Round 11 for all 13 models.
+  - H-ST-MBAN average MAE is 20.40s.
+  - Updated Table III sorted by ascending average MAE.
+- **G7 Cache Metrics by Density (`G7_cache_metrics_density.csv`)**:
+  - Confirmed H-ST-MBAN cache hit rate in the highest density bin `(22.5, 25.0]` is 91.70%.
+- **Q=5000 SEM update (G4-2)**:
+  - Confirmed the updated SEM value from the latest coder run is 0.29s (specifically `\(\sim\)0.29~\text{s}`).
+
+## 2. Concurrency Control and Backup
+- File lock on `main.tex` was acquired via `/home/imnyj/Command/core/lock_manager.py` under the owner `writer_paper1`.
+- A backup copy was successfully generated at `/home/imnyj/papers/paper1/paper/draft/backup/` (latest: `main.tex.1781165305.bak`).
+- Lock was released after completing edits.
+
+## 3. TeX Modifications (Final Checklists Handled)
+- **Q=5000 SEM update (Section V.D)**: Updated `0.52~s` to `0.29~s` to synchronize with latest G4-2 curve figures.
+- **Global MAE alignment (G3 & Table I)**: Synchronized Section V.G3 text MAE values with Table I:
+  - H-ST-MBAN: MAE `58.19 s` -> `44.32 s`.
+  - ResNet: MAE `59.93 s` -> `47.10 s`.
+  - LSTM & GRU: Rephrased to use explicit values (`96.90 s` and `101.75 s` respectively) instead of `MAE > 104 s`.
+- **Cache Hit Rate Logic Expansion (Conclusion)**: Added an explanation of why vehicle dwell time increases during congestion at high density and how this provides edge nodes enough time to prefetch and maintain a high hit rate (91.70%) surpassing the average (90.66%).
+- **AI expression and Adverb Neutering**: Removed adverbs like `successfully`, `safely`, `effectively`, `significantly`, and `actively`.
+- **Duplicate Parentheses & Abbreviation Cleanup**:
+  - Initialized `CCVNs` and `H-ST-MBAN` abbreviations only once in the Abstract. Removed secondary parentheses expansions from Introduction and Conclusion.
+  - Rephrased the Table II (`tab:features`) description column to replace nested parentheses expressions with plain text descriptions.
+  - Substituted the ST-CVAE parentheses structure in Section VI with a comma structure.
+- **Paragraph Length Compliance (5-sentence enforcement)**: Expanded 5 specific paragraphs to at least 5 sentences by adding technical details on:
+  - Snapshot composition and edge constraints (Subsection IV.A 1st paragraph)
+  - Privacy and bandwidth benefits of edge learning (Subsection IV.A 4th paragraph)
+  - Architectural comparison between H-ST-MBAN and ResNet (Subsection V.G3 1st paragraph)
+  - Caching scheduler correction factors for next RSU branching uncertainty (Subsection V.G3 2nd paragraph)
+  - Hardware physical and real-time constraints of RSU edges (Subsection V.D 1st paragraph)
+- **Related Work formatting**:
+  - Restructured the inline `(D1)...(D6)` list into a continuous, cohesive paragraph.
+  - Replaced hardcoded category bold headers with the official `\paragraph` macro.
+- **G5 Fine-Tuning Spike Analysis (Section V.G5)**:
+  - Appended a 10-sentence paragraph details the early convergence under steady-state data, subsequent spikes due to dynamic road anomaly outliers (> 300s) causing gradient pollution and catastrophic forgetting in DL baselines (MLP, ResNet, TabR), and H-ST-MBAN's protection mechanisms.
+  - Formulated three concrete defensive proposals for DL baselines: outlier filtering (Z-score/Isolation Forest), regularization (weight decay/cosine annealing), and prior anchor loss constraints.
+
+## 4. Audit Logging
+- Logged the final edit action to `/tmp/agent_audit.log` via `/home/imnyj/Command/core/audit_logger.py` under owner `writer_paper1`.

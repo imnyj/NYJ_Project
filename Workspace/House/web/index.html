@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>신혼집 대출 전략 시뮬레이터</title>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --card-border: rgba(255, 255, 255, 0.1);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #10b981;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Pretendard', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(45deg, #0f172a, #1e1b4b, #0f172a);
+            background-size: 400% 400%;
+            animation: gradientBG 15s ease infinite;
+        }
+
+        @keyframes gradientBG {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .glass-panel {
+            background: var(--card-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 2rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .glass-panel:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6);
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        h2::before {
+            content: '';
+            display: inline-block;
+            width: 4px;
+            height: 24px;
+            background: var(--primary);
+            border-radius: 4px;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        input[type="number"], input[type="text"] {
+            width: 100%;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: var(--text-main);
+            padding: 1rem;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            font-family: 'Pretendard', sans-serif;
+        }
+
+        input[type="number"]:focus, input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: var(--primary);
+            margin-top: 0.5rem;
+        }
+
+        .value-display {
+            float: right;
+            color: var(--primary-light);
+            font-weight: 600;
+        }
+
+        .result-box {
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+            text-align: center;
+        }
+
+        .result-box h3 {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .result-box .highlight {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--accent);
+            text-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .info-list {
+            list-style: none;
+            margin-top: 1rem;
+        }
+
+        .info-list li {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.95rem;
+        }
+
+        .info-list li:last-child {
+            border-bottom: none;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            background: rgba(15, 23, 42, 0.4);
+            padding: 0.5rem;
+            border-radius: 16px;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 1rem;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            color: var(--text-muted);
+        }
+
+        .tab.active {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.4s ease forwards;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Settings Panel -->
+        <div class="glass-panel">
+            <h2>자산 및 대출 설정</h2>
+            
+            <div class="form-group">
+                <label>보유 현금 총액 <span class="value-display" id="cashDisplay">2억 4,000만원</span></label>
+                <input type="range" id="cashSlider" min="100000000" max="400000000" step="5000000" value="240000000">
+                <ul class="info-list" style="margin-top: 1rem; font-size: 0.85rem; color: #64748b;">
+                    <li><span>영주 자산:</span> <span>약 2,000만 ~ 3,000만원</span></li>
+                    <li><span>영주 부모님 지원:</span> <span>1억원</span></li>
+                    <li><span>은비 부모님 지원:</span> <span>매칭 (약 1억 2,000만원)</span></li>
+                </ul>
+            </div>
+
+            <div class="form-group" style="margin-top: 2rem;">
+                <label>대출 연 이자율 <span class="value-display" id="rateDisplay">3.0%</span></label>
+                <input type="range" id="rateSlider" min="1.0" max="7.0" step="0.1" value="3.0">
+                <div style="font-size: 0.8rem; color: #64748b; margin-top: 0.5rem;">
+                    * 디딤돌/신생아 특례(1~2%대), 보금자리론/일반(3~4%대)
+                </div>
+            </div>
+
+            <div class="form-group" style="margin-top: 2rem;">
+                <label>대출 상환 기간 <span class="value-display" id="periodDisplay">30년</span></label>
+                <input type="range" id="periodSlider" min="10" max="50" step="5" value="30">
+            </div>
+        </div>
+
+        <!-- Calculator Panel -->
+        <div class="glass-panel">
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('aptToMonthly')">매매가 ➔ 월 상환액</div>
+                <div class="tab" onclick="switchTab('monthlyToApt')">월 상환액 ➔ 가능 매매가</div>
+            </div>
+
+            <!-- Tab 1: Apt -> Monthly -->
+            <div id="aptToMonthly" class="tab-content active">
+                <div class="form-group">
+                    <label>목표 아파트 매매가 (원)</label>
+                    <input type="text" id="aptPriceInput" value="350,000,000">
+                </div>
+                
+                <div class="result-box">
+                    <h3>매월 상환해야 할 금액 (원리금균등)</h3>
+                    <div class="highlight" id="monthlyPaymentResult">0원</div>
+                </div>
+
+                <ul class="info-list" style="margin-top: 2rem;">
+                    <li><span>아파트 매매가</span> <span id="summaryAptPrice">3억 5,000만원</span></li>
+                    <li><span>보유 현금 투입</span> <span id="summaryCash">2억 4,000만원</span></li>
+                    <li><span style="color: #f43f5e;">필요 대출 금액</span> <span id="summaryLoan" style="color: #f43f5e; font-weight: bold;">1억 1,000만원</span></li>
+                    <li><span>총 이자액</span> <span id="summaryInterest">0원</span></li>
+                </ul>
+            </div>
+
+            <!-- Tab 2: Monthly -> Apt -->
+            <div id="monthlyToApt" class="tab-content">
+                <div class="form-group">
+                    <label>감당 가능한 월 상환액 (원)</label>
+                    <input type="text" id="monthlyInput" value="1,000,000">
+                </div>
+                
+                <div class="result-box">
+                    <h3>구입 가능한 최대 아파트 가격</h3>
+                    <div class="highlight" id="maxAptResult">0원</div>
+                </div>
+
+                <ul class="info-list" style="margin-top: 2rem;">
+                    <li><span>월 상환액</span> <span id="revSummaryMonthly">100만원</span></li>
+                    <li><span>최대 대출 가능액</span> <span id="revSummaryLoan" style="color: #f43f5e; font-weight: bold;">0원</span></li>
+                    <li><span>보유 현금 투입</span> <span id="revSummaryCash">2억 4,000만원</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const cashSlider = document.getElementById('cashSlider');
+        const rateSlider = document.getElementById('rateSlider');
+        const periodSlider = document.getElementById('periodSlider');
+        
+        const cashDisplay = document.getElementById('cashDisplay');
+        const rateDisplay = document.getElementById('rateDisplay');
+        const periodDisplay = document.getElementById('periodDisplay');
+
+        const aptPriceInput = document.getElementById('aptPriceInput');
+        const monthlyInput = document.getElementById('monthlyInput');
+
+        // Formatter
+        const formatMoney = (num) => {
+            if(num >= 100000000) {
+                const uk = Math.floor(num / 100000000);
+                const man = Math.floor((num % 100000000) / 10000);
+                return man > 0 ? `${uk}억 ${man.toLocaleString()}만원` : `${uk}억원`;
+            }
+            return `${Math.floor(num / 10000).toLocaleString()}만원`;
+        };
+
+        const formatNumber = (num) => Math.floor(num).toLocaleString();
+
+        // Input formatter
+        const setupNumberInput = (input) => {
+            input.addEventListener('input', function(e) {
+                let value = e.target.value.replace(/[^0-9]/g, '');
+                if(value) {
+                    e.target.value = parseInt(value).toLocaleString();
+                    calculate();
+                } else {
+                    e.target.value = '';
+                }
+            });
+        };
+
+        setupNumberInput(aptPriceInput);
+        setupNumberInput(monthlyInput);
+
+        // Core Calculation Math (원리금 균등 상환)
+        // M = P * (r * (1 + r)^n) / ((1 + r)^n - 1)
+        const calcMonthlyPayment = (principal, annualRate, years) => {
+            if(principal <= 0) return 0;
+            const r = (annualRate / 100) / 12;
+            const n = years * 12;
+            if(r === 0) return principal / n;
+            return principal * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
+        };
+
+        // P = M * ((1 + r)^n - 1) / (r * (1 + r)^n)
+        const calcMaxLoan = (monthly, annualRate, years) => {
+            if(monthly <= 0) return 0;
+            const r = (annualRate / 100) / 12;
+            const n = years * 12;
+            if(r === 0) return monthly * n;
+            return monthly * (Math.pow(1 + r, n) - 1) / (r * Math.pow(1 + r, n));
+        };
+
+        const calculate = () => {
+            const cash = parseInt(cashSlider.value);
+            const rate = parseFloat(rateSlider.value);
+            const years = parseInt(periodSlider.value);
+
+            // Update displays
+            cashDisplay.textContent = formatMoney(cash);
+            rateDisplay.textContent = `${rate.toFixed(1)}%`;
+            periodDisplay.textContent = `${years}년`;
+
+            // Tab 1 Calc
+            const aptPrice = parseInt(aptPriceInput.value.replace(/,/g, '') || 0);
+            const requiredLoan = Math.max(0, aptPrice - cash);
+            const monthlyPayment = calcMonthlyPayment(requiredLoan, rate, years);
+            const totalInterest = (monthlyPayment * years * 12) - requiredLoan;
+
+            document.getElementById('monthlyPaymentResult').textContent = formatMoney(monthlyPayment) + ' / 월';
+            document.getElementById('summaryAptPrice').textContent = formatMoney(aptPrice);
+            document.getElementById('summaryCash').textContent = formatMoney(cash);
+            document.getElementById('summaryLoan').textContent = formatMoney(requiredLoan);
+            document.getElementById('summaryInterest').textContent = requiredLoan > 0 ? formatMoney(totalInterest) : '0원';
+
+            // Tab 2 Calc
+            const targetMonthly = parseInt(monthlyInput.value.replace(/,/g, '') || 0);
+            const maxLoan = calcMaxLoan(targetMonthly, rate, years);
+            const maxApt = maxLoan + cash;
+
+            document.getElementById('maxAptResult').textContent = formatMoney(maxApt);
+            document.getElementById('revSummaryMonthly').textContent = formatMoney(targetMonthly);
+            document.getElementById('revSummaryLoan').textContent = formatMoney(maxLoan);
+            document.getElementById('revSummaryCash').textContent = formatMoney(cash);
+        };
+
+        // Event Listeners
+        [cashSlider, rateSlider, periodSlider].forEach(el => {
+            el.addEventListener('input', calculate);
+        });
+
+        // Tab Switching
+        window.switchTab = (tabId) => {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        };
+
+        // Init
+        calculate();
+    </script>
+</body>
+</html>

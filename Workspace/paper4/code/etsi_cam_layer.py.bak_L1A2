@@ -1,0 +1,379 @@
+#!/usr/bin/env python3
+"""
+etsi_cam_layer.py
+=================
+ETSI EN 302 637-2 CAM generation logic + DCC baselines.
+
+Implements:
+  - BL-A: ETSI DCC Reactive (3-state machine, CBR thresholds 0.40/0.60)
+  - BL-B: Simplified Adaptive (CBR-tracking proportional controller)
+  - BL-C: Bhattacharyya2024 Variable Beacon (CBR + neighbour lookup)
+  - BL-D: Fixed 10 Hz (T_GenCam = 0.1 s, p_tx = +20 dBm)
+
+CAM event triggers (ETSI EN 302 637-2 §6.1.3):
+  - DeltaHeading >= 4 deg
+  - DeltaPos >= 4 m
+  - DeltaSpeed >= 0.5 m/s
+  - T_GenCam timer expiry (periodic fallback)
+
+Author: Experimenter agent (Stage 2: implement)
+"""
+
+import math
+import random
+from collections import defaultdict
+from typing import Dict, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Constants (ETSI EN 302 637-2)
+# ---------------------------------------------------------------------------
+T_GENCAM_MIN = 0.100   # 100 ms
+T_GENCAM_MAX = 1.000   # 1000 ms
+PTX_DEFAULT_DBM = 20   # +20 dBm fixed for most baselines
+
+# ETSI DCC Reactive thresholds (BL-A)
+CBR_RELAXED_THRESH  = 0.40   # below -> go to Relaxed state
+CBR_ACTIVE_THRESH   = 0.60   # above -> go to Active/Restricted
+
+# BL-A T_GenCam per state (s)
+T_GENCAM_RELAXED    = 0.100  # 10 Hz
+T_GENCAM_ACTIVE     = 0.300  # ~3.3 Hz
+T_GENCAM_RESTRICTED = 1.000  # 1 Hz
+
+# p_tx grid (dBm) for AI-DCC
+PTX_GRID_DBM = [-10, 0, 10, 20]   # 4x4 default grid
+T_GENCAM_GRID = [0.1, 0.2, 0.5, 1.0]  # 4-level default
+
+# Action grids for sensitivity analysis
+ACTION_GRIDS = {
+    "3x3": {
+        "t_grid": [0.1, 0.5, 1.0],
+        "p_grid": [-10, 0, 20],
+    },
+    "4x4": {
+        "t_grid": [0.1, 0.2, 0.5, 1.0],
+        "p_grid": [-10, 0, 10, 20],
+    },
+    "5x5": {
+        "t_grid": [0.1, 0.2, 0.5, 0.8, 1.0],
+        "p_grid": [-10, -5, 0, 10, 20],
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Helper: p_tx dBm -> linear power factor (relative; used for energy metric)
+# ---------------------------------------------------------------------------
+def dbm_to_linear(dbm: float) -> float:
+    """Return linear power (mW) from dBm."""
+    return 10.0 ** (dbm / 10.0)
+
+
+# ---------------------------------------------------------------------------
+# VehicleCAMState: per-vehicle state for CAM generation + DCC controller
+# ---------------------------------------------------------------------------
+class VehicleCAMState:
+    """Tracks heading/position/speed deltas and DCC controller state."""
+
+    def __init__(self, vid: str, method: str = "BL-A", method_params: Optional[dict] = None):
+        self.vid = vid
+        self.method = method
+        self.params = method_params or {}
+
+        # Previous values for delta triggers
+        self.prev_x: float = 0.0
+        self.prev_y: float = 0.0
+        self.prev_speed: float = 0.0
+        self.prev_heading: float = 0.0
+        self.last_cam_time: float = 0.0   # simulation time of last CAM sent
+
+        # Current T_GenCam (seconds) and p_tx (dBm)
+        self.T_GenCam: float = T_GENCAM_MIN
+        self.p_tx: float = PTX_DEFAULT_DBM
+
+        # BL-A: DCC Reactive state machine
+        self.dcc_state: str = "RELAXED"   # RELAXED / ACTIVE / RESTRICTED
+
+        # BL-B: Simplified Adaptive
+        CBR_target = self.params.get("CBR_target", 0.60)
+        self.blb_CBR_target: float = CBR_target
+        self.blb_CBR_smoothed: float = 0.0
+        self.blb_T_min: float = self.params.get("T_min", 0.1)
+        self.blb_T_max: float = self.params.get("T_max", 1.0)
+        self.blb_delta_T: float = self.params.get("delta_T", 0.05)
+        self.blb_lambda_s: float = self.params.get("lambda_s", 0.5)
+
+        # BL-C: Bhattacharyya2024 Variable Beacon
+        # Lookup table: (cbr_zone, n_zone) -> T_GenCam
+        self._blc_table = self._init_bhattacharyya_table()
+
+        # Odometer (for energy metric)
+        self.odometer_m: float = 0.0
+        self.total_cam_sent: int = 0
+        self.total_energy_mj: float = 0.0  # mJ (millijoules approx)
+
+        # Time accumulator for DCC measurement window (100 ms)
+        self.dcc_window_acc: float = 0.0
+
+    def _init_bhattacharyya_table(self) -> dict:
+        """
+        Bhattacharyya2024 §III-B look-up table (re-implemented heuristic):
+          CBR zones: low (<0.40), medium (0.40-0.60), high (>0.60)
+          Neighbour zones: sparse (<10), medium (10-30), dense (>30)
+          -> T_GenCam (s)
+        """
+        return {
+            ("low",    "sparse"):   0.1,
+            ("low",    "medium"):   0.1,
+            ("low",    "dense"):    0.2,
+            ("medium", "sparse"):   0.2,
+            ("medium", "medium"):   0.3,
+            ("medium", "dense"):    0.5,
+            ("high",   "sparse"):   0.3,
+            ("high",   "medium"):   0.5,
+            ("high",   "dense"):    1.0,
+        }
+
+    def _cbr_zone(self, cbr: float) -> str:
+        if cbr < 0.40:
+            return "low"
+        elif cbr < 0.60:
+            return "medium"
+        else:
+            return "high"
+
+    def _n_zone(self, n_est: int) -> str:
+        if n_est < 10:
+            return "sparse"
+        elif n_est <= 30:
+            return "medium"
+        else:
+            return "dense"
+
+
+# ---------------------------------------------------------------------------
+# ETSICAMLayer: manages all vehicles' CAM generation and DCC control
+# ---------------------------------------------------------------------------
+class ETSICAMLayer:
+    """
+    Central CAM generation and DCC management layer.
+
+    For each simulation step:
+      1. update_vehicle_state(vid, x, y, speed, heading, sim_time, cbr, n_est)
+         -> decides if CAM should be sent (trigger or periodic)
+      2. update_dcc(vid, cbr, n_est, sim_time)
+         -> updates DCC controller (BL-A/B/C/D)
+      3. Returns list of CAM events: [(vid, sim_time, x, y, speed, heading, T_GenCam, p_tx)]
+    """
+
+    def __init__(self, method: str = "BL-A", method_params: Optional[dict] = None):
+        self.method = method
+        self.method_params = method_params or {}
+        self.vehicles: Dict[str, VehicleCAMState] = {}
+
+        # CAM packet parameters (ETSI EN 302 637-2)
+        self.cam_packet_bits: int = 280 * 8   # ~280 bytes (basic CAM)
+        self.data_rate_bps: int = 3_000_000   # 3 Mbps (BPSK 1/2, 10 MHz)
+        self.tx_duration_s: float = self.cam_packet_bits / self.data_rate_bps
+
+        # Event log: list of dicts
+        self.cam_events: list = []
+
+        # ETSI compliance counter
+        self.etsi_compliant_events: int = 0
+        self.total_events: int = 0
+
+    def get_or_create_vehicle(self, vid: str) -> VehicleCAMState:
+        if vid not in self.vehicles:
+            self.vehicles[vid] = VehicleCAMState(
+                vid, self.method, self.method_params
+            )
+        return self.vehicles[vid]
+
+    def remove_vehicle(self, vid: str):
+        self.vehicles.pop(vid, None)
+
+    def step(self, vehicles_data: list, sim_time: float, cbr_global: float) -> list:
+        """
+        Process one simulation step (called every 0.1 s = 100 ms).
+
+        vehicles_data: list of dicts with keys:
+          vid, x, y, speed (m/s), heading (deg), n_est (int)
+        cbr_global: channel busy ratio [0,1] measured this step
+
+        Returns list of CAM events (dicts) generated this step.
+        """
+        step_events = []
+
+        for vdata in vehicles_data:
+            vid     = vdata["vid"]
+            x       = vdata["x"]
+            y       = vdata["y"]
+            speed   = vdata["speed"]
+            heading = vdata["heading"]
+            n_est   = vdata.get("n_est", 0)
+            accel   = vdata.get("accel", 0.0)
+
+            vs = self.get_or_create_vehicle(vid)
+
+            # Odometer update
+            dx = x - vs.prev_x
+            dy = y - vs.prev_y
+            dist_moved = math.sqrt(dx*dx + dy*dy)
+            vs.odometer_m += dist_moved
+
+            # DCC controller update (per 100ms window)
+            self._update_dcc(vs, cbr_global, n_est, sim_time)
+
+            # Check ETSI trigger conditions
+            dt = sim_time - vs.last_cam_time
+            trigger = False
+
+            # Periodic trigger: T_GenCam expiry
+            if dt >= vs.T_GenCam:
+                trigger = True
+
+            # Event trigger: heading change
+            d_heading = abs(heading - vs.prev_heading)
+            if d_heading > 180:
+                d_heading = 360 - d_heading
+            if d_heading >= 4.0:
+                trigger = True
+
+            # Event trigger: position change
+            if dist_moved >= 4.0:
+                trigger = True
+
+            # Event trigger: speed change
+            if abs(speed - vs.prev_speed) >= 0.5:
+                trigger = True
+
+            # Apply T_GenCam minimum guard
+            if dt < T_GENCAM_MIN:
+                trigger = False  # honour minimum period
+
+            if trigger:
+                # Generate CAM
+                event = {
+                    "vid":       vid,
+                    "t_gen":     sim_time,
+                    "x":         x,
+                    "y":         y,
+                    "speed":     speed,
+                    "heading":   heading,
+                    "T_GenCam":  vs.T_GenCam,
+                    "p_tx":      vs.p_tx,
+                }
+                self.cam_events.append(event)
+                step_events.append(event)
+
+                # Energy accounting
+                p_linear_mw = dbm_to_linear(vs.p_tx)
+                vs.total_energy_mj += p_linear_mw * self.tx_duration_s  # mW*s = mJ
+
+                # ETSI compliance check
+                self.total_events += 1
+                if T_GENCAM_MIN <= vs.T_GenCam <= T_GENCAM_MAX:
+                    self.etsi_compliant_events += 1
+
+                vs.last_cam_time = sim_time
+                vs.total_cam_sent += 1
+
+            # Update previous state
+            vs.prev_x = x
+            vs.prev_y = y
+            vs.prev_speed = speed
+            vs.prev_heading = heading
+
+        return step_events
+
+    # -----------------------------------------------------------------------
+    # DCC controller dispatch
+    # -----------------------------------------------------------------------
+    def _update_dcc(self, vs: VehicleCAMState, cbr: float, n_est: int, sim_time: float):
+        method = self.method
+        if method == "BL-A":
+            self._dcc_reactive(vs, cbr)
+        elif method == "BL-B":
+            self._dcc_simplified_adaptive(vs, cbr)
+        elif method == "BL-C":
+            self._dcc_bhattacharyya(vs, cbr, n_est)
+        elif method == "BL-D":
+            self._dcc_fixed_10hz(vs)
+        # For AI-DCC methods, T_GenCam and p_tx are set externally by ai_dcc_hook.py
+
+    # -----------------------------------------------------------------------
+    # BL-A: ETSI DCC Reactive (EN 302 571 §8.1)
+    # -----------------------------------------------------------------------
+    def _dcc_reactive(self, vs: VehicleCAMState, cbr: float):
+        """3-state machine: RELAXED <-> ACTIVE <-> RESTRICTED."""
+        state = vs.dcc_state
+        if state == "RELAXED":
+            if cbr >= CBR_ACTIVE_THRESH:
+                vs.dcc_state = "ACTIVE"
+                vs.T_GenCam = T_GENCAM_ACTIVE
+        elif state == "ACTIVE":
+            if cbr < CBR_RELAXED_THRESH:
+                vs.dcc_state = "RELAXED"
+                vs.T_GenCam = T_GENCAM_RELAXED
+            elif cbr >= CBR_ACTIVE_THRESH:
+                vs.dcc_state = "RESTRICTED"
+                vs.T_GenCam = T_GENCAM_RESTRICTED
+        elif state == "RESTRICTED":
+            if cbr < CBR_ACTIVE_THRESH:
+                vs.dcc_state = "ACTIVE"
+                vs.T_GenCam = T_GENCAM_ACTIVE
+
+    # -----------------------------------------------------------------------
+    # BL-B: Simplified Adaptive (per idea_spec.md §10.1)
+    # -----------------------------------------------------------------------
+    def _dcc_simplified_adaptive(self, vs: VehicleCAMState, cbr: float):
+        """
+        Per-measurement-window (100 ms) update:
+          1) CBR_smoothed <- (1-lambda_s)*CBR_smoothed + lambda_s*CBR_meas
+          2) error <- CBR_smoothed - CBR_target
+          3) if error > 0: T_GenCam = min(T+delta, T_max)  # busy
+             elif error < 0: T_GenCam = max(T-delta, T_min)  # quiet
+          4) p_tx = +20 dBm (fixed)
+        """
+        lam = vs.blb_lambda_s
+        vs.blb_CBR_smoothed = (1 - lam) * vs.blb_CBR_smoothed + lam * cbr
+        error = vs.blb_CBR_smoothed - vs.blb_CBR_target
+        if error > 0:
+            vs.T_GenCam = min(vs.T_GenCam + vs.blb_delta_T, vs.blb_T_max)
+        elif error < 0:
+            vs.T_GenCam = max(vs.T_GenCam - vs.blb_delta_T, vs.blb_T_min)
+        # p_tx remains +20 dBm (no power adaptation)
+        vs.p_tx = PTX_DEFAULT_DBM
+
+    # -----------------------------------------------------------------------
+    # BL-C: Bhattacharyya2024 Variable Beacon
+    # -----------------------------------------------------------------------
+    def _dcc_bhattacharyya(self, vs: VehicleCAMState, cbr: float, n_est: int):
+        """Look up T_GenCam from CBR + neighbour zone table."""
+        cz = vs._cbr_zone(cbr)
+        nz = vs._n_zone(n_est)
+        vs.T_GenCam = vs._blc_table.get((cz, nz), 0.3)
+        vs.p_tx = PTX_DEFAULT_DBM
+
+    # -----------------------------------------------------------------------
+    # BL-D: Fixed 10 Hz
+    # -----------------------------------------------------------------------
+    def _dcc_fixed_10hz(self, vs: VehicleCAMState):
+        vs.T_GenCam = T_GENCAM_MIN   # 0.1 s
+        vs.p_tx = PTX_DEFAULT_DBM
+
+    # -----------------------------------------------------------------------
+    # Summary statistics
+    # -----------------------------------------------------------------------
+    def get_etsi_compliance(self) -> float:
+        if self.total_events == 0:
+            return 100.0
+        return 100.0 * self.etsi_compliant_events / self.total_events
+
+    def get_energy_efficiency(self) -> float:
+        """Return total energy (mJ) / total distance (km) averaged across vehicles."""
+        total_energy = sum(v.total_energy_mj for v in self.vehicles.values())
+        total_dist_km = sum(v.odometer_m for v in self.vehicles.values()) / 1000.0
+        if total_dist_km < 1e-9:
+            return 0.0
+        return total_energy / total_dist_km

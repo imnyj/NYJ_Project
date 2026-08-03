@@ -1,0 +1,162 @@
+# G4 Plots Visualization Plan and Specification (v2)
+
+This document defines the visual design specification and implementation checklist for the three G4 graphs in the CCVN caching paper:
+1. **G4-1**: `G4-1_cumulative_mae_validation.png` (Cumulative MAE validation over cumulative samples for different queue sizes 1000 to 10000).
+2. **G4-2**: `G4-2_queue_size_analysis.png` (Dual-axis trade-off plot showing Queue Size vs. MAE standard deviation (SEM) and Update Delay).
+3. **G4-3**: `G4-3_baseline_comparison.png` (Cumulative fine-tuning comparison of all 13 models at the optimal queue size Q=4000).
+
+---
+
+## 📋 General Visualization Rules (from GEMINI.md)
+* **RULE 10**: Absolutely NO title inside the image (do not use `plt.title` or `ax.set_title` or `fig.suptitle`). All descriptions must be handled in the LaTeX caption.
+* **Font Sizes**: 
+  - Axis labels: **20pt**
+  - Tick labels: **18pt**
+  - Legend font size: **18pt**
+* **Colors for H-ST-MBAN**: Must be solid red (`#FF0000`).
+* **DPI**: Save all images at **300 DPI** using `bbox_inches='tight'`.
+* **Output Directories**: Save the generated graphs to:
+  1. `/home/imnyj/Workspace/paper1/visualizer/`
+  2. `/home/imnyj/Workspace/paper1/writer/draft/figure/`
+
+---
+
+## 🎨 Graph 1: G4-1 (Cumulative MAE Validation)
+* **Filename**: `G4-1_cumulative_mae_validation.png`
+* **Plot Type**: Multi-line plot with shaded Standard Error of the Mean (SEM) bands.
+
+### 1. Data Specification
+* **Source**: `/home/imnyj/Workspace/paper1/worker/G4_cumulative_mae_validation.csv` (updated to 60,000 samples).
+* **Filtering & Range**:
+  - Filter out dwell times > 300s.
+  - X-axis data stream goes up to **60,000 samples** (previously 15,000).
+* **Expected Columns**: 
+  - `Cumulative_Samples` (X-axis, integer 0 to 60,000)
+  - `Queue_Size` (categorical, integer 1000, 2000, ..., 10000)
+  - `Validation_MAE` (Y-axis, float, validation error in seconds)
+  - `MAE_Std` or `MAE_SEM` (float, standard error of the mean of validation error at that step)
+* **Initial State Constraint**:
+  - All curves must start at `Cumulative_Samples = 0`, showing the exact same initial validation MAE value (since fine-tuning has not occurred yet). This initial value corresponds to the base pre-trained model's MAE on the validation set.
+
+### 2. Visual Design Specs
+* **Canvas Size**: `figsize=(12, 8)`
+* **X-Axis**: 
+  - Label: `Cumulative Traffic Data Samples` (fontsize=20)
+  - Range: 0 to 60,000
+  - Tick labels: fontsize=18
+* **Y-Axis**: 
+  - Label: `Validation MAE (s)` (fontsize=20)
+  - Tick labels: fontsize=18
+* **Lines & Shaded Bands**:
+  - **10 lines** corresponding to queue sizes 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000.
+  - **Color Palette**: Use a premium sequential color palette (e.g., `viridis` or `plasma`). E.g., `colors = plt.cm.plasma(np.linspace(0.1, 0.9, 10))`.
+  - **Shaded Band**: Soft shaded area representing the SEM around each line using `plt.fill_between(x, mae - sem, mae + sem, alpha=0.1, color=line_color)`.
+* **Legend**:
+  - Placed at the **upper-right** inside the graph.
+  - Display queue sizes in **ascending order** (1000 to 10000).
+  - Font size: **18pt**
+* **Grid**: Light grey grid (`color='grey', linestyle='--', alpha=0.5`).
+
+---
+
+## 🎨 Graph 2: G4-2 (Queue Size Analysis)
+* **Filename**: `G4-2_queue_size_analysis.png`
+* **Plot Type**: Dual-axis line plot with markers.
+
+### 1. Data Specification
+* **Source**: `/home/imnyj/Workspace/paper1/worker/G4_queue_size_analysis.csv`
+* **Expected Columns**:
+  - `Queue_Size` (X-axis, integer 1000 to 10000)
+  - `Validation_MAE` (Left Y-axis, float)
+  - `MAE_Std_Dev` (representing the standard deviation or SEM of validation MAE)
+  - `Update_Delay_Minutes` (Right Y-axis, float)
+
+### 2. Visual Design Specs
+* **Canvas Size**: `figsize=(10, 6)`
+* **X-Axis**:
+  - Label: `Queue Size` (fontsize=20)
+  - Range: 1000 to 10000 (ticks at every 1000)
+  - Tick labels: fontsize=18
+* **Left Y-Axis (Y1)**:
+  - Label: `MAE Standard Deviation (SEM) (s)` (fontsize=20, color='#1F4E79')
+  - Line: Blue line with circle markers `o`, linewidth=2, markersize=8, color='#1F4E79'.
+  - Ticks and labels: fontsize=18, color matching the primary line (`#1F4E79`).
+* **Right Y-Axis (Y2)**:
+  - Label: `Update Delay (min)` (fontsize=20, color='#C00000')
+  - Line: Red line with square markers `s`, linewidth=2, markersize=8, color='#C00000'.
+  - Ticks and labels: fontsize=18, color matching the secondary line (`#C00000`).
+* **Legend**:
+  - **Unified Legend**: Combine both lines (Left Y-axis and Right Y-axis) into a single legend.
+  - Position: **Top-center** (e.g., `loc='lower center'`, `bbox_to_anchor=(0.5, 1.15)`, `ncol=2`).
+  - Font size: **18pt**
+* **Grid**: Light grey grid only for the primary X/Y axis to avoid visual clutter from overlapping dual-axis grids.
+
+---
+
+## 🎨 Graph 3: G4-3 (Baseline Comparison)
+* **Filename**: `G4-3_baseline_comparison.png`
+* **Plot Type**: Multi-line comparison plot of baselines.
+
+### 1. Data Specification
+* **Source**: `/home/imnyj/Workspace/paper1/worker/G5_all_mae_by_round.csv` (or updated equivalent for optimal queue size Q=4000).
+* **Expected Models (13 Models)**:
+  1. MLP
+  2. LSTM
+  3. GRU
+  4. FTT (Feature Tokenizer Transformer)
+  5. TabR
+  6. ResNet
+  7. H-ST-MBAN (Proposed) (Must be red `#FF0000`)
+  8. LR (Linear Regression)
+  9. RF (Random Forest)
+  10. XGBoost
+  11. CatBoost
+  12. NGBoost
+  13. TabPFN
+
+### 2. Visual Design Specs
+* **Canvas Size**: `figsize=(12, 8)`
+* **X-Axis**:
+  - Label: `Cumulative Traffic Data Samples` or `Rounds` (fontsize=20).
+  - Tick labels: fontsize=18
+* **Y-Axis**:
+  - Label: `Validation MAE (s)` (fontsize=20).
+  - Tick labels: fontsize=18
+* **Lines**:
+  - **13 lines** representing each model's validation MAE over cumulative samples.
+  - **Colors**:
+    - **H-ST-MBAN (Proposed)**: Solid Red `#FF0000` with thicker line width (e.g., linewidth=2.5) to stand out.
+    - Other 12 baselines: Mapped to a distinct categorical color palette (e.g., `tab20` or a custom set of colors with clear contrast).
+* **Legend**:
+  - Located at the most appropriate clear position (e.g., upper-right or lower-left depending on curve distribution).
+  - Font size: **18pt**
+* **Grid**: Light grey grid (`color='grey', linestyle='--', alpha=0.5`).
+
+---
+
+## 🛠️ Implementation Checklist for Coder
+1. [ ] **Verify / Generate Data**:
+   - Ensure the raw metrics are evaluated up to 60,000 samples for G4-1 and baseline comparison (G4-3) at Q=4000.
+   - For G4-1, filter out dwell times > 300s and ensure all lines start at X=0 with the same pre-trained validation MAE.
+2. [ ] **Plot G4-1 (Cumulative MAE validation curves)**:
+   - Load cumulative data, plot 10 lines from 1000 to 10000 using sequential color palette (`viridis` or `plasma`).
+   - Fill soft shaded bands representing SEM using `plt.fill_between(x, mae-sem, mae+sem, alpha=0.1)`.
+   - Ensure axis labels are 20pt, ticks 18pt, and legend 18pt in ascending order at upper-right.
+   - Verify that there is NO title inside the image (Rule 10).
+3. [ ] **Plot G4-2 (Queue Size Analysis)**:
+   - Use dual-axis (`ax1.twinx()`).
+   - Plot Left Y-axis (MAE Std. Dev.) in Blue `#1F4E79` with circle markers `o`.
+   - Plot Right Y-axis (Update Delay) in Red `#C00000` with square markers `s`.
+   - Set tick parameters and label colors for each axis matching the respective line colors.
+   - Combine both lines into a single legend at the top-center (`bbox_to_anchor=(0.5, 1.15)`).
+   - Ensure labels are 20pt, ticks 18pt, legend 18pt, and NO title inside the image (Rule 10).
+4. [ ] **Plot G4-3 (Baseline Comparison)**:
+   - Plot 13 lines representing all models.
+   - Set H-ST-MBAN (Proposed) to red `#FF0000` with distinct line style/width if needed.
+   - Set other models to colors from a categorical palette.
+   - Set labels to 20pt, ticks to 18pt, legend to 18pt.
+   - Verify that there is NO title inside the image (Rule 10).
+5. [ ] **Apply Safety & Concurrency**:
+   - Use `LockManager` to acquire write locks before saving files.
+   - Save all plots to `/home/imnyj/Workspace/paper1/visualizer/` and `/home/imnyj/Workspace/paper1/writer/draft/figure/` at 300 DPI.
+   - Log all modifications using `AuditLogger` with correct parameters.

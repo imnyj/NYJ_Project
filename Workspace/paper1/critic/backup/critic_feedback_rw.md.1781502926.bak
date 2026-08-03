@@ -1,0 +1,98 @@
+# Academic Critic Feedback Report: Related Work Section (main.tex)
+
+**Agent ID:** `critic_rw`  
+**Date:** 2026-06-15  
+**Target File:** `/home/imnyj/papers/paper1/paper/draft/main.tex` (Related Work Section, Lines 162–205)  
+**Status Overview:** **PASS** (with minor improvement suggestions)
+
+---
+
+## 1. Sentence Count Validation (문장 수 검증)
+Each paragraph (Category 1 to Category 5) was evaluated for its sentence count. All paragraphs meet the minimum requirement of 5 sentences.
+
+### Category 1: CIoV and Content-Centric Networking
+* **Status:** **PASS** (5 Sentences)
+* **Analyzed Sentences:**
+  1. *Content-Centric IoV (CIoV) embeds Named Data Networking semantics into vehicular architectures, allowing RSUs and vehicles to cache and forward content by name rather than address \cite{1,3,5}.*
+  2. *Recent work has extended CIoV to edge-computing and mobility-aware routing contexts, improving content availability under dynamic topologies \cite{8,10,11}.*
+  3. *However, these architectures suffer from efficiency limitations during content distribution because the caching decision engines at the RSUs lack knowledge of the exact residency duration of incoming vehicles.*
+  4. *Without explicit coordination of the vehicle dwell time, the edge node pre-positions excessive segments of large content files resulting in over-prefetching overhead, or terminates the V2I transmission before delivery completes, causing under-prefetching waste.*
+  5. *Consequently, it is necessary to integrate a dwell-time aware caching schedule where the RSU estimates the connection interval using single-snapshot telemetry data transmitted from the vehicle during the initial association handshake, to optimize the allocation of backhaul and local storage resources.*
+
+### Category 2: V2I Precaching
+* **Status:** **PASS** (5 Sentences)
+* **Analyzed Sentences:**
+  1. *V2I precaching exploits scheduled RSU-to-vehicle links to deliver content before a request is issued.*
+  2. *Federated learning approaches \cite{17,18,20} distribute model training across vehicles to protect privacy while adapting caching decisions to real-time traffic conditions.*
+  3. *Under these frameworks, vehicles transmit their local model parameter updates to the serving RSU, which aggregates them to update global parameters before broadcasting the refined model back to the edge clients.*
+  4. *Although these methods optimize global cache hit rates, they overlook the micro-level variations in vehicle dwell times caused by intersection signal phase and timing (SPaT) variables and queuing delays.*
+  5. *Failing to account for such temporal volatility leads to mismatching the transmission window, which increases the edge delivery delay when vehicles exit the communication range before receiving the pre-cached content.*
+
+### Category 3: Popularity-Based and Hybrid Precaching
+* **Status:** **PASS** (5 Sentences)
+* **Analyzed Sentences:**
+  1. *Popularity-based schemes predict which content items will be requested and prefetch them to edge nodes \cite{32,33,34}.*
+  2. *Hybrid designs combine popularity estimation with context signals, such as social ties or unmanned aerial vehicle (UAV) relay paths, improving hit rates in heterogeneous topologies \cite{47,48,49}.*
+  3. *In these environments, the RSU updates its local caching list by fetching global popularity indices from a central content server at regular intervals.*
+  4. *However, relying on long-term content popularity estimates ignores the physical mobility characteristics of individual vehicles, such as instantaneous velocity and the resulting transmission duration within the RSU coverage area.*
+  5. *As a result, the RSU fails to complete content delivery during the short link duration, which renders the prefetched content invalid and highlights the necessity of incorporating physical dwell time as an explicit scheduling metric.*
+
+### Category 4: Mobility Prediction and Combined Caching
+* **Status:** **PASS** (5 Sentences)
+* **Analyzed Sentences:**
+  1. *Mobility-aware caching couples vehicle trajectory forecasts with content placement decisions \cite{39,42,43}.*
+  2. *These methods use multi-step time-series models, such as Long Short-Term Memory or Transformer architectures, to predict future RSU associations, subsequently pre-positioning content along predicted paths \cite{41,45}.*
+  3. *Under typical implementations, vehicles upload their GPS traces and direction vectors with a period of 100 milliseconds to allow the central server to execute sequential path modeling.*
+  4. *This continuous transmission of spatial-temporal data incurs uplink bandwidth overhead and elevates the risk of vehicle privacy leaks.*
+  5. *Furthermore, these models forecast the discrete sequence of future RSUs rather than performing continuous-time regression of the exact dwell duration, failing to resolve the fine-grained timing requirements of proactive caching schedules.*
+
+### Category 5: RSU-Local and Snapshot-Based Learning
+* **Status:** **PASS** (6 Sentences)
+* **Analyzed Sentences:**
+  1. *A growing body of work deploys lightweight inference directly at the RSU using only locally available observations, avoiding the need for continuous uplink traces \cite{64,68,71}.*
+  2. *Federated and hierarchical learning frameworks have been proposed to aggregate RSU-local models while preserving vehicle privacy \cite{60,61,67}.*
+  3. *However, these methods rely on cumulative observation windows that require multiple seconds of historical monitoring, making them unsuitable for low-latency decision-making during fast-moving vehicular transits.*
+  4. *Furthermore, there is a lack of real-time protocols capable of combining intersection SPaT configurations and queuing delay variables from edge-local infrastructure to feed back into the prefetching scheduler.*
+  5. *To address these limitations, our approach introduces an event-driven framework where the vehicle transmits a single kinematic snapshot package within the initial content request packet, allowing the RSU to estimate the dwell time and execute caching decisions without continuous track history.*
+  6. *To our knowledge, no existing method performs deterministic dwell-time regression from a single kinematic snapshot at the instant of a content request, which is the operating condition targeted in this work.*
+
+---
+
+## 2. AI Expression Removal Validation (AI 표현 제거 검증)
+* **Status:** **PASS**
+* **Findings:**
+  - Standard AI-generated hyperbolic vocabulary (e.g., *revolutionary*, *groundbreaking*, *innovative*, *transformative*) has been fully eliminated. The text maintains a neutral, academic tone throughout.
+  - Punctuation checkers: There are no instances of consecutive dashes (`---`, `--`), asterisks (`***`), or dangling colons/semicolons.
+  - Parentheses usage: Parentheses are strictly limited to defining standard academic abbreviations (e.g., `CIoV`, `SPaT`, `UAV`) at their first mention, which complies with `/home/imnyj/Workspace/paper1/.rules/critic.md`.
+
+---
+
+## 3. Academic Logic & Flow Validation (학술적 논리성 및 변수 흐름 검증)
+* **Status:** **PASS**
+* **Logic Assessment:**
+  - **Category 1 (CIoV):** Successfully connects the structural limits of CIoV with the operational overheads of *over-prefetching* (large content chunk wastes) and *under-prefetching* (truncated V2I deliveries). It correctly introduces the necessity of RSU estimation during the *initial association handshake* using *telemetry data*.
+  - **Category 2 (V2I Precaching):** Seamlessly bridges the gap of federated learning caching models with the physical dynamics of intersections, specifically noting *SPaT (signal phase and timing)* configurations and *queuing delays* causing *transmission window mismatches*.
+  - **Category 3 (Popularity-Based):** Accurately targets the drawback of relying purely on long-term popularities, connecting it with individual vehicle dynamics (*instantaneous velocity*, *transmission duration*).
+  - **Category 4 (Mobility Prediction):** Directly compares the overhead of continuous *100ms GPS updates* (uplink bandwidth and privacy risk) to the proposed localized regression, showing why discrete sequence forecasting fails to address fine-grained timing.
+  - **Category 5 (RSU-Local):** Establishes the clear research gap: the absence of a real-time protocol feeding *SPaT* and *queuing variables* back to the scheduler, motivating the *single kinematic snapshot package* transmitted event-drivenly.
+
+---
+
+## 4. Typos & Grammatical Improvement Suggestions (오타 및 문법적 교정 제안)
+While the text is grammatically correct and suitable for submission, the following minor edits are suggested to further polish the manuscript:
+
+### Category 1:
+* **Current (Line 167):** "...during the initial association handshake, to optimize the allocation..."
+* **Suggested Modification:** Remove the comma before `to optimize` to establish a direct causal/purpose flow, or replace it with `in order to`.
+  * *Draft:* "...during the initial association handshake to optimize the allocation..."
+* **Current (Line 167):** "...resulting in over-prefetching overhead, or terminates the V2I..."
+* **Suggested Modification:** Introduce a comma after `overhead` to visually separate the gerund clause (`resulting in...`) from the second main verb (`terminates`) of the subject `the edge node`.
+  * *Draft:* "...resulting in over-prefetching overhead, or terminates the V2I..." (Currently already written this way, but double-checking readability).
+
+### Category 4:
+* **Current (Line 173):** "...upload their GPS traces and direction vectors with a period of 100 milliseconds..."
+* **Suggested Modification:** In vehicular communication literature, update frequencies are more commonly expressed using "every" or frequency terms.
+  * *Draft:* "...upload their GPS traces and direction vectors every 100 milliseconds..." or "...at a frequency of 10 Hz (every 100 ms)..."
+
+---
+**Conclusion:** The Related Work section is highly rigorous, logically sound, meets all structural/sentence constraints, and is ready for integration.

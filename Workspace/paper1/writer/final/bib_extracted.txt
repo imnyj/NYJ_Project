@@ -1,0 +1,104 @@
+\bibitem{1}
+Zhou Su, Yilong Hui, and Qing Yang, ``The Next Generation Vehicular Networks: A Content-Centric Framework,'' \emph{IEEE Wireless Communications}, vol. 24, no. 1, pp. 60--66, 2017, doi: 10.1109/MWC.2017.1600195WC.
+
+\bibitem{2}
+Meng Wang, Jun Wu, Gaolei Li, Jianhua Li, Qiang Li, and Shen Wang, ``Toward mobility support for information-centric IoV in smart city using fog computing,'' \emph{2017 IEEE International Conference on Smart Energy Grid Engineering (SEGE)}, Oshawa, ON, Canada, pp. 357--361, 2017, doi: 10.1109/SEGE.2017.8052825.
+
+\bibitem{3}
+Youngju Nam, Hyeonseok Choi, and Euisin Lee, ``Content Storage Management and Precaching Scheme in Content-Centric-Network-Based Internet of Vehicles,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 9, pp. 12927--12947, 2025, doi: 10.1109/JIOT.2024.3522322.
+
+\bibitem{4}
+Zhou Su, Yilong Hui, Qichao Xu, Tingting Yang, Jianyi Liu, and Yunjian Jia, ``An Edge Caching Scheme to Distribute Content in Vehicular Networks,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 67, no. 6, pp. 5346--5356, 2018, doi: 10.1109/TVT.2018.2824345.
+
+\bibitem{5}
+Wanying Huang, Tian Song, Yating Yang, and Yu Zhang, ``Cluster-Based Cooperative Caching With Mobility Prediction in Vehicular Named Data Networking,'' \emph{IEEE Access}, vol. 7, pp. 23442--23458, 2019, doi: 10.1109/ACCESS.2019.2897747.
+
+\bibitem{6}
+Biqian Feng, Chenyuan Feng, Daquan Feng, Yongpeng Wu, and Xiang-Gen Xia, ``Proactive Content Caching Scheme in Urban Vehicular Networks,'' \emph{IEEE Transactions on Communications}, vol. 71, no. 7, pp. 4165--4180, 2023, doi: 10.1109/TCOMM.2023.3277530.
+
+\bibitem{7}
+Chenglong Wang, Jun Peng, Lin Cai, Weirong Liu, Ziyu Zhao, Hu He, and Zhiwu Huang, ``Mobility and Context-Aware Precaching Strategy Using Spatial-Temporal Informer for Vehicular Service,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 11, pp. 16053--16066, 2025, doi: 10.1109/JIOT.2025.3530699.
+
+\bibitem{8}
+Liang Xu, Kaitao Meng, Deshi Li, Rui Wang, and Lele Cong, ``Adaptive Video Segment Pre-Caching With Varying Travel Duration for Internet of Vehicles,'' \emph{IEEE Internet of Things Journal}, 2025, doi: 10.1109/JIOT.2025.3587768.
+
+\bibitem{9}
+Jinguo Cheng, Ke Li, Yuxuan Liang, Lijun Sun, Junchi Yan, and Yuankai Wu, ``Rethinking Urban Mobility Prediction: A Multivariate Time Series Forecasting Approach,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 2, pp. 2543--2557, 2025, doi: 10.1109/TITS.2024.3498054.
+
+\bibitem{10}
+Genghua Yu, Jian Wu, Rui Liu, Yixin He, Zhigang Chen, and Jianping Pan, ``Joint Cooperative Caching and UAV Trajectory Optimization Based on Mobility Prediction in the Internet of Connected Vehicles,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 11, pp. 17392--17406, 2024, doi: 10.1109/TITS.2024.3429305.
+
+\bibitem{11}
+Nyothiri Aung, Sahraoui Dhelim, Liming Chen, Abderrahmane Lakas, Wenyin Zhang, Huansheng Ning, Souleyman Chaib, and Mohand Tahar Kechadi, ``VeSoNet: Traffic-Aware Content Caching for Vehicular Social Networks Using Deep Reinforcement Learning,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 24, no. 8, pp. 8638--8649, 2023, doi: 10.1109/TITS.2023.3250320.
+
+\bibitem{12}
+Kai Jiang, Yue Cao, Yujie Song, Huan Zhou, Shaohua Wan, and Xu Zhang, ``Asynchronous Federated and Reinforcement Learning for Mobility-Aware Edge Caching in IoV,'' \emph{IEEE Internet of Things Journal}, vol. 11, no. 9, pp. 15334--15347, 2024, doi: 10.1109/JIOT.2023.3349255.
+
+\bibitem{13}
+Zhuofan Liao, Pang Liu, Bin Zheng, and XiaoYong Tang, ``Context-Aware Proactive Edge Caching for Vehicular Edge Computing Based on Asynchronous Federated Learning,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 13, pp. 23195--23206, 2025, doi: 10.1109/JIOT.2025.3552682.
+
+\bibitem{14}
+Xinran Zhang, Zheng Chang, Tao Hu, Weilong Chen, Xin Zhang, and Geyong Min, ``Vehicle Selection and Resource Allocation for Federated Learning-Assisted Vehicular Network,'' \emph{IEEE Transactions on Mobile Computing}, vol. 23, no. 5, pp. 3817--3829, 2024, doi: 10.1109/TMC.2023.3283295.
+
+\bibitem{15}
+Rui Liu and Jianping Pan, ``CRS: A Privacy-Preserving Two-Layered Distributed Machine Learning Framework for IoV,'' \emph{IEEE Internet of Things Journal}, vol. 11, no. 1, pp. 1080--1095, 2024, doi: 10.1109/JIOT.2023.3287799.
+
+\bibitem{16}
+Zhuo Li, Yutong Chen, Deliang Liu, and Xiang Li, ``Performance analysis for an enhanced architecture of IoV via Content-Centric Networking,'' \emph{EURASIP Journal on Wireless Communications and Networking}, vol. 2017, no. 1, 2017, doi: 10.1186/S13638-017-0905-4.
+
+\bibitem{17}
+Irfanullah Khan, Tiankui Zhang, Xiaogeng Xu, Siyang Shan, Adil Khan, and Shabeer Ahmad, ``Priority-based Content Dissemination in Content Centric Vehicular Networks,'' \emph{2018 2nd IEEE Advanced Information Management, Communicates, Electronic and Automation Control Conference (IMCEC)}, Xi'an, China, 2018, doi: 10.1109/IMCEC.2018.8469332.
+
+\bibitem{18}
+Sajjad Ahmad Khan, Huhnkuk Lim, and Shehzad Ashraf Chaudhry, ``Adaptive Data Forwarding Scheme for Diverse Infotainment Services in Vehicular Named Data Networking,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 74, no. 5, pp. 8012--8022, 2025, doi: 10.1109/TVT.2024.3524122.
+
+\bibitem{19}
+Huhnkuk Lim, ``Toward Infotainment Services in Vehicular Named Data Networking: A Comprehensive Framework Design and Its Realization,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 2, pp. 2793--2810, 2025, doi: 10.1109/TITS.2024.3489574.
+
+\bibitem{20}
+Azan Ali Khan, Basharat Hussain, Muhammad Islam, Maryam M. Al Dabel, and Ali Kashif Bashir, ``Optimizing Content Cache With Vehicular Edge Computing: A Deep Federated Learning-Based Novel Predictive Study,'' \emph{IEEE Transactions on Consumer Electronics}, vol. 71, no. 2, pp. 6069--6079, 2025, doi: 10.1109/TCE.2025.3571029.
+
+\bibitem{21}
+Tengfei Cao, Nianqing Zhang, Xiaoying Wang, and Jianqiang Huang, ``Mobility-Aware Cooperative Caching in Vehicular Edge Computing Based on Federated Distillation and Deep Reinforcement Learning,'' \emph{IEEE Transactions on Network Science and Engineering}, pp. 1--17, 2025, doi: 10.1109/TNSE.2025.3571902.
+
+\bibitem{22}
+Yali Wang and Shouhao Li, ``Federated Learning-based Vehicle Edge Caching Optimization Strategy,'' \emph{2025 IEEE 6th International Conference on Pattern Recognition and Machine Learning (PRML)}, Chongqing, China, pp. 285--290, 2025, doi: 10.1109/PRML66062.2025.11160265.
+
+\bibitem{23}
+Yaqin Xie, Chengshuai Zhou, Zhongyu Liu, Yu Zhang, Jianyue Zhu, and Junmin Wu, ``Research on Cache Placement Optimization and Popularity-Based Content Prefetching Strategy in LEO Satellite Networks,'' \emph{IEEE Transactions on Green Communications and Networking}, vol. 10, pp. 50--62, 2026, doi: 10.1109/TGCN.2025.3570489.
+
+\bibitem{24}
+Qin Yang and Sang-Jo Yoo, ``Hierarchical Reinforcement Learning-Based Routing Algorithm With Grouped RSU in Urban VANETs,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 8, pp. 10131--10146, 2024, doi: 10.1109/TITS.2024.3353258.
+
+\bibitem{25}
+Govind R. Gopal, Jie Chen, William J. Hillery, Jun Tan, Serdar Özen, and Qiping Zhu, ``Wireless Channel Scenario Identification Using Convolutional Neural Networks,'' \emph{2023 IEEE 97th Vehicular Technology Conference (VTC2023-Spring)}, Florence, Italy, pp. 1--5, 2023, doi: 10.1109/VTC2023-Spring57618.2023.10200552.
+
+\bibitem{26}
+Mohammad Kamrul Hasan, Nusrat Jahan, Mohd Zakree Ahmad Nazri, Shayla Islam, Muhammad Attique Khan, Ahmed Ibrahim Alzahrani, Nasser Alalwan, and Yunyoung Nam, ``Federated Learning for Computational Offloading and Resource Management of Vehicular Edge Computing in 6G-V2X Network,'' \emph{IEEE Transactions on Consumer Electronics}, vol. 70, no. 1, pp. 3827--3847, 2024, doi: 10.1109/TCE.2024.3357530.
+
+\bibitem{27}
+Bo Xu, Haitao Zhao, Haotong Cao, Xiaozhen Lu, and Hongbo Zhu, ``Joint Contract Design and Task Reorganization for Semi-Decentralized Federated Edge Learning in Vehicular Networks,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 7, pp. 10539--10553, 2024, doi: 10.1109/TVT.2024.3364515.
+
+\bibitem{28}
+Soohyun Park, Chanyoung Park, Soyi Jung, Minseok Choi, and Joongheon Kim, ``Age-of-Information Aware Caching and Delivery for Infrastructure-Assisted Connected Vehicles,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 7, pp. 10681--10696, 2024, doi: 10.1109/TVT.2024.3384952.
+
+\bibitem{29}
+Jie Hu, Li Shen, and Gang Sun, ``Squeeze-and-Excitation Networks,'' \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)}, Salt Lake City, UT, USA, pp. 7132--7141, 2018.
+
+\bibitem{30}
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin, ``Attention Is All You Need,'' \emph{Advances in Neural Information Processing Systems}, Long Beach, CA, USA, pp. 5998--6008, 2017.
+
+\bibitem{31}
+Intelligent Transportation Systems Joint Program Office, ``ITS Standards Program: Strategic Plan 2021--2026,'' \emph{U.S. Department of Transportation}, 2021.
+
+\bibitem{32}
+Yuxuan Wu, Le Wang, Sanping Zhou, Ning Ding, and Gang Hua, ``Posterior Augmented CVAE for Pedestrian Trajectory Prediction with Momentary Observation,'' \emph{IEEE Transactions on Multimedia}, pp. 1--11, 2026, doi: 10.1109/tmm.2026.3673507.
+
+\bibitem{33}
+Marina Kurilova and Howard Li, ``Time-Frequency Wavelet Transformer Forecasting for Hypersonic Glide Vehicle Trajectory Prediction,'' \emph{2026 IEEE Aerospace Conference}, Big Sky, MT, USA, pp. 1--14, 2026, doi: 10.1109/aero66936.2026.11519972.
+
+\bibitem{34}
+Yue Liu, Hongjian Wang, Kai Zhang, and Jingfei Ren, ``UUV Trajectory Prediction Based on GRU Neural Network,'' \emph{2021 40th Chinese Control Conference (CCC)}, Shanghai, China, pp. 8346--8352, 2021, doi: 10.23919/ccc52363.2021.9549995.
+
+\bibitem{35}
+Fatimetou El Jili, ``An Effective Driver Intention and Trajectory Prediction for Autonomous Vehicle based on LSTM,'' \emph{Proceedings of the 13th International Conference on Agents and Artificial Intelligence}, Online Streaming, pp. 1090--1096, 2021, doi: 10.5220/0010321710901096.

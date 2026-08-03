@@ -1,0 +1,143 @@
+# Writer Agent Progress Report (writer_progress.md)
+
+**Agent ID:** `writer_paper1`  
+**Target File:** `/home/imnyj/papers/paper1/paper/draft/main.tex`  
+**Timestamp:** 2026-06-11T18:24:26+09:00 (KST)  
+
+---
+
+## 1. Task Overview
+This progress report documents the complete structural and stylistic refactoring of the LaTeX draft `main.tex` to resolve style violations raised in `critic_feedback_style.md`. The modifications strictly adhere to academic writing styles, eliminating conversational/AI-like exaggerations, punctuation abuses, and incorrect paragraph fragmentation.
+
+---
+
+## 2. Lock & Backup Verification
+- **Lock Acquisition:** Successfully acquired lock via `/home/imnyj/Command/core/lock_manager.py` before editing.
+- **Backup Location:** `/home/imnyj/papers/paper1/paper/draft/backup/`
+  - Created a baseline backup of `main.tex` before performing any edits.
+- **Audit Logging:** Logged `MODIFY` action in `/tmp/agent_audit.log` with `agent_id="writer_paper1"`.
+- **Lock Release:** Released lock successfully after file modification.
+
+---
+
+## 3. Detail of Style Modifications
+
+### A. AI-like Expressions & Hyperbolic Words Removed
+- **"effectively unimodal"**:
+  - Line 86: Replaced with `analytically unimodal` as it describes a formal mathematical analysis.
+  - Lines 87, 132, 271, 633, and 640: Replaced with `unimodal` to provide objective descriptions of the conditional dwell-time distributions.
+- **"state-of-the-art"**:
+  - Line 658: Replaced with `advanced deep tabular models`.
+  - Line 845: Replaced with `the lowest prediction error` based on quantitative outcomes.
+
+### B. Punctuation Abuse Rectified
+- **Em-Dashes**:
+  - Line 109: Changed parenthetical em-dashes `---placing content at the RSU before demand materializes---` to a descriptive subordinate clause: `, which places content at the RSU before demand materializes,`.
+- **Semicolons**:
+  - Split independent clauses into separate sentences or replaced them with formal conjunctions to improve readability:
+    - Line 86: Changed `Conditional Variational Autoencoder (CVAE); analysis shows that` to `Conditional Variational Autoencoder (CVAE). Subsequent analysis shows that`.
+    - Line 244: Changed `$r_{\text{cur}}$; the immediately following` to `$r_{\text{cur}}$. The immediately following`.
+    - Line 320: Changed `is required; the snapshot` to `is required, as the snapshot`.
+    - Line 371: Changed `more than one domain; in such cases` to `more than one domain. In such cases,`.
+    - Line 478: Changed `are periodic; representing them` to `are periodic. Consequently, representing them`.
+    - Line 500: Changed `specific RSU; the same queue` to `specific RSU. For instance, the same queue`.
+    - Line 613: Changed `queue build-up; these samples` to `queue build-up. These samples`.
+    - Line 744: Changed `cost-effectiveness; the marginal gain` to `cost-effectiveness, where the marginal gain`.
+
+### C. Restructured Parenthetical Explanations
+- **Redundant Abbreviations**:
+  - Line 57: Ellipsed nested parentheses: `(Ministry of Science and ICT (MSIT))` to `(Ministry of Science and ICT, MSIT)`.
+  - Line 649: Removed duplicate abbreviation definition: `SUMO (Simulation of Urban MObility)` to `SUMO`.
+- **Explanatory Parentheses Refactored to Prose**:
+  - Line 359: Changed `(a ping-pong transition)` to `, acting as a ping-pong transition,`.
+  - Lines 368-369: Restructured semantic categories to `kinematic (\textbf{K}), traffic control (\textbf{T}), and social/contextual (\textbf{S}) branches`.
+  - Line 435: Rewrote kinematic/traffic/social dimensions into distinct descriptive clauses.
+  - Line 438: Changed `(forming a deep ResNet)` to `, which forms a deep ResNet,`.
+  - Line 494: Changed `(phase periodicity)` to `, namely the phase periodicity,`.
+  - Line 514: Changed `(reduction ratio 4)` to `, which features a reduction ratio of 4,`.
+  - Line 639: Changed `(the \beta-VAE problem)` to `, commonly referred to as the \beta-VAE problem,`.
+  - Line 651: Changed `(5 to 25~\text{veh/km/lane})` to `spanning from 5 to 25~\text{veh/km/lane}`.
+  - Line 687: Changed `ResNet (MAE of 47.10~s)` to `ResNet, which yields an MAE of 47.10~s`.
+  - Line 688: Changed LSTM and GRU parentheses to `, exhibiting higher MAEs of 96.90~s and 101.75~s, respectively,`.
+  - Line 744: Replaced `(variance reduction)` with `, which represents a variance reduction,` and `(specifically \sim 0.29~s)` with `, which is approximately 0.29~s,`.
+- **Ablation Descriptions (Line 670)**:
+  - Removed long inline parentheses explaining `w/o Attn`, `w/o XGB`, and `Early Fusion`. Described them sequentially using inline numbers: `1) \textit{w/o Attn}, which...; 2) \textit{w/o XGB}, which...; and 3) \textit{Early Fusion}, which...`.
+- **Numerical Reporting (Line 780)**:
+  - Integrated MLP, ResNet, and TabR MAE and Standard Deviation figures smoothly into prose without using parentheses.
+
+### D. Paragraph Length & Cohesion (Merged Around Equations)
+- **Line 214-218 (Related Works)**: Expanded the section by adding a sentence explaining why predicting dwell time (physical residency) is more challenging than predicting content popularity due to signal cycle timings and queue volatility.
+- **Line 257-263 & 268-276 (Eq 1)**: Merged into a unified paragraph by removing intermediate blank lines around the equation.
+- **Line 462-465 & 470-473 (Eq 3)**: Combined to describe the Kinematic branch details in a single paragraph.
+- **Line 477-479 & 484-487 & 493-494 (Eq 4 & Eq 5)**: Merged into a single comprehensive paragraph explaining the Traffic Control branch CTE and its downstream encoder.
+- **Line 514-515 & 525-526**: Merged the Social branch encoder details with the Multi-Head Attention fusion mechanism, inserting narrative transitions that connect the squeeze-and-excitation block to self-attention.
+- **Line 562-563 & 585**: Combined decoder feedforward details and final gating equations with surrounding paragraphs to prevent short, isolated sentence fragments.
+- **Line 619-621, 626-627, & 632-634 (Eq 11 & Eq 12)**: Combined CVAE posterior collapse discussions into a single cohesive paragraph.
+- **Line 655**: Merged the intro sentence for graph evaluation into the subsequent paragraph introducing Graph G1.
+- **Line 673-676**: Added a sentence on the synergy between tabular priors and neural representation learning to expand the paragraph to 5 sentences.
+
+### E. List Abuse Fixed
+- **Line 744**: Refactored the inline written list `"First, ... Second, ... Third, ..."` into a formal LaTeX `\begin{enumerate} \item ... \end{enumerate}` block.
+
+---
+
+## 4. Past Status (2026-06-11)
+All requested modifications have been completed. The document compiled successfully and is structurally cohesive.
+
+---
+
+## 5. Progress Report (2026-06-15 Update)
+- **Timestamp:** 2026-06-15T14:49:00+09:00 (KST)
+- **Target File:** `/home/imnyj/papers/paper1/paper/draft/main.tex`
+- **Agent ID:** `writer_paper1`
+
+### Summary of Changes:
+1. **Dwell Time Motivation Update (Section I):**
+   - Updated the vehicle traverse duration description from fixed seconds to highly dynamic stay times (averaging 100 seconds, escalating up to 300 seconds under congestion/red-light signals).
+   - Augmented the paragraph to detail the system/network overhead of stay-time variance: underestimating dwell time triggers under-prefetching (causing communication disruptions), whereas overestimating it results in over-prefetching (wasting cache storage and backhaul bandwidth).
+   - Paragraph expanded to 6 sentences, satisfying the minimum length rule.
+2. **Removal of ST-CVAE / CVAE Reference:**
+   - Deleted posterior collapse and KL divergence comparisons from the introductory model description.
+   - Refactored the text to describe H-ST-MBAN's deterministic regression approach in a general manner, emphasizing edge overhead optimization and reduced latency.
+   - Completely removed the first contribution regarding CVAE replacement.
+3. **Contribution Refactoring (Itemize Environment):**
+   - Transformed the contributions section into a clean, bulleted `\begin{itemize}` block.
+   - Structured each contribution as `\item \textbf{Metric/Label:} Content...`, resulting in 7 restructured bullet points.
+   - Pre-contributions introduction paragraph expanded to 5 sentences to maintain paragraph cohesion rules.
+4. **Style and Rigor Check:**
+   - Ensured all updated paragraphs contain at least 5 sentences.
+   - Removed any subjective, hyperbolic, or AI-like expressions.
+5. **Safety Protocols & Logging:**
+   - Lock acquired successfully beforehand, and snapshot backup saved under `/home/imnyj/papers/paper1/paper/draft/backup/`.
+   - File lock released upon completion.
+   - Audit log recorded in `/tmp/agent_audit.log` via `audit_logger.py` under agent `writer_paper1`.
+
+---
+
+## 6. CVAE/ST-CVAE Complete Removal (2026-06-15 2nd Update)
+- **Timestamp:** 2026-06-15T14:50:00+09:00 (KST)
+- **Target File:** `/home/imnyj/papers/paper1/paper/draft/main.tex`
+- **Agent ID:** `writer_paper1`
+
+### Detailed Modifications:
+1. **Abstract Refactoring (Lines 86-89):**
+   - Completely removed references to `ST-CVAE` predecessor model, Conditional Variational Autoencoder (CVAE), and latent variable collapse.
+   - Restructured the logical flow to emphasize the high dynamic variability of RSU dwell times (averaging 100 seconds, extending up to 300 seconds under congestion/delays).
+   - Positioned H-ST-MBAN as an explicit deterministic regression model directly addressing this dynamic variability.
+2. **System Model Refactoring (Section III):**
+   - Line 282: Replaced `"used in the ST-CVAE predecessor"` with `"used in predecessor models"`.
+   - Line 349: Replaced `"variables inherited from the predecessor ST-CVAE model"` with `"baseline vehicular kinematic variables"`.
+   - Line 366 (Table II): Replaced `"\multicolumn{3}{l}{\textit{Inherited from ST-CVAE}} \\"` with `"\multicolumn{3}{l}{\textit{Baseline Kinematic Features}} \\"`.
+3. **Architecture Section Update (Section IV, Line 527):**
+   - Completely removed the extensive paragraph explaining the CVAE posterior collapse and variational autoencoder limitations.
+   - Deleted the KL-divergence regularization formulas (originally Equation 5 and Equation 6) and all associated descriptions.
+4. **Conclusion Section Refactoring (Section V, Lines 717-718):**
+   - Deleted the mention of `"prior variational generative approaches, such as ST-CVAE, which can experience posterior collapse..."`.
+   - Replaced it with a statement highlighting H-ST-MBAN as a hybrid architecture designed to overcome `"complex traffic patterns and localized inference latency"`.
+   - Changed `"without the overhead of variational approximations"` to `"without high computational overhead"`.
+
+### Protocols & Compliance:
+- File lock acquired successfully on `main.tex` and `writer_progress.md` before edits.
+- Snapshots of modified files backed up to `/home/imnyj/papers/paper1/paper/draft/backup/` and `/home/imnyj/Workspace/paper1/writer/backup/`.
+- Action logged in `/tmp/agent_audit.log` with `agent_id="writer_paper1"`.
+- All locks released successfully.

@@ -130,8 +130,9 @@ def simulate_receptions(cam_events: list,
 
             # Adjust reception probability for channel load (collisions)
             p_rx = reception_probability(dist_m, p_tx_dbm)
-            # Channel collision reduction due to CBR
-            collision_factor = max(0.0, 1.0 - cbr * 0.5)
+            # Strict MAC layer contention: packet drop probability increases heavily with CBR and active vehicles
+            effective_load = cbr + (len(vehicle_positions) * 0.005)
+            collision_factor = math.exp(-3.0 * (effective_load ** 2))
             p_rx *= collision_factor
 
             if rng.random() < p_rx:

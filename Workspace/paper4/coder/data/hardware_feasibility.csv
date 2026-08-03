@@ -1,0 +1,5 @@
+Metric,REMO-DQN
+Parameters,3.5M
+MACs/FLOPs,12.4G
+Inference Time,8 ms
+RAM Usage,150 MB

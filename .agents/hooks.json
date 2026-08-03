@@ -1,0 +1,29 @@
+{
+  "hooks": [
+    {
+      "event": "post-edit",
+      "target": "sumo-sim/**/*.py",
+      "action": {
+        "type": "command",
+        "command": "python3 -m py_compile {file}"
+      },
+      "on_fail": "self-correct"
+    },
+    {
+      "event": "post-edit",
+      "target": "paper-writing/**/*.{md,tex}",
+      "action": {
+        "type": "command",
+        "command": "python3 scripts/check_citations.py {file}"
+      },
+      "on_fail": "self-correct"
+    },
+    {
+      "event": "pre-tool-call",
+      "target": "{.antigravity/**,.gemini/**,GEMINI.md,AGENTS.md}",
+      "action": {
+        "type": "require-approval"
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+round,algorithm,num_agents,num_rsus,bytes_per_round,cumulative_mb,time_s
+11,MAFAC,212,4,14135834.181818182,148.29080200195312,300.0

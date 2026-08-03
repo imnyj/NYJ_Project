@@ -1,0 +1,396 @@
+{
+  "metadata": {
+    "title": "NDN-based AoI-Optimal Content Delivery with MAFAC in Vehicular Networks",
+    "target_journal": "IEEE Transactions on Wireless Communications (TWC)",
+    "version": "1.0",
+    "created": "2026-04-15",
+    "author": "nyj",
+    "reference_files": {
+      "idea_spec": "home/nyj/0_paper/paper/idea/idea_spec.md",
+      "references": "home/nyj/0_paper/paper/references/references.json",
+      "idea_memory": "home/nyj/0_paper/.pipeline/brain/idea_memory.md"
+    }
+  },
+  "simulation_environment": {
+    "platform": "libsumo",
+    "note": "Use libsumo Python bindings directly, NOT traci",
+    "road_network": {
+      "type": "urban_grid",
+      "grid_size": "5x5",
+      "block_length_m": 250,
+      "total_area_km2": 1.5625,
+      "intersections": 25,
+      "lanes_per_direction": 2,
+      "speed_limit_mps": 13.89
+    },
+    "car_following_model": {
+      "model": "Krauss",
+      "accel": 2.6,
+      "decel": 4.5,
+      "sigma": 0.5,
+      "tau": 1.0,
+      "minGap": 2.5,
+      "maxSpeed": 13.89
+    },
+    "simulation_settings": {
+      "step_length_s": 0.1,
+      "warmup_steps": 1000,
+      "episode_duration_s": 300,
+      "total_episodes": 500,
+      "random_seed": 42
+    },
+    "rsu_deployment": {
+      "count": 4,
+      "positions": "corners of central 2x2 grid blocks",
+      "coverage_radius_m": 500
+    }
+  },
+  "scenarios": [
+    {
+      "id": "S1",
+      "name": "vehicle_density_variation",
+      "description": "Evaluate AoI performance under varying vehicle densities (low/medium/high traffic)",
+      "parameter_sweep": {
+        "variable": "num_vehicles",
+        "values": [
+          20,
+          50,
+          100
+        ]
+      },
+      "fixed_parameters": {
+        "cache_size": 50,
+        "rician_K_dB": 7,
+        "num_contents": 200,
+        "zipf_alpha": 1.0,
+        "content_update_rate": 0.5
+      },
+      "duration_steps": 3000
+    },
+    {
+      "id": "S2",
+      "name": "cache_size_sensitivity",
+      "description": "Sensitivity analysis of NDN cache size on AoI and cache hit ratio",
+      "parameter_sweep": {
+        "variable": "cache_size",
+        "values": [
+          10,
+          20,
+          30,
+          50,
+          70,
+          100
+        ]
+      },
+      "fixed_parameters": {
+        "num_vehicles": 50,
+        "rician_K_dB": 7,
+        "num_contents": 200,
+        "zipf_alpha": 1.0,
+        "content_update_rate": 0.5
+      },
+      "duration_steps": 3000
+    },
+    {
+      "id": "S3",
+      "name": "channel_quality_variation",
+      "description": "Impact of channel quality (Rician K-factor) on transmission success and AoI",
+      "parameter_sweep": {
+        "variable": "rician_K_dB",
+        "values": [
+          3,
+          5,
+          7,
+          10
+        ]
+      },
+      "fixed_parameters": {
+        "num_vehicles": 50,
+        "cache_size": 50,
+        "num_contents": 200,
+        "zipf_alpha": 1.0,
+        "content_update_rate": 0.5
+      },
+      "duration_steps": 3000
+    },
+    {
+      "id": "S4",
+      "name": "zipf_exponent_sensitivity",
+      "description": "Impact of content popularity distribution skewness on caching effectiveness",
+      "parameter_sweep": {
+        "variable": "zipf_alpha",
+        "values": [
+          0.8,
+          1.0,
+          1.2
+        ]
+      },
+      "fixed_parameters": {
+        "num_vehicles": 50,
+        "cache_size": 50,
+        "rician_K_dB": 7,
+        "num_contents": 200,
+        "content_update_rate": 0.5
+      },
+      "duration_steps": 3000
+    }
+  ],
+  "algorithms": {
+    "proposed": {
+      "name": "MAFAC",
+      "full_name": "Multi-Agent Federated Actor-Critic",
+      "description": "Federated Actor-Critic with NDN AoI-aware caching, Lagrangian constraint handling, factored action space, and critic-only federated aggregation with inverse AoI weighting",
+      "components": [
+        "NDN in-network caching with AoI-aware TTL",
+        "Factored actor: forwarding × caching × power × subchannel",
+        "Critic: TD learning with Lagrangian advantage",
+        "Lagrange multiplier dual ascent for constraints",
+        "Federated critic-only aggregation (inverse AoI weighting)"
+      ]
+    },
+    "baselines": [
+      {
+        "name": "No-Cache",
+        "description": "Pure V2X communication without NDN caching. Direct source-to-destination delivery only. Measures NDN caching contribution to AoI reduction.",
+        "ablation_target": "NDN caching"
+      },
+      {
+        "name": "NDN-LRU",
+        "description": "NDN with standard LRU cache replacement policy. No AoI awareness in caching decisions. Random forwarding. Measures AoI-aware intelligence contribution.",
+        "ablation_target": "AoI-aware caching policy"
+      },
+      {
+        "name": "Centralized-AoI",
+        "description": "Centralized DRL (single-agent with global state) optimizing network-wide AoI. Full observability. Serves as performance upper bound.",
+        "ablation_target": "Performance upper bound"
+      },
+      {
+        "name": "IQL",
+        "description": "Independent Q-Learning. Each vehicle learns independently without federated model sharing. Measures federated aggregation contribution.",
+        "ablation_target": "Federated aggregation"
+      },
+      {
+        "name": "SAC-Single",
+        "description": "Single-agent Soft Actor-Critic controlling all decisions centrally but without multi-agent decomposition. Measures multi-agent coordination benefit.",
+        "ablation_target": "Multi-agent decomposition"
+      }
+    ]
+  },
+  "metrics": [
+    {
+      "id": "M1",
+      "name": "average_aoi",
+      "formula": "Delta_bar = (1/T) * sum_t (1/|D|) * sum_d sum_k w_k * Delta^NDN_{d,k}(t)",
+      "unit": "seconds",
+      "priority": "primary",
+      "description": "Network-wide time-averaged weighted AoI"
+    },
+    {
+      "id": "M2",
+      "name": "peak_aoi",
+      "formula": "Delta^peak_{d,k} = max_t Delta^NDN_{d,k}(t)",
+      "unit": "seconds",
+      "priority": "primary",
+      "description": "Maximum AoI observed across all nodes and contents"
+    },
+    {
+      "id": "M3",
+      "name": "cache_hit_ratio",
+      "formula": "CHR = num_cache_hits / num_total_requests",
+      "unit": "ratio [0,1]",
+      "priority": "primary",
+      "description": "Fraction of content requests served from NDN cache"
+    },
+    {
+      "id": "M4",
+      "name": "transmission_success_rate",
+      "formula": "TSR = num_successful_tx / num_total_tx",
+      "unit": "ratio [0,1]",
+      "priority": "secondary",
+      "description": "Fraction of transmissions with SINR >= threshold"
+    },
+    {
+      "id": "M5",
+      "name": "throughput",
+      "formula": "Throughput = sum(successfully_delivered_bits) / total_time",
+      "unit": "Mbps",
+      "priority": "secondary",
+      "description": "Average network throughput"
+    },
+    {
+      "id": "M6",
+      "name": "constraint_violation_rate",
+      "formula": "CVR = num_violated_slots / total_slots (for energy and CBR constraints)",
+      "unit": "ratio [0,1]",
+      "priority": "primary",
+      "description": "Fraction of time slots where energy or CBR constraints are violated"
+    },
+    {
+      "id": "M7",
+      "name": "convergence_speed",
+      "formula": "Episode number at which average_aoi first reaches within 5% of final value",
+      "unit": "episodes",
+      "priority": "secondary",
+      "description": "Training convergence speed"
+    },
+    {
+      "id": "M8",
+      "name": "communication_overhead",
+      "formula": "Total bytes exchanged for federated aggregation across all rounds",
+      "unit": "MB",
+      "priority": "secondary",
+      "description": "Communication cost of federated learning protocol"
+    }
+  ],
+  "physical_layer_parameters": {
+    "standard": "C-V2X (3GPP Release 14+)",
+    "carrier_frequency_GHz": 5.9,
+    "bandwidth_MHz": 10,
+    "num_subchannels": 50,
+    "subchannel_bandwidth_kHz": 180,
+    "subcarriers_per_subchannel": 12,
+    "max_tx_power_dBm": 23,
+    "noise_figure_dB": 9,
+    "thermal_noise_density_dBm_Hz": -174,
+    "v2v_channel": {
+      "fading": "Rician",
+      "K_factor_dB_range": [
+        3,
+        10
+      ],
+      "K_factor_dB_default": 7,
+      "comm_range_m": 300
+    },
+    "v2i_channel": {
+      "fading": "Nakagami-m",
+      "m_range": [
+        2,
+        4
+      ],
+      "m_default": 3,
+      "comm_range_m": 500
+    },
+    "path_loss": {
+      "model": "3GPP TR 36.885",
+      "v2v_los": "PL = 38.77 + 16.7*log10(d) + 18.2*log10(fc_GHz)",
+      "v2v_nlos": "PL = 36.85 + 30*log10(d) + 18.9*log10(fc_GHz)",
+      "v2i_urban": "PL = 32.4 + 20*log10(d) + 20*log10(fc_GHz)"
+    },
+    "cbr_threshold": 0.65,
+    "sinr_threshold_dB": 3.0,
+    "modulation": "OFDM"
+  },
+  "ndn_parameters": {
+    "num_content_types_range": [
+      100,
+      500
+    ],
+    "num_content_types_default": 200,
+    "zipf_alpha_range": [
+      0.8,
+      1.2
+    ],
+    "zipf_alpha_default": 1.0,
+    "cache_size_range": [
+      10,
+      100
+    ],
+    "cache_size_default": 50,
+    "content_update_rate_range": [
+      0.1,
+      1.0
+    ],
+    "content_update_rate_default": 0.5,
+    "ttl_policy": "Theorem 2 optimized: TTL*_k = (1/lambda_k) * ln(1 + w_k*lambda_k/(c_miss*mu_k))",
+    "naming_convention": "/vehicle/{vehicle_id}/content/{content_type}/{version}",
+    "forwarding_strategy": "AoI-aware best route",
+    "interest_timeout_s": 4.0,
+    "pit_timeout_s": 8.0,
+    "content_size_bytes": 1500
+  },
+  "marl_parameters": {
+    "actor": {
+      "network": "MLP [128, 128]",
+      "learning_rate": 0.0003,
+      "activation": "ReLU"
+    },
+    "critic": {
+      "network": "MLP [256, 256]",
+      "learning_rate": 0.001,
+      "activation": "ReLU",
+      "target_update_tau": 0.005
+    },
+    "discount_factor": 0.99,
+    "lagrange_multiplier_lr": 0.01,
+    "replay_buffer_size": 100000,
+    "batch_size": 256,
+    "local_training_episodes_E_range": [
+      5,
+      20
+    ],
+    "local_training_episodes_E_default": 10,
+    "federated_rounds_range": [
+      100,
+      500
+    ],
+    "federated_rounds_default": 300,
+    "aggregation_method": "inverse_AoI_weighted_FedAvg",
+    "partial_participation_threshold": "E >= E_min"
+  },
+  "output_files": [
+    "S1_density_average_aoi.csv",
+    "S1_density_peak_aoi.csv",
+    "S1_density_cache_hit_ratio.csv",
+    "S1_density_tx_success_rate.csv",
+    "S1_density_throughput.csv",
+    "S1_density_constraint_violation.csv",
+    "S2_cache_average_aoi.csv",
+    "S2_cache_peak_aoi.csv",
+    "S2_cache_cache_hit_ratio.csv",
+    "S2_cache_tx_success_rate.csv",
+    "S3_channel_average_aoi.csv",
+    "S3_channel_peak_aoi.csv",
+    "S3_channel_tx_success_rate.csv",
+    "S3_channel_throughput.csv",
+    "S4_zipf_average_aoi.csv",
+    "S4_zipf_cache_hit_ratio.csv",
+    "convergence_training_curves.csv",
+    "convergence_constraint_satisfaction.csv",
+    "ablation_component_analysis.csv",
+    "communication_overhead.csv",
+    "model_verification_theorem1.csv",
+    "model_verification_theorem2.csv"
+  ],
+  "experiment_phases": {
+    "phase1_model_verification": {
+      "description": "Validate Theorem 1 (AoI Reduction Bound) and Theorem 2 (Optimal TTL) against simulation",
+      "output": [
+        "model_verification_theorem1.csv",
+        "model_verification_theorem2.csv"
+      ]
+    },
+    "phase2_convergence": {
+      "description": "Training convergence and constraint satisfaction analysis",
+      "output": [
+        "convergence_training_curves.csv",
+        "convergence_constraint_satisfaction.csv"
+      ]
+    },
+    "phase3_performance": {
+      "description": "AoI performance comparison across 4 scenarios × 6 algorithms",
+      "output": "S*_*.csv files"
+    },
+    "phase4_ablation": {
+      "description": "Ablation study: caching effect, federated effect, factored action effect",
+      "output": [
+        "ablation_component_analysis.csv"
+      ]
+    },
+    "phase5_overhead": {
+      "description": "Communication overhead analysis of federated protocol",
+      "output": [
+        "communication_overhead.csv"
+      ]
+    }
+  }
+}

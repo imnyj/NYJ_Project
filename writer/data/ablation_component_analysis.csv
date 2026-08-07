@@ -1,5 +1,0 @@
-scenario,variant,average_aoi,peak_aoi,cache_hit_ratio,tx_success_rate,throughput_mbps,constraint_violation
-S1_default,MAFAC-Full,121.8191,178.0268,0.0,0.6634,5190.2689,1.0
-S1_default,MAFAC-NoCaching,181.8116,271.0131,0.0,0.1232,814.5358,1.0SS1_default,MAFAC-NoFederated,121.8172,178.0254,0.0,0.6634,5190.3143,1.0S1_default,MAFAC-Centralized,121.9161,178.2199,0.0,0.6625,5183.2058,1.0
-S1_default,NDN-LRU,156.3841,227.2805,0.0,0.414,1991.7127,1.0
-S1_default,No-Cache,181.7459,270.9795,0.0,0.1229,812.335,1.0

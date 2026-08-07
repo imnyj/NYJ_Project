@@ -79,12 +79,18 @@ class VehicleCAMState:
         self.method = method
         self.params = method_params or {}
 
-        # Previous values for delta triggers
-        self.prev_x: float = 0.0
-        self.prev_y: float = 0.0
+        # Previous values for delta triggers (from last CAM sent)
+        self.cam_x: float = 0.0
+        self.cam_y: float = 0.0
+        self.cam_speed: float = 0.0
+        self.cam_heading: float = 0.0
+        self.last_cam_time: float = 0.0   # simulation time of last CAM sent
+
+        # Previous values for odometer tracking (step-by-step)
+        self.prev_x: Optional[float] = None
+        self.prev_y: Optional[float] = None
         self.prev_speed: float = 0.0
         self.prev_heading: float = 0.0
-        self.last_cam_time: float = 0.0   # simulation time of last CAM sent
 
         # Current T_GenCam (seconds) and p_tx (dBm)
         self.T_GenCam: float = T_GENCAM_MIN
@@ -190,7 +196,14 @@ class ETSICAMLayer:
         return self.vehicles[vid]
 
     def remove_vehicle(self, vid: str):
-        self.vehicles.pop(vid, None)
+        if vid in self.vehicles:
+            vs = self.vehicles[vid]
+            if vs.method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling"]:
+                from ai_dcc_hook import get_hook
+                hook = get_hook(vs.method)
+                if hasattr(hook, 'terminate_vehicle'):
+                    hook.terminate_vehicle(vid)
+            self.vehicles.pop(vid)
 
     def step(self, vehicles_data: list, sim_time: float, cbr_global: float) -> list:
         """
@@ -216,40 +229,54 @@ class ETSICAMLayer:
             vs = self.get_or_create_vehicle(vid)
 
             # Odometer update
-            dx = x - vs.prev_x
-            dy = y - vs.prev_y
-            dist_moved = math.sqrt(dx*dx + dy*dy)
-            vs.odometer_m += dist_moved
+            if vs.prev_x is not None:
+                dx = x - vs.prev_x
+                dy = y - vs.prev_y
+                dist_moved = math.sqrt(dx*dx + dy*dy)
+                vs.odometer_m += dist_moved
+            else:
+                vs.cam_x = x
+                vs.cam_y = y
+                vs.cam_speed = speed
+                vs.cam_heading = heading
 
             # DCC controller update (per 100ms window)
-            self._update_dcc(vs, cbr_global, n_est, sim_time)
+            cbr_local = vdata.get("cbr", cbr_global)
+            self._update_dcc(vs, cbr_local, n_est, sim_time)
 
             # Check ETSI trigger conditions
             dt = sim_time - vs.last_cam_time
             trigger = False
 
-            # Periodic trigger: T_GenCam expiry
-            if dt >= vs.T_GenCam:
+            # Periodic trigger: T_GENCAM_MAX expiry (ETSI fallback)
+            if dt >= T_GENCAM_MAX:
                 trigger = True
 
             # Event trigger: heading change
-            d_heading = abs(heading - vs.prev_heading)
+            d_heading = abs(heading - vs.cam_heading)
             if d_heading > 180:
                 d_heading = 360 - d_heading
             if d_heading >= 4.0:
                 trigger = True
 
             # Event trigger: position change
-            if dist_moved >= 4.0:
+            dx_cam = x - vs.cam_x
+            dy_cam = y - vs.cam_y
+            dist_since_cam = math.sqrt(dx_cam*dx_cam + dy_cam*dy_cam)
+            if dist_since_cam >= 4.0:
                 trigger = True
 
             # Event trigger: speed change
-            if abs(speed - vs.prev_speed) >= 0.5:
+            if abs(speed - vs.cam_speed) >= 0.5:
                 trigger = True
 
-            # Apply T_GenCam minimum guard
+            # Apply DCC minimum guard (T_GenCam provided by DCC acts as T_GenCamMin_Dcc)
+            if dt < vs.T_GenCam:
+                trigger = False  # blocked by DCC
+
+            # Apply absolute minimum guard just in case
             if dt < T_GENCAM_MIN:
-                trigger = False  # honour minimum period
+                trigger = False
 
             if trigger:
                 # Generate CAM
@@ -277,8 +304,14 @@ class ETSICAMLayer:
 
                 vs.last_cam_time = sim_time
                 vs.total_cam_sent += 1
+                
+                # Update CAM trigger baseline
+                vs.cam_x = x
+                vs.cam_y = y
+                vs.cam_speed = speed
+                vs.cam_heading = heading
 
-            # Update previous state
+            # Update step tracking
             vs.prev_x = x
             vs.prev_y = y
             vs.prev_speed = speed
@@ -299,7 +332,7 @@ class ETSICAMLayer:
             self._dcc_bhattacharyya(vs, cbr, n_est)
         elif method == "Fixed10Hz":
             self._dcc_fixed_10hz(vs)
-        elif method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG"]:
+        elif method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling"]:
             self._dcc_ai(vs, cbr, n_est, sim_time, method)
         # For AI-DCC methods, T_GenCam and p_tx are set externally by ai_dcc_hook.py
 
@@ -308,23 +341,15 @@ class ETSICAMLayer:
     # -----------------------------------------------------------------------
     def _dcc_reactive(self, vs: VehicleCAMState, cbr: float):
         """3-state machine: RELAXED <-> ACTIVE <-> RESTRICTED."""
-        state = vs.dcc_state
-        if state == "RELAXED":
-            if cbr >= CBR_ACTIVE_THRESH:
-                vs.dcc_state = "ACTIVE"
-                vs.T_GenCam = T_GENCAM_ACTIVE
-        elif state == "ACTIVE":
-            if cbr < CBR_RELAXED_THRESH:
-                vs.dcc_state = "RELAXED"
-                vs.T_GenCam = T_GENCAM_RELAXED
-            elif cbr >= CBR_ACTIVE_THRESH:
-                vs.dcc_state = "RESTRICTED"
-                vs.T_GenCam = T_GENCAM_RESTRICTED
-        elif state == "RESTRICTED":
-            if cbr < CBR_ACTIVE_THRESH:
-                vs.dcc_state = "ACTIVE"
-                vs.T_GenCam = T_GENCAM_ACTIVE
-
+        if cbr < CBR_RELAXED_THRESH:
+            vs.dcc_state = "RELAXED"
+            vs.T_GenCam = T_GENCAM_RELAXED
+        elif cbr < CBR_ACTIVE_THRESH:
+            vs.dcc_state = "ACTIVE"
+            vs.T_GenCam = T_GENCAM_ACTIVE
+        else:
+            vs.dcc_state = "RESTRICTED"
+            vs.T_GenCam = T_GENCAM_RESTRICTED
     # -----------------------------------------------------------------------
     # AdaptDCC: Simplified Adaptive (per idea_spec.md §10.1)
     # -----------------------------------------------------------------------

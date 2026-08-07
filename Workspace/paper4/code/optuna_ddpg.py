@@ -33,7 +33,10 @@ def objective(trial):
         _ = runner.run()
         
         # Train a bit after episode
-        for _ in range(50):
+        num_updates = len(agent.memory) // agent.batch_size
+        if num_updates < 1:
+            num_updates = 1
+        for _ in range(num_updates):
             agent.train_step()
             
         mean_reward += hook.episode_reward
@@ -73,10 +76,16 @@ def train_best_model(best_params):
         metrics = runner.run()
         
         a_loss, c_loss = 0, 0
-        for _ in range(100):
+        num_updates = len(agent.memory) // agent.batch_size
+        if num_updates < 1:
+            num_updates = 1
+        for _ in range(num_updates):
             al, cl = agent.train_step()
             a_loss += al
             c_loss += cl
+            
+        a_loss /= num_updates
+        c_loss /= num_updates
             
         ep_reward = hook.episode_reward
         
@@ -89,7 +98,7 @@ def train_best_model(best_params):
         
         with open('ddpg_train_log.csv', 'a', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([ep+1, ep_reward, a_loss/100, c_loss/100, aoi, cbr, pdr])
+            writer.writerow([ep+1, ep_reward, a_loss, c_loss, aoi, cbr, pdr])
             
     # Evaluation run
     print("Running final evaluation...")

@@ -69,9 +69,10 @@ class ResNetMoEDQN(nn.Module):
         
         self.experts = nn.ModuleList([DuelingExpert(hidden_dim, action_dim) for _ in range(num_experts)])
         
-    def forward(self, state):
+    def forward(self, state, return_gate_weights=False):
         features = self.feature_extractor(state)
-        gate_weights = self.gating_network(features)
+        # Detach features for gating network to prevent representation instability
+        gate_weights = self.gating_network(features.detach())
         
         expert_outputs = []
         for expert in self.experts:
@@ -80,6 +81,9 @@ class ResNetMoEDQN(nn.Module):
         expert_outputs = torch.stack(expert_outputs, dim=1)
         weighted_q_vals = expert_outputs * gate_weights.unsqueeze(-1)
         q_vals = weighted_q_vals.sum(dim=1)
+        
+        if return_gate_weights:
+            return q_vals, gate_weights
         return q_vals
 
 class ResNetMoEAgent:
@@ -134,7 +138,8 @@ class ResNetMoEAgent:
         next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
         
-        q_vals = self.q_network(states).gather(1, actions)
+        q_vals_all, gate_weights = self.q_network(states, return_gate_weights=True)
+        q_vals = q_vals_all.gather(1, actions)
         
         with torch.no_grad():
             next_actions = self.q_network(next_states).argmax(dim=1, keepdim=True)
@@ -143,11 +148,22 @@ class ResNetMoEAgent:
             
         loss = self.criterion(q_vals, target_q_vals)
         
+        # Load balancing loss (coefficient of variation of gate weights across batch)
+        # gate_weights shape: (batch_size, num_experts)
+        importance = gate_weights.mean(dim=0) # mean probability per expert
+        # cv^2 = var / mean^2, but mean is 1/num_experts on average.
+        # to prevent division by zero, we use standard form: num_experts * sum(importance^2) - 1
+        # or simply cv squared of importance
+        cv_squared = torch.var(importance) / (torch.mean(importance)**2 + 1e-8)
+        lb_loss = 0.01 * cv_squared
+        
+        total_loss = loss + lb_loss
+        
         self.optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         self.optimizer.step()
         
-        return loss.item()
+        return total_loss.item()
         
     def update_epsilon(self):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)

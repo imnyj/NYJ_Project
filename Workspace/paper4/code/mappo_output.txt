@@ -1,29 +1,51 @@
+[I 2026-08-07 15:28:46,256] A new study created in memory with name: no-name-37db86f7-a850-44c2-a220-7a0e14bc1f9a
+Success.
+Success.
+[I 2026-08-07 15:28:52,118] Trial 0 finished with value: -783.6569105733247 and parameters: {'lr': 0.0001380031244188528, 'gamma': 0.9898689201567109, 'eps_clip': 0.22663362320571803, 'k_epochs': 8, 'batch_size': 64}. Best is trial 0 with value: -783.6569105733247.
+Success.
+Success.
+[I 2026-08-07 15:28:56,630] Trial 1 finished with value: -784.9149222656175 and parameters: {'lr': 0.0001581392298979066, 'gamma': 0.9584908905266329, 'eps_clip': 0.12667889060299622, 'k_epochs': 8, 'batch_size': 32}. Best is trial 0 with value: -783.6569105733247.
+Success.
+Success.
+[I 2026-08-07 15:29:01,321] Trial 2 finished with value: -784.9368843695975 and parameters: {'lr': 0.001652845913174559, 'gamma': 0.956733320406894, 'eps_clip': 0.15928934636183167, 'k_epochs': 2, 'batch_size': 128}. Best is trial 0 with value: -783.6569105733247.
+Success.
+Success.
+[I 2026-08-07 15:29:06,091] Trial 3 finished with value: -783.4640581879215 and parameters: {'lr': 0.0009893178747059708, 'gamma': 0.9408067965929964, 'eps_clip': 0.24141643061499035, 'k_epochs': 8, 'batch_size': 64}. Best is trial 3 with value: -783.4640581879215.
+Success.
+Success.
+[I 2026-08-07 15:29:10,772] Trial 4 finished with value: -783.4780620218381 and parameters: {'lr': 0.0015513859743077811, 'gamma': 0.98951665125329, 'eps_clip': 0.2524427430590801, 'k_epochs': 10, 'batch_size': 128}. Best is trial 3 with value: -783.4640581879215.
 Success.
 Success.
 Success.
 Success.
 Success.
 Success.
-Success.
-Success.
-Success.
-Success.
-Success.
-Success.
-Success.
-Success.
-Success.
-Success.
-Best params: {'lr': 0.00127328073402658, 'gamma': 0.9466364642773654, 'eps_clip': 0.17017451930187485, 'k_epochs': 8, 'batch_size': 128}
-Episode 1 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
-Metrics -> AoI: 177.286, CBR: 0.018, PDR: 100.000
-Episode 2 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
-Metrics -> AoI: 152.069, CBR: 0.019, PDR: 100.000
-Episode 3 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
-Metrics -> AoI: 172.992, CBR: 0.013, PDR: 100.000
-Episode 4 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
-Metrics -> AoI: 0.000, CBR: 0.009, PDR: 100.000
-Episode 5 | Reward: 0.00 | Loss (A/C): 0.0000/0.0000
-Metrics -> AoI: 246.970, CBR: 0.013, PDR: 100.000
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+Best params: {'lr': 0.0009893178747059708, 'gamma': 0.9408067965929964, 'eps_clip': 0.24141643061499035, 'k_epochs': 8, 'batch_size': 64}
+ Retrying in 1 seconds
+Episode 1 | Reward: -1542.47 | Loss (A/C): -0.0044/0.3314
+Metrics -> AoI: 706.415, CBR: 0.010, PDR: 100.000
+ Retrying in 1 seconds
+Episode 2 | Reward: -1476.59 | Loss (A/C): -0.0123/0.2501
+Metrics -> AoI: 213.099, CBR: 0.011, PDR: 100.000
+ Retrying in 1 seconds
+Episode 3 | Reward: -1259.33 | Loss (A/C): -0.0122/0.2225
+Metrics -> AoI: 331.216, CBR: 0.008, PDR: 100.000
+ Retrying in 1 seconds
+Episode 4 | Reward: -377.86 | Loss (A/C): -0.0172/0.1739
+Metrics -> AoI: 0.000, CBR: 0.006, PDR: 100.000
+ Retrying in 1 seconds
+Episode 5 | Reward: -571.05 | Loss (A/C): -0.0123/0.1264
+Metrics -> AoI: 425.845, CBR: 0.009, PDR: 100.000
 Model saved.
-EVAL -> PDR: 100.000, CBR: 0.022, AoI: 337.886
+ Retrying in 1 seconds
+EVAL -> PDR: 100.000, CBR: 0.015, AoI: 500.859

@@ -8,7 +8,7 @@ from ai_dcc_hook import get_hook
 
 def main():
     agent = DQNAgent(state_dim=5, action_dim=16, buffer_size=50000, batch_size=64)
-    hook = get_hook("DuelingDQN")
+    hook = get_hook("VanillaDQN")
     hook.set_agent(agent)
     hook.is_training = True
 
@@ -24,7 +24,7 @@ def main():
         print(f"Starting Episode {ep+1}/{num_episodes}...")
         # A shorter duration for quicker validation if allowed, but we'll stick to default 3000 steps (300s) 
         # or maybe we can pass shorter duration_steps to speed it up
-        runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=42+ep, method="DuelingDQN", method_params={}, duration_steps=1000)
+        runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=42+ep, method="VanillaDQN", method_params={}, duration_steps=1000)
         metrics = runner.run()
         
         # Train agent 
@@ -34,15 +34,16 @@ def main():
         
         losses = []
         num_updates = len(agent.memory) // agent.batch_size
-        if num_updates > 100:
-            num_updates = 100
+        if num_updates < 1:
+            num_updates = 1
             
         for _ in range(num_updates):
             loss = agent.train_step()
             if loss > 0.0:
                 losses.append(loss)
+            if hasattr(agent, 'update_epsilon'):
+                agent.update_epsilon()
                 
-        agent.update_epsilon()
         agent.update_target_network()
         
         avg_loss = sum(losses)/len(losses) if losses else 0.0
@@ -61,8 +62,8 @@ def main():
             writer.writerow([ep+1, ep_reward, avg_loss, agent.epsilon, aoi, cbr, pdr])
             
     # Save the model
-    agent.save("dueling_dqn.pth")
-    print("Training finished, model saved to dueling_dqn.pth")
+    agent.save("vanilla_dqn.pth")
+    print("Training finished, model saved to vanilla_dqn.pth")
 
 if __name__ == "__main__":
     main()

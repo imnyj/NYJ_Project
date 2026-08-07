@@ -13,7 +13,7 @@ def objective(trial):
     batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
     
     agent = DQNAgent(state_dim=5, action_dim=16, lr=lr, gamma=gamma, buffer_size=10000, batch_size=batch_size)
-    hook = get_hook("DuelingDQN")
+    hook = get_hook("VanillaDQN")
     hook.set_agent(agent)
     hook.is_training = True
 
@@ -23,18 +23,21 @@ def objective(trial):
     for ep in range(num_episodes):
         hook.reset_episode()
         # Shorter duration for optuna
-        runner = SimulationRunner(scenario="urban_grid", n_vehicles=30, seed=42+ep, method="DuelingDQN", method_params={}, duration_steps=500)
+        runner = SimulationRunner(scenario="urban_grid", n_vehicles=30, seed=42+ep, method="VanillaDQN", method_params={}, duration_steps=500)
         runner.run()
         
         # Train agent
+        losses = []
         num_updates = len(agent.memory) // agent.batch_size
-        if num_updates > 50:
-            num_updates = 50
+        if num_updates < 1:
+            num_updates = 1
             
         for _ in range(num_updates):
-            agent.train_step()
-                
-        agent.update_epsilon()
+            loss = agent.train_step()
+            if loss > 0.0:
+                losses.append(loss)
+            if hasattr(agent, 'update_epsilon'):
+                agent.update_epsilon()
         agent.update_target_network()
         
         avg_rewards.append(hook.episode_reward)
@@ -53,7 +56,7 @@ def main():
     best_batch_size = study.best_params["batch_size"]
     
     agent = DQNAgent(state_dim=5, action_dim=16, lr=best_lr, gamma=best_gamma, buffer_size=50000, batch_size=best_batch_size)
-    hook = get_hook("DuelingDQN")
+    hook = get_hook("VanillaDQN")
     hook.set_agent(agent)
     hook.is_training = True
     
@@ -61,15 +64,16 @@ def main():
     num_episodes = 3
     for ep in range(num_episodes):
         hook.reset_episode()
-        runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=100+ep, method="DuelingDQN", method_params={}, duration_steps=1000)
+        runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=100+ep, method="VanillaDQN", method_params={}, duration_steps=1000)
         runner.run()
         
         num_updates = len(agent.memory) // agent.batch_size
-        if num_updates > 100:
-            num_updates = 100
+        if num_updates < 1:
+            num_updates = 1
         for _ in range(num_updates):
             agent.train_step()
-        agent.update_epsilon()
+            if hasattr(agent, 'update_epsilon'):
+                agent.update_epsilon()
         agent.update_target_network()
         
     agent.save("vanilla_dqn.pth")
@@ -77,7 +81,7 @@ def main():
     
     # Evaluation
     hook.is_training = False
-    runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=999, method="DuelingDQN", method_params={}, duration_steps=2000)
+    runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=999, method="VanillaDQN", method_params={}, duration_steps=2000)
     metrics = runner.run()
     
     aoi = metrics.get('AoI_mean', 0.0)

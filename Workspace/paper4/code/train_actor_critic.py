@@ -28,12 +28,7 @@ def objective(trial):
         _ = runner.run()
         
         # Train agent
-        num_updates = len(agent.memory) // agent.batch_size
-        if num_updates > 20:
-            num_updates = 20
-        for _ in range(num_updates):
-            agent.train_step()
-            
+        agent.train_step()
         mean_reward += hook.episode_reward
         
     return mean_reward / num_episodes
@@ -67,22 +62,11 @@ def train_best_model(best_params):
         metrics = runner.run()
         
         # Train agent
-        actor_losses = []
-        critic_losses = []
-        num_updates = len(agent.memory) // agent.batch_size
-        if num_updates > 100:
-            num_updates = 100
+        avg_aloss, avg_closs = agent.train_step()
+        if hasattr(agent, "update_epsilon"):
+            agent.update_epsilon()
             
-        for _ in range(num_updates):
-            aloss, closs = agent.train_step()
-            if aloss != 0.0 or closs != 0.0:
-                actor_losses.append(aloss)
-                critic_losses.append(closs)
-                
         ep_reward = hook.episode_reward
-        
-        avg_aloss = sum(actor_losses)/len(actor_losses) if actor_losses else 0.0
-        avg_closs = sum(critic_losses)/len(critic_losses) if critic_losses else 0.0
         
         aoi = metrics.get('AoI_mean', 0.0)
         cbr = metrics.get('CBR_mean', 0.0)

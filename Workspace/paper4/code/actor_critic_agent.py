@@ -32,6 +32,7 @@ class ActorCritic(nn.Module):
         value = self.critic(state)
         return policy_dist, value
 
+
 class ActorCriticAgent:
     def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, buffer_size=100000, batch_size=64):
         self.state_dim = state_dim
@@ -44,7 +45,7 @@ class ActorCriticAgent:
         self.network = ActorCritic(state_dim, action_dim).to(self.device)
         self.optimizer = optim.Adam(self.network.parameters(), lr=lr)
         
-        self.memory = deque(maxlen=buffer_size)
+        self.memory = []
         
     def act(self, state, evaluate=False):
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
@@ -56,7 +57,6 @@ class ActorCriticAgent:
         if evaluate:
             return torch.argmax(policy_dist).item()
         
-        # Sample action based on policy probabilities
         m = torch.distributions.Categorical(policy_dist)
         action = m.sample().item()
         return action
@@ -65,25 +65,23 @@ class ActorCriticAgent:
         self.memory.append((state, action, reward, next_state, done))
         
     def train_step(self):
-        if len(self.memory) < self.batch_size:
+        if len(self.memory) == 0:
             return 0.0, 0.0
             
-        batch = random.sample(self.memory, self.batch_size)
-        states, actions, rewards, next_states, dones = zip(*batch)
-        
-        states = torch.FloatTensor(np.array(states)).to(self.device)
-        actions = torch.LongTensor(actions).to(self.device)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
-        next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
+        states = torch.FloatTensor(np.array([m[0] for m in self.memory])).to(self.device)
+        actions = torch.LongTensor([m[1] for m in self.memory]).to(self.device)
+        rewards = torch.FloatTensor([m[2] for m in self.memory]).unsqueeze(1).to(self.device)
+        next_states = torch.FloatTensor(np.array([m[3] for m in self.memory])).to(self.device)
+        dones = torch.FloatTensor([m[4] for m in self.memory]).unsqueeze(1).to(self.device)
         
         # Forward pass
         policy_dist, values = self.network(states)
-        _, next_values = self.network(next_states)
+        with torch.no_grad():
+            _, next_values = self.network(next_states)
         
         # Compute advantage
         target_values = rewards + self.gamma * next_values * (1 - dones)
-        advantages = target_values.detach() - values
+        advantages = target_values - values
         
         # Critic loss
         critic_loss = advantages.pow(2).mean()
@@ -99,8 +97,10 @@ class ActorCriticAgent:
         loss.backward()
         self.optimizer.step()
         
-        return actor_loss.item(), critic_loss.item()
+        # Clear memory since A2C is on-policy
+        self.memory.clear()
         
+        return actor_loss.item(), critic_loss.item()
     def save(self, filepath):
         torch.save(self.network.state_dict(), filepath)
         

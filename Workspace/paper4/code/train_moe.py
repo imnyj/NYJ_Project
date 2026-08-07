@@ -27,15 +27,15 @@ def main():
         
         losses = []
         num_updates = len(agent.memory) // agent.batch_size
-        if num_updates > 100:
-            num_updates = 100
+        if num_updates < 1:
+            num_updates = 1
             
         for _ in range(num_updates):
             loss = agent.train_step()
             if loss > 0.0:
                 losses.append(loss)
-                
-        agent.update_epsilon()
+            if hasattr(agent, 'update_epsilon'):
+                agent.update_epsilon()
         agent.update_target_network()
         
         avg_loss = sum(losses)/len(losses) if losses else 0.0

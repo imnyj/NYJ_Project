@@ -26,8 +26,9 @@ class MoEFeature(nn.Module):
             nn.Softmax(dim=-1)
         )
         
-    def forward(self, state):
-        gate_weights = self.gating_network(state)
+    def forward(self, state, return_gate_weights=False):
+        # Detach state for gating network to prevent representation instability
+        gate_weights = self.gating_network(state.detach())
         
         expert_outputs = []
         for i, expert in enumerate(self.experts):
@@ -36,7 +37,11 @@ class MoEFeature(nn.Module):
         expert_outputs = torch.stack(expert_outputs, dim=1)
         weighted_features = expert_outputs * gate_weights.unsqueeze(-1)
         features = weighted_features.sum(dim=1)
+        
+        if return_gate_weights:
+            return features, gate_weights
         return features
+
 
 class MoEDQN(nn.Module):
     def __init__(self, state_dim, action_dim, num_experts=2):
@@ -56,13 +61,21 @@ class MoEDQN(nn.Module):
             nn.Linear(64, action_dim)
         )
         
-    def forward(self, state):
-        features = self.feature_layer(state)
+    def forward(self, state, return_gate_weights=False):
+        if return_gate_weights:
+            features, gate_weights = self.feature_layer(state, return_gate_weights=True)
+        else:
+            features = self.feature_layer(state)
+            
         value = self.value_stream(features)
         advantage = self.advantage_stream(features)
         
         q_vals = value + (advantage - advantage.mean(dim=1, keepdim=True))
+        
+        if return_gate_weights:
+            return q_vals, gate_weights
         return q_vals
+
 
 class MoEAgent:
     def __init__(self, state_dim, action_dim, num_experts=2, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64):
@@ -116,7 +129,8 @@ class MoEAgent:
         next_states = torch.FloatTensor(np.array(next_states)).to(self.device)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(self.device)
         
-        q_vals = self.q_network(states).gather(1, actions)
+        q_vals_all, gate_weights = self.q_network(states, return_gate_weights=True)
+        q_vals = q_vals_all.gather(1, actions)
         
         with torch.no_grad():
             next_actions = self.q_network(next_states).argmax(dim=1, keepdim=True)
@@ -125,11 +139,18 @@ class MoEAgent:
             
         loss = self.criterion(q_vals, target_q_vals)
         
+        # Load balancing loss (coefficient of variation of gate weights across batch)
+        importance = gate_weights.mean(dim=0) # mean probability per expert
+        cv_squared = torch.var(importance) / (torch.mean(importance)**2 + 1e-8)
+        lb_loss = 0.01 * cv_squared
+        
+        total_loss = loss + lb_loss
+        
         self.optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         self.optimizer.step()
         
-        return loss.item()
+        return total_loss.item()
         
     def update_epsilon(self):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)

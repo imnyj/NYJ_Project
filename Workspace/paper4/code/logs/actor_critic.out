@@ -1,0 +1,51 @@
+[I 2026-08-07 15:36:02,324] A new study created in memory with name: no-name-590a1044-57cf-4ead-b5f4-f4d3c0bb3cfd
+Success.
+Success.
+[I 2026-08-07 15:36:09,241] Trial 0 finished with value: -828.4073990908182 and parameters: {'lr': 0.004032901334983545, 'gamma': 0.8663897678729024, 'batch_size': 64}. Best is trial 0 with value: -828.4073990908182.
+Success.
+Success.
+[I 2026-08-07 15:36:14,287] Trial 1 finished with value: -827.086459340102 and parameters: {'lr': 0.00043502122093470674, 'gamma': 0.8034278134215378, 'batch_size': 128}. Best is trial 1 with value: -827.086459340102.
+Success.
+Success.
+[I 2026-08-07 15:36:19,296] Trial 2 finished with value: -827.0545060604663 and parameters: {'lr': 0.0030229564302699783, 'gamma': 0.8228970337371795, 'batch_size': 128}. Best is trial 2 with value: -827.0545060604663.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+Best Params found: {'lr': 0.0030229564302699783, 'gamma': 0.8228970337371795, 'batch_size': 128}
+Training final model with best params: {'lr': 0.0030229564302699783, 'gamma': 0.8228970337371795, 'batch_size': 128}
+Starting Episode 1/5...
+ Retrying in 1 seconds
+Episode 1 | Reward: -942.91 | ALoss: -1.4809 | CLoss: 0.4619
+Metrics -> AoI: 230.087, CBR: 0.008, PDR: 81.430
+Starting Episode 2/5...
+ Retrying in 1 seconds
+Episode 2 | Reward: -2185.84 | ALoss: -0.3354 | CLoss: 0.1168
+Metrics -> AoI: 200.020, CBR: 0.013, PDR: 92.890
+Starting Episode 3/5...
+ Retrying in 1 seconds
+Episode 3 | Reward: -1586.01 | ALoss: -0.0720 | CLoss: 0.0325
+Metrics -> AoI: 227.060, CBR: 0.007, PDR: 99.110
+Starting Episode 4/5...
+ Retrying in 1 seconds
+Episode 4 | Reward: -2228.65 | ALoss: 0.0181 | CLoss: 0.0282
+Metrics -> AoI: 355.481, CBR: 0.007, PDR: 98.610
+Starting Episode 5/5...
+ Retrying in 1 seconds
+Episode 5 | Reward: -859.17 | ALoss: 0.0193 | CLoss: 0.0274
+Metrics -> AoI: 492.349, CBR: 0.006, PDR: 99.110
+Running final evaluation...
+ Retrying in 1 seconds
+Training finished, model saved to actor_critic.pth
+Final Evaluation Metrics:
+AoI: 549.7900
+CBR: 0.0043
+PDR: 98.7800

@@ -16,8 +16,11 @@ class Actor(nn.Module):
     def forward(self, state):
         x = F.relu(self.fc1(state))
         x = F.relu(self.fc2(x))
-        x = F.softmax(self.fc3(x), dim=-1)
-        return x
+        logits = self.fc3(x)
+        # Always use gumbel_softmax during training, hard=True gives one-hot vectors
+        # For evaluation, we can just use argmax, but gumbel_softmax handles it automatically if we set noise properly.
+        # It's better to just use gumbel_softmax with hard=True
+        return F.gumbel_softmax(logits, tau=1.0, hard=True)
 
 class Critic(nn.Module):
     def __init__(self, state_dim, action_dim):
@@ -59,7 +62,10 @@ class DDPGAgent:
         state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
         self.actor.eval()
         with torch.no_grad():
-            action_probs = self.actor(state_tensor).cpu().numpy()[0]
+            x = F.relu(self.actor.fc1(state_tensor))
+            x = F.relu(self.actor.fc2(x))
+            logits = self.actor.fc3(x)
+            action_probs = F.softmax(logits, dim=-1).cpu().numpy()[0]
         self.actor.train()
         
         if evaluate:

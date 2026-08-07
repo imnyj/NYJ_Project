@@ -24,7 +24,7 @@ class SARSAAgent:
         # cbr_global (0 to 1), n_neighbors (0 to 200), v_norm (0 to 1), dt_since_last_cam (0 to 1), cbr_smoothed (0 to 1)
         self.state_bounds = [
             (0.0, 1.0),
-            (0.0, 200.0),
+            (0.0, 4.0),
             (0.0, 1.0),
             (0.0, 1.0),
             (0.0, 1.0)

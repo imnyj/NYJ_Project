@@ -69,12 +69,13 @@ class AoITracker:
     # -------------------------------------------------------------------------
     # Event handlers
     # -------------------------------------------------------------------------
-    def on_cam_sent(self, sender_id: str, t_gen: float, x: float, y: float):
+    def on_cam_sent(self, sender_id: str, t_gen: float, x: float, y: float, in_range_count: int = 0):
         """Record a CAM transmission event."""
         self.last_cam_sent[sender_id] = (t_gen, x, y)
         if not self._in_warmup:
             self.cam_tx_count[sender_id] += 1
             self.cam_tx_total += 1
+            self.cam_tx_in_range_total += in_range_count
 
     def on_cam_received(self, sender_id: str, receiver_id: str,
                         t_rx: float, t_gen: float,

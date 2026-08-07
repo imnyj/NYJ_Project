@@ -20,10 +20,13 @@ import random
 import csv
 import time
 import tempfile
+import re
+import subprocess
+import shutil
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-import traci as libsumo
+import libsumo
 
 # Import our modules
 import sys
@@ -79,36 +82,48 @@ def reception_probability(dist_m: float, p_tx_dbm: float = 20.0) -> float:
     # Simplified: use exponential approximation
     if snr_linear <= 0:
         return 0.0
-    # Simplified Nakagami CDF approximation
+        
     ratio = snr_linear / snr_thresh_lin
-    if ratio > 20:
+    if ratio > 50:
         return 1.0
-    # P_success ≈ 1 - exp(-m * ratio) for m=1; for m=3 use (1 - exp(-ratio))^m
-    p = 1.0 - math.exp(-NAKAGAMI_M_PARAM * ratio / 3.0)
+        
+    # Exact Nakagami-m CCDF for m=3
+    # P_success = P(SNR_instant >= threshold)
+    x = NAKAGAMI_M_PARAM / ratio
+    p = math.exp(-x) * (1.0 + x + 0.5 * (x ** 2))
     return max(0.0, min(1.0, p))
 
 
-def compute_cbr(vehicle_positions: Dict[str, Tuple[float, float]],
-                cam_events_this_step: list,
-                n_vehicles: int,
-                step_duration_s: float = 0.1) -> float:
+def compute_local_cbr(vehicle_positions: Dict[str, Tuple[float, float]],
+                      cam_events_this_step: list,
+                      step_duration_s: float = 0.1,
+                      sense_range_m: float = 500.0) -> Tuple[Dict[str, float], float]:
     """
-    Estimate Channel Busy Ratio for this step.
-    CBR = (total transmission time) / (step_duration * 1 channel)
-    Approximation: each CAM uses TX_DURATION_S of channel time.
-    With n_vehicles all transmitting, CBR = n_cams * TX_DURATION_S / step_duration
+    Estimate local Channel Busy Ratio for each vehicle.
+    For each vehicle, count CAMs generated within sense_range_m.
     """
-    n_cams = len(cam_events_this_step)
-    cbr = n_cams * TX_DURATION_S / step_duration_s
-    return min(cbr, 1.0)
+    cbr_dict = {}
+    cams_info = [(ev["x"], ev["y"]) for ev in cam_events_this_step]
+    
+    for vid, (x, y) in vehicle_positions.items():
+        n_cams = 0
+        for cx, cy in cams_info:
+            if math.sqrt((x - cx)**2 + (y - cy)**2) <= sense_range_m:
+                n_cams += 1
+        cbr = n_cams * TX_DURATION_S / step_duration_s
+        cbr_dict[vid] = min(cbr, 1.0)
+        
+    cbr_mean = sum(cbr_dict.values()) / len(cbr_dict) if cbr_dict else 0.0
+    return cbr_dict, cbr_mean
 
 
 def simulate_receptions(cam_events: list,
                         vehicle_positions: Dict[str, Tuple[float, float]],
-                        cbr: float,
+                        cbr_dict: Dict[str, float],
                         rng: random.Random,
                         dist_tx_counts: list,
-                        dist_rx_counts: list) -> List[Dict]:
+                        dist_rx_counts: list,
+                        is_warmup: bool = False) -> List[Dict]:
     """
     Simulate CAM reception by nearby vehicles.
     Returns list of reception events: {sender, receiver, t_rx, t_gen, dist_m}
@@ -121,22 +136,34 @@ def simulate_receptions(cam_events: list,
         sx, sy = vehicle_positions.get(sid, (ev["x"], ev["y"]))
         t_gen = ev["t_gen"]
         p_tx_dbm = ev["p_tx"]
+        in_range_count = 0
 
         for rid in vehicle_ids:
             if rid == sid:
                 continue
             rx, ry = vehicle_positions[rid]
             dist_m = math.sqrt((sx - rx)**2 + (sy - ry)**2)
+            
+            if dist_m <= COMM_RANGE_M:
+                in_range_count += 1
+                
+            if not is_warmup:
+                bin_idx = min(int(dist_m / 50.0), 5)
+                dist_tx_counts[bin_idx] += 1
+
             if dist_m > COMM_RANGE_M * 2:  # Skip far-away vehicles
                 continue
 
             # Adjust reception probability for channel load (collisions)
             p_rx = reception_probability(dist_m, p_tx_dbm)
             # MAC layer contention: modified to avoid excessive penalty and reflect density variations
-            collision_factor = max(0.1, 1.0 - cbr * 0.8)
+            receiver_cbr = cbr_dict.get(rid, 0.0)
+            collision_factor = max(0.1, 1.0 - receiver_cbr * 0.8)
             p_rx *= collision_factor
 
             if rng.random() < p_rx:
+                if not is_warmup:
+                    dist_rx_counts[bin_idx] += 1
                 # Propagation delay: negligible at these distances
                 prop_delay_s = dist_m / 3e8  # ~1 us for 300m
                 reception_events.append({
@@ -146,6 +173,10 @@ def simulate_receptions(cam_events: list,
                     "t_gen": t_gen,
                     "dist_m": dist_m,
                 })
+        
+        ev["in_range_count"] = in_range_count
+
+    return reception_events
 
     return reception_events
 
@@ -153,6 +184,59 @@ def simulate_receptions(cam_events: list,
 # ---------------------------------------------------------------------------
 # Network file generators
 # ---------------------------------------------------------------------------
+def load_config(config_path: str) -> dict:
+    config = {}
+    if not os.path.exists(config_path):
+        return config
+    with open(config_path, 'r') as f:
+        for line in f:
+            if line.startswith('|'):
+                parts = [p.strip() for p in line.split('|')]
+                if len(parts) >= 4:
+                    key, val = parts[1], parts[2]
+                    if key in ['Variable', '---']:
+                        continue
+                    try:
+                        config[key] = float(val) if '.' in val else int(val)
+                    except ValueError:
+                        pass
+    return config
+
+def generate_sumonetsim_files(work_dir: str, config: dict, seed: int):
+    source_script = "/home/imnyj/SumoNetSim1.1.5/src/sumo/make_sumo_set.py"
+    if not os.path.exists(source_script):
+        return False
+        
+    with open(source_script, 'r') as f:
+        code = f.read()
+        
+    for k, v in config.items():
+        code = re.sub(rf"^{k}\s*=.*", f"{k} = {v}", code, flags=re.MULTILINE)
+        
+    # Inject seed to restore reproducibility
+    code = f"import random\nrandom.seed({seed})\n" + code
+        
+    script_path = os.path.join(work_dir, "make_sumo_set.py")
+    with open(script_path, 'w') as f:
+        f.write(code)
+        
+    if "__main__" not in code:
+        with open(script_path, 'a') as f:
+            f.write("\n\nif __name__ == '__main__':\n    make_sumo_files()\n")
+            
+    rsu_source = "/home/imnyj/SumoNetSim1.1.5/src/sumo/rsu.poi.xml"
+    if os.path.exists(rsu_source):
+        shutil.copy(rsu_source, os.path.join(work_dir, "rsu.poi.xml"))
+        
+    env = os.environ.copy()
+    env["PATH"] = "/home/imnyj/venv/bin:" + env.get("PATH", "")
+    
+    try:
+        subprocess.check_call(["python3", "make_sumo_set.py"], cwd=work_dir, env=env)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
 def generate_urban_grid_net(output_path: str):
     """Generate a simple 3x3 grid network XML (no binary SUMO tools needed)."""
     # Use sumolib to generate via netgenerate command string
@@ -266,14 +350,20 @@ def generate_routes(net_path: str, route_path: str, n_vehicles: int,
 # SUMO config file generator
 # ---------------------------------------------------------------------------
 def generate_sumocfg(net_path: str, route_path: str, cfg_path: str,
-                     duration_steps: int, step_length: float = 0.1):
+                     duration_steps: int, step_length: float = 0.1,
+                     add_paths: Optional[List[str]] = None):
     """Generate a .sumocfg file for this run."""
+    add_str = ""
+    if add_paths:
+        add_val = ",".join(add_paths)
+        add_str = f'\n        <additional-files value="{add_val}"/>'
+
     cfg_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
     <input>
         <net-file value="{net_path}"/>
-        <route-files value="{route_path}"/>
+        <route-files value="{route_path}"/>{add_str}
     </input>
     <time>
         <begin value="0"/>
@@ -321,30 +411,34 @@ class SimulationRunner:
         t_start = time.time()
         os.makedirs(self.work_dir, exist_ok=True)
 
-        # Generate network and route files
-        net_path = os.path.join(self.work_dir, f"{self.scenario}.net.xml")
-        route_path = os.path.join(self.work_dir,
-                                   f"{self.scenario}_{self.n_vehicles}_{self.seed}.rou.xml")
-        cfg_path = os.path.join(self.work_dir,
-                                 f"{self.scenario}_{self.n_vehicles}_{self.seed}.sumocfg")
+        # Load config.md
+        config_path = os.path.join(_sim_dir, "config.md")
+        config = load_config(config_path)
 
-        # Generate network
-        if self.scenario == "urban_grid":
-            ok = generate_urban_grid_net(net_path)
-        else:
-            ok = generate_highway_net(net_path)
+        # Override config DENSITY with self.n_vehicles for sensitivity sweeps
+        config["DENSITY"] = self.n_vehicles
 
-        if not ok or not os.path.exists(net_path):
-            raise RuntimeError(f"Network generation failed for {self.scenario}")
+        # Generate network and route files using make_sumo_set.py based on config
+        ok = generate_sumonetsim_files(self.work_dir, config, self.seed)
+        if not ok:
+            raise RuntimeError("Failed to generate SUMO files using make_sumo_set.py")
 
-        # Generate routes
-        generate_routes(net_path, route_path, self.n_vehicles,
-                        int(self.duration_steps * self.STEP_LENGTH),
-                        self.seed, self.scenario)
+        net_path = os.path.join(self.work_dir, "generated.net.xml")
+        route_path = os.path.join(self.work_dir, "generated.rou.xml")
+        add_path = os.path.join(self.work_dir, "generated.add.xml")
+        cfg_path = os.path.join(self.work_dir, f"{self.scenario}_{self.n_vehicles}_{self.seed}.sumocfg")
+
+        add_paths = []
+        if os.path.exists(add_path):
+            add_paths.append(add_path)
+        rsu_path = os.path.join(self.work_dir, "rsu.poi.xml")
+        if os.path.exists(rsu_path):
+            add_paths.append(rsu_path)
 
         # Generate SUMO config
         generate_sumocfg(net_path, route_path, cfg_path,
-                         self.duration_steps, self.STEP_LENGTH)
+                         self.duration_steps, self.STEP_LENGTH,
+                         add_paths=add_paths)
 
         # Initialise modules
         cam_layer = ETSICAMLayer(method=self.method, method_params=self.method_params)
@@ -359,7 +453,7 @@ class SimulationRunner:
         dist_rx_counts = [0]*6
 
         # ---- libsumo simulation ----
-        libsumo.start(["/home/imnyj/venv/bin/sumo",
+        sumo_cmd = ["/home/imnyj/venv/bin/sumo",
                        "--net-file", net_path,
                        "--route-files", route_path,
                        "--step-length", str(self.STEP_LENGTH),
@@ -369,10 +463,15 @@ class SimulationRunner:
                        "--ignore-route-errors", "true",
                        "--no-warnings", "true",
                        "--no-step-log", "true",
-                       "--collision.action", "warn"])
+                       "--collision.action", "warn"]
+        if add_paths:
+            sumo_cmd.extend(["--additional-files", ",".join(add_paths)])
+            
+        libsumo.start(sumo_cmd)
 
         try:
             step = 0
+            previous_vehicle_ids = set()
             while libsumo.simulation.getMinExpectedNumber() > 0 and step < self.duration_steps:
                 libsumo.simulationStep()
                 sim_time = step * self.STEP_LENGTH
@@ -380,6 +479,13 @@ class SimulationRunner:
 
                 # Get active vehicles
                 vehicle_ids = libsumo.vehicle.getIDList()
+                
+                vehicle_ids_set = set(vehicle_ids)
+                departed_vids = previous_vehicle_ids - vehicle_ids_set
+                for vid in departed_vids:
+                    cam_layer.remove_vehicle(vid)
+                previous_vehicle_ids = vehicle_ids_set
+
                 if not vehicle_ids:
                     continue
 
@@ -398,32 +504,47 @@ class SimulationRunner:
                         "vid": vid, "x": x, "y": y,
                         "speed": speed, "heading": heading,
                         "accel": accel,
-                        "n_est": len(vehicle_ids) - 1,
                     })
 
                 if not vehicles_data:
                     continue
 
+                cbr_dict_prev = getattr(self, "_last_cbr_dict", {})
+                for vdata in vehicles_data:
+                    vid = vdata["vid"]
+                    x, y = vdata["x"], vdata["y"]
+                    vdata["cbr"] = cbr_dict_prev.get(vid, 0.0)
+                    
+                    # Local n_est
+                    n_est = 0
+                    for ovid, (ox, oy) in vehicle_positions.items():
+                        if ovid != vid:
+                            if math.sqrt((x-ox)**2 + (y-oy)**2) <= COMM_RANGE_M:
+                                n_est += 1
+                    vdata["n_est"] = n_est
+
                 # Compute CBR from previous step (bootstrapped)
-                cbr_prev = cbr_history[-1] if cbr_history else 0.0
+                cbr_prev_mean = cbr_history[-1] if cbr_history else 0.0
 
                 # CAM layer step
-                cam_events = cam_layer.step(vehicles_data, sim_time, cbr_prev)
+                cam_events = cam_layer.step(vehicles_data, sim_time, cbr_prev_mean)
+
+                # Compute CBR for this step
+                cbr_dict, cbr_mean = compute_local_cbr(vehicle_positions, cam_events, self.STEP_LENGTH)
+                self._last_cbr_dict = cbr_dict
+
+                is_warmup = (sim_time < self.warmup_s)
+
+                # Simulate receptions
+                reception_evs = simulate_receptions(
+                    cam_events, vehicle_positions, cbr_dict, rng,
+                    dist_tx_counts, dist_rx_counts, is_warmup
+                )
 
                 # Register CAM sends in AoI tracker
                 for ev in cam_events:
                     aoi_tracker.on_cam_sent(ev["vid"], ev["t_gen"],
-                                             ev["x"], ev["y"])
-
-                # Compute CBR for this step
-                cbr = compute_cbr(vehicle_positions, cam_events,
-                                   len(vehicles_data), self.STEP_LENGTH)
-
-                # Simulate receptions
-                reception_evs = simulate_receptions(
-                    cam_events, vehicle_positions, cbr, rng,
-                    dist_tx_counts, dist_rx_counts
-                )
+                                             ev["x"], ev["y"], ev.get("in_range_count", 0))
                 for rx_ev in reception_evs:
                     aoi_tracker.on_cam_received(
                         rx_ev["sender"], rx_ev["receiver"],
@@ -436,11 +557,13 @@ class SimulationRunner:
 
                 # Record metrics (after warmup)
                 if sim_time >= self.warmup_s:
-                    cbr_history.append(cbr)
+                    cbr_history.append(cbr_mean)
                     if mean_aoi > 0:
                         aoi_history.append(mean_aoi)
 
         finally:
+            for vid in list(cam_layer.vehicles.keys()):
+                cam_layer.remove_vehicle(vid)
             try:
                 libsumo.close()
             except Exception:

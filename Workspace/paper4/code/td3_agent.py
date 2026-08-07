@@ -109,7 +109,7 @@ class TD3Agent:
             noise = torch.randn_like(next_logits) * self.target_noise
             noise = noise.clamp(-self.noise_clip, self.noise_clip)
             next_logits = next_logits + noise
-            next_actions = F.softmax(next_logits, dim=-1)
+            next_actions = F.gumbel_softmax(next_logits, tau=1.0, hard=True)
             
             target_Q1, target_Q2 = self.critic_target(next_states, next_actions)
             target_Q = rewards + (1 - dones) * self.gamma * torch.min(target_Q1, target_Q2)

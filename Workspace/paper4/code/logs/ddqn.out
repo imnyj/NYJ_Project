@@ -1,0 +1,51 @@
+[I 2026-08-07 15:36:43,960] A new study created in memory with name: no-name-23051ed2-dfd8-46a6-a71b-2c1871774d1c
+Success.
+Success.
+[I 2026-08-07 15:36:49,119] Trial 0 finished with value: -783.9852216275199 and parameters: {'lr': 0.0020781582796216814, 'gamma': 0.974166781474066, 'tau': 0.04703706142281793, 'batch_size': 32, 'epsilon_decay': 0.9985250703555808}. Best is trial 0 with value: -783.9852216275199.
+Success.
+Success.
+[I 2026-08-07 15:36:52,088] Trial 1 finished with value: -783.6580756888087 and parameters: {'lr': 0.0008685145371732745, 'gamma': 0.9269876136361846, 'tau': 0.016595538850219062, 'batch_size': 128, 'epsilon_decay': 0.9927423110722169}. Best is trial 1 with value: -783.6580756888087.
+Success.
+Success.
+[I 2026-08-07 15:36:55,203] Trial 2 finished with value: -782.5007052968747 and parameters: {'lr': 0.0001107996760200961, 'gamma': 0.9819715492585523, 'tau': 0.04446165415172086, 'batch_size': 128, 'epsilon_decay': 0.9914956945805423}. Best is trial 2 with value: -782.5007052968747.
+Success.
+Success.
+[I 2026-08-07 15:36:58,211] Trial 3 finished with value: -786.4731452113714 and parameters: {'lr': 0.0001939415445230353, 'gamma': 0.9382870043807752, 'tau': 0.0393341403825173, 'batch_size': 64, 'epsilon_decay': 0.9911479550168876}. Best is trial 2 with value: -782.5007052968747.
+Success.
+Success.
+[I 2026-08-07 15:37:01,166] Trial 4 finished with value: -784.8937934393347 and parameters: {'lr': 0.0012140845457375953, 'gamma': 0.9130487157967703, 'tau': 0.02042903637183809, 'batch_size': 64, 'epsilon_decay': 0.9945000299306364}. Best is trial 2 with value: -782.5007052968747.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+Best params: {'lr': 0.0001107996760200961, 'gamma': 0.9819715492585523, 'tau': 0.04446165415172086, 'batch_size': 128, 'epsilon_decay': 0.9914956945805423}
+ Retrying in 1 seconds
+Episode 1 | Reward: -1544.38 | Loss: 0.2417
+Metrics -> AoI: 309.980, CBR: 0.010, PDR: 79.150
+ Retrying in 1 seconds
+Episode 2 | Reward: -1478.88 | Loss: 0.2648
+Metrics -> AoI: 331.521, CBR: 0.011, PDR: 83.950
+ Retrying in 1 seconds
+Episode 3 | Reward: -1250.32 | Loss: 0.2593
+Metrics -> AoI: 309.834, CBR: 0.009, PDR: 92.530
+ Retrying in 1 seconds
+Episode 4 | Reward: -374.96 | Loss: 0.2169
+Metrics -> AoI: 0.000, CBR: 0.007, PDR: 100.000
+ Retrying in 1 seconds
+Episode 5 | Reward: -563.84 | Loss: 0.2069
+Metrics -> AoI: 173.844, CBR: 0.012, PDR: 97.980
+Model saved.
+ Retrying in 1 seconds
+EVAL -> PDR: 93.550, CBR: 0.008, AoI: 854.227

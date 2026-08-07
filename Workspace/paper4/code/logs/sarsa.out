@@ -1,0 +1,61 @@
+[I 2026-08-07 15:36:01,278] A new study created in memory with name: no-name-a98fa0f2-0562-4981-829f-799bdee50daf
+Success.
+Success.
+[I 2026-08-07 15:36:04,310] Trial 0 finished with value: -828.6506303169203 and parameters: {'alpha': 0.4699350429883351, 'gamma': 0.9245508514277619, 'epsilon_decay': 0.9533516364000632, 'bin_cbr_global': 3, 'bin_n_neighbors': 10, 'bin_v_norm': 7, 'bin_dt': 8, 'bin_cbr_smoothed': 5}. Best is trial 0 with value: -828.6506303169203.
+Success.
+Success.
+[I 2026-08-07 15:36:07,256] Trial 1 finished with value: -828.5063503619922 and parameters: {'alpha': 0.116186883226604, 'gamma': 0.9550810631965595, 'epsilon_decay': 0.9557707122786014, 'bin_cbr_global': 7, 'bin_n_neighbors': 9, 'bin_v_norm': 6, 'bin_dt': 10, 'bin_cbr_smoothed': 7}. Best is trial 1 with value: -828.5063503619922.
+Success.
+Success.
+[I 2026-08-07 15:36:10,228] Trial 2 finished with value: -828.0172354345027 and parameters: {'alpha': 0.02402324805813506, 'gamma': 0.9053040198609895, 'epsilon_decay': 0.989513465790053, 'bin_cbr_global': 6, 'bin_n_neighbors': 6, 'bin_v_norm': 8, 'bin_dt': 7, 'bin_cbr_smoothed': 7}. Best is trial 2 with value: -828.0172354345027.
+Success.
+Success.
+[I 2026-08-07 15:36:13,186] Trial 3 finished with value: -828.5270909218298 and parameters: {'alpha': 0.44821791774777087, 'gamma': 0.9570397496852054, 'epsilon_decay': 0.9657680421424759, 'bin_cbr_global': 6, 'bin_n_neighbors': 5, 'bin_v_norm': 6, 'bin_dt': 9, 'bin_cbr_smoothed': 6}. Best is trial 2 with value: -828.0172354345027.
+Success.
+Success.
+[I 2026-08-07 15:36:16,160] Trial 4 finished with value: -828.2000131587041 and parameters: {'alpha': 0.05498995213719396, 'gamma': 0.8584001440263267, 'epsilon_decay': 0.9481432542148269, 'bin_cbr_global': 4, 'bin_n_neighbors': 3, 'bin_v_norm': 8, 'bin_dt': 9, 'bin_cbr_smoothed': 3}. Best is trial 2 with value: -828.0172354345027.
+Success.
+Success.
+Success.
+Success.
+Success.
+Success.
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+ Retrying in 1 seconds
+Best Params found: {'alpha': 0.02402324805813506, 'gamma': 0.9053040198609895, 'epsilon_decay': 0.989513465790053, 'bin_cbr_global': 6, 'bin_n_neighbors': 6, 'bin_v_norm': 8, 'bin_dt': 7, 'bin_cbr_smoothed': 7}
+Training final model with best params: {'alpha': 0.02402324805813506, 'gamma': 0.9053040198609895, 'epsilon_decay': 0.989513465790053, 'bin_cbr_global': 6, 'bin_n_neighbors': 6, 'bin_v_norm': 8, 'bin_dt': 7, 'bin_cbr_smoothed': 7}
+Starting Episode 1/5...
+ Retrying in 1 seconds
+Episode 1 | Reward: -943.41 | Epsilon: 0.990
+Metrics -> AoI: 319.135, CBR: 0.007, PDR: 82.690
+Starting Episode 2/5...
+ Retrying in 1 seconds
+Episode 2 | Reward: -2189.24 | Epsilon: 0.979
+Metrics -> AoI: 236.503, CBR: 0.013, PDR: 84.300
+Starting Episode 3/5...
+ Retrying in 1 seconds
+Episode 3 | Reward: -1567.91 | Epsilon: 0.969
+Metrics -> AoI: 250.246, CBR: 0.010, PDR: 76.970
+Starting Episode 4/5...
+ Retrying in 1 seconds
+Episode 4 | Reward: -2163.44 | Epsilon: 0.959
+Metrics -> AoI: 292.221, CBR: 0.013, PDR: 80.820
+Starting Episode 5/5...
+ Retrying in 1 seconds
+Episode 5 | Reward: -844.41 | Epsilon: 0.949
+Metrics -> AoI: 288.293, CBR: 0.010, PDR: 83.060
+Running final evaluation...
+ Retrying in 1 seconds
+Training finished, model saved to sarsa_model.pkl
+Final Evaluation Metrics:
+AoI: 1803.1760
+CBR: 0.0052
+PDR: 76.8800

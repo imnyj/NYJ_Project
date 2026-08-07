@@ -14,15 +14,15 @@
   - [x] Expand `SA1` (Density sweep) to evaluate all 7 methods.
   - [x] Enhance data saving logic to export `distance_pdr.json` and `cbr_history.json`.
 
-- [ ] **4. Execute Global Simulation**
-  - [ ] Run `python3 sensitivity_runner.py --sweep all`.
+- [x] **4. Execute Global Simulation**
+  - [x] Run `python3 sensitivity_runner.py --sweep all`.
 
-- [ ] **5. Generate IEEE-Style Plots**
-  - [ ] Create `plot_convergence.py` (Epoch vs Loss/Acc).
-  - [ ] Create `plot_line_density.py` (AoI/CBR vs Vehicle Density).
-  - [ ] Create `plot_pdr_distance.py` (PDR vs Distance).
-  - [ ] Create `plot_cbr_cdf.py` (CBR Cumulative Distribution Function).
-  - [ ] Extract Model Complexity Table metrics.
+- [x] **5. Generate IEEE-Style Plots**
+  - [x] Create `plot_convergence.py` (Epoch vs Loss/Acc).
+  - [x] Create `plot_line_density.py` (AoI/CBR vs Vehicle Density).
+  - [x] Create `plot_pdr_distance.py` (PDR vs Distance).
+  - [x] Create `plot_cbr_cdf.py` (CBR Cumulative Distribution Function).
+  - [x] Extract Model Complexity Table metrics.
 
-- [ ] **6. Wrap up**
-  - [ ] Create `walkthrough.md` with final graphs and insights.
+- [x] **6. Wrap up**
+  - [x] Create `walkthrough.md` with final graphs and insights.

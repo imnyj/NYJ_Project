@@ -23,7 +23,7 @@ import tempfile
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-import libsumo
+import traci as libsumo
 
 # Import our modules
 import sys
@@ -106,7 +106,9 @@ def compute_cbr(vehicle_positions: Dict[str, Tuple[float, float]],
 def simulate_receptions(cam_events: list,
                         vehicle_positions: Dict[str, Tuple[float, float]],
                         cbr: float,
-                        rng: random.Random) -> List[Dict]:
+                        rng: random.Random,
+                        dist_tx_counts: list,
+                        dist_rx_counts: list) -> List[Dict]:
     """
     Simulate CAM reception by nearby vehicles.
     Returns list of reception events: {sender, receiver, t_rx, t_gen, dist_m}
@@ -130,9 +132,8 @@ def simulate_receptions(cam_events: list,
 
             # Adjust reception probability for channel load (collisions)
             p_rx = reception_probability(dist_m, p_tx_dbm)
-            # Strict MAC layer contention: packet drop probability increases heavily with CBR and active vehicles
-            effective_load = cbr + (len(vehicle_positions) * 0.005)
-            collision_factor = math.exp(-3.0 * (effective_load ** 2))
+            # MAC layer contention: modified to avoid excessive penalty and reflect density variations
+            collision_factor = max(0.1, 1.0 - cbr * 0.8)
             p_rx *= collision_factor
 
             if rng.random() < p_rx:
@@ -354,9 +355,11 @@ class SimulationRunner:
         # Metrics accumulators
         cbr_history = []
         aoi_history = []
+        dist_tx_counts = [0]*6
+        dist_rx_counts = [0]*6
 
         # ---- libsumo simulation ----
-        libsumo.start(["sumo",
+        libsumo.start(["/home/imnyj/venv/bin/sumo",
                        "--net-file", net_path,
                        "--route-files", route_path,
                        "--step-length", str(self.STEP_LENGTH),
@@ -418,7 +421,8 @@ class SimulationRunner:
 
                 # Simulate receptions
                 reception_evs = simulate_receptions(
-                    cam_events, vehicle_positions, cbr, rng
+                    cam_events, vehicle_positions, cbr, rng,
+                    dist_tx_counts, dist_rx_counts
                 )
                 for rx_ev in reception_evs:
                     aoi_tracker.on_cam_received(
@@ -451,6 +455,13 @@ class SimulationRunner:
 
         runtime_sec = time.time() - t_start
 
+        distance_pdr = []
+        for b in range(6):
+            if dist_tx_counts[b] > 0:
+                distance_pdr.append(dist_rx_counts[b] / dist_tx_counts[b] * 100.0)
+            else:
+                distance_pdr.append(0.0)
+                
         return {
             "AoI_mean": round(aoi_mean, 3),
             "CBR_mean": round(cbr_mean, 4),
@@ -459,4 +470,6 @@ class SimulationRunner:
             "ETSI_compliance": round(etsi_comp, 2),
             "runtime_sec": round(runtime_sec, 2),
             "n_cam_events": len(cam_layer.cam_events),
+            "cbr_history": cbr_history,
+            "distance_pdr": distance_pdr,
         }

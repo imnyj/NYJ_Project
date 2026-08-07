@@ -11,4 +11,5 @@ description: Coder agent rules for writing clean Python simulation code.
 - 코드를 통해 `/data/`에 데이터를 저장 및 불러오기 가능.
 - 코드 완성 후 `critic`에게 검토 받을 것.
 - **Rule:** 코드 수정 후 반드시 독립적인 검증 스크립트나 단위 테스트를 실행하여 데이터 누수 및 로직 오차가 없는지 직접 팩트를 확인할 것.
+- **Rule:** 외부 모듈이나 클래스(예: environment vs models)를 사용할 때는 반드시 실제 코드 파일 내용을 확인(view_file, grep_search 등)하여 객체의 위치와 속성을 정확히 파악한 뒤 코딩할 것 (환각/오류 방지).
 - **Rule:** 요구사항이나 작업 지침이 모호하거나 애매한 부분이 있다면, 임의로 추측하여 판단하지 말고 필히 상위 에이전트 혹은 사용자에게 물어보고 진행할 것.

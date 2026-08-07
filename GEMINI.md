@@ -45,3 +45,6 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 
 ## 14. Language (언어)
 - **Rule:** 모든 에이전트는 사용자와 소통하거나 문서/결과물을 작성할 때 반드시 한글(Korean)을 사용해야 한다.
+
+## 15. Idle Time Upgrades
+- **Rule:** 4시간 유휴 상태가 경과하여 백그라운드 업그레이드(예: skill-crafter)를 지시받는 경우, 이는 매 4시간마다 반복하라는 의미가 아니며 **최초 1회에 한해서만** 실행하고 타이머를 완전히 종료해야 한다.

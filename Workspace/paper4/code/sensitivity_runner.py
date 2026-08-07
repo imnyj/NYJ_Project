@@ -342,7 +342,7 @@ def main():
     sweeps = define_sweeps()
 
     if args.sweep == "all":
-        sweep_ids = ["SA2", "SA3", "SA4"]
+        sweep_ids = ["SA1", "SA2", "SA3", "SA4"]
     else:
         sweep_ids = [args.sweep.upper()]
 

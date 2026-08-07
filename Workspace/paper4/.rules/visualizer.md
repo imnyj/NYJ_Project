@@ -10,19 +10,6 @@
 - 직접 코드를 짜지 말고, 해당 지시를 상세히 `coder`에게 지시할 것.
 
 ## Standardized Model Ordering and Coloring
-Always use the following order and RGB color values for the 13 models:
-1. RGB(255,80,80) -> #FF5050
-2. RGB(237,125,49) -> #ED7D31
-3. RGB(255,153,102) -> #FF9966
-4. RGB(255,192,0) -> #FFC000
-5. RGB(204,204,0) -> #CCCC00
-6. RGB(112,173,71) -> #70AD47
-7. RGB(0,204,153) -> #00CC99
-8. RGB(51,153,255) -> #3399FF
-9. RGB(0,102,255) -> #0066FF
-10. RGB(102,102,255) -> #6666FF
-11. RGB(204,102,255) -> #CC66FF
-12. RGB(255,102,255) -> #FF66FF
-13. RGB(255,0,0) -> #FF0000
-- **Rule:** coder가 연산한 CSV 결과 파일을 직접 읽어 그래프를 그릴 것. 또한, 그래프의 색상 맵(Color Palette)은 논문 전체에서 일관성 있는 톤(Palette)을 유지하도록 사전 정의된 색상을 고수할 것.
+Always refer to `/home/imnyj/Workspace/paper4/visualizer/config.md` for the correct order, names, and color assignments of the **16 models**.
+- **Rule:** coder가 연산한 CSV 결과 파일을 직접 읽어 그래프를 그릴 것. 또한, 그래프의 색상 맵(Color Palette)은 논문 전체에서 일관성 있는 톤(Palette)을 유지하도록 `config.md`에 정의된 색상을 고수할 것.
 - **Rule:** 요구사항이나 작업 지침이 모호하거나 애매한 부분이 있다면, 임의로 추측하여 판단하지 말고 필히 상위 에이전트 혹은 사용자에게 물어보고 진행할 것.

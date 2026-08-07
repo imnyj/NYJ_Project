@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 FEATURE_COLS = ["cbr_global", "n_neighbors", "v_norm", "dt_since_last_cam", "cbr_smoothed"]
 LABEL_COL = "action_idx"
-DATASET_PATH = "/home/imnyj/papers/paper4/paper/data/oracle_dataset.csv"
+DATASET_PATH = "/home/imnyj/Workspace/paper4/coder/data/oracle_dataset.csv"
 
 # Load data
 df = pd.read_csv(DATASET_PATH)

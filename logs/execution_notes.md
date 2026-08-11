@@ -20,3 +20,8 @@
 - (1) Task Done: 설정 값 하드코딩 안티패턴을 방지하기 위한 `config-management-best-practices` 신규 스킬 생성
 - (2) Failures / Retries: 없음
 - (3) Manual Corrections from User: 없음
+
+- 2026-08-07T20:33:16
+- (1) Task Done: 시스템 전반의 의존성 관리 부실(버전 고정 누락 및 의존성 파일 미갱신) 안티패턴 방지를 위한 `dependency-management-best-practices` 신규 스킬 생성
+- (2) Failures / Retries: 없음
+- (3) Manual Corrections from User: 없음

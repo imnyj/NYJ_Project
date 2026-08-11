@@ -78,7 +78,7 @@ class MoEDQN(nn.Module):
 
 
 class MoEAgent:
-    def __init__(self, state_dim, action_dim, num_experts=2, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64):
+    def __init__(self, state_dim, action_dim, num_experts=2, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -86,6 +86,7 @@ class MoEAgent:
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
         self.batch_size = batch_size
+        self.target_update_freq = target_update_freq
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         

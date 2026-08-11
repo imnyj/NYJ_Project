@@ -1,0 +1,7 @@
+Parameter,Value
+lr,0.00014695654119298066
+gamma,0.9721568404156539
+eps_clip,0.29113871431006855
+k_epochs,9
+batch_size,32
+buffer_size,100000

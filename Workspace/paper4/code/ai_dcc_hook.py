@@ -154,12 +154,13 @@ class DuelingDQNHook:
         t_act = self.t_grid[action_idx // n_p]
         p_act = self.p_tx_grid[action_idx % n_p]
         
-        if self.is_training and vid is not None:
+        if vid is not None:
             if vid in self.prev_states:
                 reward = -1.0 * abs(cbr_smoothed - 0.6) - 0.1 * dt_since_last_cam
                 self.episode_reward += reward
-                done = False
-                self.agent.store_transition(self.prev_states[vid], self.prev_actions[vid], reward, state, done)
+                if self.is_training:
+                    done = False
+                    self.agent.store_transition(self.prev_states[vid], self.prev_actions[vid], reward, state, done)
             
             self.prev_states[vid] = state
             self.prev_actions[vid] = action_idx
@@ -203,13 +204,13 @@ class SARSAHook(DuelingDQNHook):
         t_act = self.t_grid[action_idx // n_p]
         p_act = self.p_tx_grid[action_idx % n_p]
         
-        if self.is_training and vid is not None:
+        if vid is not None:
             if vid in self.prev_states:
                 reward = -1.0 * abs(cbr_smoothed - 0.6) - 0.1 * dt_since_last_cam
                 self.episode_reward += reward
-                done = False
-                # Passing next_action to store_transition for SARSA
-                self.agent.store_transition(self.prev_states[vid], self.prev_actions[vid], reward, state, done, next_action=action_idx)
+                if self.is_training:
+                    done = False
+                    self.agent.store_transition(self.prev_states[vid], self.prev_actions[vid], reward, state, done, next_action=action_idx)
             
             self.prev_states[vid] = state
             self.prev_actions[vid] = action_idx
@@ -250,14 +251,14 @@ class DecisionTransformerHook(DuelingDQNHook):
         t_act = self.t_grid[action_idx // n_p]
         p_act = self.p_tx_grid[action_idx % n_p]
         
-        if self.is_training and vid is not None:
+        if vid is not None:
             if vid in self.prev_states:
                 reward = -1.0 * abs(cbr_smoothed - 0.6) - 0.1 * dt_since_last_cam
                 self.episode_reward += reward
-                
-                if vid not in self.trajectories:
-                    self.trajectories[vid] = []
-                self.trajectories[vid].append((self.prev_states[vid], self.prev_actions[vid], reward, state))
+                if self.is_training:
+                    if vid not in self.trajectories:
+                        self.trajectories[vid] = []
+                    self.trajectories[vid].append((self.prev_states[vid], self.prev_actions[vid], reward, state))
             
             self.prev_states[vid] = state
             self.prev_actions[vid] = action_idx
@@ -313,12 +314,13 @@ class MAPPOHook(DuelingDQNHook):
         t_act = self.t_grid[action_idx // n_p]
         p_act = self.p_tx_grid[action_idx % n_p]
         
-        if self.is_training and vid is not None:
+        if vid is not None:
             if vid in self.prev_states:
                 reward = -1.0 * abs(cbr_smoothed - 0.6) - 0.1 * dt_since_last_cam
                 self.episode_reward += reward
-                done = False
-                self.agent.store_transition(self.prev_states[vid], self.prev_states[vid], self.prev_actions[vid], reward, state, state, done)
+                if self.is_training:
+                    done = False
+                    self.agent.store_transition(self.prev_states[vid], self.prev_states[vid], self.prev_actions[vid], reward, state, state, done)
             
             self.prev_states[vid] = state
             self.prev_actions[vid] = action_idx

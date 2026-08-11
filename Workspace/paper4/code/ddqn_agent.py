@@ -19,10 +19,11 @@ class QNetwork(nn.Module):
         return self.fc3(x)
 
 class DDQNAgent:
-    def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, tau=0.005, batch_size=64, buffer_size=100000, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+    def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, tau=0.005, batch_size=64, target_update_freq=1, buffer_size=100000, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
+        self.target_update_freq = target_update_freq
         self.action_dim = action_dim
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

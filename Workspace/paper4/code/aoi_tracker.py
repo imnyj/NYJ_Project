@@ -45,6 +45,7 @@ class AoITracker:
 
         # Dict: sender_id -> latest (t_gen, x, y) from last CAM sent
         self.last_cam_sent: Dict[str, Tuple[float, float, float]] = {}
+        self.first_tx_time: Dict[str, float] = {}
 
         # Dict: (sender_id, receiver_id) -> t_gen of last RECEIVED CAM
         self.last_received_gen_time: Dict[Tuple[str, str], float] = {}
@@ -72,6 +73,9 @@ class AoITracker:
     def on_cam_sent(self, sender_id: str, t_gen: float, x: float, y: float, in_range_count: int = 0):
         """Record a CAM transmission event."""
         self.last_cam_sent[sender_id] = (t_gen, x, y)
+        if sender_id not in self.first_tx_time:
+            self.first_tx_time[sender_id] = t_gen
+            
         if not self._in_warmup:
             self.cam_tx_count[sender_id] += 1
             self.cam_tx_total += 1
@@ -147,11 +151,15 @@ class AoITracker:
                     t_gen_last = self.last_received_gen_time[pair]
                     aoi_ms = (sim_time - t_gen_last) * 1000.0
                 else:
-                    # Never received a CAM from this sender: AoI = time since sim start
-                    aoi_ms = (sim_time - self.eval_start_time) * 1000.0
+                    # Never received a CAM from this sender: AoI = time since first tx
+                    if sid not in self.first_tx_time:
+                        continue
+                    aoi_ms = (sim_time - self.first_tx_time[sid]) * 1000.0
 
                 if aoi_ms < 0:
                     aoi_ms = 0.0
+                elif aoi_ms > 2000.0:
+                    aoi_ms = 2000.0
                 self.current_aoi[pair] = aoi_ms
                 aoi_values.append(aoi_ms)
 
@@ -186,6 +194,7 @@ class AoITracker:
     def reset(self):
         """Reset all state for a new simulation run."""
         self.last_cam_sent.clear()
+        self.first_tx_time.clear()
         self.last_received_gen_time.clear()
         self.aoi_history.clear()
         self.step_times.clear()
@@ -196,3 +205,22 @@ class AoITracker:
         self.cam_tx_in_range_total = 0
         self.current_aoi.clear()
         self._in_warmup = True
+
+    def remove_vehicle(self, vid: str):
+        """Clean up state for departed vehicles to prevent memory leaks."""
+        self.last_cam_sent.pop(vid, None)
+        self.first_tx_time.pop(vid, None)
+        self.cam_tx_count.pop(vid, None)
+        
+        # Clean up pair-based dictionaries where vid is either sender or receiver
+        keys_to_remove_rx = [pair for pair in self.last_received_gen_time if pair[0] == vid or pair[1] == vid]
+        for k in keys_to_remove_rx:
+            del self.last_received_gen_time[k]
+
+        keys_to_remove_aoi = [pair for pair in self.current_aoi if pair[0] == vid or pair[1] == vid]
+        for k in keys_to_remove_aoi:
+            del self.current_aoi[k]
+
+        keys_to_remove_cam_rx = [pair for pair in self.cam_rx_count if pair[0] == vid or pair[1] == vid]
+        for k in keys_to_remove_cam_rx:
+            del self.cam_rx_count[k]

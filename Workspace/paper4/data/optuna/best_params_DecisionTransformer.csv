@@ -1,0 +1,5 @@
+Parameter,Value
+lr,0.0003516002873085632
+gamma,0.9334605484110036
+batch_size,64
+buffer_size,10000

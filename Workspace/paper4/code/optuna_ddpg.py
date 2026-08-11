@@ -1,128 +1,100 @@
-#!/usr/bin/env python3
-import os
-import csv
 import optuna
+import csv
+import os
+import torch
 import numpy as np
 
 from sim_engine import SimulationRunner
-from ddpg_agent import DDPGAgent
 from ai_dcc_hook import get_hook
+from ddpg_agent import DDPGAgent
 
 def objective(trial):
-    # Suggest hyperparameters
-    lr_actor = trial.suggest_float("lr_actor", 1e-5, 1e-3, log=True)
-    lr_critic = trial.suggest_float("lr_critic", 1e-4, 1e-2, log=True)
+    lr_actor = trial.suggest_float("lr_actor", 1e-5, 1e-2, log=True)
+    lr_critic = trial.suggest_float("lr_critic", 1e-5, 1e-2, log=True)
     gamma = trial.suggest_float("gamma", 0.9, 0.999)
-    tau = trial.suggest_float("tau", 0.001, 0.05)
+    tau = trial.suggest_float("tau", 0.001, 0.01)
     batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
-    
-    state_dim = 5
-    action_dim = 16
-    
-    agent = DDPGAgent(state_dim=state_dim, action_dim=action_dim, lr_actor=lr_actor, lr_critic=lr_critic, gamma=gamma, tau=tau, batch_size=batch_size)
-    hook = get_hook("DDPG")
-    hook.set_agent(agent)
-    hook.is_training = True
-
-    num_episodes = 2
-    mean_reward = 0
-    
-    for ep in range(num_episodes):
-        hook.reset_episode()
-        runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=42+ep, method="DDPG", method_params={}, duration_steps=500)
-        _ = runner.run()
-        
-        # Train a bit after episode
-        num_updates = len(agent.memory) // agent.batch_size
-        if num_updates < 1:
-            num_updates = 1
-        for _ in range(num_updates):
-            agent.train_step()
-            
-        mean_reward += hook.episode_reward
-        
-    return mean_reward / num_episodes
-
-def train_best_model(best_params):
-    print("Training final model with best params:", best_params)
-    
-    state_dim = 5
-    action_dim = 16
+    buffer_size = trial.suggest_categorical("buffer_size", [10000, 50000, 100000])
     
     agent = DDPGAgent(
-        state_dim=state_dim,
-        action_dim=action_dim,
-        lr_actor=best_params["lr_actor"],
-        lr_critic=best_params["lr_critic"],
-        gamma=best_params["gamma"],
-        tau=best_params["tau"],
-        batch_size=best_params["batch_size"]
+        state_dim=5,
+        action_dim=16,
+        lr_actor=lr_actor,
+        lr_critic=lr_critic,
+        gamma=gamma,
+        tau=tau,
+        batch_size=batch_size,
+        buffer_size=buffer_size
     )
     
     hook = get_hook("DDPG")
     hook.set_agent(agent)
-    hook.is_training = True
-
-    num_episodes = 5
     
-    with open('ddpg_train_log.csv', 'w', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow(['Episode', 'Reward', 'ActorLoss', 'CriticLoss', 'AoI_mean', 'CBR_mean', 'PDR_mean'])
-
+    # --- TRAINING PHASE ---
+    hook.is_training = True
+    num_episodes = 2
     for ep in range(num_episodes):
         hook.reset_episode()
-        print(f"Starting Episode {ep+1}/{num_episodes}...")
-        runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=42+ep, method="DDPG", method_params={}, duration_steps=1000)
-        metrics = runner.run()
+        runner = SimulationRunner(
+            scenario="urban_grid", 
+            n_vehicles=10, 
+            seed=42+ep, 
+            method="DDPG", 
+            method_params={}, 
+            duration_steps=200
+        )
+        runner.run()
         
-        a_loss, c_loss = 0, 0
-        num_updates = len(agent.memory) // agent.batch_size
-        if num_updates < 1:
-            num_updates = 1
-        for _ in range(num_updates):
-            al, cl = agent.train_step()
-            a_loss += al
-            c_loss += cl
-            
-        a_loss /= num_updates
-        c_loss /= num_updates
-            
-        ep_reward = hook.episode_reward
-        
-        aoi = metrics.get('AoI_mean', 0.0)
-        cbr = metrics.get('CBR_mean', 0.0)
-        pdr = metrics.get('PDR_mean', 0.0)
-        
-        print(f"Episode {ep+1} | Reward: {ep_reward:.2f}")
-        print(f"Metrics -> AoI: {aoi:.3f}, CBR: {cbr:.3f}, PDR: {pdr:.3f}")
-        
-        with open('ddpg_train_log.csv', 'a', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow([ep+1, ep_reward, a_loss, c_loss, aoi, cbr, pdr])
-            
-    # Evaluation run
-    print("Running final evaluation...")
+        # Post-episode updates
+        if hasattr(agent, 'memory'):
+            batch_size = getattr(agent, 'batch_size', 64)
+            num_updates = max(1, len(agent.memory) // batch_size)
+            for _ in range(num_updates):
+                if hasattr(agent, 'train_step'):
+                    agent.train_step()
+                if hasattr(agent, 'update_epsilon'):
+                    agent.update_epsilon()
+                    
+            if hasattr(agent, 'update_target_network'):
+                freq = getattr(agent, 'target_update_freq', 1)
+                if (ep + 1) % freq == 0:
+                    agent.update_target_network()
+                    
+    # --- EVALUATION PHASE ---
     hook.is_training = False
-    runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=99, method="DDPG", method_params={}, duration_steps=3000)
-    final_metrics = runner.run()
+    eval_rewards = []
+    for ep in range(1):
+        hook.reset_episode()
+        runner = SimulationRunner(
+            scenario="urban_grid", 
+            n_vehicles=15, 
+            seed=100+ep, 
+            method="DDPG", 
+            method_params={}, 
+            duration_steps=200
+        )
+        runner.run()
+        eval_rewards.append(hook.episode_reward)
+        
+    return np.mean(eval_rewards)
+
+def main():
+    study = optuna.create_study(direction="maximize", study_name="DDPG")
+    study.optimize(objective, n_trials=2)
     
-    agent.save("ddpg_model.pth")
-    print("Training finished, model saved to ddpg_model.pth")
+    print("Best params:", study.best_params)
     
-    print("Final Evaluation Metrics:")
-    print(f"AoI: {final_metrics.get('AoI_mean', 0.0):.4f}")
-    print(f"CBR: {final_metrics.get('CBR_mean', 0.0):.4f}")
-    print(f"PDR: {final_metrics.get('PDR_mean', 0.0):.4f}")
+    output_dir = "/home/imnyj/Workspace/paper4/data/optuna"
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, "best_params_DDPG.csv")
     
-    return final_metrics
+    with open(output_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Parameter", "Value"])
+        for key, value in study.best_params.items():
+            writer.writerow([key, value])
+            
+    print(f"Best parameters saved to {output_file}")
 
 if __name__ == "__main__":
-    study = optuna.create_study(direction="maximize")
-    study.optimize(objective, n_trials=5)
-    print("Best Params found:", study.best_params)
-    
-    metrics = train_best_model(study.best_params)
-    # write to a file so we can parse it easily
-    import json
-    with open('ddpg_eval_metrics.json', 'w') as f:
-        json.dump(metrics, f)
+    main()

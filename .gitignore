@@ -3,8 +3,9 @@ venv/
 .venv/
 node_modules/
 snap/
+SumoNetSim1.1.5-main/
 
-# AI 모델 및 대용량 데이터셋 (6.5GB의 주범일 가능성이 높음)
+# AI 모델 및 대용량 데이터셋
 .ollama/
 etc/SumoNetSim1.1.6/data/
 Workspace/paper1/writer/data_Desk01/

@@ -149,7 +149,8 @@ def simulate_receptions(cam_events: list,
                 
             if not is_warmup:
                 bin_idx = min(int(dist_m / 50.0), 5)
-                dist_tx_counts[bin_idx] += 1
+                if dist_m <= COMM_RANGE_M:
+                    dist_tx_counts[bin_idx] += 1
 
             if dist_m > COMM_RANGE_M * 2:  # Skip far-away vehicles
                 continue
@@ -162,7 +163,7 @@ def simulate_receptions(cam_events: list,
             p_rx *= collision_factor
 
             if rng.random() < p_rx:
-                if not is_warmup:
+                if not is_warmup and dist_m <= COMM_RANGE_M:
                     dist_rx_counts[bin_idx] += 1
                 # Propagation delay: negligible at these distances
                 prop_delay_s = dist_m / 3e8  # ~1 us for 300m
@@ -175,8 +176,6 @@ def simulate_receptions(cam_events: list,
                 })
         
         ev["in_range_count"] = in_range_count
-
-    return reception_events
 
     return reception_events
 
@@ -237,114 +236,6 @@ def generate_sumonetsim_files(work_dir: str, config: dict, seed: int):
     except subprocess.CalledProcessError:
         return False
 
-def generate_urban_grid_net(output_path: str):
-    """Generate a simple 3x3 grid network XML (no binary SUMO tools needed)."""
-    # Use sumolib to generate via netgenerate command string
-    # Since we have netgenerate in /home/imnyj/venv/bin, use it via os.system
-    import os
-    netgenerate = "/home/imnyj/venv/bin/netgenerate"
-    cmd = (
-        f"{netgenerate} --grid --grid.number=3 --grid.length=250 "
-        f"--default.lanenumber=2 --default.speed=16.67 "
-        f"--tls.guess=true --output-file={output_path} 2>/dev/null"
-    )
-    ret = os.system(cmd)
-    return ret == 0
-
-
-def generate_highway_net(output_path: str):
-    """Generate a 5km 2-lane highway network."""
-    import os
-    netgenerate = "/home/imnyj/venv/bin/netgenerate"
-    cmd = (
-        f"{netgenerate} --grid --grid.number=1 --grid.y-number=1 "
-        f"--grid.length=5000 --grid.y-length=3.75 "
-        f"--default.lanenumber=2 --default.speed=36.11 "
-        f"--output-file={output_path} 2>/dev/null"
-    )
-    ret = os.system(cmd)
-    if ret != 0:
-        # Fallback: generate a straight highway by hand
-        return _generate_highway_net_manual(output_path)
-    return True
-
-
-def _generate_highway_net_manual(output_path: str) -> bool:
-    """Fallback: generate minimal highway network XML manually."""
-    net_xml = """<?xml version="1.0" encoding="UTF-8"?>
-<net version="1.16" junctionCornerDetail="5" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
-    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,5000.00,3.75" origBoundary="-180.0,-90.0,180.0,90.0" projParameter="!"/>
-    <edge id="highway" from="entry" to="exit" priority="3" numLanes="2" speed="36.11">
-        <lane id="highway_0" index="0" speed="36.11" length="5000.00" shape="0.00,-1.875 5000.00,-1.875"/>
-        <lane id="highway_1" index="1" speed="36.11" length="5000.00" shape="0.00,1.875 5000.00,1.875"/>
-    </edge>
-    <edge id="highway_rev" from="exit" to="entry" priority="3" numLanes="2" speed="36.11">
-        <lane id="highway_rev_0" index="0" speed="36.11" length="5000.00" shape="5000.00,1.875 0.00,1.875"/>
-        <lane id="highway_rev_1" index="1" speed="36.11" length="5000.00" shape="5000.00,-1.875 0.00,-1.875"/>
-    </edge>
-    <junction id="entry" type="dead_end" x="0.00" y="0.00" incLanes="highway_rev_0 highway_rev_1" intLanes="" shape="-1.875,1.875 -1.875,-1.875"/>
-    <junction id="exit" type="dead_end" x="5000.00" y="0.00" incLanes="highway_0 highway_1" intLanes="" shape="5001.875,-1.875 5001.875,1.875"/>
-</net>
-"""
-    with open(output_path, 'w') as f:
-        f.write(net_xml)
-    return True
-
-
-def generate_routes(net_path: str, route_path: str, n_vehicles: int,
-                    duration_s: int, seed: int, scenario: str = "urban_grid"):
-    """
-    Generate a random routes file for the scenario.
-    Uses sumolib to read the network, then creates random routes.
-    """
-    import sumolib
-    import random as rnd
-    rng = rnd.Random(seed)
-
-    net = sumolib.net.readNet(net_path, withInternal=False)
-    edges = [e for e in net.getEdges() if not e.getID().startswith(":")]
-    # Filter to normal edges only
-    normal_edges = [e for e in edges if len(e.getLanes()) > 0]
-
-    routes_xml_lines = ['<?xml version="1.0" encoding="UTF-8"?>',
-                        '<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">']
-
-    # Define vehicle type: Krauss model
-    if scenario == "urban_grid":
-        routes_xml_lines.append(
-            '  <vType id="car" accel="2.6" decel="4.5" sigma="0.5" length="5.0" ' +
-            'maxSpeed="16.67" minGap="2.5" speedFactor="1.0" speedDev="0.1"/>')
-        speed_min, speed_max = 0.0, 16.67
-    else:
-        routes_xml_lines.append(
-            '  <vType id="car" accel="2.6" decel="4.5" sigma="0.3" length="5.0" ' +
-            'maxSpeed="36.11" minGap="5.0" speedFactor="1.0" speedDev="0.1"/>')
-        speed_min, speed_max = 22.22, 36.11
-
-    # Generate random routes (simple: pick random edge pairs)
-    edge_ids = [e.getID() for e in normal_edges]
-    if len(edge_ids) < 2:
-        edge_ids = edge_ids * 3  # duplicate if too few
-
-    for i in range(n_vehicles * 2):  # 2x stagger: compensate for trip completion/disappearance
-        depart = rng.uniform(0, max(30, duration_s * 0.7))
-        from_edge = rng.choice(edge_ids)
-        to_edge = rng.choice(edge_ids)
-        while to_edge == from_edge and len(edge_ids) > 1:
-            to_edge = rng.choice(edge_ids)
-
-        depart_speed = rng.uniform(speed_min * 0.5, speed_max * 0.8)
-
-        routes_xml_lines.append(
-            f'  <trip id="veh{i}" type="car" from="{from_edge}" to="{to_edge}" ' +
-            f'depart="{depart:.1f}" departSpeed="{depart_speed:.2f}"/>'
-        )
-
-    routes_xml_lines.append('</routes>')
-
-    with open(route_path, 'w') as f:
-        f.write('\n'.join(routes_xml_lines))
-
 
 # ---------------------------------------------------------------------------
 # SUMO config file generator
@@ -355,25 +246,20 @@ def generate_sumocfg(net_path: str, route_path: str, cfg_path: str,
     """Generate a .sumocfg file for this run."""
     add_str = ""
     if add_paths:
-        add_val = ",".join(add_paths)
+        add_val = ",".join(os.path.basename(p) for p in add_paths)
         add_str = f'\n        <additional-files value="{add_val}"/>'
 
     cfg_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-               xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
     <input>
-        <net-file value="{net_path}"/>
-        <route-files value="{route_path}"/>{add_str}
+        <net-file value="{os.path.basename(net_path)}"/>
+        <route-files value="{os.path.basename(route_path)}"/>{add_str}
     </input>
     <time>
         <begin value="0"/>
         <end value="{int(duration_steps * step_length)}"/>
         <step-length value="{step_length}"/>
     </time>
-    <processing>
-        <ignore-route-errors value="true"/>
-        <collision.action value="warn"/>
-    </processing>
 </configuration>
 """
     with open(cfg_path, 'w') as f:
@@ -415,8 +301,11 @@ class SimulationRunner:
         config_path = os.path.join(_sim_dir, "config.md")
         config = load_config(config_path)
 
-        # Override config DENSITY with self.n_vehicles for sensitivity sweeps
-        config["DENSITY"] = self.n_vehicles
+        # Override config DENSITY and AV_SPEED ONLY if explicitly passed as a sweep variable
+        if self.method_params and 'n_vehicles_sweep' in self.method_params:
+            config["DENSITY"] = self.method_params['n_vehicles_sweep']
+        if self.method_params and 'speed' in self.method_params:
+            config["AV_SPEED"] = self.method_params['speed']
 
         # Generate network and route files using make_sumo_set.py based on config
         ok = generate_sumonetsim_files(self.work_dir, config, self.seed)
@@ -484,6 +373,7 @@ class SimulationRunner:
                 departed_vids = previous_vehicle_ids - vehicle_ids_set
                 for vid in departed_vids:
                     cam_layer.remove_vehicle(vid)
+                    aoi_tracker.remove_vehicle(vid)
                 previous_vehicle_ids = vehicle_ids_set
 
                 if not vehicle_ids:
@@ -534,6 +424,7 @@ class SimulationRunner:
                 self._last_cbr_dict = cbr_dict
 
                 is_warmup = (sim_time < self.warmup_s)
+                aoi_tracker._in_warmup = is_warmup
 
                 # Simulate receptions
                 reception_evs = simulate_receptions(
@@ -564,6 +455,7 @@ class SimulationRunner:
         finally:
             for vid in list(cam_layer.vehicles.keys()):
                 cam_layer.remove_vehicle(vid)
+                aoi_tracker.remove_vehicle(vid)
             try:
                 libsumo.close()
             except Exception:

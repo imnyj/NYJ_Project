@@ -1,0 +1,95 @@
+{
+    "TD3": {
+        "lr": 0.00037918430794189753,
+        "gamma": 0.9181907633150898,
+        "tau": 0.00505713347993875,
+        "policy_delay": 1.0,
+        "target_noise": 0.20453348745026323,
+        "noise_clip": 0.4647763014108265,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0
+    },
+    "SARSA": {
+        "alpha": 0.028097125069122812,
+        "gamma": 0.9727439260045622,
+        "epsilon_decay": 0.9913733606357367
+    },
+    "PPO": {
+        "lr": 0.00014695654119298066,
+        "gamma": 0.9721568404156539,
+        "eps_clip": 0.29113871431006855,
+        "k_epochs": 9.0,
+        "batch_size": 32.0,
+        "buffer_size": 100000.0
+    },
+    "DecisionTransformer": {
+        "lr": 0.0003516002873085632,
+        "gamma": 0.9334605484110036,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0
+    },
+    "QLearning": {
+        "alpha": 0.32494958348397746,
+        "gamma": 0.9609445843216711,
+        "epsilon_decay": 0.951398413230144
+    },
+    "DDPG": {
+        "lr_actor": 2.902470283296858e-05,
+        "lr_critic": 0.00309232284775983,
+        "gamma": 0.9008125595896528,
+        "tau": 0.001745617053614782,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0
+    },
+    "VanillaDQN": {
+        "lr": 0.0006632630243265272,
+        "gamma": 0.9283329822029354,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0,
+        "target_update_freq": 2.0
+    },
+    "MAPPO": {
+        "lr": 4.342138482166234e-05,
+        "gamma": 0.9622989591175002,
+        "eps_clip": 0.27686411502653324,
+        "k_epochs": 7.0,
+        "batch_size": 32.0,
+        "buffer_size": 100000.0
+    },
+    "ActorCritic": {
+        "lr": 0.0020315621155720443,
+        "gamma": 0.9579477518258083,
+        "batch_size": 32.0,
+        "buffer_size": 100000.0
+    },
+    "DoubleDQN": {
+        "lr": 4.642602417252316e-05,
+        "gamma": 0.9464730502127116,
+        "batch_size": 64.0,
+        "buffer_size": 50000.0,
+        "target_update_freq": 1.0
+    },
+    "DuelingDQN": {
+        "lr": 0.0002662765882738053,
+        "gamma": 0.9878739177245568,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0,
+        "target_update_freq": 2.0
+    },
+    "SAC": {
+        "lr": 0.009022631564003434,
+        "gamma": 0.9071828708144009,
+        "tau": 0.009894951185478878,
+        "alpha": 0.46429123928308674,
+        "batch_size": 128.0,
+        "buffer_size": 10000.0
+    },
+    "MoEDQN": {
+        "num_experts": 2.0,
+        "lr": 0.00398909851663667,
+        "gamma": 0.9218599058180568,
+        "batch_size": 64.0,
+        "buffer_size": 50000.0,
+        "target_update_freq": 1.0
+    }
+}

@@ -188,6 +188,10 @@ class ETSICAMLayer:
         self.etsi_compliant_events: int = 0
         self.total_events: int = 0
 
+        # Global accumulators for departed vehicles
+        self.accumulated_energy_mj: float = 0.0
+        self.accumulated_dist_m: float = 0.0
+
     def get_or_create_vehicle(self, vid: str) -> VehicleCAMState:
         if vid not in self.vehicles:
             self.vehicles[vid] = VehicleCAMState(
@@ -198,7 +202,9 @@ class ETSICAMLayer:
     def remove_vehicle(self, vid: str):
         if vid in self.vehicles:
             vs = self.vehicles[vid]
-            if vs.method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling"]:
+            self.accumulated_energy_mj += vs.total_energy_mj
+            self.accumulated_dist_m += vs.odometer_m
+            if vs.method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling", "Base", "wo_R1", "wo_R2", "wo_R3", "StateAblation_Base", "StateAblation_wo_Density", "StateAblation_wo_CBR", "StateAblation_wo_Kinematics"]:
                 from ai_dcc_hook import get_hook
                 hook = get_hook(vs.method)
                 if hasattr(hook, 'terminate_vehicle'):
@@ -332,7 +338,7 @@ class ETSICAMLayer:
             self._dcc_bhattacharyya(vs, cbr, n_est)
         elif method == "Fixed10Hz":
             self._dcc_fixed_10hz(vs)
-        elif method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling"]:
+        elif method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling", "Base", "wo_R1", "wo_R2", "wo_R3", "StateAblation_Base", "StateAblation_wo_Density", "StateAblation_wo_CBR", "StateAblation_wo_Kinematics"]:
             self._dcc_ai(vs, cbr, n_est, sim_time, method)
         # For AI-DCC methods, T_GenCam and p_tx are set externally by ai_dcc_hook.py
 
@@ -430,8 +436,8 @@ class ETSICAMLayer:
 
     def get_energy_efficiency(self) -> float:
         """Return total energy (mJ) / total distance (km) averaged across vehicles."""
-        total_energy = sum(v.total_energy_mj for v in self.vehicles.values())
-        total_dist_km = sum(v.odometer_m for v in self.vehicles.values()) / 1000.0
+        total_energy = self.accumulated_energy_mj + sum(v.total_energy_mj for v in self.vehicles.values())
+        total_dist_km = (self.accumulated_dist_m + sum(v.odometer_m for v in self.vehicles.values())) / 1000.0
         if total_dist_km < 1e-9:
             return 0.0
         return total_energy / total_dist_km

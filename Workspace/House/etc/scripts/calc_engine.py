@@ -1,0 +1,356 @@
+"""
+calc_engine.py - Milestone 1 Financial Calculation Engine
+Location: /home/imnyj/Workspace/House/etc/scripts/calc_engine.py
+
+Calculates:
+- R1: One-time property acquisition costs (acquisition tax, local education tax, first-home exemption,
+      statutory brokerage fees + VAT, judicial scrivener fee, stamp duty, national housing bond discount,
+      moving fee, repair & cleaning fee).
+- R2: Mortgage loan scenarios & secondary fees (Didimdol, Bogeumjari, Commercial bank mortgage,
+      LTV, borrower stamp tax split 7.5만 KRW, mortgage setup fee split, annual guarantee fee).
+- Comprehensive scenario execution for 3.5억, 3.75억, and 4.0억 KRW.
+"""
+
+import json
+import math
+import argparse
+from pathlib import Path
+from typing import Dict, Any, List, Optional, Union
+
+
+def get_default_params_path() -> Path:
+    """Return default path to etc/data/financial_params.json"""
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parent.parent
+    return project_root / 'etc' / 'data' / 'financial_params.json'
+
+
+def load_financial_params(json_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Load and return financial_params.json parameter configuration."""
+    if json_path is None:
+        target_path = get_default_params_path()
+    else:
+        target_path = Path(json_path)
+
+    if not target_path.exists():
+        raise FileNotFoundError(f'Financial parameters file not found: {target_path}')
+
+    with open(target_path, 'r', encoding='utf-8') as f:
+        params = json.load(f)
+
+    # Basic Schema Validation
+    required_keys = ['scenarios', 'cash_reserve', 'monthly_income', 'expenses', 'r1_params', 'r2_params']
+    for key in required_keys:
+        if key not in params:
+            raise KeyError(f'Missing required parameter key in JSON: {key}')
+
+    return params
+
+
+def calculate_r1_costs(price: int, is_first_home: bool = True, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Calculate R1 one-time property acquisition costs.
+    
+    :param price: Property purchase price in KRW (e.g. 350000000)
+    :param is_first_home: Whether first-home buyer exemption applies (max 2M KRW)
+    :param params: Parameter dictionary from financial_params.json (loads default if None)
+    :return: Itemized calculation dictionary and total costs
+    """
+    if not isinstance(price, (int, float)) or price <= 0:
+        raise ValueError('Purchase price must be a positive number')
+
+    price = int(round(price))
+
+    if params is None:
+        params = load_financial_params()
+
+    r1 = params['r1_params']
+
+    # 1. Acquisition Tax & Local Education Tax
+    acq_cfg = r1['acquisition_tax']
+    gross_acq_tax = int(round(price * acq_cfg['base_rate']))
+    if is_first_home:
+        acq_tax_exemption = min(gross_acq_tax, acq_cfg['first_time_buyer_exemption'])
+    else:
+        acq_tax_exemption = 0
+
+    net_acq_tax = max(0, gross_acq_tax - acq_tax_exemption)
+    local_education_tax = int(round(net_acq_tax * acq_cfg['local_education_tax_rate']))
+    acquisition_tax_total = net_acq_tax + local_education_tax
+
+    # 2. Brokerage Fee (Statutory cap 0.4% + VAT 10% = 0.44%)
+    broker_cfg = r1['brokerage_fee']
+    brokerage_fee_base = int(round(price * broker_cfg['statutory_cap_rate']))
+    brokerage_vat = int(round(brokerage_fee_base * broker_cfg['vat_rate']))
+    brokerage_fee = brokerage_fee_base + brokerage_vat
+
+    # 3. Judicial Scrivener Fee
+    legal_map = r1['legal_fees_by_scenario']
+    price_str = str(price)
+    legal_fee = legal_map.get(price_str, 500000)
+
+    # 4. Property Transfer Stamp Duty
+    stamp_duty = r1['stamp_duty']
+
+    # 5. National Housing Bond Discount Loss
+    bond_cfg = r1['national_housing_bond']
+    public_official_price = int(round(price * bond_cfg['public_appraisal_ratio']))
+    threshold = bond_cfg['threshold_public_price']
+
+    if public_official_price < threshold:
+        bond_rate = bond_cfg['rate_below_threshold']
+    else:
+        bond_rate = bond_cfg['rate_above_threshold']
+
+    bond_buy_amount = int(round(public_official_price * bond_rate))
+    bond_discount_fee = int(round(bond_buy_amount * bond_cfg['discount_rate']))
+
+    # 6. Moving & Repair/Cleaning Fees
+    moving_fee = r1['moving_fee']
+    repair_cleaning_fee = r1['repair_cleaning_fee']
+
+    # Total R1 One-time Costs
+    total_r1_cost = (acquisition_tax_total + brokerage_fee + legal_fee + stamp_duty +
+                     bond_discount_fee + moving_fee + repair_cleaning_fee)
+
+    total_initial_capital_needed = price + total_r1_cost
+
+    return {
+        'purchase_price': price,
+        'is_first_home': is_first_home,
+        'gross_acquisition_tax': gross_acq_tax,
+        'acq_tax_exemption': acq_tax_exemption,
+        'net_acquisition_tax': net_acq_tax,
+        'local_education_tax': local_education_tax,
+        'acquisition_tax_total': acquisition_tax_total,
+        'brokerage_fee_base': brokerage_fee_base,
+        'brokerage_vat': brokerage_vat,
+        'brokerage_fee': brokerage_fee,
+        'legal_fee': legal_fee,
+        'stamp_duty': stamp_duty,
+        'public_official_price': public_official_price,
+        'bond_rate': bond_rate,
+        'bond_buy_amount': bond_buy_amount,
+        'bond_discount_fee': bond_discount_fee,
+        'moving_fee': moving_fee,
+        'repair_cleaning_fee': repair_cleaning_fee,
+        'total_r1_cost': total_r1_cost,
+        'total_initial_capital_needed': total_initial_capital_needed
+    }
+
+
+def calculate_cpm_monthly_payment(principal: int, annual_rate: float, term_years: int = 30) -> int:
+    """Calculate Monthly Payment for Constant Payment Mortgage (CPM)."""
+    if principal <= 0:
+        return 0
+    if annual_rate <= 0:
+        return int(math.ceil(principal / (term_years * 12)))
+
+    r = annual_rate / 12.0
+    n = term_years * 12
+    monthly_payment = principal * (r * (1 + r) ** n) / ((1 + r) ** n - 1)
+    return int(round(monthly_payment))
+
+
+def calculate_r2_loans(price: int, cash_reserve: int = 230000000, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Calculate R2 Loan scenarios and secondary fees.
+    
+    :param price: Property price in KRW
+    :param cash_reserve: Available cash reserve (default 230,000,000 KRW)
+    :param params: Parameter dictionary
+    :return: Dictionary containing loan requirement, LTV, secondary fees, and loan product comparisons
+    """
+    if not isinstance(price, (int, float)) or price <= 0:
+        raise ValueError('Purchase price must be a positive number')
+    if not isinstance(cash_reserve, (int, float)) or cash_reserve < 0:
+        raise ValueError('Cash reserve cannot be negative')
+
+    price = int(round(price))
+    cash_reserve = int(round(cash_reserve))
+
+    if params is None:
+        params = load_financial_params()
+
+    r2 = params['r2_params']
+    borrower_fees = r2['borrower_secondary_fees']
+
+    pure_required_loan = max(0, price - cash_reserve)
+    ltv_percent = round((pure_required_loan / price) * 100.0, 2) if price > 0 else 0.0
+
+    # Borrower secondary fees
+    loan_stamp_duty_share = borrower_fees['loan_stamp_duty_share'] if pure_required_loan > 100000000 else 35000
+    mortgage_setup_fee = borrower_fees['mortgage_setup_fee']
+    annual_guarantee_fee_rate = borrower_fees['annual_guarantee_fee_rate']
+    annual_guarantee_fee = int(round(pure_required_loan * annual_guarantee_fee_rate))
+    total_upfront_fees = loan_stamp_duty_share + mortgage_setup_fee
+
+    products_comparison = {}
+    for key, prod in r2['loan_products'].items():
+        rate = prod.get('default_rate', prod['min_rate'])
+        monthly_payment_30y = calculate_cpm_monthly_payment(pure_required_loan, rate, term_years=30)
+        total_interest_30y = (monthly_payment_30y * 360) - pure_required_loan
+
+        eligible = True
+        ineligible_reason = None
+        if key == 'didimdol':
+            max_income = prod.get('max_income', 85000000)
+            max_price = prod.get('max_price', 600000000)
+            if price > max_price:
+                eligible = False
+                ineligible_reason = f'Price ({price:,}) exceeds Didimdol cap ({max_price:,})'
+
+        products_comparison[key] = {
+            'product_name': prod['name'],
+            'min_rate': prod['min_rate'],
+            'max_rate': prod['max_rate'],
+            'applied_rate': rate,
+            'max_limit': prod.get('max_limit', None),
+            'eligible': eligible,
+            'ineligible_reason': ineligible_reason,
+            'required_loan': pure_required_loan,
+            'ltv_percent': ltv_percent,
+            'monthly_payment_30y': monthly_payment_30y,
+            'total_interest_30y': total_interest_30y,
+            'upfront_secondary_fees': total_upfront_fees,
+            'annual_guarantee_fee': annual_guarantee_fee
+        }
+
+    return {
+        'purchase_price': price,
+        'cash_reserve': cash_reserve,
+        'pure_required_loan': pure_required_loan,
+        'ltv_percent': ltv_percent,
+        'secondary_fees': {
+            'loan_stamp_duty_borrower': loan_stamp_duty_share,
+            'mortgage_setup_borrower': mortgage_setup_fee,
+            'annual_guarantee_fee_rate': annual_guarantee_fee_rate,
+            'annual_guarantee_fee': annual_guarantee_fee,
+            'total_upfront_fees': total_upfront_fees
+        },
+        'products': products_comparison
+    }
+
+
+def run_all_scenarios(json_path: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
+    """Run R1 & R2 calculations for all defined price scenarios (3.5억, 3.75억, 4.0억)."""
+    params = load_financial_params(json_path)
+
+    cash_reserve = params['cash_reserve']
+    monthly_income = params['monthly_income']
+    monthly_housing_budget = params.get('monthly_housing_budget', 500000)
+    fixed_expense = params['expenses']['total_monthly_fixed_expense']
+
+    scenario_results = []
+    for price in params['scenarios']:
+        r1_res = calculate_r1_costs(price, is_first_home=True, params=params)
+        r2_res = calculate_r2_loans(price, cash_reserve=cash_reserve, params=params)
+
+        scenario_results.append({
+            'scenario_price': price,
+            'r1_one_time_costs': r1_res,
+            'r2_loan_analysis': r2_res
+        })
+
+    return {
+        'cash_reserve': cash_reserve,
+        'monthly_income': monthly_income,
+        'monthly_housing_budget': monthly_housing_budget,
+        'total_monthly_fixed_expense_no_loan': fixed_expense,
+        'bonuses_prepayment_summary': params.get('bonuses', {}).get('prepayment_schedule', []),
+        'scenarios': scenario_results
+    }
+
+
+def self_verify() -> bool:
+    """Run built-in sanity checks on calculations."""
+    print('=== Running calc_engine.py Self-Verification ===')
+    params = load_financial_params()
+    
+    # 1. Test 3.5억 Scenario
+    r1_35 = calculate_r1_costs(350000000, params=params)
+    assert r1_35['net_acquisition_tax'] == 1500000, f'Expected 1.5M acq tax, got {r1_35["net_acquisition_tax"]}'
+    assert r1_35['local_education_tax'] == 150000, f'Expected 150k edu tax, got {r1_35["local_education_tax"]}'
+    assert r1_35['brokerage_fee'] == 1540000, f'Expected 1.54M brokerage, got {r1_35["brokerage_fee"]}'
+    assert r1_35['stamp_duty'] == 150000
+    assert r1_35['bond_discount_fee'] == 514500, f'Expected 514,500 bond fee, got {r1_35["bond_discount_fee"]}'
+    assert r1_35['total_r1_cost'] == 7854500, f'Expected 7,854,500 total R1, got {r1_35["total_r1_cost"]}'
+    print('  [PASS] Scenario 3.5억 R1 calculation verified (Exact 7,854,500 KRW)')
+
+    # 2. Test 3.75억 Scenario
+    r1_375 = calculate_r1_costs(375000000, params=params)
+    assert r1_375['net_acquisition_tax'] == 1750000
+    assert r1_375['local_education_tax'] == 175000
+    assert r1_375['brokerage_fee'] == 1650000
+    assert r1_375['bond_discount_fee'] == 603750, f'Expected 603,750 bond fee, got {r1_375["bond_discount_fee"]}'
+    assert r1_375['total_r1_cost'] == 8348750, f'Expected 8,348,750 total R1, got {r1_375["total_r1_cost"]}'
+    print('  [PASS] Scenario 3.75억 R1 calculation verified (Exact 8,348,750 KRW)')
+
+    # 3. Test 4.0억 Scenario
+    r1_40 = calculate_r1_costs(400000000, params=params)
+    assert r1_40['net_acquisition_tax'] == 2000000
+    assert r1_40['local_education_tax'] == 200000
+    assert r1_40['brokerage_fee'] == 1760000
+    assert r1_40['bond_discount_fee'] == 644000, f'Expected 644,000 bond fee, got {r1_40["bond_discount_fee"]}'
+    assert r1_40['total_r1_cost'] == 8804000, f'Expected 8,804,000 total R1, got {r1_40["total_r1_cost"]}'
+    print('  [PASS] Scenario 4.0억 R1 calculation verified (Exact 8,804,000 KRW)')
+
+    # 4. Test R2 Loan amounts
+    r2_35 = calculate_r2_loans(350000000, cash_reserve=230000000, params=params)
+    assert r2_35['pure_required_loan'] == 120000000, f'Expected 1.2억 loan, got {r2_35["pure_required_loan"]}'
+    assert r2_35['secondary_fees']['loan_stamp_duty_borrower'] == 75000
+    print('  [PASS] Scenario 3.5억 R2 loan verified (Required 1.2억, Stamp tax 75,000 KRW)')
+
+    r2_375 = calculate_r2_loans(375000000, cash_reserve=230000000, params=params)
+    assert r2_375['pure_required_loan'] == 145000000, f'Expected 1.45억 loan, got {r2_375["pure_required_loan"]}'
+    print('  [PASS] Scenario 3.75억 R2 loan verified (Required 1.45억)')
+
+    r2_40 = calculate_r2_loans(400000000, cash_reserve=230000000, params=params)
+    assert r2_40['pure_required_loan'] == 170000000, f'Expected 1.7억 loan, got {r2_40["pure_required_loan"]}'
+    print('  [PASS] Scenario 4.0억 R2 loan verified (Required 1.7억)')
+
+    print('=== All Self-Verification Checks PASSED (100%) ===')
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Milestone 1 Financial Data Calculation Engine')
+    parser.add_argument('--all', action='store_true', help='Run calculation for all 3 price scenarios')
+    parser.add_argument('--price', type=int, help='Run calculation for specific price (e.g. 350000000)')
+    parser.add_argument('--cash', type=int, default=230000000, help='Cash reserve amount (default 230000000)')
+    parser.add_argument('--json-path', type=str, default=None, help='Custom path to financial_params.json')
+    parser.add_argument('--json', action='store_true', help='Output formatted JSON')
+    parser.add_argument('--verify', action='store_true', help='Run self-verification checks')
+    parser.add_argument('--export', type=str, help='Export result JSON to file path')
+
+    args = parser.parse_args()
+
+    if args.verify:
+        self_verify()
+        return
+
+    if args.all or (args.price is None and not args.verify):
+        res = run_all_scenarios(args.json_path)
+    elif args.price:
+        params = load_financial_params(args.json_path)
+        r1_res = calculate_r1_costs(args.price, is_first_home=True, params=params)
+        r2_res = calculate_r2_loans(args.price, cash_reserve=args.cash, params=params)
+        res = {
+            'purchase_price': args.price,
+            'r1_one_time_costs': r1_res,
+            'r2_loan_analysis': r2_res
+        }
+
+    if args.export:
+        export_path = Path(args.export)
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(export_path, 'w', encoding='utf-8') as f:
+            json.dump(res, f, ensure_ascii=False, indent=2)
+        print(f'Exported simulation results to {export_path}')
+
+    if args.json or not args.export:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+
+
+if __name__ == '__main__':
+    main()

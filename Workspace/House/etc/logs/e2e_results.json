@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-08-12T08:11:06Z",
+  "status": "SUCCESS",
+  "summary": {
+    "total_tests": 72,
+    "passed": 72,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 3.271
+  },
+  "tier_results": {
+    "test_tier1.py": {
+      "status": "PASSED",
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "total": 28,
+      "exit_code": 0
+    },
+    "test_tier2.py": {
+      "status": "PASSED",
+      "passed": 26,
+      "failed": 0,
+      "skipped": 0,
+      "total": 26,
+      "exit_code": 0
+    },
+    "test_tier3.py": {
+      "status": "PASSED",
+      "passed": 13,
+      "failed": 0,
+      "skipped": 0,
+      "total": 13,
+      "exit_code": 0
+    },
+    "test_tier4.py": {
+      "status": "PASSED",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "total": 5,
+      "exit_code": 0
+    }
+  },
+  "failures_detail": []
+}

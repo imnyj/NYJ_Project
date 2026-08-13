@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏠 청주 방서동 자이 아파트 종합 재무 시뮬레이터</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #f3f4f6;
+            --glass-bg: rgba(255, 255, 255, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.5);
+            --text-main: #1f2937;
+            --text-muted: #4b5563;
+            --accent: #4f46e5;
+            --accent-hover: #4338ca;
+            --danger: #ef4444;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --card-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.12);
+            --input-bg: rgba(255, 255, 255, 0.4);
+            --tab-active-bg: #4f46e5;
+            --tab-active-text: #ffffff;
+            --table-header-bg: #4f46e5;
+        }
+
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --glass-bg: rgba(30, 41, 59, 0.75);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #818cf8;
+            --accent-hover: #6366f1;
+            --danger: #f87171;
+            --success: #34d399;
+            --warning: #fbbf24;
+            --card-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+            --input-bg: rgba(0, 0, 0, 0.25);
+            --tab-active-bg: #818cf8;
+            --tab-active-text: #0f172a;
+            --table-header-bg: #3730a3;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            background: var(--bg);
+            color: var(--text-main);
+            font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 24px 16px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+            position: relative;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Ambient Background Blobs */
+        .bg-blob {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(90px);
+            z-index: -1;
+            opacity: 0.65;
+            transition: background 0.5s ease;
+        }
+        .blob1 { width: 450px; height: 450px; background: #ff9a9e; top: -120px; left: -100px; }
+        .blob2 { width: 550px; height: 550px; background: #a18cd1; bottom: -120px; right: -100px; }
+        .blob3 { width: 350px; height: 350px; background: #84fab0; top: 45%; left: 50%; transform: translate(-50%, -50%); }
+        [data-theme="dark"] .blob1 { background: #312e81; }
+        [data-theme="dark"] .blob2 { background: #831843; }
+        [data-theme="dark"] .blob3 { background: #064e3b; }
+
+        .container {
+            max-width: 1240px;
+            margin: 0 auto;
+            position: relative;
+            z-index: 1;
+        }
+
+        .glass {
+            background: var(--glass-bg);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: var(--card-shadow);
+            padding: 28px;
+            margin-bottom: 24px;
+            transition: background 0.3s ease, border-color 0.3s ease;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 0 0 8px 0;
+            font-size: 2rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: var(--text-main);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin: 0 0 28px 0;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            font-size: 22px;
+            cursor: pointer;
+            border-radius: 50%;
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: var(--card-shadow);
+            z-index: 100;
+            transition: transform 0.2s ease, background 0.3s ease;
+        }
+        .theme-toggle:hover {
+            transform: scale(1.1) rotate(12deg);
+        }
+
+        /* Section Titles */
+        .section-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid var(--glass-border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* KPI Cards Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            padding: 20px 16px;
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.15);
+            text-align: center;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        [data-theme="dark"] .stat-card {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .stat-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+        }
+        .stat-label {
+            font-size: 0.82rem;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        .stat-value {
+            font-size: 1.45rem;
+            font-weight: 800;
+            margin-bottom: 4px;
+            word-break: keep-all;
+        }
+        .stat-sub {
+            font-size: 0.76rem;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+
+        /* Form Controls & Grids */
+        .input-group-title {
+            font-size: 0.88rem;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+        .value-display {
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .form-group input[type="range"] {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+        .form-group input[type="number"], .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border);
+            background: var(--input-bg);
+            color: var(--text-main);
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .form-group input[type="number"]:focus, .form-group select:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+        .form-group input[type="number"]:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Preset Buttons */
+        .price-preset-group {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .price-preset-btn {
+            flex: 1;
+            padding: 8px 12px;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        [data-theme="dark"] .price-preset-btn {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .price-preset-btn:hover {
+            border-color: var(--accent);
+            transform: translateY(-1px);
+        }
+        .price-preset-btn.active {
+            background: var(--accent);
+            color: #ffffff;
+            border-color: var(--accent);
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+        }
+
+        /* Toggle Switch */
+        .toggle-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 46px;
+            height: 24px;
+        }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-round {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #cbd5e1;
+            transition: .3s;
+            border-radius: 24px;
+        }
+        .slider-round:before {
+            position: absolute;
+            content: "";
+            height: 18px; width: 18px;
+            left: 3px; bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .slider-round {
+            background-color: var(--accent);
+        }
+        input:checked + .slider-round:before {
+            transform: translateX(22px);
+        }
+
+        /* Tabbed Views */
+        .tabs-nav {
+            display: flex;
+            gap: 8px;
+            border-bottom: 2px solid var(--glass-border);
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+        .tab-btn {
+            padding: 10px 18px;
+            border-radius: 12px 12px 0 0;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-muted);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+        .tab-btn:hover {
+            color: var(--text-main);
+            background: rgba(255, 255, 255, 0.1);
+        }
+        .tab-btn.active {
+            background: var(--tab-active-bg);
+            color: var(--tab-active-text);
+            border-color: var(--glass-border);
+        }
+        .tab-panel {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        .tab-panel.active {
+            display: block;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Data Tables */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            margin-top: 12px;
+        }
+        .custom-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            text-align: left;
+        }
+        .custom-table th {
+            background: var(--table-header-bg);
+            color: #ffffff;
+            padding: 12px 14px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .custom-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--glass-border);
+            white-space: nowrap;
+        }
+        .custom-table tr:hover {
+            background: rgba(79, 70, 229, 0.08);
+        }
+        .custom-table tr.active-price-col {
+            background: rgba(16, 185, 129, 0.12);
+            font-weight: 700;
+        }
+        .highlight-val {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        /* Checklist UI Cards */
+        .checklist-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 16px;
+        }
+        .checklist-card {
+            padding: 18px;
+            border-radius: 14px;
+            border: 1px solid var(--glass-border);
+            background: rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease;
+        }
+        [data-theme="dark"] .checklist-card {
+            background: rgba(0, 0, 0, 0.15);
+        }
+        .checklist-card.completed {
+            border-color: var(--success);
+            background: rgba(16, 185, 129, 0.08);
+        }
+        .checklist-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .checklist-step {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: var(--accent);
+            background: rgba(79, 70, 229, 0.15);
+            padding: 4px 8px;
+            border-radius: 6px;
+        }
+        .checklist-title {
+            font-size: 0.98rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .checklist-meta {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            line-height: 1.4;
+        }
+
+        /* Message Callouts */
+        .info-box {
+            padding: 14px 18px;
+            border-radius: 12px;
+            font-size: 0.88rem;
+            line-height: 1.5;
+            margin-top: 16px;
+            border: 1px solid transparent;
+        }
+        .info-box.warning { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.3); color: var(--text-main); }
+        .info-box.success { background: rgba(16, 185, 129, 0.12); border-color: rgba(16, 185, 129, 0.3); color: var(--text-main); }
+        .info-box.danger  { background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.3); color: var(--text-main); }
+
+        /* Responsive Breakpoints */
+        @media (max-width: 1024px) {
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 768px) {
+            body { padding: 16px 10px; }
+            .glass { padding: 20px 16px; }
+            h1 { font-size: 1.5rem; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .input-grid { grid-template-columns: 1fr; }
+            .checklist-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-blob blob1"></div>
+    <div class="bg-blob blob2"></div>
+    <div class="bg-blob blob3"></div>
+    
+    <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn" title="다크/라이트 테마 변경">☀️</button>
+
+    <div class="container">
+        <!-- Header -->
+        <header style="text-align: center; margin-bottom: 20px;">
+            <h1>🏠 청주 방서동 자이 아파트 종합 재무 시뮬레이터</h1>
+            <p class="subtitle">매입 제반비용(R1) · 대출 상품(R2) · 월별 현금흐름(R3) · 행정 절차(R4) 실시간 통합 시뮬레이션</p>
+        </header>
+
+        <!-- 4대 핵심 KPI 지표 카드 -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">초기 필요 자금 총액</div>
+                <div class="stat-value" id="kpi-initial-cash" style="color: var(--accent);">-</div>
+                <div class="stat-sub" id="kpi-initial-sub">매매가 + 부대비용</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">월 총 지출</div>
+                <div class="stat-value" id="kpi-monthly-expenditure" style="color: var(--warning);">-</div>
+                <div class="stat-sub" id="kpi-monthly-sub">대출 원리금 + 관리비 + 생활비</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">월 잔여 자금</div>
+                <div class="stat-value" id="kpi-monthly-surplus" style="color: var(--success);">-</div>
+                <div class="stat-sub" id="kpi-surplus-sub">월 세후 소득(330만) 기준</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">대출 완납 예상 시점</div>
+                <div class="stat-value" id="kpi-payoff-timeline" style="color: var(--accent);">-</div>
+                <div class="stat-sub" id="kpi-payoff-sub">보너스 상환 적용 시</div>
+            </div>
+        </div>
+
+        <!-- 실시간 컨트롤 패널 -->
+        <div class="glass">
+            <div class="section-title"><span>⚙️</span> 대출 및 매입 조건 설정 패널</div>
+            
+            <!-- Section 1: 가격 및 보유 현금 -->
+            <div class="input-group-title">🏘️ 1. 아파트 가격 & 보유 현금</div>
+            <div class="input-grid">
+                <div class="form-group">
+                    <label>아파트 매매가 프리셋</label>
+                    <div class="price-preset-group">
+                        <button class="price-preset-btn active" data-price="350000000" onclick="selectPresetPrice(350000000)">3.5억 원</button>
+                        <button class="price-preset-btn" data-price="375000000" onclick="selectPresetPrice(375000000)">3.75억 원</button>
+                        <button class="price-preset-btn" data-price="400000000" onclick="selectPresetPrice(400000000)">4.0억 원</button>
+                    </div>
+                    <label style="margin-top: 4px;">매매가 미세 조절 <span class="value-display" id="apt-price-val">3억 5,000만 원</span></label>
+                    <input type="range" id="apt-price" min="300000000" max="500000000" step="5000000" value="350000000" oninput="onPriceSliderInput(this.value)">
+                </div>
+
+                <div class="form-group">
+                    <label>보유 현금 자산 <span class="value-display" id="cash-reserve-val">2억 3,000만 원</span></label>
+                    <input type="range" id="cash-reserve" min="100000000" max="400000000" step="5000000" value="230000000" oninput="recalculateAll()">
+                    <span style="font-size:0.75rem; color:var(--text-muted);">* 구성: 본인 3천만 + 본가 1억 + 처가 1억 원</span>
+                </div>
+
+                <div class="form-group">
+                    <label>월 상환 여력 지정 (원) <span class="value-display" id="monthly-pay-val">50만 원</span></label>
+                    <input type="number" id="monthly-payment-input" value="500000" step="50000" min="0" oninput="recalculateAll()">
+                    <span style="font-size:0.75rem; color:var(--text-muted);">* 기본 부담 가능액 50만 원 (원리금상환)</span>
+                </div>
+            </div>
+
+            <!-- Section 2: 대출 상품 & 금리 -->
+            <div class="input-group-title">🏛️ 2. 대출 금리 & 기간 설정</div>
+            <div class="input-grid">
+                <div class="form-group">
+                    <label>디딤돌대출 금리 <span class="value-display" id="rate-didimdol-val">3.15%</span></label>
+                    <input type="range" id="rate-didimdol" min="3.0" max="3.3" step="0.05" value="3.15" oninput="recalculateAll()">
+                    <span style="font-size:0.75rem; color:var(--text-muted);">* 신혼부부 특례 (한도 최대 4억 원)</span>
+                </div>
+
+                <div class="form-group">
+                    <label>시중은행 주담대 금리 <span class="value-display" id="rate-commercial-val">4.20%</span></label>
+                    <input type="range" id="rate-commercial" min="3.8" max="4.5" step="0.05" value="4.20" oninput="recalculateAll()">
+                    <span style="font-size:0.75rem; color:var(--text-muted);">* 초과 대출금 및 일반 주담대 적용</span>
+                </div>
+
+                <div class="form-group">
+                    <label>대출 상환 만기 <span class="value-display" id="loan-term-val">30년</span></label>
+                    <input type="range" id="loan-term" min="10" max="30" step="1" value="30" oninput="recalculateAll()">
+                    <span style="font-size:0.75rem; color:var(--text-muted);">* 10년 ~ 30년 만기 설정</span>
+                </div>
+            </div>
+
+            <!-- Section 3: 보너스 조기상환 -->
+            <div class="input-group-title">🎁 3. 연간 보너스 조기상환 설정</div>
+            <div class="toggle-wrapper">
+                <label class="switch">
+                    <input type="checkbox" id="bonus-toggle" checked onchange="toggleBonusInputs(this.checked)">
+                    <span class="slider-round"></span>
+                </label>
+                <span style="font-weight: 700; font-size: 0.9rem;">연 1,000만 원 보너스 조기 원금상환 적용</span>
+            </div>
+            <div class="input-grid" id="bonus-input-grid">
+                <div class="form-group">
+                    <label>1월 특강비 상환액</label>
+                    <input type="number" id="bonus-jan" value="1000000" step="500000" min="0" oninput="recalculateAll()">
+                </div>
+                <div class="form-group">
+                    <label>2월 교연비 상환액</label>
+                    <input type="number" id="bonus-feb" value="4000000" step="500000" min="0" oninput="recalculateAll()">
+                </div>
+                <div class="form-group">
+                    <label>7월 특강비 상환액</label>
+                    <input type="number" id="bonus-jul" value="1000000" step="500000" min="0" oninput="recalculateAll()">
+                </div>
+                <div class="form-group">
+                    <label>8월 교연비 상환액</label>
+                    <input type="number" id="bonus-aug" value="4000000" step="500000" min="0" oninput="recalculateAll()">
+                </div>
+            </div>
+            <div id="simulation-status-callout"></div>
+        </div>
+
+        <!-- Chart.js 이중축 시각화 그래프 -->
+        <div class="glass">
+            <div class="section-title"><span>📈</span> 월별 현금흐름 & 대출 잔액 이중축 추세 그래프</div>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: -10px; margin-bottom: 16px;">
+                💡 <strong>좌측 축(막대/선)</strong>: 월 발생 이자, 정기 원금, 보너스 상환액 | <strong>우측 축(황금색 곡선)</strong>: 대출 잔액 추세 (독립 스케일링)
+            </p>
+            <div style="position: relative; height: 440px; width: 100%;">
+                <canvas id="mainChart"></canvas>
+            </div>
+        </div>
+
+        <!-- 4-Tab 상세 분석 세션 -->
+        <div class="glass">
+            <div class="tabs-nav">
+                <button class="tab-btn active" id="tab-btn-1" onclick="switchTab(1)">📋 R1. 일회성 부대비용</button>
+                <button class="tab-btn" id="tab-btn-2" onclick="switchTab(2)">🏛️ R2. 대출 상품 & 규제 분석</button>
+                <button class="tab-btn" id="tab-btn-3" onclick="switchTab(3)">🗓️ R3. 월별/연별 현금흐름 표</button>
+                <button class="tab-btn" id="tab-btn-4" onclick="switchTab(4)">📑 R4. 행정 & 법률 절차</button>
+            </div>
+
+            <!-- Tab 1: R1 부대비용 -->
+            <div class="tab-panel active" id="tab-panel-1">
+                <div class="section-title">📋 R1. 매입 시 일회성 부대비용 비교표 (3.5억 / 3.75억 / 4.0억)</div>
+                <p style="font-size: 0.88rem; color: var(--text-muted);">
+                    청주 방서동 자이 아파트 매입 시 발생하는 모든 초기 행정, 세금, 제반 실무 비용 산출 근거 명세입니다.
+                </p>
+                <div class="table-responsive">
+                    <table class="custom-table" id="r1-comparison-table">
+                        <thead>
+                            <tr>
+                                <th>비용 항목</th>
+                                <th>3.5억 원 시나리오</th>
+                                <th>3.75억 원 시나리오</th>
+                                <th>4.0억 원 시나리오</th>
+                                <th>산출 근거 및 관계 법령</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr id="r1-row-acq">
+                                <td><strong>취득세 (납부액)</strong></td>
+                                <td>150만 원</td>
+                                <td>175만 원</td>
+                                <td>200만 원</td>
+                                <td>지방세법 1.0% (생애최초 감면 최대 200만 원 차감)</td>
+                            </tr>
+                            <tr id="r1-row-edu">
+                                <td><strong>지방교육세</strong></td>
+                                <td>15만 원</td>
+                                <td>17.5만 원</td>
+                                <td>20만 원</td>
+                                <td>취득세 납부액의 10% (0.1%)</td>
+                            </tr>
+                            <tr id="r1-row-broker">
+                                <td><strong>중개수수료</strong></td>
+                                <td>154만 원</td>
+                                <td>165만 원</td>
+                                <td>176만 원</td>
+                                <td>공인중개사법 법정 상한 0.4% + 부가세 10% (0.44%)</td>
+                            </tr>
+                            <tr id="r1-row-legal">
+                                <td><strong>법무사 등기 대행료</strong></td>
+                                <td>50만 원</td>
+                                <td>52만 원</td>
+                                <td>55만 원</td>
+                                <td>대한법무사회 소유권 이전 등기 보수 기준 표준약정</td>
+                            </tr>
+                            <tr id="r1-row-stamp">
+                                <td><strong>매매 인지세</strong></td>
+                                <td>15만 원</td>
+                                <td>15만 원</td>
+                                <td>15만 원</td>
+                                <td>인지세법 부동산 소유권 이전 (1억 초과~10억 이하 고정)</td>
+                            </tr>
+                            <tr id="r1-row-bond">
+                                <td><strong>국민주택채권 매입 할인액</strong></td>
+                                <td>51.5만 원</td>
+                                <td>60.4만 원</td>
+                                <td>64.4만 원</td>
+                                <td>공시지가(70%) × 매입비율(2.1%~2.3%) × 할인율 10% 실부담</td>
+                            </tr>
+                            <tr id="r1-row-moving">
+                                <td><strong>포장이사 비용</strong></td>
+                                <td>150만 원</td>
+                                <td>150만 원</td>
+                                <td>150만 원</td>
+                                <td>청주 관내 30평형대 포장이사 및 사다리차 평균 비용</td>
+                            </tr>
+                            <tr id="r1-row-repair">
+                                <td><strong>기본 수리 / 청소비</strong></td>
+                                <td>200만 원</td>
+                                <td>200만 원</td>
+                                <td>200만 원</td>
+                                <td>입주 도배, 부분 보수 및 전문 입주청소 세팅비</td>
+                            </tr>
+                            <tr id="r1-row-loan-stamp">
+                                <td><strong>대출 인지세 (차주 부담)</strong></td>
+                                <td>7.5만 원</td>
+                                <td>7.5만 원</td>
+                                <td>7.5만 원</td>
+                                <td>대출금 1억 초과 시 15만 원 중 차주 50% 부담액</td>
+                            </tr>
+                            <tr style="background: rgba(79, 70, 229, 0.12); font-weight: 800;" id="r1-row-total">
+                                <td><strong>일회성 부대비용 총합계</strong></td>
+                                <td id="r1-total-350">793만 원</td>
+                                <td id="r1-total-375">842.4만 원</td>
+                                <td id="r1-total-400">887.9만 원</td>
+                                <td>매매가 외 초기 추가 필요 현금 자금</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 2: R2 대출 비교 -->
+            <div class="tab-panel" id="tab-panel-2">
+                <div class="section-title">🏛️ R2. 주택담보대출 상품 비교 및 소득 규제 완화 분석</div>
+                <div class="input-grid">
+                    <div style="padding: 16px; border-radius: 12px; border: 1px solid var(--glass-border); background: rgba(79, 70, 229, 0.08);">
+                        <h4 style="margin:0 0 8px 0; color: var(--accent);">🐣 디딤돌대출 (신혼부부 특례)</h4>
+                        <ul style="font-size:0.85rem; padding-left:18px; margin:0; line-height:1.6; color:var(--text-muted);">
+                            <li><strong>대출 금리</strong>: 연 3.0% ~ 3.3% (기본 3.15%)</li>
+                            <li><strong>최대 한도</strong>: 4억 원 (LTV 최대 70%, 생애최초 80%)</li>
+                            <li><strong>소득 조건 분석</strong>: 현행 신혼부부 기준 부부합산 연소득 8,500만 원 이하. 본인(5,296만) + 배우자(8,000만 이상) 부부합산 약 1.3억~1.5억 원으로 현행 초과 위험.</li>
+                            <li><strong>시나리오 반영</strong>: 디딤돌 규제 완화 정책 시행 시 대출 가능.</li>
+                        </ul>
+                    </div>
+
+                    <div style="padding: 16px; border-radius: 12px; border: 1px solid var(--glass-border); background: rgba(16, 185, 129, 0.08);">
+                        <h4 style="margin:0 0 8px 0; color: var(--success);">🏦 일반 시중은행 주택담보대출</h4>
+                        <ul style="font-size:0.85rem; padding-left:18px; margin:0; line-height:1.6; color:var(--text-muted);">
+                            <li><strong>대출 금리</strong>: 연 3.8% ~ 4.5% (주요 시중은행 고정/혼합형)</li>
+                            <li><strong>대출 한도</strong>: LTV 70% 이내 (DSR 40% 적용)</li>
+                            <li><strong>부대비용</strong>: 근저당 설정비(은행 부담 0원), 대출 인지세(차주 7.5만 원), HF/HUG 보증료(연 0.05%)</li>
+                            <li><strong>특징</strong>: 소득 제한이 없어 즉시 대출 실행 가능.</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="info-box warning">
+                    💡 <strong>정책 및 소득 요건 가이드</strong>: 부부합산 소득이 디딤돌 요건을 초과하더라도, 시뮬레이터 상단의 <strong>[디딤돌 금리]</strong>와 <strong>[시중은행 금리]</strong> 슬라이더를 통해 규제 완화 여부에 따른 차이점을 자유롭게 테스트할 수 있습니다.
+                </div>
+            </div>
+
+            <!-- Tab 3: R3 현금흐름 표 -->
+            <div class="tab-panel" id="tab-panel-3">
+                <div class="section-title">🗓️ R3. 상세 현금흐름 & 대출 상환 스케줄 표</div>
+                <div class="info-box success" style="margin-bottom: 14px;">
+                    📌 <strong>기존 생활비 반영</strong>: 기존 월 지출(2,390,708원)에서 <strong>월세(311,000원) 제거</strong> 후, 아파트 신규 고정비(관리비 20만+주차 1만+TV인터넷 3만 = 24만 원)를 결합하여 산출되었습니다.
+                </div>
+                
+                <h4 style="margin: 16px 0 8px 0;">1. 입주 초기 1년 월별 상세 현금흐름</h4>
+                <div class="table-responsive">
+                    <table class="custom-table">
+                        <thead>
+                            <tr>
+                                <th>구분</th>
+                                <th>월 세후 소득</th>
+                                <th>대출 원리금 상환금</th>
+                                <th>아파트 고정비</th>
+                                <th>기존 생활비 (월세제거)</th>
+                                <th>월 총 지출</th>
+                                <th>월 잔여 순유보금</th>
+                            </tr>
+                        </thead>
+                        <tbody id="initial-year-table-body">
+                            <!-- JS dynamic injection -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <h4 style="margin: 24px 0 8px 0;">2. 연도별 대출 상환 및 잔액 추세 요약</h4>
+                <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="custom-table">
+                        <thead>
+                            <tr>
+                                <th>연도</th>
+                                <th>연간 정기 납입금</th>
+                                <th>연간 보너스 조기상환</th>
+                                <th>연간 총 이자 지출</th>
+                                <th>연간 총 원금 상환</th>
+                                <th>기말 대출 잔액</th>
+                            </tr>
+                        </thead>
+                        <tbody id="yearly-summary-table-body">
+                            <!-- JS dynamic injection -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 4: R4 행정 절차 체크리스트 -->
+            <div class="tab-panel" id="tab-panel-4">
+                <div class="section-title">📑 R4. 매입 후 법적 & 행정 절차 체크리스트</div>
+                <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 16px;">
+                    아파트 계약 잔금 지급일 이후 수행해야 하는 법적 신고 및 행정 절차를 시급성 순서대로 명시하였습니다.
+                </p>
+                <div class="checklist-grid">
+                    <div class="checklist-card" onclick="toggleChecklist(this)">
+                        <div class="checklist-header">
+                            <span class="checklist-step">STEP 1. D-DAY</span>
+                            <input type="checkbox" style="transform: scale(1.2); cursor: pointer;">
+                        </div>
+                        <div class="checklist-title">💰 잔금 납부 & 영수증 수령</div>
+                        <div class="checklist-meta">
+                            <span>⏱️ <strong>기한</strong>: 잔금 당일</span>
+                            <span>🏛️ <strong>담당 기관</strong>: 해당 공인중개사업무소</span>
+                            <span>📄 <strong>필요 서류</strong>: 잔금 이체확인서, 매매계약서, 선수관리비 영수증</span>
+                        </div>
+                    </div>
+
+                    <div class="checklist-card" onclick="toggleChecklist(this)">
+                        <div class="checklist-header">
+                            <span class="checklist-step">STEP 2. D-DAY</span>
+                            <input type="checkbox" style="transform: scale(1.2); cursor: pointer;">
+                        </div>
+                        <div class="checklist-title">📜 소유권 이전 등기 신청</div>
+                        <div class="checklist-meta">
+                            <span>⏱️ <strong>기한</strong>: 잔금 지급 당일 즉시</span>
+                            <span>🏛️ <strong>담당 기관</strong>: 관할 법원 등기소 (법무사 위임)</span>
+                            <span>📄 <strong>필요 서류</strong>: 매매계약서, 매도인 인감증명서, 주민등록초본</span>
+                        </div>
+                    </div>
+
+                    <div class="checklist-card" onclick="toggleChecklist(this)">
+                        <div class="checklist-header">
+                            <span class="checklist-step">STEP 3. D+60일 이내</span>
+                            <input type="checkbox" style="transform: scale(1.2); cursor: pointer;">
+                        </div>
+                        <div class="checklist-title">🏛️ 취득세 신고 및 납부</div>
+                        <div class="checklist-meta">
+                            <span>⏱️ <strong>기한</strong>: 잔금일로부터 60일 이내 (미납 시 가산세 20%)</span>
+                            <span>🏛️ <strong>담당 기관</strong>: 상당구청 세무과 / 위택스(WeTax)</span>
+                            <span>📄 <strong>필요 서류</strong>: 취득세 신고서, 부동산거래계약신고필증</span>
+                        </div>
+                    </div>
+
+                    <div class="checklist-card" onclick="toggleChecklist(this)">
+                        <div class="checklist-header">
+                            <span class="checklist-step">STEP 4. 입주 당일</span>
+                            <input type="checkbox" style="transform: scale(1.2); cursor: pointer;">
+                        </div>
+                        <div class="checklist-title">🏠 전입신고 & 확정일자 부여</div>
+                        <div class="checklist-meta">
+                            <span>⏱️ <strong>기한</strong>: 입주 후 14일 이내</span>
+                            <span>🏛️ <strong>담당 기관</strong>: 방서동 관할 행정복지센터 / 정부24</span>
+                            <span>📄 <strong>필요 서류</strong>: 신분증, 매매계약서 원본</span>
+                        </div>
+                    </div>
+
+                    <div class="checklist-card" onclick="toggleChecklist(this)">
+                        <div class="checklist-header">
+                            <span class="checklist-step">STEP 5. 매년 6월 1일</span>
+                            <input type="checkbox" style="transform: scale(1.2); cursor: pointer;">
+                        </div>
+                        <div class="checklist-title">📊 재산세 & 종합부동산세 과세 안내</div>
+                        <div class="checklist-meta">
+                            <span>⏱️ <strong>기한</strong>: 매년 7월 / 9월 고지서 수령 납부</span>
+                            <span>🏛️ <strong>담당 기관</strong>: 청주시 상당구청 세무과</span>
+                            <span>📄 <strong>참고</strong>: 6월 1일 소유자 기준 과세, 공동명의 시 공제 혜택</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    /* ==========================================================================
+       GLOBAL STATE & CALCULATION ENGINE
+       ========================================================================== */
+    let mainChartInstance = null;
+
+    // Formatting Helpers
+    function formatKRW(val) {
+        const num = Math.round(val);
+        if (Math.abs(num) >= 100000000) {
+            const uk = Math.floor(num / 100000000);
+            const remainder = Math.round((num % 100000000) / 10000);
+            if (remainder > 0) return `${uk}억 ${remainder.toLocaleString()}만 원`;
+            return `${uk}억 원`;
+        }
+        if (Math.abs(num) >= 10000) {
+            return `${Math.round(num / 10000).toLocaleString()}만 원`;
+        }
+        return `${num.toLocaleString()} 원`;
+    }
+
+    function formatShortKRW(val) {
+        const num = Math.round(val);
+        if (Math.abs(num) >= 100000000) return (num / 100000000).toFixed(2) + '억';
+        if (Math.abs(num) >= 10000) return (num / 10000).toFixed(0) + '만';
+        return num.toLocaleString();
+    }
+
+    function formatFullKRW(val) {
+        return Math.round(val).toLocaleString() + '원';
+    }
+
+    // Theme Toggle
+    function toggleTheme() {
+        const html = document.documentElement;
+        const btn = document.getElementById('themeBtn');
+        if (html.getAttribute('data-theme') === 'dark') {
+            html.setAttribute('data-theme', 'light');
+            btn.textContent = '🌙';
+        } else {
+            html.setAttribute('data-theme', 'dark');
+            btn.textContent = '☀️';
+        }
+        recalculateAll();
+    }
+
+    // Tab Switcher
+    function switchTab(tabIndex) {
+        for (let i = 1; i <= 4; i++) {
+            const btn = document.getElementById(`tab-btn-${i}`);
+            const panel = document.getElementById(`tab-panel-${i}`);
+            if (i === tabIndex) {
+                btn.classList.add('active');
+                panel.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+                panel.classList.remove('active');
+            }
+        }
+    }
+
+    // Preset Price Selection
+    function selectPresetPrice(price) {
+        document.getElementById('apt-price').value = price;
+        updatePresetButtonsState(price);
+        recalculateAll();
+    }
+
+    function onPriceSliderInput(val) {
+        updatePresetButtonsState(parseInt(val));
+        recalculateAll();
+    }
+
+    function updatePresetButtonsState(currentPrice) {
+        document.querySelectorAll('.price-preset-btn').forEach(btn => {
+            const btnPrice = parseInt(btn.getAttribute('data-price'));
+            if (btnPrice === currentPrice) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    // Bonus Input Toggle
+    function toggleBonusInputs(enabled) {
+        const inputs = ['bonus-jan', 'bonus-feb', 'bonus-jul', 'bonus-aug'];
+        inputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.disabled = !enabled;
+        });
+        recalculateAll();
+    }
+
+    // Checklist Interactive Toggle
+    function toggleChecklist(card) {
+        const checkbox = card.querySelector('input[type="checkbox"]');
+        if (event.target !== checkbox) {
+            checkbox.checked = !checkbox.checked;
+        }
+        if (checkbox.checked) {
+            card.classList.add('completed');
+        } else {
+            card.classList.remove('completed');
+        }
+    }
+
+    /* ==========================================================================
+       MAIN CALCULATION LOGIC
+       ========================================================================== */
+    function calculateSimulation() {
+        const price = parseInt(document.getElementById('apt-price').value);
+        const cash = parseInt(document.getElementById('cash-reserve').value);
+        const monthlyPaymentTarget = parseInt(document.getElementById('monthly-payment-input').value) || 0;
+        const didimdolRate = parseFloat(document.getElementById('rate-didimdol').value) / 100;
+        const commercialRate = parseFloat(document.getElementById('rate-commercial').value) / 100;
+        const termYears = parseInt(document.getElementById('loan-term').value);
+        const useBonus = document.getElementById('bonus-toggle').checked;
+
+        const bonusJan = useBonus ? (parseInt(document.getElementById('bonus-jan').value) || 0) : 0;
+        const bonusFeb = useBonus ? (parseInt(document.getElementById('bonus-feb').value) || 0) : 0;
+        const bonusJul = useBonus ? (parseInt(document.getElementById('bonus-jul').value) || 0) : 0;
+        const bonusAug = useBonus ? (parseInt(document.getElementById('bonus-aug').value) || 0) : 0;
+
+        // 1. R1 One-time Cost Calculations
+        const grossAcqTax = Math.floor(price * 0.011);
+        const acqTaxExemption = Math.min(grossAcqTax, 2000000);
+        const netAcqTaxTotal = Math.max(0, grossAcqTax - acqTaxExemption);
+
+        const brokerageFee = Math.floor(price * 0.0044);
+        
+        let legalFee = 500000;
+        if (price >= 375000000 && price < 400000000) legalFee = 520000;
+        else if (price >= 400000000) legalFee = 550000;
+
+        const stampDuty = 150000;
+        const publicPrice = price * 0.70;
+        const bondRate = (publicPrice < 260000000) ? 0.021 : 0.023;
+        const bondDiscountFee = Math.floor(publicPrice * bondRate * 0.10);
+        const movingFee = 1500000;
+        const repairCleaningFee = 2000000;
+
+        const requiredLoan = Math.max(0, price - cash);
+        const loanStampDuty = (requiredLoan > 100000000) ? 75000 : ((requiredLoan > 50000000) ? 35000 : 0);
+
+        const totalR1Cost = netAcqTaxTotal + brokerageFee + legalFee + stampDuty + bondDiscountFee + movingFee + repairCleaningFee + loanStampDuty;
+        const totalInitialCapital = price + totalR1Cost;
+        const cashSurplusDeficit = cash - totalInitialCapital;
+
+        // 2. Loan Split & Effective Rate
+        const DIDIMDOL_MAX = 400000000;
+        let didimdolAmount = 0;
+        let commercialAmount = 0;
+        let effectiveRate = commercialRate;
+
+        if (requiredLoan > 0) {
+            didimdolAmount = Math.min(requiredLoan, DIDIMDOL_MAX);
+            commercialAmount = Math.max(0, requiredLoan - DIDIMDOL_MAX);
+            effectiveRate = (didimdolAmount * didimdolRate + commercialAmount * commercialRate) / requiredLoan;
+        }
+
+        // 3. Fixed Expenses & Monthly Cashflow
+        const baseLivingNet = 2079708; // 2,390,708 - 311,000 (monthly rent removed)
+        const aptFixedExpenses = 240000; // maintenance 20만 + parking/TV/internet 4만
+        const totalFixedSpendingNoLoan = baseLivingNet + aptFixedExpenses; // 2,319,708 원
+
+        const appliedMonthlyLoanPayment = monthlyPaymentTarget;
+        const totalMonthlySpending = appliedMonthlyLoanPayment + totalFixedSpendingNoLoan;
+        const monthlyNetIncome = 3300000;
+        const remainingMonthlyIncome = monthlyNetIncome - totalMonthlySpending;
+
+        // 4. Amortization Simulation Engine
+        const monthlyRate = effectiveRate / 12;
+        let currentBalance = requiredLoan;
+        let accumulatedShortfall = 0;
+        let totalInterestPaid = 0;
+        let totalPrincipalPaid = 0;
+        let finishMonth = 0;
+        let isPaidOff = false;
+
+        const maxMonths = termYears * 12;
+        const chartLabels = [];
+        const interestData = [];
+        const principalData = [];
+        const bonusData = [];
+        const bonusShortfallData = [];
+        const balanceData = [];
+        const monthlyLog = [];
+
+        for (let m = 1; m <= maxMonths; m++) {
+            if (currentBalance <= 0) {
+                if (!isPaidOff) {
+                    isPaidOff = true;
+                    finishMonth = m - 1;
+                }
+                break;
+            }
+
+            const startBal = currentBalance;
+            const interestThisMonth = startBal * monthlyRate;
+
+            let principalPaidThisMonth = 0;
+            let interestPaidThisMonth = 0;
+
+            if (appliedMonthlyLoanPayment >= interestThisMonth) {
+                interestPaidThisMonth = interestThisMonth;
+                principalPaidThisMonth = appliedMonthlyLoanPayment - interestThisMonth;
+                if (principalPaidThisMonth > currentBalance) {
+                    principalPaidThisMonth = currentBalance;
+                }
+                currentBalance -= principalPaidThisMonth;
+            } else {
+                interestPaidThisMonth = appliedMonthlyLoanPayment;
+                const shortfall = interestThisMonth - appliedMonthlyLoanPayment;
+                accumulatedShortfall += shortfall;
+            }
+
+            totalInterestPaid += interestPaidThisMonth;
+            totalPrincipalPaid += principalPaidThisMonth;
+
+            // Bonus Prepayment Calculation
+            const calMonth = ((m - 1) % 12) + 1;
+            let bonusAmount = 0;
+            if (calMonth === 1) bonusAmount = bonusJan;
+            else if (calMonth === 2) bonusAmount = bonusFeb;
+            else if (calMonth === 7) bonusAmount = bonusJul;
+            else if (calMonth === 8) bonusAmount = bonusAug;
+
+            let bonusPaidThisMonth = 0;
+            let shortfallClearedThisMonth = 0;
+
+            if (bonusAmount > 0 && currentBalance > 0) {
+                if (accumulatedShortfall > 0) {
+                    if (bonusAmount >= accumulatedShortfall) {
+                        shortfallClearedThisMonth = accumulatedShortfall;
+                        totalInterestPaid += accumulatedShortfall;
+                        bonusAmount -= accumulatedShortfall;
+                        accumulatedShortfall = 0;
+                    } else {
+                        shortfallClearedThisMonth = bonusAmount;
+                        totalInterestPaid += bonusAmount;
+                        accumulatedShortfall -= bonusAmount;
+                        bonusAmount = 0;
+                    }
+                }
+
+                if (bonusAmount > 0) {
+                    bonusPaidThisMonth = Math.min(currentBalance, bonusAmount);
+                    currentBalance -= bonusPaidThisMonth;
+                    totalPrincipalPaid += bonusPaidThisMonth;
+                }
+            }
+
+            // Year-end Shortfall Capitalization
+            if (m % 12 === 0 && accumulatedShortfall > 0) {
+                currentBalance += accumulatedShortfall;
+                accumulatedShortfall = 0;
+            }
+
+            if (currentBalance < 0) currentBalance = 0;
+
+            const yearNum = Math.floor((m - 1) / 12) + 1;
+            const labelStr = `${yearNum}년 ${calMonth}월`;
+
+            chartLabels.push(labelStr);
+            interestData.push(Math.round(interestThisMonth));
+            principalData.push(Math.round(principalPaidThisMonth));
+            bonusData.push(Math.round(bonusPaidThisMonth));
+            bonusShortfallData.push(Math.round(shortfallClearedThisMonth));
+            balanceData.push(Math.round(currentBalance));
+
+            monthlyLog.push({
+                month: m,
+                calMonth: calMonth,
+                yearNum: yearNum,
+                startBal: Math.round(startBal),
+                interest: Math.round(interestThisMonth),
+                regularPrincipal: Math.round(principalPaidThisMonth),
+                bonusPrincipal: Math.round(bonusPaidThisMonth),
+                shortfallCleared: Math.round(shortfallClearedThisMonth),
+                shortfall: Math.round(accumulatedShortfall),
+                balance: Math.round(currentBalance)
+            });
+
+            if (currentBalance <= 0 && !isPaidOff) {
+                isPaidOff = true;
+                finishMonth = m;
+                break;
+            }
+        }
+
+        if (!isPaidOff) finishMonth = maxMonths;
+
+        const payoffYears = Math.floor(finishMonth / 12);
+        const payoffMonths = finishMonth % 12;
+
+        return {
+            price, cash, requiredLoan, totalR1Cost, totalInitialCapital, cashSurplusDeficit,
+            effectiveRate, termYears, appliedMonthlyLoanPayment, totalMonthlySpending,
+            remainingMonthlyIncome, isPaidOff, finishMonth, payoffYears, payoffMonths,
+            totalInterestPaid: Math.round(totalInterestPaid),
+            totalPrincipalPaid: Math.round(totalPrincipalPaid),
+            chartLabels, interestData, principalData, bonusData, bonusShortfallData, balanceData, monthlyLog
+        };
+    }
+
+    /* ==========================================================================
+       UI UPDATER & CHART RENDERER
+       ========================================================================== */
+    function recalculateAll() {
+        // 1. Synchronize Slider Display Texts
+        const priceVal = parseInt(document.getElementById('apt-price').value);
+        const cashVal = parseInt(document.getElementById('cash-reserve').value);
+        const monthlyPayVal = parseInt(document.getElementById('monthly-payment-input').value) || 0;
+        const rateDidimdolVal = parseFloat(document.getElementById('rate-didimdol').value);
+        const rateCommercialVal = parseFloat(document.getElementById('rate-commercial').value);
+        const termVal = parseInt(document.getElementById('loan-term').value);
+
+        document.getElementById('apt-price-val').textContent = formatKRW(priceVal);
+        document.getElementById('cash-reserve-val').textContent = formatKRW(cashVal);
+        document.getElementById('monthly-pay-val').textContent = formatKRW(monthlyPayVal);
+        document.getElementById('rate-didimdol-val').textContent = rateDidimdolVal.toFixed(2) + '%';
+        document.getElementById('rate-commercial-val').textContent = rateCommercialVal.toFixed(2) + '%';
+        document.getElementById('loan-term-val').textContent = termVal + '년';
+
+        // 2. Run Engine Calculation
+        const result = calculateSimulation();
+
+        // 3. Update KPI Cards
+        document.getElementById('kpi-initial-cash').textContent = formatKRW(result.totalInitialCapital);
+        document.getElementById('kpi-initial-sub').textContent = `매매가 ${formatShortKRW(result.price)}원 + 부대비용 ${formatShortKRW(result.totalR1Cost)}원`;
+
+        document.getElementById('kpi-monthly-expenditure').textContent = `${formatFullKRW(result.totalMonthlySpending)} /월`;
+        document.getElementById('kpi-monthly-sub').textContent = `상환 ${formatShortKRW(result.appliedMonthlyLoanPayment)}원 + 관리비 24만 + 생활비 208만`;
+
+        const surplusElem = document.getElementById('kpi-monthly-surplus');
+        if (result.remainingMonthlyIncome >= 0) {
+            surplusElem.style.color = 'var(--success)';
+            surplusElem.textContent = `+${formatFullKRW(result.remainingMonthlyIncome)} /월`;
+            document.getElementById('kpi-surplus-sub').textContent = `월 소득 330만 원 대비 여유 자금`;
+        } else {
+            surplusElem.style.color = 'var(--danger)';
+            surplusElem.textContent = `${formatFullKRW(result.remainingMonthlyIncome)} /월`;
+            document.getElementById('kpi-surplus-sub').textContent = `⚠️ 적자 발생! 지출 조정 필요`;
+        }
+
+        const payoffElem = document.getElementById('kpi-payoff-timeline');
+        if (result.requiredLoan === 0) {
+            payoffElem.textContent = '대출 불필요 🎉';
+            document.getElementById('kpi-payoff-sub').textContent = '보유 현금만으로 전액 매입 가능';
+        } else if (result.isPaidOff) {
+            payoffElem.textContent = `${result.payoffYears}년 ${result.payoffMonths}개월`;
+            const savedYears = result.termYears - result.payoffYears;
+            document.getElementById('kpi-payoff-sub').textContent = `만기 ${result.termYears}년 대비 약 ${savedYears}년 조기 완납`;
+        } else {
+            payoffElem.textContent = `${result.termYears}년+ (미완납)`;
+            document.getElementById('kpi-payoff-sub').textContent = '만기 내 잔액 상환 미완료';
+        }
+
+        // Callout Status Box
+        const statusCallout = document.getElementById('simulation-status-callout');
+        if (result.requiredLoan === 0) {
+            statusCallout.innerHTML = `<div class="info-box success">✅ <strong>대출 불필요!</strong> 보유 현금(${formatKRW(result.cash)})이 매매가 이상입니다.</div>`;
+        } else if (result.isPaidOff) {
+            statusCallout.innerHTML = `<div class="info-box success">🎉 <strong>대출 완납 성공!</strong> 필요 대출금 <strong>${formatKRW(result.requiredLoan)}</strong>을 <strong>${result.payoffYears}년 ${result.payoffMonths}개월</strong> 만에 완납합니다. (총 지출 이자: ${formatKRW(result.totalInterestPaid)})</div>`;
+        } else {
+            statusCallout.innerHTML = `<div class="info-box danger">⚠️ <strong>상환 기간 부족</strong>: 지정 만기(${result.termYears}년) 이내에 대출금이 완전히 상환되지 않습니다. 월 상환액 또는 보너스 투입을 늘려주세요.</div>`;
+        }
+
+        // 4. Render Dual-axis Chart.js
+        renderChart(result);
+
+        // 5. Render Tables (Tab 1 active price column highlight & Tab 3 Tables)
+        highlightR1ActivePriceCol(result.price);
+        renderTab3Tables(result);
+    }
+
+    /* ==========================================================================
+       CHART.JS DUAL-AXIS RENDERER
+       ========================================================================== */
+    function renderChart(result) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
+        const fontColor = isDark ? '#94a3b8' : '#4b5563';
+
+        // Clean Canvas Lifecycle
+        if (mainChartInstance !== null) {
+            mainChartInstance.destroy();
+            mainChartInstance = null;
+        }
+
+        const ctx = document.getElementById('mainChart').getContext('2d');
+        mainChartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: result.chartLabels,
+                datasets: [
+                    {
+                        label: '보너스 원금 조기상환',
+                        data: result.bonusData,
+                        type: 'bar',
+                        backgroundColor: isDark ? 'rgba(52, 211, 153, 0.75)' : 'rgba(16, 185, 129, 0.75)',
+                        borderColor: '#10b981',
+                        borderWidth: 1,
+                        yAxisID: 'yLeft',
+                        order: 3
+                    },
+                    {
+                        label: '보너스 미납이자 청산',
+                        data: result.bonusShortfallData,
+                        type: 'bar',
+                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.75)' : 'rgba(245, 158, 11, 0.75)',
+                        borderColor: '#f59e0b',
+                        borderWidth: 1,
+                        yAxisID: 'yLeft',
+                        order: 3
+                    },
+                    {
+                        label: '월 발생 이자',
+                        data: result.interestData,
+                        type: 'line',
+                        borderColor: isDark ? '#f87171' : '#ef4444',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2.2,
+                        pointRadius: 0,
+                        tension: 0.25,
+                        yAxisID: 'yLeft',
+                        order: 1
+                    },
+                    {
+                        label: '대출 잔액 추세',
+                        data: result.balanceData,
+                        type: 'line',
+                        borderColor: isDark ? '#fbbf24' : '#d97706',
+                        backgroundColor: isDark ? 'rgba(251, 191, 36, 0.08)' : 'rgba(217, 119, 6, 0.08)',
+                        fill: true,
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        tension: 0.25,
+                        yAxisID: 'yRight',
+                        order: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: fontColor,
+                            font: { family: 'Pretendard', size: 12, weight: '600' },
+                            usePointStyle: true,
+                            padding: 16
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: isDark ? 'rgba(15, 23, 42, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                        titleColor: isDark ? '#f8fafc' : '#1f2937',
+                        bodyColor: isDark ? '#cbd5e1' : '#4b5563',
+                        borderColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: function(ctx) {
+                                const label = ctx.dataset.label || '';
+                                const val = ctx.raw || 0;
+                                if (val === 0 && (ctx.datasetIndex === 0 || ctx.datasetIndex === 1)) return null;
+                                return `${label}: ${formatFullKRW(val)}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            color: fontColor,
+                            font: { size: 10 },
+                            callback: function(val, index) {
+                                return index % 12 === 0 ? this.getLabelForValue(val) : '';
+                            }
+                        },
+                        grid: { color: gridColor }
+                    },
+                    yLeft: {
+                        type: 'linear',
+                        position: 'left',
+                        title: { display: true, text: '월 이자 / 보너스 (원)', color: fontColor, font: { size: 11, weight: 'bold' } },
+                        ticks: { color: fontColor, callback: v => formatShortKRW(v) + '원' },
+                        grid: { color: gridColor }
+                    },
+                    yRight: {
+                        type: 'linear',
+                        position: 'right',
+                        title: { display: true, text: '대출 잔액 (원)', color: isDark ? '#fbbf24' : '#d97706', font: { size: 11, weight: 'bold' } },
+                        ticks: { color: isDark ? '#fbbf24' : '#d97706', callback: v => formatShortKRW(v) + '원' },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+    }
+
+    /* ==========================================================================
+       TAB TABLES RENDERERS
+       ========================================================================== */
+    function highlightR1ActivePriceCol(currentPrice) {
+        const table = document.getElementById('r1-comparison-table');
+        if (!table) return;
+        const rows = table.querySelectorAll('tr');
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('th, td');
+            if (cells.length >= 4) {
+                // reset styles
+                cells[1].classList.remove('active-price-col');
+                cells[2].classList.remove('active-price-col');
+                cells[3].classList.remove('active-price-col');
+
+                if (currentPrice === 350000000) cells[1].classList.add('active-price-col');
+                else if (currentPrice === 375000000) cells[2].classList.add('active-price-col');
+                else if (currentPrice === 400000000) cells[3].classList.add('active-price-col');
+            }
+        });
+    }
+
+    function renderTab3Tables(result) {
+        // 1. Initial 1-Year Monthly Table
+        const tbodyInitial = document.getElementById('initial-year-table-body');
+        if (tbodyInitial) {
+            tbodyInitial.innerHTML = '';
+            const firstYearLogs = result.monthlyLog.slice(0, 12);
+            firstYearLogs.forEach(row => {
+                const tr = document.createElement('tr');
+                const totalSpending = result.appliedMonthlyLoanPayment + 240000 + 2079708;
+                const netRem = 3300000 - totalSpending;
+
+                tr.innerHTML = `
+                    <td><strong>${row.yearNum}년 ${row.calMonth}월</strong></td>
+                    <td>330만 원</td>
+                    <td class="highlight-val">${formatFullKRW(result.appliedMonthlyLoanPayment)}</td>
+                    <td>24만 원</td>
+                    <td>207.97만 원</td>
+                    <td style="color: var(--warning); font-weight:700;">${formatFullKRW(totalSpending)}</td>
+                    <td style="color: ${netRem >= 0 ? 'var(--success)' : 'var(--danger)'}; font-weight:700;">${formatFullKRW(netRem)}</td>
+                `;
+                tbodyInitial.appendChild(tr);
+            });
+        }
+
+        // 2. Yearly Summary Amortization Table
+        const tbodyYearly = document.getElementById('yearly-summary-table-body');
+        if (tbodyYearly) {
+            tbodyYearly.innerHTML = '';
+            const yearlyStats = {};
+
+            result.monthlyLog.forEach(row => {
+                const y = row.yearNum;
+                if (!yearlyStats[y]) {
+                    yearlyStats[y] = { regularPaid: 0, bonusPaid: 0, interestPaid: 0, principalPaid: 0, endBalance: 0 };
+                }
+                yearlyStats[y].regularPaid += result.appliedMonthlyLoanPayment;
+                yearlyStats[y].bonusPaid += (row.bonusPrincipal + row.shortfallCleared);
+                yearlyStats[y].interestPaid += row.interest;
+                yearlyStats[y].principalPaid += (row.regularPrincipal + row.bonusPrincipal);
+                yearlyStats[y].endBalance = row.balance;
+            });
+
+            Object.keys(yearlyStats).forEach(yr => {
+                const stat = yearlyStats[yr];
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td><strong>${yr}년차</strong></td>
+                    <td>${formatKRW(stat.regularPaid)}</td>
+                    <td style="color: var(--success); font-weight:700;">${formatKRW(stat.bonusPaid)}</td>
+                    <td style="color: var(--danger);">${formatKRW(stat.interestPaid)}</td>
+                    <td style="color: var(--accent); font-weight:700;">${formatKRW(stat.principalPaid)}</td>
+                    <td><strong>${formatKRW(stat.endBalance)}</strong></td>
+                `;
+                tbodyYearly.appendChild(tr);
+            });
+        }
+    }
+
+    // Initialize on page load
+    window.addEventListener('DOMContentLoaded', () => {
+        recalculateAll();
+    });
+    </script>
+</body>
+</html>

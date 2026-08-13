@@ -1,0 +1,141 @@
+{
+  "project": "House Financial Simulation - Cheongju Bangseo XI",
+  "version": "1.0.0",
+  "scenarios": [
+    350000000,
+    375000000,
+    400000000
+  ],
+  "cash_reserve": 230000000,
+  "cash_breakdown": {
+    "self": 30000000,
+    "parents_self": 100000000,
+    "parents_spouse": 100000000
+  },
+  "monthly_income": 3300000,
+  "monthly_housing_budget": 500000,
+  "bonuses": {
+    "raw_schedule": [
+      {
+        "month": 1,
+        "name": "교연비 (1차)",
+        "total_amount": 5000000
+      },
+      {
+        "month": 2,
+        "name": "특강비/부가소득 (1차)",
+        "total_amount": 1000000
+      },
+      {
+        "month": 7,
+        "name": "교연비 (2차)",
+        "total_amount": 5000000
+      },
+      {
+        "month": 8,
+        "name": "특강비/부가소득 (2차)",
+        "total_amount": 1000000
+      }
+    ],
+    "prepayment_schedule": [
+      {
+        "month": 1,
+        "name": "교연비 상환 투입",
+        "repayment_amount": 4000000,
+        "reserved": 1000000
+      },
+      {
+        "month": 2,
+        "name": "특강비/부가소득 상환 투입",
+        "repayment_amount": 1000000,
+        "reserved": 0
+      },
+      {
+        "month": 7,
+        "name": "교연비 상환 투입",
+        "repayment_amount": 4000000,
+        "reserved": 1000000
+      },
+      {
+        "month": 8,
+        "name": "특강비/부가소득 상환 투입",
+        "repayment_amount": 1000000,
+        "reserved": 0
+      }
+    ],
+    "annual_prepayment_total": 10000000
+  },
+  "expenses": {
+    "base_13_categories_total": 2390708,
+    "removed_rent_and_electricity": 311000,
+    "base_living_net": 2079708,
+    "apartment_fixed_breakdown": {
+      "maintenance_fee": 200000,
+      "parking_fee": 10000,
+      "tv_internet": 30000
+    },
+    "apartment_fixed_total": 240000,
+    "total_monthly_fixed_expense": 2319708
+  },
+  "r1_params": {
+    "acquisition_tax": {
+      "base_rate": 0.01,
+      "local_education_tax_rate": 0.1,
+      "first_time_buyer_exemption": 2000000
+    },
+    "legal_fees_by_scenario": {
+      "350000000": 500000,
+      "375000000": 520000,
+      "400000000": 550000
+    },
+    "brokerage_fee": {
+      "statutory_cap_rate": 0.004,
+      "vat_rate": 0.1,
+      "effective_rate": 0.0044
+    },
+    "stamp_duty": 150000,
+    "national_housing_bond": {
+      "public_appraisal_ratio": 0.7,
+      "threshold_public_price": 260000000,
+      "rate_below_threshold": 0.021,
+      "rate_above_threshold": 0.023,
+      "discount_rate": 0.1
+    },
+    "moving_fee": 1500000,
+    "repair_cleaning_fee": 2000000
+  },
+  "r2_params": {
+    "loan_products": {
+      "didimdol": {
+        "name": "내집마련 디딤돌대출 (신혼부부 특례)",
+        "min_rate": 0.03,
+        "max_rate": 0.033,
+        "default_rate": 0.0315,
+        "max_limit": 400000000,
+        "max_ltv": 0.7,
+        "max_income": 85000000,
+        "max_price": 600000000
+      },
+      "bogeumjari": {
+        "name": "아낌e 보금자리론",
+        "min_rate": 0.038,
+        "max_rate": 0.041,
+        "default_rate": 0.0395,
+        "max_limit": 420000000,
+        "max_ltv": 0.7
+      },
+      "commercial": {
+        "name": "시중은행 주택담보대출",
+        "min_rate": 0.039,
+        "max_rate": 0.046,
+        "default_rate": 0.0425,
+        "max_ltv": 0.7
+      }
+    },
+    "borrower_secondary_fees": {
+      "mortgage_setup_fee": 20000,
+      "loan_stamp_duty_share": 75000,
+      "annual_guarantee_fee_rate": 0.0005
+    }
+  }
+}

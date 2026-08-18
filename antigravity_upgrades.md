@@ -53,6 +53,14 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 - **Rule:** 작업 중 발생하는 기타 파일(임시 스크립트, 중간 데이터, 디버깅 로그 등)이 프로젝트 메인 공간에 무분별하게 쌓이는 것을 철저히 방지한다.
 - **Rule:** 메인 산출물이 아닌 모든 보조 파일들은 반드시 `etc/` 디렉토리를 생성한 뒤, 그 내부에 목적별로 카테고리화(예: `etc/scripts/`, `etc/logs/`, `etc/temp/`)하여 단정하게 정리해야 한다.
 
+## 11. Path Verification & Anti-Hallucination
+- **Rule:** 서브 에이전트가 파일 수정/생성 작업을 수행할 때는 반드시 지정된 정확한 절대 경로(Absolute Path)를 재확인하고 검증해야 한다. 존재하지 않거나 임의의 가상 경로에 작업해 놓고 완료했다고 허위 보고하는 환각(Hallucination)을 엄격히 금지한다.
+- **Rule:** 작업 완료 전 반드시 실제 타겟 파일이 물리적으로 올바르게 변경되었는지 직접 확인(Double Check)한 뒤에 상위 에이전트에게 보고할 것.
+
+## 12. Persistent Session Harness (자동 초기화 및 하네스 구동)
+- **Rule:** 새로운 세션이 시작될 때마다 에이전트는 별도 지시가 없더라도 자동으로 프로젝트 경로를 파악하여 `/home/imnyj/Workspace/<Project_Name>` 디렉토리를 확인 및 생성하고, 해당 디렉토리를 작업 기준으로 삼아야 한다.
+- **Rule:** 작업을 진행할 때, 단순 수행에 그치지 않고 `session-harness` 및 `multi-agent-manager` 스킬을 로드하여 하위 에이전트에게 태스크를 분배하고 관리하는 초기화 하네스(Initialization Harness)를 반드시 가동하여 체계적으로 작업을 수행할 것.
+
 ## 13. Execution Logging (자가 개선 로그)
 - **Rule:** 모든 세션 종료 시 `logs/execution_notes.md`에 (1) 수행한 작업 (2) 실패/재시도 지점 (3) 수동 교정 내용을 3줄 이내로 요약 추가할 것.
 
@@ -60,7 +68,7 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 - **Rule:** 모든 에이전트는 사용자와 소통하거나 문서/결과물을 작성할 때 반드시 한글(Korean)을 사용해야 한다.
 
 ## 15. Idle Time Upgrades
-- **Rule:** 4시간 유휴 상태가 경과하여 백그라운드 업그레이드(예: skill-crafter)를 지시받는 경우, 이는 매 4시간마다 반복하라는 의미가 아니며 **최초 1회에 한해서만** 실행하고 타이머를 완전히 종료해야 한다.
+- **Rule:** 5시간 유휴 상태가 경과하여 백그라운드 업그레이드(예: skill-crafter) 및 GitHub 업로드를 지시받는 경우, 이는 매 5시간마다 반복하라는 의미가 아니며 **최초 1회에 한해서만** 실행하고 타이머를 완전히 종료해야 한다.
 
 ```
 
@@ -804,3 +812,110 @@ description: 에이전트의 효율적이고 안전한 도구 사용을 위한 �
 
 ```
 
+### Skill: dependency-management-best-practices
+디렉토리 생성: `~/.agents/skills/dependency-management-best-practices/`
+
+#### 파일 생성: `~/.agents/skills/dependency-management-best-practices/SKILL.md`
+```markdown
+---
+name: dependency-management-best-practices
+description: 의존성 패키지 설치 시 버전 고정 누락 및 의존성 파일 업데이트 누락을 방지하기 위한 베스트 프랙티스 및 안티패턴 방지 스킬입니다.
+---
+# Dependency Management Best Practices
+
+에이전트가 새로운 라이브러리나 패키지를 설치할 때 자주 발생하는 안티패턴(환경 재현성 훼손)을 방지하기 위한 지침입니다.
+
+## 🚫 안티패턴 (절대 금지)
+- `pip install <package>`, `npm install <package>` 등의 명령어를 사용하여 버전을 명시하지 않고 최신 버전을 맹목적으로 설치하는 행위.
+- 패키지를 임의로 설치한 후 프로젝트의 의존성 관리 파일(`requirements.txt`, `package.json` 등)을 업데이트하지 않아 다른 에이전트가 환경을 재현할 수 없게 만드는 행위.
+- 시스템 전역(global) 공간에 패키지를 설치하여 다른 프로젝트 환경과 충돌을 유발하는 행위.
+
+## ✅ 베스트 프랙티스 (권장 사항)
+- **가상 환경 사용**: 패키지 설치 전 반드시 로컬 가상 환경이 활성화되어 있는지 확인하고 해당 환경 내에만 설치하십시오.
+- **버전 명시 (Pinning)**: 호환성 문제가 발생하지 않도록, 가급적 명확한 버전을 고정하여 설치하십시오. (예: `pip install numpy==1.24.3`)
+- **의존성 기록 유지**: 성공적으로 패키지를 설치했다면, 변경된 환경을 즉시 `requirements.txt`에 기록(`pip freeze > requirements.txt` 등)하여 동기화하십시오.
+- **관리 스크립트 분리**: 복잡한 환경 설정이 필요한 경우, 일회성 설치 명령어를 남발하지 말고 `etc/scripts/setup_env.sh` 와 같이 재사용 가능한 스크립트로 작성하십시오.
+```
+
+### Skill: long-running-simulation
+디렉토리 생성: `~/.agents/skills/long-running-simulation/`
+
+#### 파일 생성: `~/.agents/skills/long-running-simulation/SKILL.md`
+```markdown
+---
+name: long-running-simulation
+description: 장기 실행 시뮬레이션/훈련 작업 시 프로세스 내결함성, 토큰 절약, 알림 빈도 관리를 위한 베스트 프랙티스 스킬입니다.
+---
+# Long-Running Simulation Skill
+
+## 목적
+수 시간~수 일이 소요되는 대규모 시뮬레이션, 모델 훈련, 데이터 수집 파이프라인을 관리할 때 발생하는 안티패턴을 방지합니다.
+
+## 1. 프로세스 내결함성 (Fault Tolerance)
+
+### 필수 원칙
+- **체크포인트 기반 재개(Resume)**: 장기 실행 스크립트는 반드시 중간 결과를 주기적으로 저장(에피소드별, 배치별 등)하고, 재시작 시 마지막 체크포인트부터 이어서 실행할 수 있도록 구현해야 합니다.
+- **자동 재시작 래퍼**: `auto_train.sh` 패턴처럼, 스크립트가 비정상 종료되면 자동으로 재시작하는 Bash 래퍼를 항상 함께 제공합니다.
+- **`setsid` 분리 실행**: `nohup`만으로는 에이전트 세션 종료 시 프로세스가 함께 죽을 수 있습니다. 반드시 `setsid nohup ... < /dev/null &` 패턴으로 완전히 독립된 세션에서 실행합니다.
+
+### 안티패턴
+| ❌ 안티패턴 | ✅ 올바른 방식 |
+|---|---|
+| `nohup python train.py &` | `setsid nohup bash auto_train.sh > log 2>&1 < /dev/null &` |
+| 에피소드 0부터 재시작 | 체크포인트 CSV/가중치에서 마지막 에피소드 읽어 이어서 실행 |
+| 에이전트가 직접 훈련 프로세스를 모니터링 | 독립 프로세스로 실행, 필요 시에만 로그 확인 |
+
+## 2. 토큰 절약 (Token Conservation)
+
+### 필수 원칙
+- **서브에이전트 최소화**: 장기 훈련이 백그라운드에서 자율적으로 돌아가는 동안, 불필요한 서브에이전트(teamwork_preview 등)를 유지하지 않습니다.
+- **모니터링은 스크립트로**: `check_progress.sh` 같은 경량 Bash 스크립트를 제공하여, 사용자가 터미널에서 직접 진행 상황을 확인할 수 있도록 합니다.
+- **에이전트 개입 최소화**: 프로세스가 안정적으로 가동 중이면, 에이전트는 사용자가 요청할 때만 상태를 확인합니다.
+
+### 안티패턴
+| ❌ 안티패턴 | ✅ 올바른 방식 |
+|---|---|
+| 서브에이전트가 8분마다 진행 상황 보고 | 사용자가 지정한 시각에만 보고 (예: 6시, 12시) |
+| 쿼터 제한 에러에도 서브에이전트 계속 재시도 | 쿼터 제한 시 즉시 중단, 프로세스는 독립 실행 |
+| 훈련 완료까지 에이전트가 계속 폴링 | 완료 감지를 스크립트 내 종료 로그에 위임 |
+
+## 3. 알림 빈도 관리 (Notification Frequency)
+
+### 필수 원칙
+- **사용자 지정 빈도 엄수**: 사용자가 보고 빈도를 지정하면(예: "6시와 12시에만"), 에이전트와 모든 서브에이전트는 해당 빈도를 절대적으로 준수합니다.
+- **서브에이전트 자율 크론 금지**: 서브에이전트가 자체적으로 크론이나 타이머를 추가 설정하여 상위 에이전트에 알림을 보내는 행위를 금지합니다. 보고 빈도는 상위 에이전트(또는 사용자)만 결정합니다.
+- **이벤트 기반 보고**: 정기 보고 외에는 Milestone 달성, 치명적 에러, 최종 완료 등 중대 이벤트에서만 알림을 보냅니다.
+
+## 4. 병렬 실행 안정성
+
+### 필수 원칙
+- **동시 프로세스 수 제한**: `mp.Pool(processes=N)` 사용 시 N은 가용 GPU 수 이하로 제한합니다.
+- **중복 실행 방지**: 동일 스크립트가 여러 인스턴스로 실행되지 않도록, 실행 전 `pgrep` 등으로 기존 프로세스 존재 여부를 확인합니다.
+- **파일 쓰기 충돌 방지**: 여러 프로세스가 같은 CSV/가중치 파일에 동시 접근할 경우, 파일 Lock 또는 프로세스 풀 직렬화로 보호합니다.
+```
+
+### Skill: skill-crafter
+디렉토리 생성: `~/.agents/skills/skill-crafter/`
+
+#### 파일 생성: `~/.agents/skills/skill-crafter/SKILL.md`
+```markdown
+---
+name: skill-crafter
+description: Skill for autonomously creating or updating other skills based on user feedback during nightly upgrades.
+---
+# Skill Crafter Skill
+
+- **목적**: 5시간 대기 후 Nightly Upgrade(자체 시스템 업그레이드)를 수행할 때, `feedback_backlog.md`에 누적된 피드백을 분석하여 단순히 룰을 추가하는 것에 그치지 않고, 특정 역할이나 반복적인 워크플로우로 묶일 수 있는 사안이라면 이를 **독립적인 신규 스킬(Skill)로 창설하거나 기존 스킬을 업데이트**하는 역할을 수행합니다.
+- **판단 기준**: 
+    - 피드백 내용이 시스템 전체에 적용되는 절대 규칙이라면 `GEMINI.md`에 반영.
+    - 특정 에이전트(예: writer, coder)의 행동 양식에 관한 것이라면 해당 스킬 업데이트 (`replace_file_content` 사용).
+    - 완전히 새로운 워크플로우나 기능적 요구사항이라면 새로운 스킬 생성.
+- **스킬 생성 및 저장 규격**:
+    - **경로**: 신규 스킬은 반드시 `/home/imnyj/.agents/skills/<새로운-스킬-이름>/SKILL.md` 경로에 생성할 것.
+    - **형식**: 파일 최상단에 반드시 YAML frontmatter(`name`, `description`)를 포함하고, 그 아래 마크다운 형식으로 구체적인 작업 지침(Instruction)을 기재할 것.
+- **절차**:
+    1. 피드백 분석 후 스킬화 가능성 평가.
+    2. 생성할 스킬의 이름과 역할 명세 도출.
+    3. `write_to_file` 또는 `replace_file_content` 도구를 활용하여 스킬 파일 물리적 작성.
+    4. 업그레이드 리포트(Artifact)에 어떤 스킬이 생성/업데이트 되었는지 명시.
+```

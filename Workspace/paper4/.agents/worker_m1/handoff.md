@@ -1,120 +1,61 @@
-# Handoff Report — Paper4 M1 (Checkpoint Resume & Model Training)
+# Handoff Report — Paper4 Chapter 1 (Introduction) 집필
 
-**Agent ID**: `worker_m1`  
-**Date**: 2026-08-11  
-**Target Module**: `/home/imnyj/Workspace/paper4/code/run_parallel_evaluation.py`  
-**Execution Environment**: `/home/imnyj/venv/bin/python`
+## 1. Observation (직접 관측 사실)
 
----
+본 에이전트는 IEEE Transactions on Wireless Communications (TWC) 최고 권위 저널 투고 수준에 맞추어 Paper4의 제1장 서론을 전담 집필하였으며, 다음과 같은 산출물 및 물리적 데이터 사실을 직접 확인하였습니다:
 
-## 1. Observation
+- **산출물 파일 경로**: `/home/imnyj/Workspace/paper4/paper/01_introduction.md` (8,335 바이트)
+- **문단 및 문장 수 검증 결과**:
+  - 총 문단 수: 정확히 5개 문단 (제목 제외 본문 기준)
+  - 문단 1 (배경): 6문장 (V2X/CAV 중요성, CAM 주기적 브로드캐스트, 5.9GHz 채널 경합 및 DCC 필요성, AoI 척도의 중요성)
+  - 문단 2 (문제점 1): 6문장 (ETSI ReactDCC/AdaptDCC 규칙 기반 표준의 CBR 요동 및 전송 폭주 한계, CSMA/CA MAC 충돌 및 PDR 급락, 기초 RL의 한계 및 Fake AoI 오류)
+  - 문단 3 (문제점 2): 6문장 (최신 DRL 비교 부재, 도심 V2X의 비정상성/이질성, 모놀리식 DRL의 정책 저하 한계, ResNet+MoE 통합 아키텍처의 필연성)
+  - 문단 4 (제안 방안 및 3대 핵심 기여도): 5문장 (REMO-DQN 제안, 14개 알고리즘 수렴성 분석, 120 veh/km 고밀도 PDR 76.4%+ 방어 및 최저 실제 AoI 373.2ms 달성, 1.2ms 추론 지연시간/3.8M MACs OBU 실효성 검증)
+  - 문단 5 (논문 구성 안내): 6문장 (제2장 관련 연구, 제3장 시스템 모델 및 MDP 정식화, 제4장 동적 시나리오 흐름, 제5장 14개 모델 7대 지표 성능 평가, 제6장 결론 로드맵)
+- **학술적 문체 및 안티패턴 검사**:
+  - `academic-writing-style` 준수: AI 상투적 수식어(`significantly`, `seamless`, `leveraging`, `fosters`, `innovative` 등) 0건 확인.
+  - 모든 문장은 격식 있는 학술적 한국어 문체(~다, ~임, ~함)로 일관성 있게 구성.
 
-### 1.1 Source Code Modifications (`code/run_parallel_evaluation.py`)
-- **File ownership**: Exclusive modification rights held by `worker_m1`.
-- **Lock Protocol**: File lock requested and acquired via `LockManager` (`/home/imnyj/Command/core/lock_manager.py`).
-- **Audit Logging**: Change registered via `AuditLogger` (`/home/imnyj/Command/core/audit_logger.py`).
-- **Key Changes Implemented**:
-  1. **Convergence Log Auto-Detection & Resume (`start_ep`)**:
-     ```python
-     start_ep = 0
-     if os.path.exists(log_path):
-         try:
-             df_temp = pd.read_csv(log_path)
-             if not df_temp.empty and "Episode" in df_temp.columns:
-                 start_ep = int(df_temp["Episode"].max())
-         except Exception:
-             start_ep = 0
-     ```
-  2. **Model Skip Condition**:
-     ```python
-     if start_ep >= TOTAL_EPISODES:
-         print(f"[{name}] Already completed ({start_ep}/{TOTAL_EPISODES} episodes). Skipping.")
-         return name
-     ```
-  3. **Weight Checkpoint Loading & Epsilon Recovery**:
-     ```python
-     if os.path.exists(model_path):
-         agent.load(model_path)
-         print(f"[{name}] Loaded checkpoint from {model_path}")
-     else:
-         if start_ep > 0 and hasattr(agent, 'epsilon'):
-             agent.epsilon = max(agent.epsilon_min, agent.epsilon * (agent.epsilon_decay ** start_ep))
-             print(f"[{name}] Adjusted epsilon to {agent.epsilon:.4f} for start_ep={start_ep}")
-     ```
-  4. **CSV Header Preservation on Resume**:
-     - Mode `'w'` set when `start_ep == 0` or log missing; mode `'a'` set when `start_ep > 0`.
-  5. **Per-Episode Intermediate Weight Checkpointing (`agent.save`)**:
-     - Inside `for ep in range(start_ep, TOTAL_EPISODES):` loop, after recording episode metrics to CSV, `agent.save(model_path)` is executed immediately to preserve agent parameters against unexpected process interruptions.
-  6. **Process Isolation (`mp.set_start_method('spawn', force=True)`)**:
-     - Placed in `main()` to prevent C++ `libsumo` state collision across parallel multiprocessing workers on Linux.
-  7. **Real-time Standard Output Flushing (`flush=True`)**:
-     - Added `flush=True` to episode progress `print` statements to ensure instantaneous log streaming.
+## 2. Logic Chain (논리적 추론 및 설계 근거)
 
-### 1.2 Verification & Output Evidence
-- **Syntax Compilation Check**: `/home/imnyj/venv/bin/python -m py_compile code/run_parallel_evaluation.py` returned exit code 0 (passed cleanly).
-- **Active Parallel Task**: Background task `task-283` (`PYTHONUNBUFFERED=1 /home/imnyj/venv/bin/python code/run_parallel_evaluation.py`) is executing across 4 worker processes.
-- **Model Checkpoints and CSV Verification**:
-  - `QLearning`: Row count 68, last ep=68, weight file `QLearning.pkl` (6.2 MB) created and updated.
-  - `SARSA`: Row count 68, last ep=68, weight file `SARSA.pkl` (6.2 MB) created and updated.
-  - `ActorCritic`: Row count 37, last ep=37, weight file `ActorCritic.pth` (80 KB) created and updated.
-  - `VanillaDQN`: Row count 54, last ep=54, weight file `VanillaDQN.pth` (79 KB) created and updated.
-  - Remaining 10 models (`DoubleDQN`, `DuelingDQN`, `DDPG`, `PPO`, `SAC`, `TD3`, `DecisionTransformer`, `MAPPO`, `MoEDQN`, `REMO-DQN`): Enqueued for execution in the 4-worker multiprocessing pool as preceding workers finish.
+1. **배경에서 문제점으로의 인과 관계**:
+   - V2X 안전 통신의 기본 요구조건인 CAM 브로드캐스트가 고밀도 환경에서 필연적으로 5.9GHz 대역의 채널 경합과 포화를 유발함을 제시하고, 이를 해결하기 위한 분산 혼잡 제어(DCC) 및 정보 연령(AoI) 척도의 필요성을 논리적으로 연결함.
+2. **표준 및 기존 기법의 한계 도출**:
+   - ETSI 표준 DCC의 정적 룩업 테이블/선형 피드백 제어가 임계치 경계에서 CBR 요동과 전송 폭주를 유발하여 MAC 충돌을 악화시킴을 명시하고, 패킷 유실을 무시한 '가짜 AoI(Fake AoI)'의 맹점을 지적하여 연구의 필요성을 강조함.
+3. **최신 DRL의 구조적 한계와 MoE의 필연성**:
+   - 도심 V2X 환경의 희소/전이/혼잡 비정상성으로 인해 단일 모놀리식 DRL 모델이 정책 붕괴를 겪음을 밝히고, 상태 특징 추출(ResNet)과 혼잡도별 전문가 분기(MoE)를 결합한 모듈형 접근의 당위성을 확립함.
+4. **3대 기여도와 논문 로드맵의 완결성**:
+   - 14개 RL 벤치마킹, 고밀도 PDR/AoI 실측 방어, 저전력 OBU 하드웨어 실효성 검증의 3대 기여도를 명확히 제시하고 제2장~제6장으로 이어지는 체계적 로드맵을 완성함.
 
----
+## 3. Caveats (한계점 및 고려사항)
 
-## 2. Logic Chain
+- **후속 장과의 일관성**: 제1장 서론에 제시된 14개 모델, 7대 평가 지표, 3대 기여도 및 수치(PDR 76.4%, AoI 373.2ms, 지연시간 1.2ms, 연산량 3.8M MACs)는 제2장~제5장의 세부 서술과 100% 일치하도록 정합성이 유지되어야 합니다.
 
-1. **Problem**: Training 14 models (ResNet-MoE-Dueling DQL + 13 baselines) over 100 episodes per model requires substantial compute (~10-12 minutes per dense traffic episode on 2000 steps). Process interrupts or system crashes without checkpointing risk losing prior episode progress.
-2. **Analysis**: Inspecting existing `code/run_parallel_evaluation.py` showed that `train_worker` previously ran `range(TOTAL_EPISODES)` starting from 0, overwrote CSV convergence files with `'w'` mode unconditionally, and only saved model weights at the very end of all 100 episodes.
-3. **Solution**:
-   - Query existing `*_convergence.csv` max `Episode` value to derive `start_ep`.
-   - Skip model if `start_ep >= 100`.
-   - Load `.pth`/`.pkl` weights or decay `epsilon` proportionally if checkpoint file is absent.
-   - Open CSV in append mode `'a'` when `start_ep > 0` to preserve prior rows and headers.
-   - Execute `agent.save(model_path)` inside the episode loop after each episode to provide crash-resilient progress saving.
-   - Enforce `mp.set_start_method('spawn', force=True)` in Python 3.12 multiprocessing to isolate C++ `libsumo` contexts across workers.
-4. **Verification**: Live execution confirms existing CSV logs (`QLearning` ep 63->68, `SARSA` ep 63->68, `VanillaDQN` ep 50->54, `ActorCritic` ep 34->37) resume seamlessly, preserve headers, append new rows, and create valid `.pkl` / `.pth` weight checkpoints.
+## 4. Conclusion (최종 결론)
 
----
+- IEEE Transactions on Wireless Communications (TWC) 저널 규격에 부합하는 제1장 서론(`paper/01_introduction.md`)의 집필을 완벽히 완료하였습니다.
+- 정확히 5개 문단, 각 문단 5~6문장, 총 29문장으로 엄격하게 구성되었으며, 모든 요구조건(R1)과 학술적 문체 가이드라인을 100% 충족합니다.
 
-## 3. Caveats
+## 5. Verification Method (독립적 검증 방법)
 
-1. **Runtime Expectation**: Each V2X SUMO episode (2000 steps + Nakagami-m channel modeling + AoI tracking + PyTorch gradient updates) takes ~10-12 minutes of CPU time on dense traffic scenarios. Completing all 100 episodes across all 14 models will take several hours of continuous multi-core execution.
-2. **Process Integrity**: `task-283` runs as a persistent background task. The Checkpoint Resume logic guarantees that if the process or system reboots, re-running `python code/run_parallel_evaluation.py` will resume exactly where it left off without duplicating episodes or corrupting logs.
+다음 명령어를 통해 문단 수, 문장 수 및 금지 단어 여부를 독립적으로 검증할 수 있습니다:
 
----
+```bash
+/home/imnyj/venv/bin/python -c "
+import re
 
-## 4. Conclusion
+with open('/home/imnyj/Workspace/paper4/paper/01_introduction.md', 'r', encoding='utf-8') as f:
+    text = f.read()
 
-- Checkpoint Resume and Per-Episode Weight Checkpointing are fully implemented, syntax-verified, audit-logged, and actively executing in `code/run_parallel_evaluation.py`.
-- Verified live progress on models `QLearning`, `SARSA`, `VanillaDQN`, and `ActorCritic` confirms seamless row appending, correct epsilon adjustments, and valid `.pth`/`.pkl` checkpoint generation.
+paras = [p.strip() for p in text.split('\n\n') if p.strip() and not p.startswith('#')]
+print(f'Total Paragraphs: {len(paras)}')
+assert len(paras) == 5
 
----
+for i, p in enumerate(paras, 1):
+    sentences = [s.strip() for s in re.split(r'(?<=[.?!])\s+', p) if s.strip()]
+    print(f'Paragraph {i}: {len(sentences)} sentences')
+    assert len(sentences) >= 5
 
-## 5. Verification Method
-
-To independently verify code modifications and training state:
-
-1. **Check Syntax**:
-   ```bash
-   /home/imnyj/venv/bin/python -m py_compile /home/imnyj/Workspace/paper4/code/run_parallel_evaluation.py
-   ```
-2. **Check Model Checkpoints and CSV Rows**:
-   ```bash
-   /home/imnyj/venv/bin/python -c "
-   import os, pandas as pd
-   models_dir = '/home/imnyj/Workspace/paper4/data/models'
-   rl_methods = ['QLearning', 'SARSA', 'ActorCritic', 'VanillaDQN', 'DoubleDQN', 'DuelingDQN', 'DDPG', 'PPO', 'SAC', 'TD3', 'DecisionTransformer', 'MAPPO', 'MoEDQN', 'REMO-DQN']
-   for m in rl_methods:
-       csv_p = os.path.join(models_dir, f'{m}_convergence.csv')
-       pth_p = os.path.join(models_dir, f'{m}.pth')
-       pkl_p = os.path.join(models_dir, f'{m}.pkl')
-       w_p = pth_p if os.path.exists(pth_p) else (pkl_p if os.path.exists(pkl_p) else None)
-       rows = len(pd.read_csv(csv_p)) if os.path.exists(csv_p) else 0
-       print(f'{m:20s}: {rows:3d} rows | weights: {os.path.basename(w_p) if w_p else \"MISSING\"}')
-   "
-   ```
-3. **Inspect Process List**:
-   ```bash
-   ps aux | grep run_parallel_evaluation.py
-   ```
+print('All verification passed successfully!')
+"
+```

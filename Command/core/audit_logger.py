@@ -37,7 +37,20 @@ class AuditLogger:
         return None
 
 if __name__ == "__main__":
+    import sys
+    import argparse
     logger = AuditLogger()
-    logger.log_action("worker_1", "MODIFY", "test.txt", "Added new function.", "manager_alpha")
-    blame = logger.trace_blame("test.txt")
-    print("Blame record:", blame)
+    if len(sys.argv) > 1 and sys.argv[1] == "log":
+        parser = argparse.ArgumentParser()
+        parser.add_argument("cmd", choices=["log"])
+        parser.add_argument("--agent", required=True)
+        parser.add_argument("--file", required=True)
+        parser.add_argument("--action", required=True)
+        parser.add_argument("--parent", default=None)
+        args = parser.parse_args()
+        logger.log_action(args.agent, "MODIFY", args.file, args.action, args.parent)
+        print(f"[{args.agent}] Audit logged for {args.file}")
+    else:
+        logger.log_action("worker_1", "MODIFY", "test.txt", "Added new function.", "manager_alpha")
+        blame = logger.trace_blame("test.txt")
+        print("Blame record:", blame)

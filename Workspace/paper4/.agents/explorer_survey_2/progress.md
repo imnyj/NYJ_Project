@@ -1,17 +1,18 @@
-# Progress Heartbeat — Survey Explorer 2
+# Progress Heartbeat — System Model & REMO-DQN Explorer 2
 
-Last visited: 2026-08-11T15:30:25+09:00
+Last visited: 2026-08-18T12:36:48+09:00
 
 ## Completed Tasks
 - [x] Received dispatch message and logged in DISPATCH.md
-- [x] Initialized BRIEFING.md
-- [x] Read required files (`ORIGINAL_REQUEST.md`, `GEMINI.md`)
-- [x] Investigated performance evaluation scripts (`run_parallel_evaluation.py`, `run_full_evaluation.py`)
-- [x] Analyzed metrics calculation pipeline (`sim_engine.py`, `ai_dcc_hook.py`, `aoi_tracker.py`, `etsi_cam_layer.py`)
-- [x] Analyzed 14 RL model weight loading mechanisms (`.pth`, `.pkl`, `create_agent`, `agent.load`)
-- [x] Analyzed CSV output schema and generation logic (`eval_density_results.csv`, `eval_speed_results.csv`)
-- [x] Documented detailed findings in `analysis.md`
-- [x] Created `handoff.md` following Handoff Protocol
+- [x] Initialized BRIEFING.md with mission and identity
+- [x] Read required instruction files (`ORIGINAL_REQUEST.md`, `GEMINI.md`, `academic-writing-style`, `anti-hallucination`)
+- [x] Investigated `/home/imnyj/Workspace/paper4/idea/paper4_overall_plan.md`
+- [x] Investigated `/home/imnyj/Workspace/paper4/code/etsi_cam_layer.py` and `/home/imnyj/Workspace/paper4/code/sim_engine.py` (V2X network model, CAM trigger, CSMA/CA MAC, CBR, queue delay)
+- [x] Investigated `/home/imnyj/Workspace/paper4/code/ai_dcc_hook.py` (MDP formulation: state, action, multi-rewards R1, R2, normalization)
+- [x] Investigated `/home/imnyj/Workspace/paper4/code/resnet_moe_agent.py` (REMO-DQN architecture: ResNet, MoE router, Dueling DQN streams)
+- [x] Synthesized all mathematical formulations, variables, parameters, and structural equations
+- [x] Wrote comprehensive 5-component handoff report in `handoff.md`
+- [x] Executed independent verification commands (REMO-DQN shape, PHY/CAM params, reward equation)
 - [x] Updated BRIEFING.md and progress.md
 
 ## Current Status

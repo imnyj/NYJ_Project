@@ -1,0 +1,12 @@
+# Execution Notes
+
+## 2026-08-11 20:32 (Nightly Upgrade)
+1. 채팅 로그 피드백 3건 분석 → `long-running-simulation` 신규 스킬 생성
+2. 5시간 타이머 최초 1회 실행 완료 (GEMINI.md 15항 준수, 반복 안함)
+3. `feedback_backlog.md` 초기화 완료
+
+## 2026-08-18 12:38 (Chapter 1 Introduction 집필)
+1. Paper4 IEEE TWC 제1장 서론 집필 완료 (5개 문단, 각 5문장 이상, R1 요구사항 100% 충족).
+2. 실패/재시도 지점: 없음 (정확한 문단 분리 및 수치 인용 검증 완료).
+3. 수동 교정 내용: AI 상투적 수식어 전면 배제 및 건조하고 격식 있는 학술적 한국어 문체 적용.
+

@@ -1,44 +1,45 @@
-# BRIEFING — 2026-08-11T15:30:28+09:00
+# BRIEFING — 2026-08-18T12:36:44+09:00
 
 ## Mission
-Paper4 프로젝트의 성능 평가 파이프라인, 모델 가중치 로딩 방식, 지표 계산 로직 및 CSV 출력 스키마 조사/분석 완료
+Paper4 IEEE TWC 논문 작성을 위한 시스템 모델(ETSI CAM, CSMA/CA MAC, 큐 지연, CBR) 및 MDP 정식화, REMO-DQN 신경망 아키텍처(ResNet 백본, MoE 게이팅, Dueling DQN) 수학적 정밀 분석 및 정식화 완료
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: Survey Explorer 2
+- Roles: System Model & REMO-DQN Architecture Explorer 2
 - Working directory: /home/imnyj/Workspace/paper4/.agents/explorer_survey_2
-- Original parent: 2fa32ec6-b4b2-44d5-973e-4d1c68832bdc
-- Milestone: Investigation and analysis of evaluation scripts and pipeline
+- Original parent: ae998028-71ee-4501-a6aa-7b917e067e00
+- Milestone: Investigation and mathematical formalization of system model and REMO-DQN architecture
 
 ## 🔒 Key Constraints
 - Read-only investigation — do NOT implement code or modify project files (except writing inside /home/imnyj/Workspace/paper4/.agents/explorer_survey_2)
 - All communications and documents must be written in Korean (GEMINI.md Rule 14)
+- Comply with academic writing style (no exaggerated adverbs/adjectives, paragraphs >= 5 sentences) and anti-hallucination rules (exact code reading and citations)
 
 ## Current Parent
-- Conversation ID: 2fa32ec6-b4b2-44d5-973e-4d1c68832bdc
-- Updated: 2026-08-11T15:30:28+09:00
+- Conversation ID: ae998028-71ee-4501-a6aa-7b917e067e00
+- Updated: 2026-08-18T12:36:44+09:00
 
 ## Investigation State
 - **Explored paths**:
-  - `/home/imnyj/Workspace/paper4/code/run_parallel_evaluation.py`
-  - `/home/imnyj/Workspace/paper4/code/run_full_evaluation.py`
-  - `/home/imnyj/Workspace/paper4/code/sim_engine.py`
+  - `/home/imnyj/Workspace/paper4/code/resnet_moe_agent.py`
   - `/home/imnyj/Workspace/paper4/code/ai_dcc_hook.py`
-  - `/home/imnyj/Workspace/paper4/data/models/`
-  - `/home/imnyj/Workspace/paper4/data/evaluation/`
+  - `/home/imnyj/Workspace/paper4/code/etsi_cam_layer.py`
+  - `/home/imnyj/Workspace/paper4/code/sim_engine.py`
+  - `/home/imnyj/Workspace/paper4/code/aoi_tracker.py`
+  - `/home/imnyj/Workspace/paper4/code/ablation_agents.py`
+  - `/home/imnyj/Workspace/paper4/idea/paper4_overall_plan.md`
 - **Key findings**:
-  - `run_parallel_evaluation.py`가 핵심 평가 스크립트로, 21개 모델(14 RL + 7 comparison)의 Density (20~120) 및 Speed (20~100) sweep 수행.
-  - 가중치는 `/home/imnyj/Workspace/paper4/data/models/`에 `.pth`/`.pkl` 형태로 위치하며, `create_agent` -> `agent.load` -> `hook.set_agent` -> `hook.is_training=False` 순서로 로드/평가.
-  - 지표 (CBR_mean, AoI_mean, PDR_mean, energy_efficiency, ETSI_compliance)는 `sim_engine.py`, `aoi_tracker.py`, `etsi_cam_layer.py` 연동 계산.
-  - 출력 파일 `eval_density_results.csv`, `eval_speed_results.csv`는 11개 컬럼을 갖고 `multiprocessing.Lock` 기반으로 안전하게 작성됨.
-- **Unexplored areas**: None (조사 완료)
+  - V2X 통신 모델: 802.11p ($5.9\text{ GHz}, 10\text{ MHz}, 3\text{ Mbps}$ BPSK $1/2$), $L_{\text{CAM}}=280\text{ B}$, $T_{\text{tx}}=0.747\text{ ms}$, Nakagami-$m$ ($m=3.0$), 경로손실 $\text{PL}(d)=47.86+20\log_{10}(d)$, 감지반경 $500\text{ m}$, 통신반경 $300\text{ m}$.
+  - ETSI CAM 트리거: $\Delta\theta \ge 4.0^\circ, \Delta d \ge 4.0\text{ m}, \Delta v \ge 0.5\text{ m/s}$, fallback $1.0\text{ s}$, guard $T_{\text{GenCam}} \ge 0.1\text{ s}$.
+  - MDP 정식화: 상태 공간 $s_t \in \mathbb{R}^5$ ($[\text{CBR}, N_{\text{est}}/50, v/25, \Delta t/1.0, \text{CBR}_{\text{smoothed}}]$), 행동 공간 $a_t \in \{0,\dots,15\}$ ($4\times 4$ 그리드), 다중 보상 $R = 0.01\bar{N}_{\text{est}} - 1.0|\text{CBR}_{\text{smoothed}}-0.6| - 0.1\Delta t$.
+  - REMO-DQN 아키텍처: ResNet 백본 (2 Residual blocks, $D_h=128$), MoE 라우터 ($K=3$, $\text{Softmax}$ 게이팅, detached 입력), Dueling DQN ($V(s) \in \mathbb{R}^1, A(s,a) \in \mathbb{R}^{16}$, mean-centered), $\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{TD}} + 0.01\cdot \text{CV}^2(\bar{g})$.
+- **Unexplored areas**: None (조사 및 수학적 정식화 완료)
 
 ## Key Decisions Made
-- `analysis.md` 및 `handoff.md` 생성 완료 및 오케스트레이터 전달 준비 완료.
+- `handoff.md`에 IEEE TWC 수준의 수식, 변수 정의, 아키텍처 다이어그램 및 독립 검증 코드를 완전하게 작성함.
 
 ## Artifact Index
 - `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/DISPATCH.md` — Dispatch log
 - `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/BRIEFING.md` — Briefing state
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/analysis.md` — Investigation & analysis report
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/handoff.md` — Handoff report
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/handoff.md` — Complete Handoff report
 - `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/progress.md` — Progress heartbeat

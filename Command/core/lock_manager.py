@@ -63,9 +63,29 @@ class LockManager:
             return True
 
 if __name__ == "__main__":
+    import sys
     lm = LockManager()
-    if lm.acquire("test.txt", "worker_1"):
-        print("Locked. Working...")
-        time.sleep(1)
-        lm.release("test.txt", "worker_1")
-        print("Unlocked.")
+    if len(sys.argv) >= 4 and sys.argv[1] == "acquire":
+        target = sys.argv[2]
+        agent = sys.argv[3]
+        if lm.acquire(target, agent):
+            print(f"[{agent}] Lock acquired on {target}")
+            sys.exit(0)
+        else:
+            print(f"[{agent}] Failed to acquire lock on {target}")
+            sys.exit(1)
+    elif len(sys.argv) >= 4 and sys.argv[1] == "release":
+        target = sys.argv[2]
+        agent = sys.argv[3]
+        if lm.release(target, agent):
+            print(f"[{agent}] Lock released on {target}")
+            sys.exit(0)
+        else:
+            print(f"[{agent}] Failed to release lock on {target}")
+            sys.exit(1)
+    else:
+        if lm.acquire("test.txt", "worker_1"):
+            print("Locked. Working...")
+            time.sleep(1)
+            lm.release("test.txt", "worker_1")
+            print("Unlocked.")

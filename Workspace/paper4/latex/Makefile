@@ -1,0 +1,52 @@
+# Makefile for IEEE Transactions LaTeX Document (paper4)
+# Target: IEEE Transactions on Wireless Communications (TWC)
+
+MAIN = main
+BIB = references.bib
+CLS = IEEEtran.cls
+FIG_DIR = figures
+ZIP_NAME = paper4_latex_overleaf.zip
+
+PYTHON = python3
+VALIDATOR = etc/scripts/validate_latex.py
+
+.PHONY: all validate check zip clean help compile
+
+all: validate
+
+check: validate
+
+help:
+	@echo "=== IEEE TWC LaTeX Build Automation ==="
+	@echo "make validate / check : Run complete LaTeX syntax, bib, and asset integrity validation"
+	@echo "make zip      : Package standalone clean Overleaf zip archive (main.tex, bib, cls, figures)"
+	@echo "make compile  : Compile PDF locally if pdflatex is installed"
+	@echo "make clean    : Remove compilation logs, aux files, and temporary artifacts"
+
+validate:
+	@echo "[*] Running validation suite..."
+	@$(PYTHON) $(VALIDATOR)
+
+zip: validate
+	@echo "[*] Creating Overleaf standalone distribution package: $(ZIP_NAME)"
+	@rm -f $(ZIP_NAME)
+	@zip -q -r $(ZIP_NAME) $(CLS) $(BIB) $(MAIN).tex $(FIG_DIR)/
+	@echo "[+] Successfully generated $(ZIP_NAME) for Overleaf upload."
+
+compile:
+	@which pdflatex > /dev/null 2>&1 || (echo "[-] pdflatex not found in local environment. Please use Overleaf for final PDF rendering." && exit 1)
+	@echo "[*] Running pdflatex pass 1..."
+	@pdflatex -interaction=nonstopmode $(MAIN).tex
+	@echo "[*] Running bibtex..."
+	@bibtex $(MAIN)
+	@echo "[*] Running pdflatex pass 2..."
+	@pdflatex -interaction=nonstopmode $(MAIN).tex
+	@echo "[*] Running pdflatex pass 3..."
+	@pdflatex -interaction=nonstopmode $(MAIN).tex
+	@echo "[+] PDF compilation complete: $(MAIN).pdf"
+
+clean:
+	@echo "[*] Cleaning build artifacts..."
+	@rm -f *.aux *.bbl *.blg *.log *.out *.toc *.synctex.gz *.fls *.fdb_latexmk $(MAIN).pdf $(ZIP_NAME)
+	@rm -rf etc/logs/*.log .pytest_cache etc/scripts/__pycache__
+	@echo "[+] Workspace clean."

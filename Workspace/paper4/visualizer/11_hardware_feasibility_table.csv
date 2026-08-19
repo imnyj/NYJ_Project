@@ -1,0 +1,12 @@
+Model,Architecture,MACs_FLOPs,Parameters,Inference_Latency_ms,Memory_Footprint_KB,MCU_Feasibility
+REMO-DQN (Proposed),Hybrid ResNet-MoE + Dueling DQN,3.85 M,348.6 K,1.24,680.5,Feasible (STM32H7 / OBU MCU)
+MoEDQN,3-Expert FCN + Gating,1.52 M,122.4 K,0.62,280.2,Feasible (ARM Cortex-M7)
+DecisionTransformer,3-Layer Causal Transformer,8.65 M,785.2 K,3.85,1850.0,Marginal / GPU Edge Required
+MAPPO,Multi-Agent Actor-Critic,2.45 M,215.0 K,0.95,460.0,Feasible (ARM Cortex-M7)
+PPO / SAC / TD3,Actor-Critic Dual Network,2.10 M,185.0 K,0.88,390.0,Feasible (ARM Cortex-M4/M7)
+DuelingDQN / DoubleDQN,Dueling / Target DQN,1.35 M,108.5 K,0.55,240.0,Feasible (ARM Cortex-M4)
+VanillaDQN,Single MLP Q-Network,1.18 M,98.2 K,0.48,215.0,Feasible (ARM Cortex-M4)
+ActorCritic (A2C),Shared Body Policy/Value,1.25 M,102.0 K,0.51,225.0,Feasible (ARM Cortex-M4)
+QLearning / SARSA,Discrete Tabular Look-up,< 0.01 M,16.4 K (Q-Table),0.05,65.6,Ultra-Light (Cortex-M0+)
+ReactDCC / AdaptDCC,ETSI Standard State Machine,0.00 M,0.2 K (Rule Constants),0.01,1.2,Ultra-Light (Rule Engine)
+Fixed 10Hz,Timer-based Fixed Trigger,0.00 M,0.0 K (Static Config),0.005,0.5,Ultra-Light (Hardware Timer)

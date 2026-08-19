@@ -1,0 +1,116 @@
+"""
+Master Visualization Pipeline for Paper4 (REMO-DQN)
+===================================================
+Orchestrates data verification, figure plotting, and table generation
+for all 11 target outputs specified in evaluation_plan.md and ORIGINAL_REQUEST.md.
+
+Targets:
+1.  ablation_study.png / ablation_study.pdf               (Ablation curves)
+2.  optuna_sensitivity_table.csv / optuna_sensitivity_table.tex (Optuna table)
+3.  reward_convergence.png / reward_convergence.pdf       (17 Baselines convergence)
+4.  tsne_clustering.png / tsne_clustering.pdf             (t-SNE latent clustering)
+5.  moe_routing.png / moe_routing.pdf                     (MoE dynamic routing)
+6.  cbr_trace.png / cbr_trace.pdf                         (CBR trace + 0.60 target)
+7.  pdr_vs_density.png / pdr_vs_density.pdf               (PDR vs density)
+8.  aoi_vs_density.png / aoi_vs_density.pdf               (AoI vs density)
+9.  pdr_vs_distance.png / pdr_vs_distance.pdf             (PDR vs distance)
+10. aoi_vs_distance.png / aoi_vs_distance.pdf             (AoI vs distance)
+11. hardware_feasibility_table.csv / hardware_feasibility_table.tex (Hardware feasibility table)
+"""
+
+import os
+import sys
+import time
+
+# Add current directory to path
+VIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if VIS_DIR not in sys.path:
+    sys.path.insert(0, VIS_DIR)
+
+from prepare_data import main as prepare_all_data
+from plot_figures import generate_all_figures
+from generate_tables import generate_all_tables
+
+TARGET_OUTPUTS = [
+    ("ablation_study.png", "PNG", "Target 1: Ablation Study Curves (PNG 300 DPI)"),
+    ("ablation_study.pdf", "PDF", "Target 1: Ablation Study Curves (Vector PDF)"),
+    ("optuna_sensitivity_table.csv", "CSV", "Target 2: Optuna Sensitivity Table (CSV)"),
+    ("optuna_sensitivity_table.tex", "TeX", "Target 2: Optuna Sensitivity Table (LaTeX)"),
+    ("reward_convergence.png", "PNG", "Target 3: Reward Convergence Curves (PNG 300 DPI)"),
+    ("reward_convergence.pdf", "PDF", "Target 3: Reward Convergence Curves (Vector PDF)"),
+    ("tsne_clustering.png", "PNG", "Target 4: t-SNE Latent Clustering (PNG 300 DPI)"),
+    ("tsne_clustering.pdf", "PDF", "Target 4: t-SNE Latent Clustering (Vector PDF)"),
+    ("moe_routing.png", "PNG", "Target 5: MoE Dynamic Routing Distribution (PNG 300 DPI)"),
+    ("moe_routing.pdf", "PDF", "Target 5: MoE Dynamic Routing Distribution (Vector PDF)"),
+    ("cbr_trace.png", "PNG", "Target 6: Time-Series CBR Trace & Stability (PNG 300 DPI)"),
+    ("cbr_trace.pdf", "PDF", "Target 6: Time-Series CBR Trace & Stability (Vector PDF)"),
+    ("pdr_vs_density.png", "PNG", "Target 7: PDR vs. Vehicle Density (PNG 300 DPI)"),
+    ("pdr_vs_density.pdf", "PDF", "Target 7: PDR vs. Vehicle Density (Vector PDF)"),
+    ("aoi_vs_density.png", "PNG", "Target 8: AoI vs. Vehicle Density (PNG 300 DPI)"),
+    ("aoi_vs_density.pdf", "PDF", "Target 8: AoI vs. Vehicle Density (Vector PDF)"),
+    ("pdr_vs_distance.png", "PNG", "Target 9: PDR vs. Communication Distance (PNG 300 DPI)"),
+    ("pdr_vs_distance.pdf", "PDF", "Target 9: PDR vs. Communication Distance (Vector PDF)"),
+    ("aoi_vs_distance.png", "PNG", "Target 10: AoI vs. Communication Distance (PNG 300 DPI)"),
+    ("aoi_vs_distance.pdf", "PDF", "Target 10: AoI vs. Communication Distance (Vector PDF)"),
+    ("hardware_feasibility_table.csv", "CSV", "Target 11: Hardware Feasibility Table (CSV)"),
+    ("hardware_feasibility_table.tex", "TeX", "Target 11: Hardware Feasibility Table (LaTeX)"),
+]
+
+def verify_outputs():
+    print("\n" + "="*75)
+    print("      PAPER4 VISUALIZATION OUTPUT VERIFICATION REPORT (PDF & PNG)")
+    print("="*75)
+    
+    all_passed = True
+    for filename, fmt, desc in TARGET_OUTPUTS:
+        filepath = os.path.join(VIS_DIR, filename)
+        if os.path.exists(filepath):
+            size_bytes = os.path.getsize(filepath)
+            size_kb = size_bytes / 1024.0
+            if size_bytes > 0:
+                status = f"[PASS] ({size_kb:6.1f} KB)"
+            else:
+                status = "[FAIL] (0 bytes empty file)"
+                all_passed = False
+        else:
+            status = "[MISSING]"
+            all_passed = False
+            
+        print(f"{status:<20} | {filename:<32} | {desc}")
+        
+    print("="*75)
+    if all_passed:
+        print("[SUCCESS] All 11 target visualization outputs (22 files: PDF, PNG, CSV, TeX) verified successfully!")
+    else:
+        print("[ERROR] Some target outputs failed or are missing.")
+    print("="*75 + "\n")
+    return all_passed
+
+def main():
+    t0 = time.time()
+    print("======================================================================")
+    print("  Starting Paper4 Full Visualization Pipeline Execution")
+    print("======================================================================")
+    
+    # 1. Prepare & Synchronize Datasets
+    print("\n[Step 1/3] Synchronizing datasets across data/ and coder/data/...")
+    prepare_all_data()
+    
+    # 2. Generate Figures (PDFs + PNG)
+    print("\n[Step 2/3] Rendering 9 publication figures (Vector PDF & 300 DPI PNG)...")
+    generate_all_figures(VIS_DIR)
+    
+    # 3. Generate Tables (CSV + LaTeX)
+    print("\n[Step 3/3] Generating 2 evaluation tables in CSV and LaTeX...")
+    generate_all_tables(VIS_DIR)
+    
+    # 4. Final Output Verification
+    success = verify_outputs()
+    elapsed = time.time() - t0
+    print(f"Pipeline executed in {elapsed:.2f} seconds.")
+    
+    if not success:
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

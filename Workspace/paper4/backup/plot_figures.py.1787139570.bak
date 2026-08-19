@@ -1,0 +1,442 @@
+"""
+Figure Generation Module for Paper4 Visualizer
+=============================================
+Generates 8 vector PDF figures and 1 high-resolution PNG figure (both PDF and PNG 300 DPI exported):
+1. ablation_study.png & ablation_study.pdf
+2. reward_convergence.png & reward_convergence.pdf
+3. tsne_clustering.png & tsne_clustering.pdf (300 DPI)
+4. moe_routing.png & moe_routing.pdf
+5. cbr_trace.png & cbr_trace.pdf
+6. pdr_vs_density.png & pdr_vs_density.pdf
+7. aoi_vs_density.png & aoi_vs_density.pdf
+8. pdr_vs_distance.png & pdr_vs_distance.pdf
+9. aoi_vs_distance.png & aoi_vs_distance.pdf
+"""
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from plot_utils import MODEL_CONFIGS, get_model_style, apply_ordered_legend
+
+DATA_DIR = "/home/imnyj/Workspace/paper4/data"
+VIS_DIR = "/home/imnyj/Workspace/paper4/visualizer"
+
+os.makedirs(VIS_DIR, exist_ok=True)
+
+
+def save_dual_figure(fig, out_dir, basename, dpi=300):
+    """Save figure in both high-res PNG (300 DPI) and publication-grade vector PDF."""
+    pdf_path = os.path.join(out_dir, f"{basename}.pdf")
+    png_path = os.path.join(out_dir, f"{basename}.png")
+    fig.savefig(pdf_path, format="pdf", bbox_inches="tight")
+    fig.savefig(png_path, format="png", dpi=dpi, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Generated -> {png_path} & {pdf_path}")
+
+
+# -------------------------------------------------------------
+# 1. Ablation Study Curves (Structure & Reward) -> PDF + PNG
+# -------------------------------------------------------------
+def plot_ablation_study(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "ablation_study.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping ablation study plot.")
+        return
+    
+    df = pd.read_csv(csv_path)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
+    
+    ep = df["Episode"]
+    
+    # (a) Structure Ablation
+    ax1.plot(ep, df["REMO-DQN"], color="#FF0000", linestyle="-", linewidth=2.4, marker="o", label="REMO-DQN (Proposed)", zorder=10)
+    if "w/o ResNet" in df.columns:
+        ax1.plot(ep, df["w/o ResNet"], color="#2A4B7C", linestyle="--", linewidth=1.8, marker="s", label="w/o ResNet Block", alpha=0.85)
+    if "w/o MoE" in df.columns:
+        ax1.plot(ep, df["w/o MoE"], color="#9B5DE5", linestyle="-.", linewidth=1.8, marker="^", label="w/o MoE Routing", alpha=0.85)
+    if "w/o Dueling" in df.columns:
+        ax1.plot(ep, df["w/o Dueling"], color="#FF9F1C", linestyle=":", linewidth=1.8, marker="D", label="w/o Dueling Stream", alpha=0.85)
+        
+    ax1.set_xlabel("Training Episodes")
+    ax1.set_ylabel("Cumulative Episode Reward")
+    ax1.set_title("(a) Structural Architectural Ablation")
+    ax1.grid(True, linestyle="--", alpha=0.4)
+    ax1.legend(loc="lower right", frameon=True, fancybox=True, edgecolor="#CCCCCC")
+    
+    # (b) Reward Function Ablation
+    ax2.plot(ep, df["REMO-DQN"], color="#FF0000", linestyle="-", linewidth=2.4, marker="o", label="Full Reward ($R_{full}$)", zorder=10)
+    if "w/o R1" in df.columns:
+        ax2.plot(ep, df["w/o R1"], color="#E63946", linestyle="--", linewidth=1.8, marker="v", label="w/o PDR & CBR Penalty ($R_1$)", alpha=0.85)
+    if "w/o R2" in df.columns:
+        ax2.plot(ep, df["w/o R2"], color="#457B9D", linestyle="-.", linewidth=1.8, marker="<", label="w/o AoI Freshness Penalty ($R_2$)", alpha=0.85)
+    if "w/o R3" in df.columns:
+        ax2.plot(ep, df["w/o R3"], color="#1D3557", linestyle=":", linewidth=1.8, marker=">", label="w/o Energy Efficiency Penalty ($R_3$)", alpha=0.85)
+        
+    ax2.set_xlabel("Training Episodes")
+    ax2.set_title("(b) Multi-Objective Reward Component Ablation")
+    ax2.grid(True, linestyle="--", alpha=0.4)
+    ax2.legend(loc="lower right", frameon=True, fancybox=True, edgecolor="#CCCCCC")
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "ablation_study")
+
+
+# -------------------------------------------------------------
+# 2. Reward Convergence (17 Baselines) -> PDF + PNG
+# -------------------------------------------------------------
+def plot_reward_convergence(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "reward_convergence.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping reward convergence plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    ep = df["Episode"]
+    
+    # Plot in reverse priority so REMO-DQN is on top
+    for cfg in reversed(MODEL_CONFIGS):
+        name = cfg["name"]
+        # Find matching column
+        matched_col = None
+        for k in cfg["keys"]:
+            if k in df.columns:
+                matched_col = k
+                break
+                
+        if matched_col:
+            ax.plot(
+                ep, df[matched_col],
+                color=cfg["color"],
+                linestyle=cfg["linestyle"],
+                linewidth=cfg["linewidth"],
+                alpha=cfg["alpha"],
+                zorder=cfg["zorder"],
+                label=cfg["name"]
+            )
+            
+    ax.set_xlabel("Training Episodes")
+    ax.set_ylabel("Cumulative Episode Reward")
+    ax.set_title("Reward Convergence Across 17 Baseline Algorithms")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    apply_ordered_legend(ax, ncol=2, bbox_to_anchor=(1.02, 1.0))
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "reward_convergence")
+
+
+# -------------------------------------------------------------
+# 3. t-SNE Clustering -> PDF + PNG (300 DPI)
+# -------------------------------------------------------------
+def plot_tsne_clustering(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "tsne_clustering.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping t-SNE plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    cluster_styles = {
+        "Low Traffic": {"color": "#2A9D8F", "marker": "o", "label": "Low Density Regime (Expert 1)"},
+        "Medium Traffic": {"color": "#E76F51", "marker": "s", "label": "Medium Density Regime (Expert 2)"},
+        "High Traffic": {"color": "#E63946", "marker": "^", "label": "High Congestion Regime (Expert 3)"}
+    }
+    
+    for c_name, style in cluster_styles.items():
+        subset = df[df["Cluster"] == c_name]
+        if not subset.empty:
+            ax.scatter(
+                subset["x"], subset["y"],
+                c=style["color"],
+                marker=style["marker"],
+                s=55,
+                alpha=0.75,
+                edgecolors="black",
+                linewidth=0.5,
+                label=style["label"]
+            )
+            
+    ax.set_xlabel("t-SNE Dimension 1")
+    ax.set_ylabel("t-SNE Dimension 2")
+    ax.set_title("t-SNE Clustering of MoE Latent Gating Representations")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(loc="upper right", frameon=True, fancybox=True, edgecolor="#CCCCCC")
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "tsne_clustering", dpi=300)
+
+
+# -------------------------------------------------------------
+# 4. MoE Routing Distribution -> PDF + PNG
+# -------------------------------------------------------------
+def plot_moe_routing(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "moe_routing.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping MoE routing plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(9, 5.5))
+    
+    density = df["Density"]
+    e1 = df["Expert1 (Low Density)"]
+    e2 = df["Expert2 (Medium Density)"]
+    e3 = df["Expert3 (High Density)"]
+    
+    colors = ["#2A9D8F", "#F4A261", "#E76F51"]
+    labels = ["Expert 1: Low-Density Optimization", "Expert 2: Moderate-Load Balancing", "Expert 3: Severe-Congestion Mitigation"]
+    
+    ax.stackplot(density, e1, e2, e3, labels=labels, colors=colors, alpha=0.85, edgecolor="white", linewidth=1.2)
+    
+    ax.set_xlabel("Vehicle Density (vehicles/km)")
+    ax.set_ylabel("Expert Gating Activation Weight (%)")
+    ax.set_title("Dynamic MoE Expert Routing Weights vs. Traffic Density")
+    ax.set_xlim(density.min(), density.max())
+    ax.set_ylim(0, 100)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    ax.legend(loc="center right", frameon=True, fancybox=True, edgecolor="#CCCCCC")
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "moe_routing")
+
+
+# -------------------------------------------------------------
+# 5. CBR Trace -> PDF + PNG
+# -------------------------------------------------------------
+def plot_cbr_trace(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "cbr_trace.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping CBR trace plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    time_col = df["Time"]
+    
+    for cfg in reversed(MODEL_CONFIGS):
+        name = cfg["name"]
+        matched_col = None
+        for k in cfg["keys"]:
+            if k in df.columns:
+                matched_col = k
+                break
+        if matched_col:
+            ax.plot(
+                time_col, df[matched_col],
+                color=cfg["color"],
+                linestyle=cfg["linestyle"],
+                linewidth=cfg["linewidth"],
+                alpha=cfg["alpha"],
+                zorder=cfg["zorder"],
+                label=cfg["name"]
+            )
+            
+    # Target CBR Limit
+    ax.axhline(y=0.60, color="#B22222", linestyle="--", linewidth=2.0, zorder=15, label="ETSI DCC Target CBR ($0.60$)")
+    
+    ax.set_xlabel("Simulation Time (s)")
+    ax.set_ylabel("Channel Busy Ratio (CBR)")
+    ax.set_title("Time-Series Channel Busy Ratio (CBR) Stability (17 Baselines)")
+    ax.set_ylim(0.20, 1.0)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    apply_ordered_legend(ax, ncol=2, bbox_to_anchor=(1.02, 1.0))
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "cbr_trace")
+
+
+# -------------------------------------------------------------
+# 6. PDR vs Density -> PDF + PNG
+# -------------------------------------------------------------
+def plot_pdr_vs_density(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "pdr_vs_density.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping PDR vs Density plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    dens_col = df["Density"]
+    
+    for cfg in reversed(MODEL_CONFIGS):
+        matched_col = None
+        for k in cfg["keys"]:
+            if k in df.columns:
+                matched_col = k
+                break
+        if matched_col:
+            ax.plot(
+                dens_col, df[matched_col],
+                color=cfg["color"],
+                linestyle=cfg["linestyle"],
+                linewidth=cfg["linewidth"],
+                alpha=cfg["alpha"],
+                zorder=cfg["zorder"],
+                label=cfg["name"]
+            )
+            
+    ax.set_xlabel("Vehicle Density (vehicles/km)")
+    ax.set_ylabel("Packet Delivery Ratio (PDR, %)")
+    ax.set_title("Packet Delivery Ratio (PDR) vs. Vehicle Density (17 Baselines)")
+    ax.set_ylim(30, 102)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    apply_ordered_legend(ax, ncol=2, bbox_to_anchor=(1.02, 1.0))
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "pdr_vs_density")
+
+
+# -------------------------------------------------------------
+# 7. AoI vs Density -> PDF + PNG
+# -------------------------------------------------------------
+def plot_aoi_vs_density(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "aoi_vs_density.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping AoI vs Density plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    dens_col = df["Density"]
+    
+    for cfg in reversed(MODEL_CONFIGS):
+        matched_col = None
+        for k in cfg["keys"]:
+            if k in df.columns:
+                matched_col = k
+                break
+        if matched_col:
+            ax.plot(
+                dens_col, df[matched_col],
+                color=cfg["color"],
+                linestyle=cfg["linestyle"],
+                linewidth=cfg["linewidth"],
+                alpha=cfg["alpha"],
+                zorder=cfg["zorder"],
+                label=cfg["name"]
+            )
+            
+    ax.set_xlabel("Vehicle Density (vehicles/km)")
+    ax.set_ylabel("Age of Information (AoI, ms)")
+    ax.set_title("Age of Information (AoI) vs. Vehicle Density (17 Baselines)")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    apply_ordered_legend(ax, ncol=2, bbox_to_anchor=(1.02, 1.0))
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "aoi_vs_density")
+
+
+# -------------------------------------------------------------
+# 8. PDR vs Distance -> PDF + PNG
+# -------------------------------------------------------------
+def plot_pdr_vs_distance(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "pdr_vs_distance.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping PDR vs Distance plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    dist_col = df["Distance"]
+    
+    for cfg in reversed(MODEL_CONFIGS):
+        matched_col = None
+        for k in cfg["keys"]:
+            if k in df.columns:
+                matched_col = k
+                break
+        if matched_col:
+            ax.plot(
+                dist_col, df[matched_col],
+                color=cfg["color"],
+                linestyle=cfg["linestyle"],
+                marker=cfg["marker"],
+                linewidth=cfg["linewidth"],
+                alpha=cfg["alpha"],
+                zorder=cfg["zorder"],
+                label=cfg["name"]
+            )
+            
+    ax.set_xlabel("Transmission Distance (m)")
+    ax.set_ylabel("Packet Delivery Ratio (PDR, %)")
+    ax.set_title("Packet Delivery Ratio (PDR) vs. Communication Distance (17 Baselines)")
+    ax.set_ylim(35, 102)
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    apply_ordered_legend(ax, ncol=2, bbox_to_anchor=(1.02, 1.0))
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "pdr_vs_distance")
+
+
+# -------------------------------------------------------------
+# 9. AoI vs Distance -> PDF + PNG
+# -------------------------------------------------------------
+def plot_aoi_vs_distance(out_dir=VIS_DIR):
+    csv_path = os.path.join(DATA_DIR, "aoi_vs_distance.csv")
+    if not os.path.exists(csv_path):
+        print(f"[Warning] {csv_path} not found. Skipping AoI vs Distance plot.")
+        return
+        
+    df = pd.read_csv(csv_path)
+    fig, ax = plt.subplots(figsize=(11, 6))
+    
+    dist_col = df["Distance"]
+    
+    for cfg in reversed(MODEL_CONFIGS):
+        matched_col = None
+        for k in cfg["keys"]:
+            if k in df.columns:
+                matched_col = k
+                break
+        if matched_col:
+            ax.plot(
+                dist_col, df[matched_col],
+                color=cfg["color"],
+                linestyle=cfg["linestyle"],
+                marker=cfg["marker"],
+                linewidth=cfg["linewidth"],
+                alpha=cfg["alpha"],
+                zorder=cfg["zorder"],
+                label=cfg["name"]
+            )
+            
+    ax.set_xlabel("Transmission Distance (m)")
+    ax.set_ylabel("Age of Information (AoI, ms)")
+    ax.set_title("Age of Information (AoI) vs. Communication Distance (17 Baselines)")
+    ax.grid(True, linestyle="--", alpha=0.4)
+    
+    apply_ordered_legend(ax, ncol=2, bbox_to_anchor=(1.02, 1.0))
+    
+    plt.tight_layout()
+    save_dual_figure(fig, out_dir, "aoi_vs_distance")
+
+
+def generate_all_figures(out_dir=VIS_DIR):
+    print("=== Generating All Figures (PDF & PNG 300 DPI) ===")
+    plot_ablation_study(out_dir)
+    plot_reward_convergence(out_dir)
+    plot_tsne_clustering(out_dir)
+    plot_moe_routing(out_dir)
+    plot_cbr_trace(out_dir)
+    plot_pdr_vs_density(out_dir)
+    plot_aoi_vs_density(out_dir)
+    plot_pdr_vs_distance(out_dir)
+    plot_aoi_vs_distance(out_dir)
+    print("=== Figure Generation Completed ===")
+
+
+if __name__ == "__main__":
+    generate_all_figures()

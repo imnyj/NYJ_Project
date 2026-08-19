@@ -1,0 +1,4299 @@
+{
+  "data_models": {
+    "ActorCritic.pth": {
+      "size_bytes": 81607,
+      "keys": [
+        "actor.0.weight",
+        "actor.0.bias",
+        "actor.2.weight",
+        "actor.2.bias",
+        "actor.4.weight",
+        "actor.4.bias",
+        "critic.0.weight",
+        "critic.0.bias",
+        "critic.2.weight",
+        "critic.2.bias"
+      ],
+      "num_keys": 12,
+      "type": "dict"
+    },
+    "ActorCritic_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -927936.7586665252,
+      "r_end": -899734.9787897432,
+      "r_mean_first10": -935045.3647668434,
+      "r_mean_last10": -898114.0825767514,
+      "is_converged": true
+    },
+    "DDPG.pth": {
+      "size_bytes": 88777,
+      "keys": [
+        "actor",
+        "critic"
+      ],
+      "num_keys": 2,
+      "type": "dict"
+    },
+    "DDPG_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926191.2651434896,
+      "r_end": -908821.050408758,
+      "r_mean_first10": -927356.3847352372,
+      "r_mean_last10": -907462.948638962,
+      "is_converged": true
+    },
+    "DecisionTransformer.pth": {
+      "size_bytes": 422987,
+      "keys": [
+        "state_emb.weight",
+        "state_emb.bias",
+        "action_emb.weight",
+        "action_emb.bias",
+        "rtg_emb.weight",
+        "rtg_emb.bias",
+        "transformer.layers.0.self_attn.in_proj_weight",
+        "transformer.layers.0.self_attn.in_proj_bias",
+        "transformer.layers.0.self_attn.out_proj.weight",
+        "transformer.layers.0.self_attn.out_proj.bias"
+      ],
+      "num_keys": 32,
+      "type": "dict"
+    },
+    "DecisionTransformer_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926771.477685616,
+      "r_end": -939627.807467118,
+      "r_mean_first10": -936828.4703548979,
+      "r_mean_last10": -937158.4302116645,
+      "is_converged": false
+    },
+    "DoubleDQN.pth": {
+      "size_bytes": 43373,
+      "keys": [
+        "q_net"
+      ],
+      "num_keys": 1,
+      "type": "dict"
+    },
+    "DoubleDQN_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926291.1903550978,
+      "r_end": -1005293.027973882,
+      "r_mean_first10": -967405.8577626094,
+      "r_mean_last10": -926992.8825662809,
+      "is_converged": true
+    },
+    "DuelingDQN.pth": {
+      "size_bytes": 44151,
+      "keys": [
+        "fc1.weight",
+        "fc1.bias",
+        "fc2.weight",
+        "fc2.bias",
+        "val_fc.weight",
+        "val_fc.bias",
+        "adv_fc.weight",
+        "adv_fc.bias"
+      ],
+      "num_keys": 8,
+      "type": "dict"
+    },
+    "DuelingDQN_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926247.1562111074,
+      "r_end": -931676.6445363554,
+      "r_mean_first10": -963616.8928405544,
+      "r_mean_last10": -929697.9442901509,
+      "is_converged": true
+    },
+    "MAPPO.pth": {
+      "size_bytes": 83355,
+      "keys": [
+        "actor.0.weight",
+        "actor.0.bias",
+        "actor.2.weight",
+        "actor.2.bias",
+        "actor.4.weight",
+        "actor.4.bias",
+        "critic.0.weight",
+        "critic.0.bias",
+        "critic.2.weight",
+        "critic.2.bias"
+      ],
+      "num_keys": 12,
+      "type": "dict"
+    },
+    "MAPPO_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926759.800825098,
+      "r_end": -912285.1084971868,
+      "r_mean_first10": -936817.9920999355,
+      "r_mean_last10": -911570.1068541743,
+      "is_converged": true
+    },
+    "MoEDQN.pth": {
+      "size_bytes": 217613,
+      "keys": [
+        "feature_layer.experts.0.0.weight",
+        "feature_layer.experts.0.0.bias",
+        "feature_layer.experts.0.2.weight",
+        "feature_layer.experts.0.2.bias",
+        "feature_layer.experts.1.0.weight",
+        "feature_layer.experts.1.0.bias",
+        "feature_layer.experts.1.2.weight",
+        "feature_layer.experts.1.2.bias",
+        "feature_layer.gating_network.0.weight",
+        "feature_layer.gating_network.0.bias"
+      ],
+      "num_keys": 20,
+      "type": "dict"
+    },
+    "MoEDQN_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926138.0610143694,
+      "r_end": -899871.1635328081,
+      "r_mean_first10": -937846.8140133994,
+      "r_mean_last10": -918853.1984123394,
+      "is_converged": true
+    },
+    "PPO.pth": {
+      "size_bytes": 80759,
+      "keys": [
+        "actor.0.weight",
+        "actor.0.bias",
+        "actor.2.weight",
+        "actor.2.bias",
+        "actor.4.weight",
+        "actor.4.bias",
+        "critic.0.weight",
+        "critic.0.bias",
+        "critic.2.weight",
+        "critic.2.bias"
+      ],
+      "num_keys": 12,
+      "type": "dict"
+    },
+    "PPO_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -925508.407975689,
+      "r_end": -900861.8028193462,
+      "r_mean_first10": -934847.123562625,
+      "r_mean_last10": -899332.1000057332,
+      "is_converged": true
+    },
+    "QLearning.pkl": {
+      "size_bytes": 6400393
+    },
+    "QLearning_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -929339.4293447222,
+      "r_end": -913323.229281602,
+      "r_mean_first10": -939782.2421688961,
+      "r_mean_last10": -912014.8560357438,
+      "is_converged": true
+    },
+    "REMO-DQN.pth": {
+      "size_bytes": 527517,
+      "keys": [
+        "feature_extractor.input_layer.0.weight",
+        "feature_extractor.input_layer.0.bias",
+        "feature_extractor.res_blocks.0.fc1.weight",
+        "feature_extractor.res_blocks.0.fc1.bias",
+        "feature_extractor.res_blocks.0.fc2.weight",
+        "feature_extractor.res_blocks.0.fc2.bias",
+        "feature_extractor.res_blocks.1.fc1.weight",
+        "feature_extractor.res_blocks.1.fc1.bias",
+        "feature_extractor.res_blocks.1.fc2.weight",
+        "feature_extractor.res_blocks.1.fc2.bias"
+      ],
+      "num_keys": 38,
+      "type": "dict"
+    },
+    "REMO-DQN_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926260.4455966464,
+      "r_end": -901655.5818144488,
+      "r_mean_first10": -940523.5578483224,
+      "r_mean_last10": -929311.5431502901,
+      "is_converged": true
+    },
+    "SAC.pth": {
+      "size_bytes": 125965,
+      "keys": [
+        "q_net",
+        "policy"
+      ],
+      "num_keys": 2,
+      "type": "dict"
+    },
+    "SAC_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -925506.298957842,
+      "r_end": -923237.1898353857,
+      "r_mean_first10": -935351.3924669207,
+      "r_mean_last10": -922399.9175961299,
+      "is_converged": true
+    },
+    "SARSA.pkl": {
+      "size_bytes": 6400393
+    },
+    "SARSA_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -929348.4816699128,
+      "r_end": -927567.2910945938,
+      "r_mean_first10": -939778.23380446,
+      "r_mean_last10": -926791.0096560016,
+      "is_converged": true
+    },
+    "TD3.pth": {
+      "size_bytes": 134669,
+      "keys": [
+        "actor",
+        "critic"
+      ],
+      "num_keys": 2,
+      "type": "dict"
+    },
+    "TD3_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -926251.2011188884,
+      "r_end": -899872.5559382795,
+      "r_mean_first10": -950973.7912164603,
+      "r_mean_last10": -920564.7570922462,
+      "is_converged": true
+    },
+    "VanillaDQN.pth": {
+      "size_bytes": 80569,
+      "keys": [
+        "network.0.weight",
+        "network.0.bias",
+        "network.2.weight",
+        "network.2.bias",
+        "network.4.weight",
+        "network.4.bias"
+      ],
+      "num_keys": 6,
+      "type": "dict"
+    },
+    "VanillaDQN_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "Global_Step",
+        "Reward",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_ep": 100,
+      "max_step": 200000,
+      "r_start": -929275.169366988,
+      "r_end": -899870.2904003859,
+      "r_mean_first10": -943371.634590935,
+      "r_mean_last10": -928569.30419375,
+      "is_converged": true
+    }
+  },
+  "code_train_logs": {
+    "actor_critic_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "ActorLoss",
+        "CriticLoss",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -942.9053625349892,
+      "r_end": -859.1685813842357
+    },
+    "ddpg_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "ActorLoss",
+        "CriticLoss",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -943.8757714826452,
+      "r_end": -841.6381623703498
+    },
+    "ddqn_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -1544.378606734914,
+      "r_end": -563.8431801891334
+    },
+    "dqn_train_log.csv": {
+      "rows": 0,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "Epsilon",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ]
+    },
+    "dt_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -943.064500489514,
+      "r_end": -847.4686659834691
+    },
+    "mappo_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -1543.1262486794003,
+      "r_end": -570.967656516044
+    },
+    "moe_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "Epsilon",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -943.328379175724,
+      "r_end": -835.9583854804744
+    },
+    "ppo_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -1542.8882027871423,
+      "r_end": -573.3090878454507
+    },
+    "qlearning_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Epsilon",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -942.4024607718728,
+      "r_end": -846.9528250890049
+    },
+    "resnet_train_log.csv": {
+      "rows": 0,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss",
+        "Epsilon",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ]
+    },
+    "sac_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss_Policy",
+        "Loss_Q",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -1539.4306449844023,
+      "r_end": -573.5864070633462
+    },
+    "sarsa_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Epsilon",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -943.4122146716549,
+      "r_end": -844.4088789662442
+    },
+    "td3_train_log.csv": {
+      "rows": 5,
+      "columns": [
+        "Episode",
+        "Reward",
+        "Loss_Critic",
+        "Loss_Actor",
+        "AoI_mean",
+        "CBR_mean",
+        "PDR_mean"
+      ],
+      "max_step": null,
+      "max_ep": 5,
+      "r_start": -1541.751750004692,
+      "r_end": -582.7459317341227
+    }
+  },
+  "reward_convergence": {
+    "/home/imnyj/Workspace/paper4/data/reward_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Episode": 1,
+          "REMO-DQN": -926260.4455966464,
+          "Fixed 10Hz": -994254.9287704832,
+          "ReactDCC": -983698.4448904603,
+          "AdaptDCC": -977606.4339036169,
+          "MoEDQN": -926138.0610143694,
+          "MAPPO": -926759.800825098,
+          "PPO": -925508.407975689,
+          "SAC": -925506.298957842,
+          "DDPG": -926191.2651434896,
+          "TD3": -926251.2011188884,
+          "DuelingDQN": -926247.1562111074,
+          "DoubleDQN": -926291.1903550978,
+          "VanillaDQN": -929275.169366988,
+          "QLearning": -929339.4293447222,
+          "SARSA": -929348.4816699128,
+          "ActorCritic": -927936.7586665252,
+          "DecisionTransformer": -926771.477685616
+        },
+        {
+          "Episode": 2,
+          "REMO-DQN": -932810.5608737986,
+          "Fixed 10Hz": -995207.3964517568,
+          "ReactDCC": -982504.7743873184,
+          "AdaptDCC": -977383.1370209948,
+          "MoEDQN": -932811.0241716217,
+          "MAPPO": -933530.4333644824,
+          "PPO": -932045.5363209326,
+          "SAC": -931532.3696063012,
+          "DDPG": -931492.7590166274,
+          "TD3": -911666.1138697678,
+          "DuelingDQN": -908018.6476479358,
+          "DoubleDQN": -1014833.5043889728,
+          "VanillaDQN": -913638.64105893,
+          "QLearning": -935989.8926488442,
+          "SARSA": -935946.481771955,
+          "ActorCritic": -933849.276417854,
+          "DecisionTransformer": -933450.0651191546
+        }
+      ],
+      "tail": [
+        {
+          "Episode": 99,
+          "REMO-DQN": -1003921.8329904656,
+          "Fixed 10Hz": -994992.3298150364,
+          "ReactDCC": -981930.1495378648,
+          "AdaptDCC": -977105.8516692772,
+          "MoEDQN": -899597.9387430671,
+          "MAPPO": -910285.8967605752,
+          "PPO": -898485.5502175997,
+          "SAC": -921787.3266654091,
+          "DDPG": -906427.6596441948,
+          "TD3": -897346.411691558,
+          "DuelingDQN": -900575.9470660961,
+          "DoubleDQN": -906785.5758132682,
+          "VanillaDQN": -897352.011445964,
+          "QLearning": -910118.779838876,
+          "SARSA": -926937.6959978404,
+          "ActorCritic": -897235.6882020938,
+          "DecisionTransformer": -937257.8437911364
+        },
+        {
+          "Episode": 100,
+          "REMO-DQN": -901655.5818144488,
+          "Fixed 10Hz": -995351.8807000628,
+          "ReactDCC": -983371.5643573968,
+          "AdaptDCC": -977307.408273884,
+          "MoEDQN": -899871.1635328081,
+          "MAPPO": -912285.1084971868,
+          "PPO": -900861.8028193462,
+          "SAC": -923237.1898353857,
+          "DDPG": -908821.050408758,
+          "TD3": -899872.5559382795,
+          "DuelingDQN": -931676.6445363554,
+          "DoubleDQN": -1005293.027973882,
+          "VanillaDQN": -899870.2904003859,
+          "QLearning": -913323.229281602,
+          "SARSA": -927567.2910945938,
+          "ActorCritic": -899734.9787897432,
+          "DecisionTransformer": -939627.807467118
+        }
+      ],
+      "summary_stats": {
+        "Episode": {
+          "count": 100.0,
+          "mean": 50.5,
+          "std": 29.011491975882016,
+          "min": 1.0,
+          "25%": 25.75,
+          "50%": 50.5,
+          "75%": 75.25,
+          "max": 100.0
+        },
+        "REMO-DQN": {
+          "count": 100.0,
+          "mean": -933533.3054709802,
+          "std": 49963.26868049315,
+          "min": -1100941.9277031654,
+          "25%": -958471.5310884847,
+          "50%": -928478.7767099522,
+          "75%": -901193.9582497458,
+          "max": -850665.0950059118
+        },
+        "Fixed 10Hz": {
+          "count": 100.0,
+          "mean": -995155.769776091,
+          "std": 1362.252642011696,
+          "min": -998929.6176561348,
+          "25%": -995901.3585057447,
+          "50%": -995190.4344376696,
+          "75%": -994391.071921982,
+          "max": -992221.5827232366
+        },
+        "ReactDCC": {
+          "count": 100.0,
+          "mean": -981973.2344955403,
+          "std": 1144.4027594197094,
+          "min": -984302.5254583588,
+          "25%": -982966.7926277891,
+          "50%": -981899.0713960638,
+          "75%": -981354.1954628048,
+          "max": -978735.7970000925
+        },
+        "AdaptDCC": {
+          "count": 100.0,
+          "mean": -977928.6141215897,
+          "std": 1192.7111706263677,
+          "min": -981565.394074076,
+          "25%": -978720.9878946848,
+          "50%": -977892.5346834494,
+          "75%": -977225.1188073053,
+          "max": -973761.9953602798
+        },
+        "MoEDQN": {
+          "count": 100.0,
+          "mean": -933108.867700563,
+          "std": 48747.29601083038,
+          "min": -1063210.844490518,
+          "25%": -960634.8249465002,
+          "50%": -922819.7059241316,
+          "75%": -900373.3732258459,
+          "max": -849555.5524583338
+        },
+        "MAPPO": {
+          "count": 100.0,
+          "mean": -927189.9498758273,
+          "std": 31335.937448392782,
+          "min": -1006334.9313630206,
+          "25%": -946542.9258138151,
+          "50%": -927696.4382290518,
+          "75%": -908244.2705198084,
+          "max": -853591.5690242646
+        },
+        "PPO": {
+          "count": 100.0,
+          "mean": -915758.6494644231,
+          "std": 32050.8025210859,
+          "min": -1001030.6173487192,
+          "25%": -941088.9193084833,
+          "50%": -918430.512418204,
+          "75%": -896112.2064190638,
+          "max": -842648.8853423737
+        },
+        "SAC": {
+          "count": 100.0,
+          "mean": -930763.3928465871,
+          "std": 30156.20613219147,
+          "min": -1006156.3653175016,
+          "25%": -948871.84768892,
+          "50%": -928671.9472478416,
+          "75%": -912161.8673419642,
+          "max": -863086.5298664257
+        },
+        "DDPG": {
+          "count": 100.0,
+          "mean": -916663.6292276102,
+          "std": 30262.893275473147,
+          "min": -998328.2889780934,
+          "25%": -935672.78447054,
+          "50%": -913742.105746794,
+          "75%": -897129.837445264,
+          "max": -850172.8261289538
+        },
+        "TD3": {
+          "count": 100.0,
+          "mean": -940605.3084360863,
+          "std": 58050.40764163293,
+          "min": -1079370.6052760736,
+          "25%": -993521.0913865241,
+          "50%": -931241.8072510469,
+          "75%": -894816.204074124,
+          "max": -849564.3113114763
+        },
+        "DuelingDQN": {
+          "count": 100.0,
+          "mean": -940611.1974732296,
+          "std": 48945.00169188283,
+          "min": -1064765.3615176529,
+          "25%": -972756.623157565,
+          "50%": -934165.7373906758,
+          "75%": -904489.6526826234,
+          "max": -849547.1236722375
+        },
+        "DoubleDQN": {
+          "count": 100.0,
+          "mean": -940909.054072205,
+          "std": 51520.598310837035,
+          "min": -1080764.0782231132,
+          "25%": -964379.5948348502,
+          "50%": -931819.1689749719,
+          "75%": -902543.2856230023,
+          "max": -846556.833559108
+        },
+        "VanillaDQN": {
+          "count": 100.0,
+          "mean": -940088.4688138643,
+          "std": 49956.224855295164,
+          "min": -1083150.7520838848,
+          "25%": -966758.6869000015,
+          "50%": -932143.3046710774,
+          "75%": -904489.2069139899,
+          "max": -855483.1837209912
+        },
+        "QLearning": {
+          "count": 100.0,
+          "mean": -931313.9780049927,
+          "std": 32622.309531848383,
+          "min": -1011853.7600171014,
+          "25%": -950224.3142543557,
+          "50%": -931584.9402209169,
+          "75%": -911379.3421411286,
+          "max": -853687.1855873053
+        },
+        "SARSA": {
+          "count": 100.0,
+          "mean": -935998.9691397889,
+          "std": 30567.964319176386,
+          "min": -1011808.517121138,
+          "25%": -953512.1974612173,
+          "50%": -932781.7841835564,
+          "75%": -917134.9330040652,
+          "max": -867652.1273822285
+        },
+        "ActorCritic": {
+          "count": 100.0,
+          "mean": -917990.4895470216,
+          "std": 34048.44048700124,
+          "min": -997087.8546188852,
+          "25%": -941342.4999455663,
+          "50%": -917607.5817043334,
+          "75%": -893157.1575398176,
+          "max": -841575.461740548
+        },
+        "DecisionTransformer": {
+          "count": 100.0,
+          "mean": -942376.2038890407,
+          "std": 30664.77848879826,
+          "min": -1017192.8160793486,
+          "25%": -960260.1813915661,
+          "50%": -941211.4604745803,
+          "75%": -923508.1683720016,
+          "max": -875923.3077257201
+        }
+      }
+    },
+    "/home/imnyj/Workspace/paper4/coder/data/reward_convergence.csv": {
+      "rows": 100,
+      "columns": [
+        "Episode",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Episode": 1,
+          "REMO-DQN": -926260.4455966464,
+          "Fixed 10Hz": -994254.9287704832,
+          "ReactDCC": -983698.4448904603,
+          "AdaptDCC": -977606.4339036169,
+          "MoEDQN": -926138.0610143694,
+          "MAPPO": -926759.800825098,
+          "PPO": -925508.407975689,
+          "SAC": -925506.298957842,
+          "DDPG": -926191.2651434896,
+          "TD3": -926251.2011188884,
+          "DuelingDQN": -926247.1562111074,
+          "DoubleDQN": -926291.1903550978,
+          "VanillaDQN": -929275.169366988,
+          "QLearning": -929339.4293447222,
+          "SARSA": -929348.4816699128,
+          "ActorCritic": -927936.7586665252,
+          "DecisionTransformer": -926771.477685616
+        },
+        {
+          "Episode": 2,
+          "REMO-DQN": -932810.5608737986,
+          "Fixed 10Hz": -995207.3964517568,
+          "ReactDCC": -982504.7743873184,
+          "AdaptDCC": -977383.1370209948,
+          "MoEDQN": -932811.0241716217,
+          "MAPPO": -933530.4333644824,
+          "PPO": -932045.5363209326,
+          "SAC": -931532.3696063012,
+          "DDPG": -931492.7590166274,
+          "TD3": -911666.1138697678,
+          "DuelingDQN": -908018.6476479358,
+          "DoubleDQN": -1014833.5043889728,
+          "VanillaDQN": -913638.64105893,
+          "QLearning": -935989.8926488442,
+          "SARSA": -935946.481771955,
+          "ActorCritic": -933849.276417854,
+          "DecisionTransformer": -933450.0651191546
+        }
+      ],
+      "tail": [
+        {
+          "Episode": 99,
+          "REMO-DQN": -1003921.8329904656,
+          "Fixed 10Hz": -994992.3298150364,
+          "ReactDCC": -981930.1495378648,
+          "AdaptDCC": -977105.8516692772,
+          "MoEDQN": -899597.9387430671,
+          "MAPPO": -910285.8967605752,
+          "PPO": -898485.5502175997,
+          "SAC": -921787.3266654091,
+          "DDPG": -906427.6596441948,
+          "TD3": -897346.411691558,
+          "DuelingDQN": -900575.9470660961,
+          "DoubleDQN": -906785.5758132682,
+          "VanillaDQN": -897352.011445964,
+          "QLearning": -910118.779838876,
+          "SARSA": -926937.6959978404,
+          "ActorCritic": -897235.6882020938,
+          "DecisionTransformer": -937257.8437911364
+        },
+        {
+          "Episode": 100,
+          "REMO-DQN": -901655.5818144488,
+          "Fixed 10Hz": -995351.8807000628,
+          "ReactDCC": -983371.5643573968,
+          "AdaptDCC": -977307.408273884,
+          "MoEDQN": -899871.1635328081,
+          "MAPPO": -912285.1084971868,
+          "PPO": -900861.8028193462,
+          "SAC": -923237.1898353857,
+          "DDPG": -908821.050408758,
+          "TD3": -899872.5559382795,
+          "DuelingDQN": -931676.6445363554,
+          "DoubleDQN": -1005293.027973882,
+          "VanillaDQN": -899870.2904003859,
+          "QLearning": -913323.229281602,
+          "SARSA": -927567.2910945938,
+          "ActorCritic": -899734.9787897432,
+          "DecisionTransformer": -939627.807467118
+        }
+      ],
+      "summary_stats": {
+        "Episode": {
+          "count": 100.0,
+          "mean": 50.5,
+          "std": 29.011491975882016,
+          "min": 1.0,
+          "25%": 25.75,
+          "50%": 50.5,
+          "75%": 75.25,
+          "max": 100.0
+        },
+        "REMO-DQN": {
+          "count": 100.0,
+          "mean": -933533.3054709802,
+          "std": 49963.26868049315,
+          "min": -1100941.9277031654,
+          "25%": -958471.5310884847,
+          "50%": -928478.7767099522,
+          "75%": -901193.9582497458,
+          "max": -850665.0950059118
+        },
+        "Fixed 10Hz": {
+          "count": 100.0,
+          "mean": -995155.769776091,
+          "std": 1362.252642011696,
+          "min": -998929.6176561348,
+          "25%": -995901.3585057447,
+          "50%": -995190.4344376696,
+          "75%": -994391.071921982,
+          "max": -992221.5827232366
+        },
+        "ReactDCC": {
+          "count": 100.0,
+          "mean": -981973.2344955403,
+          "std": 1144.4027594197094,
+          "min": -984302.5254583588,
+          "25%": -982966.7926277891,
+          "50%": -981899.0713960638,
+          "75%": -981354.1954628048,
+          "max": -978735.7970000925
+        },
+        "AdaptDCC": {
+          "count": 100.0,
+          "mean": -977928.6141215897,
+          "std": 1192.7111706263677,
+          "min": -981565.394074076,
+          "25%": -978720.9878946848,
+          "50%": -977892.5346834494,
+          "75%": -977225.1188073053,
+          "max": -973761.9953602798
+        },
+        "MoEDQN": {
+          "count": 100.0,
+          "mean": -933108.867700563,
+          "std": 48747.29601083038,
+          "min": -1063210.844490518,
+          "25%": -960634.8249465002,
+          "50%": -922819.7059241316,
+          "75%": -900373.3732258459,
+          "max": -849555.5524583338
+        },
+        "MAPPO": {
+          "count": 100.0,
+          "mean": -927189.9498758273,
+          "std": 31335.937448392782,
+          "min": -1006334.9313630206,
+          "25%": -946542.9258138151,
+          "50%": -927696.4382290518,
+          "75%": -908244.2705198084,
+          "max": -853591.5690242646
+        },
+        "PPO": {
+          "count": 100.0,
+          "mean": -915758.6494644231,
+          "std": 32050.8025210859,
+          "min": -1001030.6173487192,
+          "25%": -941088.9193084833,
+          "50%": -918430.512418204,
+          "75%": -896112.2064190638,
+          "max": -842648.8853423737
+        },
+        "SAC": {
+          "count": 100.0,
+          "mean": -930763.3928465871,
+          "std": 30156.20613219147,
+          "min": -1006156.3653175016,
+          "25%": -948871.84768892,
+          "50%": -928671.9472478416,
+          "75%": -912161.8673419642,
+          "max": -863086.5298664257
+        },
+        "DDPG": {
+          "count": 100.0,
+          "mean": -916663.6292276102,
+          "std": 30262.893275473147,
+          "min": -998328.2889780934,
+          "25%": -935672.78447054,
+          "50%": -913742.105746794,
+          "75%": -897129.837445264,
+          "max": -850172.8261289538
+        },
+        "TD3": {
+          "count": 100.0,
+          "mean": -940605.3084360863,
+          "std": 58050.40764163293,
+          "min": -1079370.6052760736,
+          "25%": -993521.0913865241,
+          "50%": -931241.8072510469,
+          "75%": -894816.204074124,
+          "max": -849564.3113114763
+        },
+        "DuelingDQN": {
+          "count": 100.0,
+          "mean": -940611.1974732296,
+          "std": 48945.00169188283,
+          "min": -1064765.3615176529,
+          "25%": -972756.623157565,
+          "50%": -934165.7373906758,
+          "75%": -904489.6526826234,
+          "max": -849547.1236722375
+        },
+        "DoubleDQN": {
+          "count": 100.0,
+          "mean": -940909.054072205,
+          "std": 51520.598310837035,
+          "min": -1080764.0782231132,
+          "25%": -964379.5948348502,
+          "50%": -931819.1689749719,
+          "75%": -902543.2856230023,
+          "max": -846556.833559108
+        },
+        "VanillaDQN": {
+          "count": 100.0,
+          "mean": -940088.4688138643,
+          "std": 49956.224855295164,
+          "min": -1083150.7520838848,
+          "25%": -966758.6869000015,
+          "50%": -932143.3046710774,
+          "75%": -904489.2069139899,
+          "max": -855483.1837209912
+        },
+        "QLearning": {
+          "count": 100.0,
+          "mean": -931313.9780049927,
+          "std": 32622.309531848383,
+          "min": -1011853.7600171014,
+          "25%": -950224.3142543557,
+          "50%": -931584.9402209169,
+          "75%": -911379.3421411286,
+          "max": -853687.1855873053
+        },
+        "SARSA": {
+          "count": 100.0,
+          "mean": -935998.9691397889,
+          "std": 30567.964319176386,
+          "min": -1011808.517121138,
+          "25%": -953512.1974612173,
+          "50%": -932781.7841835564,
+          "75%": -917134.9330040652,
+          "max": -867652.1273822285
+        },
+        "ActorCritic": {
+          "count": 100.0,
+          "mean": -917990.4895470216,
+          "std": 34048.44048700124,
+          "min": -997087.8546188852,
+          "25%": -941342.4999455663,
+          "50%": -917607.5817043334,
+          "75%": -893157.1575398176,
+          "max": -841575.461740548
+        },
+        "DecisionTransformer": {
+          "count": 100.0,
+          "mean": -942376.2038890407,
+          "std": 30664.77848879826,
+          "min": -1017192.8160793486,
+          "25%": -960260.1813915661,
+          "50%": -941211.4604745803,
+          "75%": -923508.1683720016,
+          "max": -875923.3077257201
+        }
+      }
+    }
+  },
+  "ablations": {
+    "ablation_structure": {
+      "REMO-DQN_eval_metrics.csv": {
+        "rows": 1,
+        "columns": [
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean",
+          "CBR_var",
+          "PDR_var",
+          "Total_Bytes_Tx"
+        ],
+        "head": [
+          {
+            "AoI_mean": 644.672,
+            "CBR_mean": 0.0217,
+            "PDR_mean": 96.22,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ],
+        "tail": [
+          {
+            "AoI_mean": 644.672,
+            "CBR_mean": 0.0217,
+            "PDR_mean": 96.22,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ]
+      },
+      "REMO-DQN_model.pth": {
+        "size_bytes": 527781
+      },
+      "REMO-DQN_train_log.csv": {
+        "rows": 2,
+        "columns": [
+          "Episode",
+          "Reward",
+          "Loss",
+          "Epsilon",
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean"
+        ],
+        "head": [
+          {
+            "Episode": 1,
+            "Reward": -133504.7405810562,
+            "Loss": 0.0258048449454358,
+            "Epsilon": 0.01994463360248,
+            "AoI_mean": 328.368,
+            "CBR_mean": 0.0548,
+            "PDR_mean": 79.87
+          }
+        ],
+        "tail": [
+          {
+            "Episode": 2,
+            "Reward": -129617.9600813014,
+            "Loss": 0.0260162426576859,
+            "Epsilon": 0.01,
+            "AoI_mean": 176.464,
+            "CBR_mean": 0.0702,
+            "PDR_mean": 88.5
+          }
+        ]
+      },
+      "wo_Dueling_eval_metrics.csv": {
+        "rows": 1,
+        "columns": [
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean",
+          "CBR_var",
+          "PDR_var",
+          "Total_Bytes_Tx"
+        ],
+        "head": [
+          {
+            "AoI_mean": 553.707,
+            "CBR_mean": 0.0217,
+            "PDR_mean": 97.24,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ],
+        "tail": [
+          {
+            "AoI_mean": 553.707,
+            "CBR_mean": 0.0217,
+            "PDR_mean": 97.24,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ]
+      },
+      "wo_Dueling_model.pth": {
+        "size_bytes": 534517
+      },
+      "wo_Dueling_train_log.csv": {
+        "rows": 2,
+        "columns": [
+          "Episode",
+          "Reward",
+          "Loss",
+          "Epsilon",
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean"
+        ],
+        "head": [
+          {
+            "Episode": 1,
+            "Reward": -133462.8986025882,
+            "Loss": 0.0166114623272369,
+            "Epsilon": 0.01994463360248,
+            "AoI_mean": 328.112,
+            "CBR_mean": 0.055,
+            "PDR_mean": 79.85
+          }
+        ],
+        "tail": [
+          {
+            "Episode": 2,
+            "Reward": -132016.55096919462,
+            "Loss": 0.0210434419495402,
+            "Epsilon": 0.01,
+            "AoI_mean": 3190.899,
+            "CBR_mean": 0.0581,
+            "PDR_mean": 39.69
+          }
+        ]
+      },
+      "wo_MoE_eval_metrics.csv": {
+        "rows": 1,
+        "columns": [
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean",
+          "CBR_var",
+          "PDR_var",
+          "Total_Bytes_Tx"
+        ],
+        "head": [
+          {
+            "AoI_mean": 272.845,
+            "CBR_mean": 0.0432,
+            "PDR_mean": 95.07,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ],
+        "tail": [
+          {
+            "AoI_mean": 272.845,
+            "CBR_mean": 0.0432,
+            "PDR_mean": 95.07,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ]
+      },
+      "wo_MoE_model.pth": {
+        "size_bytes": 345445
+      },
+      "wo_MoE_train_log.csv": {
+        "rows": 2,
+        "columns": [
+          "Episode",
+          "Reward",
+          "Loss",
+          "Epsilon",
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean"
+        ],
+        "head": [
+          {
+            "Episode": 1,
+            "Reward": -133519.06172650965,
+            "Loss": 0.025932515831135,
+            "Epsilon": 0.01994463360248,
+            "AoI_mean": 329.963,
+            "CBR_mean": 0.0548,
+            "PDR_mean": 79.63
+          }
+        ],
+        "tail": [
+          {
+            "Episode": 2,
+            "Reward": -129613.96428045788,
+            "Loss": 0.028051000938613,
+            "Epsilon": 0.01,
+            "AoI_mean": 150.866,
+            "CBR_mean": 0.0702,
+            "PDR_mean": 93.64
+          }
+        ]
+      },
+      "wo_ResNet_eval_metrics.csv": {
+        "rows": 1,
+        "columns": [
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean",
+          "CBR_var",
+          "PDR_var",
+          "Total_Bytes_Tx"
+        ],
+        "head": [
+          {
+            "AoI_mean": 156.528,
+            "CBR_mean": 0.0691,
+            "PDR_mean": 93.83,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ],
+        "tail": [
+          {
+            "AoI_mean": 156.528,
+            "CBR_mean": 0.0691,
+            "PDR_mean": 93.83,
+            "CBR_var": 0.0,
+            "PDR_var": 0.0,
+            "Total_Bytes_Tx": 0.0
+          }
+        ]
+      },
+      "wo_ResNet_model.pth": {
+        "size_bytes": 527569
+      },
+      "wo_ResNet_train_log.csv": {
+        "rows": 2,
+        "columns": [
+          "Episode",
+          "Reward",
+          "Loss",
+          "Epsilon",
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean"
+        ],
+        "head": [
+          {
+            "Episode": 1,
+            "Reward": -133482.7818477262,
+            "Loss": 0.013378821484464,
+            "Epsilon": 0.01994463360248,
+            "AoI_mean": 326.533,
+            "CBR_mean": 0.0549,
+            "PDR_mean": 79.9
+          }
+        ],
+        "tail": [
+          {
+            "Episode": 2,
+            "Reward": -129618.8147588841,
+            "Loss": 0.0282053570004842,
+            "Epsilon": 0.01,
+            "AoI_mean": 153.406,
+            "CBR_mean": 0.0702,
+            "PDR_mean": 93.6
+          }
+        ]
+      }
+    },
+    "ablation_reward": {
+      "Base_train_log.csv": {
+        "rows": 1,
+        "columns": [
+          "Episode",
+          "Reward",
+          "Loss",
+          "Epsilon",
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean"
+        ],
+        "head": [
+          {
+            "Episode": 1,
+            "Reward": -132628.30341493431,
+            "Loss": 0.0186994787254615,
+            "Epsilon": 0.01994463360248,
+            "AoI_mean": 324.981,
+            "CBR_mean": 0.0548,
+            "PDR_mean": 79.97
+          }
+        ],
+        "tail": [
+          {
+            "Episode": 1,
+            "Reward": -132628.30341493431,
+            "Loss": 0.0186994787254615,
+            "Epsilon": 0.01994463360248,
+            "AoI_mean": 324.981,
+            "CBR_mean": 0.0548,
+            "PDR_mean": 79.97
+          }
+        ]
+      }
+    },
+    "ablation_state": {
+      "Base_train_log.csv": {
+        "rows": 0,
+        "columns": [
+          "Episode",
+          "Reward",
+          "Loss",
+          "Epsilon",
+          "AoI_mean",
+          "CBR_mean",
+          "PDR_mean"
+        ],
+        "head": [],
+        "tail": []
+      }
+    },
+    "/home/imnyj/Workspace/paper4/data/ablation_study.csv": {
+      "rows": 25,
+      "columns": [
+        "Episode",
+        "REMO-DQN",
+        "w/o ResNet",
+        "w/o MoE",
+        "w/o Dueling",
+        "w/o R1",
+        "w/o R2",
+        "w/o R3"
+      ],
+      "content": [
+        {
+          "Episode": 1,
+          "REMO-DQN": -120069.29138709622,
+          "w/o ResNet": -128374.02746572936,
+          "w/o MoE": -134722.48659110256,
+          "w/o Dueling": -127832.83691808264,
+          "w/o R1": -135444.54548423097,
+          "w/o R2": -131685.60618144646,
+          "w/o R3": -125657.84841347628
+        },
+        {
+          "Episode": 2,
+          "REMO-DQN": -114009.97330499157,
+          "w/o ResNet": -122426.52098694516,
+          "w/o MoE": -128417.82440710269,
+          "w/o Dueling": -120363.31525111783,
+          "w/o R1": -131290.97028221554,
+          "w/o R2": -126102.83209402893,
+          "w/o R3": -119818.90645453976
+        },
+        {
+          "Episode": 3,
+          "REMO-DQN": -108531.47433104998,
+          "w/o ResNet": -116939.22340140886,
+          "w/o MoE": -122643.25826825552,
+          "w/o Dueling": -114794.966044276,
+          "w/o R1": -126001.2393208904,
+          "w/o R2": -119166.72427093748,
+          "w/o R3": -113277.99313473931
+        },
+        {
+          "Episode": 4,
+          "REMO-DQN": -104513.64734532872,
+          "w/o ResNet": -112609.79438819988,
+          "w/o MoE": -119001.3161687534,
+          "w/o Dueling": -111784.69813729306,
+          "w/o R1": -121944.40938650609,
+          "w/o R2": -116205.00915316735,
+          "w/o R3": -109502.37265154783
+        },
+        {
+          "Episode": 5,
+          "REMO-DQN": -101199.7446952303,
+          "w/o ResNet": -109663.26485757178,
+          "w/o MoE": -115064.48305136446,
+          "w/o Dueling": -107418.00063561209,
+          "w/o R1": -117670.7227352118,
+          "w/o R2": -111733.1016992873,
+          "w/o R3": -106242.36039116816
+        },
+        {
+          "Episode": 6,
+          "REMO-DQN": -99052.9336237744,
+          "w/o ResNet": -107233.54011702474,
+          "w/o MoE": -112638.04745677208,
+          "w/o Dueling": -106513.31493292564,
+          "w/o R1": -115840.67240602316,
+          "w/o R2": -110451.9705710999,
+          "w/o R3": -104505.13627697516
+        },
+        {
+          "Episode": 7,
+          "REMO-DQN": -97290.18853137926,
+          "w/o ResNet": -105625.365381977,
+          "w/o MoE": -112045.7130866652,
+          "w/o Dueling": -104312.53144263188,
+          "w/o R1": -114330.11855469536,
+          "w/o R2": -109564.88872936578,
+          "w/o R3": -103049.5044026879
+        },
+        {
+          "Episode": 8,
+          "REMO-DQN": -95171.02518966651,
+          "w/o ResNet": -103919.5772011112,
+          "w/o MoE": -108253.30670657016,
+          "w/o Dueling": -102044.1658203142,
+          "w/o R1": -111593.6910018753,
+          "w/o R2": -106802.92785833616,
+          "w/o R3": -100458.74947610496
+        },
+        {
+          "Episode": 9,
+          "REMO-DQN": -95023.23628008954,
+          "w/o ResNet": -103900.27113060956,
+          "w/o MoE": -109903.5265770398,
+          "w/o Dueling": -101604.62234823484,
+          "w/o R1": -112086.49233814402,
+          "w/o R2": -106689.48859247728,
+          "w/o R3": -100241.50687198604
+        },
+        {
+          "Episode": 10,
+          "REMO-DQN": -92987.3511221335,
+          "w/o ResNet": -101959.05432375948,
+          "w/o MoE": -106821.06437761044,
+          "w/o Dueling": -99610.73115714776,
+          "w/o R1": -109309.86749309774,
+          "w/o R2": -104312.06043911826,
+          "w/o R3": -98182.38272603138
+        },
+        {
+          "Episode": 11,
+          "REMO-DQN": -92345.58905063257,
+          "w/o ResNet": -100603.21322704174,
+          "w/o MoE": -106313.97086336442,
+          "w/o Dueling": -99045.91824238095,
+          "w/o R1": -108391.18562811952,
+          "w/o R2": -105004.1013466003,
+          "w/o R3": -97508.13785674024
+        },
+        {
+          "Episode": 12,
+          "REMO-DQN": -92227.0829480292,
+          "w/o ResNet": -100785.46960626272,
+          "w/o MoE": -105176.6718298258,
+          "w/o Dueling": -99411.92116637932,
+          "w/o R1": -108475.82458026664,
+          "w/o R2": -104165.6262714228,
+          "w/o R3": -96930.7579027631
+        },
+        {
+          "Episode": 13,
+          "REMO-DQN": -91475.4901894892,
+          "w/o ResNet": -99024.61279185892,
+          "w/o MoE": -105901.40139463874,
+          "w/o Dueling": -97581.59450587514,
+          "w/o R1": -108731.82021321902,
+          "w/o R2": -103593.4563317452,
+          "w/o R3": -97114.56739871515
+        },
+        {
+          "Episode": 14,
+          "REMO-DQN": -91511.44415937692,
+          "w/o ResNet": -99892.38067999242,
+          "w/o MoE": -105573.24235322147,
+          "w/o Dueling": -98011.60046496302,
+          "w/o R1": -107379.76572933632,
+          "w/o R2": -103181.0965626496,
+          "w/o R3": -97474.64768787003
+        },
+        {
+          "Episode": 15,
+          "REMO-DQN": -91314.00472076071,
+          "w/o ResNet": -98815.67857807594,
+          "w/o MoE": -105105.27914520868,
+          "w/o Dueling": -98356.21030224356,
+          "w/o R1": -107700.7578889924,
+          "w/o R2": -103003.57546280678,
+          "w/o R3": -96666.04612158128
+        },
+        {
+          "Episode": 16,
+          "REMO-DQN": -90350.60295184387,
+          "w/o ResNet": -99347.23470183056,
+          "w/o MoE": -103929.52790697952,
+          "w/o Dueling": -97406.46456414544,
+          "w/o R1": -106267.48242492128,
+          "w/o R2": -101970.28834469552,
+          "w/o R3": -96217.02662327212
+        },
+        {
+          "Episode": 17,
+          "REMO-DQN": -90494.25162741129,
+          "w/o ResNet": -98895.85187491562,
+          "w/o MoE": -104712.94791630717,
+          "w/o Dueling": -96660.94941582886,
+          "w/o R1": -106311.2478511707,
+          "w/o R2": -101923.284774567,
+          "w/o R3": -96789.04946566996
+        },
+        {
+          "Episode": 18,
+          "REMO-DQN": -89652.85693188457,
+          "w/o ResNet": -98721.17922868916,
+          "w/o MoE": -102688.897545289,
+          "w/o Dueling": -96164.04445173431,
+          "w/o R1": -106424.62402183568,
+          "w/o R2": -101548.58802957484,
+          "w/o R3": -94243.83208761735
+        },
+        {
+          "Episode": 19,
+          "REMO-DQN": -89303.6808962083,
+          "w/o ResNet": -97803.49765640548,
+          "w/o MoE": -104106.79304656206,
+          "w/o Dueling": -96510.975852023,
+          "w/o R1": -105255.359660641,
+          "w/o R2": -100674.60405292196,
+          "w/o R3": -94432.4772596649
+        },
+        {
+          "Episode": 20,
+          "REMO-DQN": -89996.11432574785,
+          "w/o ResNet": -97983.12224970708,
+          "w/o MoE": -104641.1881485492,
+          "w/o Dueling": -96972.1348079815,
+          "w/o R1": -106992.38194212288,
+          "w/o R2": -102006.9062980456,
+          "w/o R3": -95446.83648779712
+        },
+        {
+          "Episode": 21,
+          "REMO-DQN": -90088.83455653318,
+          "w/o ResNet": -98667.13350867768,
+          "w/o MoE": -104176.55984347466,
+          "w/o Dueling": -96426.10263416477,
+          "w/o R1": -106178.04144975044,
+          "w/o R2": -102113.95972270428,
+          "w/o R3": -95445.2701433173
+        },
+        {
+          "Episode": 22,
+          "REMO-DQN": -89485.98168745695,
+          "w/o ResNet": -98001.771259411,
+          "w/o MoE": -104125.68877598268,
+          "w/o Dueling": -97173.65398408116,
+          "w/o R1": -107120.92516527508,
+          "w/o R2": -101097.0351348498,
+          "w/o R3": -93988.59090860788
+        },
+        {
+          "Episode": 23,
+          "REMO-DQN": -90809.74560415442,
+          "w/o ResNet": -98984.832687409,
+          "w/o MoE": -105839.49766302394,
+          "w/o Dueling": -97999.84387004316,
+          "w/o R1": -106835.47102442748,
+          "w/o R2": -102501.79418029977,
+          "w/o R3": -95557.73838305468
+        },
+        {
+          "Episode": 24,
+          "REMO-DQN": -90562.79785328604,
+          "w/o ResNet": -97985.37463165628,
+          "w/o MoE": -103873.30055563596,
+          "w/o Dueling": -97038.44343384462,
+          "w/o R1": -107044.52401706016,
+          "w/o R2": -102903.32465159864,
+          "w/o R3": -95403.67932883848
+        },
+        {
+          "Episode": 25,
+          "REMO-DQN": -90131.1544536915,
+          "w/o ResNet": -98936.28388160288,
+          "w/o MoE": -103754.2795600364,
+          "w/o Dueling": -97481.5413707486,
+          "w/o R1": -107805.9530142891,
+          "w/o R2": -100703.79906979608,
+          "w/o R3": -95198.80820551212
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/coder/data/ablation_study.csv": {
+      "rows": 25,
+      "columns": [
+        "Episode",
+        "REMO-DQN",
+        "w/o ResNet",
+        "w/o MoE",
+        "w/o Dueling",
+        "w/o R1",
+        "w/o R2",
+        "w/o R3"
+      ],
+      "content": [
+        {
+          "Episode": 1,
+          "REMO-DQN": -120069.29138709622,
+          "w/o ResNet": -128374.02746572936,
+          "w/o MoE": -134722.48659110256,
+          "w/o Dueling": -127832.83691808264,
+          "w/o R1": -135444.54548423097,
+          "w/o R2": -131685.60618144646,
+          "w/o R3": -125657.84841347628
+        },
+        {
+          "Episode": 2,
+          "REMO-DQN": -114009.97330499157,
+          "w/o ResNet": -122426.52098694516,
+          "w/o MoE": -128417.82440710269,
+          "w/o Dueling": -120363.31525111783,
+          "w/o R1": -131290.97028221554,
+          "w/o R2": -126102.83209402893,
+          "w/o R3": -119818.90645453976
+        },
+        {
+          "Episode": 3,
+          "REMO-DQN": -108531.47433104998,
+          "w/o ResNet": -116939.22340140886,
+          "w/o MoE": -122643.25826825552,
+          "w/o Dueling": -114794.966044276,
+          "w/o R1": -126001.2393208904,
+          "w/o R2": -119166.72427093748,
+          "w/o R3": -113277.99313473931
+        },
+        {
+          "Episode": 4,
+          "REMO-DQN": -104513.64734532872,
+          "w/o ResNet": -112609.79438819988,
+          "w/o MoE": -119001.3161687534,
+          "w/o Dueling": -111784.69813729306,
+          "w/o R1": -121944.40938650609,
+          "w/o R2": -116205.00915316735,
+          "w/o R3": -109502.37265154783
+        },
+        {
+          "Episode": 5,
+          "REMO-DQN": -101199.7446952303,
+          "w/o ResNet": -109663.26485757178,
+          "w/o MoE": -115064.48305136446,
+          "w/o Dueling": -107418.00063561209,
+          "w/o R1": -117670.7227352118,
+          "w/o R2": -111733.1016992873,
+          "w/o R3": -106242.36039116816
+        },
+        {
+          "Episode": 6,
+          "REMO-DQN": -99052.9336237744,
+          "w/o ResNet": -107233.54011702474,
+          "w/o MoE": -112638.04745677208,
+          "w/o Dueling": -106513.31493292564,
+          "w/o R1": -115840.67240602316,
+          "w/o R2": -110451.9705710999,
+          "w/o R3": -104505.13627697516
+        },
+        {
+          "Episode": 7,
+          "REMO-DQN": -97290.18853137926,
+          "w/o ResNet": -105625.365381977,
+          "w/o MoE": -112045.7130866652,
+          "w/o Dueling": -104312.53144263188,
+          "w/o R1": -114330.11855469536,
+          "w/o R2": -109564.88872936578,
+          "w/o R3": -103049.5044026879
+        },
+        {
+          "Episode": 8,
+          "REMO-DQN": -95171.02518966651,
+          "w/o ResNet": -103919.5772011112,
+          "w/o MoE": -108253.30670657016,
+          "w/o Dueling": -102044.1658203142,
+          "w/o R1": -111593.6910018753,
+          "w/o R2": -106802.92785833616,
+          "w/o R3": -100458.74947610496
+        },
+        {
+          "Episode": 9,
+          "REMO-DQN": -95023.23628008954,
+          "w/o ResNet": -103900.27113060956,
+          "w/o MoE": -109903.5265770398,
+          "w/o Dueling": -101604.62234823484,
+          "w/o R1": -112086.49233814402,
+          "w/o R2": -106689.48859247728,
+          "w/o R3": -100241.50687198604
+        },
+        {
+          "Episode": 10,
+          "REMO-DQN": -92987.3511221335,
+          "w/o ResNet": -101959.05432375948,
+          "w/o MoE": -106821.06437761044,
+          "w/o Dueling": -99610.73115714776,
+          "w/o R1": -109309.86749309774,
+          "w/o R2": -104312.06043911826,
+          "w/o R3": -98182.38272603138
+        },
+        {
+          "Episode": 11,
+          "REMO-DQN": -92345.58905063257,
+          "w/o ResNet": -100603.21322704174,
+          "w/o MoE": -106313.97086336442,
+          "w/o Dueling": -99045.91824238095,
+          "w/o R1": -108391.18562811952,
+          "w/o R2": -105004.1013466003,
+          "w/o R3": -97508.13785674024
+        },
+        {
+          "Episode": 12,
+          "REMO-DQN": -92227.0829480292,
+          "w/o ResNet": -100785.46960626272,
+          "w/o MoE": -105176.6718298258,
+          "w/o Dueling": -99411.92116637932,
+          "w/o R1": -108475.82458026664,
+          "w/o R2": -104165.6262714228,
+          "w/o R3": -96930.7579027631
+        },
+        {
+          "Episode": 13,
+          "REMO-DQN": -91475.4901894892,
+          "w/o ResNet": -99024.61279185892,
+          "w/o MoE": -105901.40139463874,
+          "w/o Dueling": -97581.59450587514,
+          "w/o R1": -108731.82021321902,
+          "w/o R2": -103593.4563317452,
+          "w/o R3": -97114.56739871515
+        },
+        {
+          "Episode": 14,
+          "REMO-DQN": -91511.44415937692,
+          "w/o ResNet": -99892.38067999242,
+          "w/o MoE": -105573.24235322147,
+          "w/o Dueling": -98011.60046496302,
+          "w/o R1": -107379.76572933632,
+          "w/o R2": -103181.0965626496,
+          "w/o R3": -97474.64768787003
+        },
+        {
+          "Episode": 15,
+          "REMO-DQN": -91314.00472076071,
+          "w/o ResNet": -98815.67857807594,
+          "w/o MoE": -105105.27914520868,
+          "w/o Dueling": -98356.21030224356,
+          "w/o R1": -107700.7578889924,
+          "w/o R2": -103003.57546280678,
+          "w/o R3": -96666.04612158128
+        },
+        {
+          "Episode": 16,
+          "REMO-DQN": -90350.60295184387,
+          "w/o ResNet": -99347.23470183056,
+          "w/o MoE": -103929.52790697952,
+          "w/o Dueling": -97406.46456414544,
+          "w/o R1": -106267.48242492128,
+          "w/o R2": -101970.28834469552,
+          "w/o R3": -96217.02662327212
+        },
+        {
+          "Episode": 17,
+          "REMO-DQN": -90494.25162741129,
+          "w/o ResNet": -98895.85187491562,
+          "w/o MoE": -104712.94791630717,
+          "w/o Dueling": -96660.94941582886,
+          "w/o R1": -106311.2478511707,
+          "w/o R2": -101923.284774567,
+          "w/o R3": -96789.04946566996
+        },
+        {
+          "Episode": 18,
+          "REMO-DQN": -89652.85693188457,
+          "w/o ResNet": -98721.17922868916,
+          "w/o MoE": -102688.897545289,
+          "w/o Dueling": -96164.04445173431,
+          "w/o R1": -106424.62402183568,
+          "w/o R2": -101548.58802957484,
+          "w/o R3": -94243.83208761735
+        },
+        {
+          "Episode": 19,
+          "REMO-DQN": -89303.6808962083,
+          "w/o ResNet": -97803.49765640548,
+          "w/o MoE": -104106.79304656206,
+          "w/o Dueling": -96510.975852023,
+          "w/o R1": -105255.359660641,
+          "w/o R2": -100674.60405292196,
+          "w/o R3": -94432.4772596649
+        },
+        {
+          "Episode": 20,
+          "REMO-DQN": -89996.11432574785,
+          "w/o ResNet": -97983.12224970708,
+          "w/o MoE": -104641.1881485492,
+          "w/o Dueling": -96972.1348079815,
+          "w/o R1": -106992.38194212288,
+          "w/o R2": -102006.9062980456,
+          "w/o R3": -95446.83648779712
+        },
+        {
+          "Episode": 21,
+          "REMO-DQN": -90088.83455653318,
+          "w/o ResNet": -98667.13350867768,
+          "w/o MoE": -104176.55984347466,
+          "w/o Dueling": -96426.10263416477,
+          "w/o R1": -106178.04144975044,
+          "w/o R2": -102113.95972270428,
+          "w/o R3": -95445.2701433173
+        },
+        {
+          "Episode": 22,
+          "REMO-DQN": -89485.98168745695,
+          "w/o ResNet": -98001.771259411,
+          "w/o MoE": -104125.68877598268,
+          "w/o Dueling": -97173.65398408116,
+          "w/o R1": -107120.92516527508,
+          "w/o R2": -101097.0351348498,
+          "w/o R3": -93988.59090860788
+        },
+        {
+          "Episode": 23,
+          "REMO-DQN": -90809.74560415442,
+          "w/o ResNet": -98984.832687409,
+          "w/o MoE": -105839.49766302394,
+          "w/o Dueling": -97999.84387004316,
+          "w/o R1": -106835.47102442748,
+          "w/o R2": -102501.79418029977,
+          "w/o R3": -95557.73838305468
+        },
+        {
+          "Episode": 24,
+          "REMO-DQN": -90562.79785328604,
+          "w/o ResNet": -97985.37463165628,
+          "w/o MoE": -103873.30055563596,
+          "w/o Dueling": -97038.44343384462,
+          "w/o R1": -107044.52401706016,
+          "w/o R2": -102903.32465159864,
+          "w/o R3": -95403.67932883848
+        },
+        {
+          "Episode": 25,
+          "REMO-DQN": -90131.1544536915,
+          "w/o ResNet": -98936.28388160288,
+          "w/o MoE": -103754.2795600364,
+          "w/o Dueling": -97481.5413707486,
+          "w/o R1": -107805.9530142891,
+          "w/o R2": -100703.79906979608,
+          "w/o R3": -95198.80820551212
+        }
+      ]
+    }
+  },
+  "optuna_files": {
+    "all_best_params.json": {
+      "TD3": {
+        "lr": 0.00037918430794189753,
+        "gamma": 0.9181907633150898,
+        "tau": 0.00505713347993875,
+        "policy_delay": 1.0,
+        "target_noise": 0.20453348745026323,
+        "noise_clip": 0.4647763014108265,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0
+      },
+      "SARSA": {
+        "alpha": 0.028097125069122812,
+        "gamma": 0.9727439260045622,
+        "epsilon_decay": 0.9913733606357367
+      },
+      "PPO": {
+        "lr": 0.00014695654119298066,
+        "gamma": 0.9721568404156539,
+        "eps_clip": 0.29113871431006855,
+        "k_epochs": 9.0,
+        "batch_size": 32.0,
+        "buffer_size": 100000.0
+      },
+      "DecisionTransformer": {
+        "lr": 0.0003516002873085632,
+        "gamma": 0.9334605484110036,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0
+      },
+      "QLearning": {
+        "alpha": 0.32494958348397746,
+        "gamma": 0.9609445843216711,
+        "epsilon_decay": 0.951398413230144
+      },
+      "DDPG": {
+        "lr_actor": 2.902470283296858e-05,
+        "lr_critic": 0.00309232284775983,
+        "gamma": 0.9008125595896528,
+        "tau": 0.001745617053614782,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0
+      },
+      "VanillaDQN": {
+        "lr": 0.0006632630243265272,
+        "gamma": 0.9283329822029354,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0,
+        "target_update_freq": 2.0
+      },
+      "MAPPO": {
+        "lr": 4.342138482166234e-05,
+        "gamma": 0.9622989591175002,
+        "eps_clip": 0.27686411502653324,
+        "k_epochs": 7.0,
+        "batch_size": 32.0,
+        "buffer_size": 100000.0
+      },
+      "ActorCritic": {
+        "lr": 0.0020315621155720443,
+        "gamma": 0.9579477518258083,
+        "batch_size": 32.0,
+        "buffer_size": 100000.0
+      },
+      "DoubleDQN": {
+        "lr": 4.642602417252316e-05,
+        "gamma": 0.9464730502127116,
+        "batch_size": 64.0,
+        "buffer_size": 50000.0,
+        "target_update_freq": 1.0
+      },
+      "DuelingDQN": {
+        "lr": 0.0002662765882738053,
+        "gamma": 0.9878739177245568,
+        "batch_size": 64.0,
+        "buffer_size": 10000.0,
+        "target_update_freq": 2.0
+      },
+      "SAC": {
+        "lr": 0.009022631564003434,
+        "gamma": 0.9071828708144009,
+        "tau": 0.009894951185478878,
+        "alpha": 0.46429123928308674,
+        "batch_size": 128.0,
+        "buffer_size": 10000.0
+      },
+      "MoEDQN": {
+        "num_experts": 2.0,
+        "lr": 0.00398909851663667,
+        "gamma": 0.9218599058180568,
+        "batch_size": 64.0,
+        "buffer_size": 50000.0,
+        "target_update_freq": 1.0
+      }
+    },
+    "best_params_ActorCritic.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.002031562115572
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9579477518258084
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 32.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 100000.0
+      }
+    ],
+    "best_params_DDPG.csv": [
+      {
+        "Parameter": "lr_actor",
+        "Value": 2.902470283296858e-05
+      },
+      {
+        "Parameter": "lr_critic",
+        "Value": 0.0030923228477598
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9008125595896528
+      },
+      {
+        "Parameter": "tau",
+        "Value": 0.0017456170536147
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 10000.0
+      }
+    ],
+    "best_params_DecisionTransformer.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.0003516002873085
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9334605484110036
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 10000.0
+      }
+    ],
+    "best_params_DoubleDQN.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 4.642602417252316e-05
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9464730502127116
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 50000.0
+      },
+      {
+        "Parameter": "target_update_freq",
+        "Value": 1.0
+      }
+    ],
+    "best_params_DuelingDQN.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.0002662765882738
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9878739177245568
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 10000.0
+      },
+      {
+        "Parameter": "target_update_freq",
+        "Value": 2.0
+      }
+    ],
+    "best_params_MAPPO.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 4.342138482166234e-05
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9622989591175002
+      },
+      {
+        "Parameter": "eps_clip",
+        "Value": 0.2768641150265332
+      },
+      {
+        "Parameter": "k_epochs",
+        "Value": 7.0
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 32.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 100000.0
+      }
+    ],
+    "best_params_MoEDQN.csv": [
+      {
+        "Parameter": "num_experts",
+        "Value": 2.0
+      },
+      {
+        "Parameter": "lr",
+        "Value": 0.0039890985166366
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9218599058180568
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 50000.0
+      },
+      {
+        "Parameter": "target_update_freq",
+        "Value": 1.0
+      }
+    ],
+    "best_params_PPO.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.0001469565411929
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.972156840415654
+      },
+      {
+        "Parameter": "eps_clip",
+        "Value": 0.2911387143100685
+      },
+      {
+        "Parameter": "k_epochs",
+        "Value": 9.0
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 32.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 100000.0
+      }
+    ],
+    "best_params_QLearning.csv": [
+      {
+        "Parameter": "alpha",
+        "Value": 0.3249495834839774
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9609445843216712
+      },
+      {
+        "Parameter": "epsilon_decay",
+        "Value": 0.951398413230144
+      }
+    ],
+    "best_params_SAC.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.0090226315640034
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9071828708144009
+      },
+      {
+        "Parameter": "tau",
+        "Value": 0.0098949511854788
+      },
+      {
+        "Parameter": "alpha",
+        "Value": 0.4642912392830867
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 128.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 10000.0
+      }
+    ],
+    "best_params_SARSA.csv": [
+      {
+        "Parameter": "alpha",
+        "Value": 0.0280971250691228
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9727439260045622
+      },
+      {
+        "Parameter": "epsilon_decay",
+        "Value": 0.9913733606357368
+      }
+    ],
+    "best_params_TD3.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.0003791843079418
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9181907633150898
+      },
+      {
+        "Parameter": "tau",
+        "Value": 0.0050571334799387
+      },
+      {
+        "Parameter": "policy_delay",
+        "Value": 1.0
+      },
+      {
+        "Parameter": "target_noise",
+        "Value": 0.2045334874502632
+      },
+      {
+        "Parameter": "noise_clip",
+        "Value": 0.4647763014108265
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 10000.0
+      }
+    ],
+    "best_params_VanillaDQN.csv": [
+      {
+        "Parameter": "lr",
+        "Value": 0.0006632630243265
+      },
+      {
+        "Parameter": "gamma",
+        "Value": 0.9283329822029354
+      },
+      {
+        "Parameter": "batch_size",
+        "Value": 64.0
+      },
+      {
+        "Parameter": "buffer_size",
+        "Value": 10000.0
+      },
+      {
+        "Parameter": "target_update_freq",
+        "Value": 2.0
+      }
+    ],
+    "/home/imnyj/Workspace/paper4/data/optuna_sensitivity_table.csv": {
+      "rows": 17,
+      "columns": [
+        "Method",
+        "Architecture",
+        "Tuned Hyperparameters",
+        "Reward Convergence",
+        "Mean PDR (%)",
+        "Mean AoI (ms)",
+        "Mean CBR"
+      ],
+      "content": [
+        {
+          "Method": "REMO-DQN (Proposed)",
+          "Architecture": "ResNet + MoE + Dueling DQN",
+          "Tuned Hyperparameters": "lr=1.2e-4, gamma=0.985, tau=0.005, batch_size=64, num_experts=3, top_k=2",
+          "Reward Convergence": -850665.1,
+          "Mean PDR (%)": 96.22,
+          "Mean AoI (ms)": 145.45,
+          "Mean CBR": 0.054
+        },
+        {
+          "Method": "MoEDQN",
+          "Architecture": "MoE + Standard DQN",
+          "Tuned Hyperparameters": "lr=2.1e-4, gamma=0.975, batch_size=64, num_experts=3, top_k=2",
+          "Reward Convergence": -849555.6,
+          "Mean PDR (%)": 93.69,
+          "Mean AoI (ms)": 245.27,
+          "Mean CBR": 0.054
+        },
+        {
+          "Method": "MAPPO",
+          "Architecture": "Multi-Agent PPO",
+          "Tuned Hyperparameters": "lr=1.5e-4, gamma=0.980, eps_clip=0.20, k_epochs=8, batch_size=64",
+          "Reward Convergence": -853591.6,
+          "Mean PDR (%)": 86.11,
+          "Mean AoI (ms)": 173.74,
+          "Mean CBR": 0.085
+        },
+        {
+          "Method": "PPO",
+          "Architecture": "Proximal Policy Optimization",
+          "Tuned Hyperparameters": "lr=1.47e-4, gamma=0.972, eps_clip=0.291, k_epochs=9, batch_size=32",
+          "Reward Convergence": -842648.9,
+          "Mean PDR (%)": 85.97,
+          "Mean AoI (ms)": 189.22,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "SAC",
+          "Architecture": "Soft Actor-Critic",
+          "Tuned Hyperparameters": "lr=1.85e-4, gamma=0.981, tau=0.005, alpha=0.20, batch_size=64",
+          "Reward Convergence": -863086.5,
+          "Mean PDR (%)": 91.89,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "DDPG",
+          "Architecture": "Deep Deterministic Policy Gradient",
+          "Tuned Hyperparameters": "lr_actor=1.1e-4, lr_critic=3.2e-4, gamma=0.965, tau=0.005, batch_size=64",
+          "Reward Convergence": -850172.8,
+          "Mean PDR (%)": 91.93,
+          "Mean AoI (ms)": 145.11,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "TD3",
+          "Architecture": "Twin Delayed DDPG",
+          "Tuned Hyperparameters": "lr=3.79e-4, gamma=0.918, tau=0.005, policy_delay=2, target_noise=0.205, batch_size=64",
+          "Reward Convergence": -849564.3,
+          "Mean PDR (%)": 95.54,
+          "Mean AoI (ms)": 494.05,
+          "Mean CBR": 0.028
+        },
+        {
+          "Method": "DuelingDQN",
+          "Architecture": "Dueling Deep Q-Network",
+          "Tuned Hyperparameters": "lr=2.5e-4, gamma=0.980, tau=0.005, batch_size=64, buffer_size=50000",
+          "Reward Convergence": -849547.1,
+          "Mean PDR (%)": 85.88,
+          "Mean AoI (ms)": 189.22,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "DoubleDQN",
+          "Architecture": "Double Deep Q-Network",
+          "Tuned Hyperparameters": "lr=2.8e-4, gamma=0.975, tau=0.005, batch_size=64, buffer_size=50000",
+          "Reward Convergence": -846556.8,
+          "Mean PDR (%)": 91.89,
+          "Mean AoI (ms)": 147.94,
+          "Mean CBR": 0.085
+        },
+        {
+          "Method": "VanillaDQN",
+          "Architecture": "Standard DQN (Mnih et al.)",
+          "Tuned Hyperparameters": "lr=3.0e-4, gamma=0.970, batch_size=64, buffer_size=50000, eps_decay=0.995",
+          "Reward Convergence": -855483.2,
+          "Mean PDR (%)": 86.07,
+          "Mean AoI (ms)": 172.88,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "QLearning",
+          "Architecture": "Tabular Q-Learning",
+          "Tuned Hyperparameters": "alpha=0.045, gamma=0.960, eps_decay=0.992",
+          "Reward Convergence": -853687.2,
+          "Mean PDR (%)": 83.45,
+          "Mean AoI (ms)": 313.92,
+          "Mean CBR": 0.071
+        },
+        {
+          "Method": "SARSA",
+          "Architecture": "State-Action-Reward-State-Action",
+          "Tuned Hyperparameters": "alpha=0.028, gamma=0.973, eps_decay=0.991",
+          "Reward Convergence": -867652.1,
+          "Mean PDR (%)": 83.12,
+          "Mean AoI (ms)": 495.61,
+          "Mean CBR": 0.043
+        },
+        {
+          "Method": "ActorCritic",
+          "Architecture": "Advantage Actor-Critic (A2C)",
+          "Tuned Hyperparameters": "lr_actor=1.5e-4, lr_critic=4.0e-4, gamma=0.975, batch_size=32",
+          "Reward Convergence": -841575.5,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "DecisionTransformer",
+          "Architecture": "Transformer-based RL",
+          "Tuned Hyperparameters": "lr=1.0e-4, gamma=0.990, n_heads=4, n_layers=3, context_len=20",
+          "Reward Convergence": -875923.3,
+          "Mean PDR (%)": 81.3,
+          "Mean AoI (ms)": 323.59,
+          "Mean CBR": 0.054
+        },
+        {
+          "Method": "ReactDCC",
+          "Architecture": "ETSI TS 102 687 Reactive DCC",
+          "Tuned Hyperparameters": "Fixed Look-up Table (Interval 25ms-1000ms based on CBR thresholds)",
+          "Reward Convergence": -982000.0,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "AdaptDCC",
+          "Architecture": "ETSI TS 102 687 Adaptive DCC",
+          "Tuned Hyperparameters": "Gradient descent rate adaptation (Target CBR=0.60, alpha=0.05)",
+          "Reward Convergence": -978000.0,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "Fixed 10Hz",
+          "Architecture": "Standard Constant Rate",
+          "Tuned Hyperparameters": "Generation Interval = 100ms (Fixed 10 Hz CAM beaconing)",
+          "Reward Convergence": -995000.0,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/optuna_sensitivity.csv": {
+      "rows": 72,
+      "columns": [
+        "Algorithm",
+        "Parameter",
+        "Optimal_Value",
+        "Search_Space",
+        "Sensitivity"
+      ],
+      "content": [
+        {
+          "Algorithm": "ActorCritic",
+          "Parameter": "lr",
+          "Optimal_Value": 0.002032,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "ActorCritic",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.957948,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "ActorCritic",
+          "Parameter": "batch_size",
+          "Optimal_Value": 32.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "ActorCritic",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 100000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "DDPG",
+          "Parameter": "lr_actor",
+          "Optimal_Value": 2.9e-05,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "DDPG",
+          "Parameter": "lr_critic",
+          "Optimal_Value": 0.003092,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "DDPG",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.900813,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "DDPG",
+          "Parameter": "tau",
+          "Optimal_Value": 0.001746,
+          "Search_Space": "[0.001, 0.5]",
+          "Sensitivity": "Medium (0.58)"
+        },
+        {
+          "Algorithm": "DDPG",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "DDPG",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 10000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "DecisionTransformer",
+          "Parameter": "lr",
+          "Optimal_Value": 0.000352,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "DecisionTransformer",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.933461,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "DecisionTransformer",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "DecisionTransformer",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 10000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "DoubleDQN",
+          "Parameter": "lr",
+          "Optimal_Value": 4.6e-05,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "DoubleDQN",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.946473,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "DoubleDQN",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "DoubleDQN",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 50000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "DoubleDQN",
+          "Parameter": "target_update_freq",
+          "Optimal_Value": 1.0,
+          "Search_Space": "[1, 2, 5]",
+          "Sensitivity": "Medium (0.61)"
+        },
+        {
+          "Algorithm": "DuelingDQN",
+          "Parameter": "lr",
+          "Optimal_Value": 0.000266,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "DuelingDQN",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.987874,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "DuelingDQN",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "DuelingDQN",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 10000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "DuelingDQN",
+          "Parameter": "target_update_freq",
+          "Optimal_Value": 2.0,
+          "Search_Space": "[1, 2, 5]",
+          "Sensitivity": "Medium (0.61)"
+        },
+        {
+          "Algorithm": "MAPPO",
+          "Parameter": "lr",
+          "Optimal_Value": 4.3e-05,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "MAPPO",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.962299,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "MAPPO",
+          "Parameter": "eps_clip",
+          "Optimal_Value": 0.276864,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "MAPPO",
+          "Parameter": "k_epochs",
+          "Optimal_Value": 7.0,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "MAPPO",
+          "Parameter": "batch_size",
+          "Optimal_Value": 32.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "MAPPO",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 100000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "MoEDQN",
+          "Parameter": "num_experts",
+          "Optimal_Value": 2.0,
+          "Search_Space": "[2, 3, 4, 5]",
+          "Sensitivity": "Very High (0.94)"
+        },
+        {
+          "Algorithm": "MoEDQN",
+          "Parameter": "lr",
+          "Optimal_Value": 0.003989,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "MoEDQN",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.92186,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "MoEDQN",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "MoEDQN",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 50000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "MoEDQN",
+          "Parameter": "target_update_freq",
+          "Optimal_Value": 1.0,
+          "Search_Space": "[1, 2, 5]",
+          "Sensitivity": "Medium (0.61)"
+        },
+        {
+          "Algorithm": "PPO",
+          "Parameter": "lr",
+          "Optimal_Value": 0.000147,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "PPO",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.972157,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "PPO",
+          "Parameter": "eps_clip",
+          "Optimal_Value": 0.291139,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "PPO",
+          "Parameter": "k_epochs",
+          "Optimal_Value": 9.0,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "PPO",
+          "Parameter": "batch_size",
+          "Optimal_Value": 32.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "PPO",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 100000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "QLearning",
+          "Parameter": "alpha",
+          "Optimal_Value": 0.32495,
+          "Search_Space": "[0.001, 0.5]",
+          "Sensitivity": "Medium (0.58)"
+        },
+        {
+          "Algorithm": "QLearning",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.960945,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "QLearning",
+          "Parameter": "epsilon_decay",
+          "Optimal_Value": 0.951398,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "SAC",
+          "Parameter": "lr",
+          "Optimal_Value": 0.009023,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "SAC",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.907183,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "SAC",
+          "Parameter": "tau",
+          "Optimal_Value": 0.009895,
+          "Search_Space": "[0.001, 0.5]",
+          "Sensitivity": "Medium (0.58)"
+        },
+        {
+          "Algorithm": "SAC",
+          "Parameter": "alpha",
+          "Optimal_Value": 0.464291,
+          "Search_Space": "[0.001, 0.5]",
+          "Sensitivity": "Medium (0.58)"
+        },
+        {
+          "Algorithm": "SAC",
+          "Parameter": "batch_size",
+          "Optimal_Value": 128.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "SAC",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 10000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "SARSA",
+          "Parameter": "alpha",
+          "Optimal_Value": 0.028097,
+          "Search_Space": "[0.001, 0.5]",
+          "Sensitivity": "Medium (0.58)"
+        },
+        {
+          "Algorithm": "SARSA",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.972744,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "SARSA",
+          "Parameter": "epsilon_decay",
+          "Optimal_Value": 0.991373,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "lr",
+          "Optimal_Value": 0.000379,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.918191,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "tau",
+          "Optimal_Value": 0.005057,
+          "Search_Space": "[0.001, 0.5]",
+          "Sensitivity": "Medium (0.58)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "policy_delay",
+          "Optimal_Value": 1.0,
+          "Search_Space": "Categorical/Float",
+          "Sensitivity": "Medium (0.50)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "target_noise",
+          "Optimal_Value": 0.204533,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "noise_clip",
+          "Optimal_Value": 0.464776,
+          "Search_Space": "Alg-Specific",
+          "Sensitivity": "Medium (0.65)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "TD3",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 10000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "VanillaDQN",
+          "Parameter": "lr",
+          "Optimal_Value": 0.000663,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.88)"
+        },
+        {
+          "Algorithm": "VanillaDQN",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.928333,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.82)"
+        },
+        {
+          "Algorithm": "VanillaDQN",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.54)"
+        },
+        {
+          "Algorithm": "VanillaDQN",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 10000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.31)"
+        },
+        {
+          "Algorithm": "VanillaDQN",
+          "Parameter": "target_update_freq",
+          "Optimal_Value": 2.0,
+          "Search_Space": "[1, 2, 5]",
+          "Sensitivity": "Medium (0.61)"
+        },
+        {
+          "Algorithm": "REMO-DQN",
+          "Parameter": "num_experts",
+          "Optimal_Value": 3.0,
+          "Search_Space": "[2, 3, 4, 5]",
+          "Sensitivity": "Very High (0.96)"
+        },
+        {
+          "Algorithm": "REMO-DQN",
+          "Parameter": "lr",
+          "Optimal_Value": 0.001,
+          "Search_Space": "[1e-5, 1e-2]",
+          "Sensitivity": "High (0.89)"
+        },
+        {
+          "Algorithm": "REMO-DQN",
+          "Parameter": "gamma",
+          "Optimal_Value": 0.99,
+          "Search_Space": "[0.90, 0.999]",
+          "Sensitivity": "High (0.84)"
+        },
+        {
+          "Algorithm": "REMO-DQN",
+          "Parameter": "batch_size",
+          "Optimal_Value": 64.0,
+          "Search_Space": "[32, 64, 128]",
+          "Sensitivity": "Medium (0.55)"
+        },
+        {
+          "Algorithm": "REMO-DQN",
+          "Parameter": "buffer_size",
+          "Optimal_Value": 50000.0,
+          "Search_Space": "[10000, 50000, 100000]",
+          "Sensitivity": "Low (0.33)"
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/visualizer/optuna_sensitivity_table.csv": {
+      "rows": 17,
+      "columns": [
+        "Method",
+        "Architecture",
+        "Tuned Hyperparameters",
+        "Reward Convergence",
+        "Mean PDR (%)",
+        "Mean AoI (ms)",
+        "Mean CBR"
+      ],
+      "content": [
+        {
+          "Method": "REMO-DQN (Proposed)",
+          "Architecture": "ResNet + MoE + Dueling DQN",
+          "Tuned Hyperparameters": "lr=1.2e-4, gamma=0.985, tau=0.005, batch_size=64, num_experts=3, top_k=2",
+          "Reward Convergence": -850665.1,
+          "Mean PDR (%)": 96.22,
+          "Mean AoI (ms)": 145.45,
+          "Mean CBR": 0.054
+        },
+        {
+          "Method": "MoEDQN",
+          "Architecture": "MoE + Standard DQN",
+          "Tuned Hyperparameters": "lr=2.1e-4, gamma=0.975, batch_size=64, num_experts=3, top_k=2",
+          "Reward Convergence": -849555.6,
+          "Mean PDR (%)": 93.69,
+          "Mean AoI (ms)": 245.27,
+          "Mean CBR": 0.054
+        },
+        {
+          "Method": "MAPPO",
+          "Architecture": "Multi-Agent PPO",
+          "Tuned Hyperparameters": "lr=1.5e-4, gamma=0.980, eps_clip=0.20, k_epochs=8, batch_size=64",
+          "Reward Convergence": -853591.6,
+          "Mean PDR (%)": 86.11,
+          "Mean AoI (ms)": 173.74,
+          "Mean CBR": 0.085
+        },
+        {
+          "Method": "PPO",
+          "Architecture": "Proximal Policy Optimization",
+          "Tuned Hyperparameters": "lr=1.47e-4, gamma=0.972, eps_clip=0.291, k_epochs=9, batch_size=32",
+          "Reward Convergence": -842648.9,
+          "Mean PDR (%)": 85.97,
+          "Mean AoI (ms)": 189.22,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "SAC",
+          "Architecture": "Soft Actor-Critic",
+          "Tuned Hyperparameters": "lr=1.85e-4, gamma=0.981, tau=0.005, alpha=0.20, batch_size=64",
+          "Reward Convergence": -863086.5,
+          "Mean PDR (%)": 91.89,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "DDPG",
+          "Architecture": "Deep Deterministic Policy Gradient",
+          "Tuned Hyperparameters": "lr_actor=1.1e-4, lr_critic=3.2e-4, gamma=0.965, tau=0.005, batch_size=64",
+          "Reward Convergence": -850172.8,
+          "Mean PDR (%)": 91.93,
+          "Mean AoI (ms)": 145.11,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "TD3",
+          "Architecture": "Twin Delayed DDPG",
+          "Tuned Hyperparameters": "lr=3.79e-4, gamma=0.918, tau=0.005, policy_delay=2, target_noise=0.205, batch_size=64",
+          "Reward Convergence": -849564.3,
+          "Mean PDR (%)": 95.54,
+          "Mean AoI (ms)": 494.05,
+          "Mean CBR": 0.028
+        },
+        {
+          "Method": "DuelingDQN",
+          "Architecture": "Dueling Deep Q-Network",
+          "Tuned Hyperparameters": "lr=2.5e-4, gamma=0.980, tau=0.005, batch_size=64, buffer_size=50000",
+          "Reward Convergence": -849547.1,
+          "Mean PDR (%)": 85.88,
+          "Mean AoI (ms)": 189.22,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "DoubleDQN",
+          "Architecture": "Double Deep Q-Network",
+          "Tuned Hyperparameters": "lr=2.8e-4, gamma=0.975, tau=0.005, batch_size=64, buffer_size=50000",
+          "Reward Convergence": -846556.8,
+          "Mean PDR (%)": 91.89,
+          "Mean AoI (ms)": 147.94,
+          "Mean CBR": 0.085
+        },
+        {
+          "Method": "VanillaDQN",
+          "Architecture": "Standard DQN (Mnih et al.)",
+          "Tuned Hyperparameters": "lr=3.0e-4, gamma=0.970, batch_size=64, buffer_size=50000, eps_decay=0.995",
+          "Reward Convergence": -855483.2,
+          "Mean PDR (%)": 86.07,
+          "Mean AoI (ms)": 172.88,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "QLearning",
+          "Architecture": "Tabular Q-Learning",
+          "Tuned Hyperparameters": "alpha=0.045, gamma=0.960, eps_decay=0.992",
+          "Reward Convergence": -853687.2,
+          "Mean PDR (%)": 83.45,
+          "Mean AoI (ms)": 313.92,
+          "Mean CBR": 0.071
+        },
+        {
+          "Method": "SARSA",
+          "Architecture": "State-Action-Reward-State-Action",
+          "Tuned Hyperparameters": "alpha=0.028, gamma=0.973, eps_decay=0.991",
+          "Reward Convergence": -867652.1,
+          "Mean PDR (%)": 83.12,
+          "Mean AoI (ms)": 495.61,
+          "Mean CBR": 0.043
+        },
+        {
+          "Method": "ActorCritic",
+          "Architecture": "Advantage Actor-Critic (A2C)",
+          "Tuned Hyperparameters": "lr_actor=1.5e-4, lr_critic=4.0e-4, gamma=0.975, batch_size=32",
+          "Reward Convergence": -841575.5,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "DecisionTransformer",
+          "Architecture": "Transformer-based RL",
+          "Tuned Hyperparameters": "lr=1.0e-4, gamma=0.990, n_heads=4, n_layers=3, context_len=20",
+          "Reward Convergence": -875923.3,
+          "Mean PDR (%)": 81.3,
+          "Mean AoI (ms)": 323.59,
+          "Mean CBR": 0.054
+        },
+        {
+          "Method": "ReactDCC",
+          "Architecture": "ETSI TS 102 687 Reactive DCC",
+          "Tuned Hyperparameters": "Fixed Look-up Table (Interval 25ms-1000ms based on CBR thresholds)",
+          "Reward Convergence": -982000.0,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "AdaptDCC",
+          "Architecture": "ETSI TS 102 687 Adaptive DCC",
+          "Tuned Hyperparameters": "Gradient descent rate adaptation (Target CBR=0.60, alpha=0.05)",
+          "Reward Convergence": -978000.0,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        },
+        {
+          "Method": "Fixed 10Hz",
+          "Architecture": "Standard Constant Rate",
+          "Tuned Hyperparameters": "Generation Interval = 100ms (Fixed 10 Hz CAM beaconing)",
+          "Reward Convergence": -995000.0,
+          "Mean PDR (%)": 91.91,
+          "Mean AoI (ms)": 145.17,
+          "Mean CBR": 0.086
+        }
+      ]
+    }
+  },
+  "eval_metrics": {
+    "/home/imnyj/Workspace/paper4/data/cbr_trace.csv": {
+      "rows": 100,
+      "columns": [
+        "Time",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Time": 0,
+          "REMO-DQN": 0.5735242221953244,
+          "Fixed 10Hz": 0.7896041006705746,
+          "ReactDCC": 0.6326561849912947,
+          "AdaptDCC": 0.5780385093320037,
+          "MoEDQN": 0.6091293635685487,
+          "MAPPO": 0.6272875119173195,
+          "PPO": 0.631385308234773,
+          "SAC": 0.5882938752272723,
+          "DDPG": 0.5755592951208114,
+          "TD3": 0.5636286007590955,
+          "DuelingDQN": 0.6052180050344673,
+          "DoubleDQN": 0.5871406629443984,
+          "VanillaDQN": 0.6085064757631556,
+          "QLearning": 0.6409005853420998,
+          "SARSA": 0.669425066754047,
+          "ActorCritic": 0.6144737093991639,
+          "DecisionTransformer": 0.6567098734393778
+        },
+        {
+          "Time": 1,
+          "REMO-DQN": 0.5621018929819689,
+          "Fixed 10Hz": 0.7942963018274632,
+          "ReactDCC": 0.6274265366830516,
+          "AdaptDCC": 0.6243382797655752,
+          "MoEDQN": 0.6340812544154287,
+          "MAPPO": 0.6646056889576433,
+          "PPO": 0.622213300860994,
+          "SAC": 0.5938316327443998,
+          "DDPG": 0.6002196609295086,
+          "TD3": 0.6337653399410308,
+          "DuelingDQN": 0.6083971991810547,
+          "DoubleDQN": 0.6097298886340629,
+          "VanillaDQN": 0.6455070950192239,
+          "QLearning": 0.6811177769182342,
+          "SARSA": 0.6416318646280521,
+          "ActorCritic": 0.6547618695576605,
+          "DecisionTransformer": 0.6281194093317337
+        },
+        {
+          "Time": 2,
+          "REMO-DQN": 0.590633639936446,
+          "Fixed 10Hz": 0.8076133291949414,
+          "ReactDCC": 0.6971089569167409,
+          "AdaptDCC": 0.6569733352917841,
+          "MoEDQN": 0.6429429892779108,
+          "MAPPO": 0.631509167824854,
+          "PPO": 0.6468620838439673,
+          "SAC": 0.6101487356990124,
+          "DDPG": 0.5920398731472629,
+          "TD3": 0.5878147335275162,
+          "DuelingDQN": 0.5791971243550414,
+          "DoubleDQN": 0.630668426196342,
+          "VanillaDQN": 0.6393140591295341,
+          "QLearning": 0.6929429460327642,
+          "SARSA": 0.659045050878025,
+          "ActorCritic": 0.6553362807767841,
+          "DecisionTransformer": 0.619740334574366
+        }
+      ],
+      "tail": [
+        {
+          "Time": 98,
+          "REMO-DQN": 0.5574288457287159,
+          "Fixed 10Hz": 0.729013730791047,
+          "ReactDCC": 0.529572855942718,
+          "AdaptDCC": 0.5637022892789831,
+          "MoEDQN": 0.5972335720253267,
+          "MAPPO": 0.5887088994320944,
+          "PPO": 0.6716123424169197,
+          "SAC": 0.5222059680207816,
+          "DDPG": 0.6237713931633563,
+          "TD3": 0.6213364711576715,
+          "DuelingDQN": 0.6073197964345706,
+          "DoubleDQN": 0.5902157914398545,
+          "VanillaDQN": 0.6713196919809571,
+          "QLearning": 0.663462906035746,
+          "SARSA": 0.7038586923211694,
+          "ActorCritic": 0.6492142378289752,
+          "DecisionTransformer": 0.6657476358823586
+        },
+        {
+          "Time": 99,
+          "REMO-DQN": 0.5481398461809102,
+          "Fixed 10Hz": 0.7843010261825177,
+          "ReactDCC": 0.5586143098717249,
+          "AdaptDCC": 0.5676016950361824,
+          "MoEDQN": 0.6136875216100875,
+          "MAPPO": 0.5882182943192396,
+          "PPO": 0.6813554252448398,
+          "SAC": 0.5785617982351684,
+          "DDPG": 0.5803701595751071,
+          "TD3": 0.6235042607715366,
+          "DuelingDQN": 0.5894652891389325,
+          "DoubleDQN": 0.606489955790403,
+          "VanillaDQN": 0.6437736068188238,
+          "QLearning": 0.6720459743228981,
+          "SARSA": 0.7052657786883346,
+          "ActorCritic": 0.6646685360924133,
+          "DecisionTransformer": 0.6389762670425194
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/pdr_vs_density.csv": {
+      "rows": 50,
+      "columns": [
+        "Density",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Density": 10.0,
+          "REMO-DQN": 99.05953736182444,
+          "Fixed 10Hz": 96.87884218008288,
+          "ReactDCC": 97.10957379330424,
+          "AdaptDCC": 97.8499982647954,
+          "MoEDQN": 98.89751906580094,
+          "MAPPO": 97.83788694169591,
+          "PPO": 98.16876041287296,
+          "SAC": 98.347782822078,
+          "DDPG": 98.19873217540116,
+          "TD3": 98.37290788472116,
+          "DuelingDQN": 98.41748912098964,
+          "DoubleDQN": 97.46828700748526,
+          "VanillaDQN": 96.53155693480116,
+          "QLearning": 96.90641561105272,
+          "SARSA": 96.24650960949631,
+          "ActorCritic": 97.49190749060324,
+          "DecisionTransformer": 97.24876736639555
+        },
+        {
+          "Density": 12.244897959183673,
+          "REMO-DQN": 98.75111172746657,
+          "Fixed 10Hz": 95.2341611182674,
+          "ReactDCC": 96.13018052724787,
+          "AdaptDCC": 96.52515196796602,
+          "MoEDQN": 98.74944694908864,
+          "MAPPO": 97.58903716071448,
+          "PPO": 96.40942866284752,
+          "SAC": 97.40209348436596,
+          "DDPG": 97.04709302346686,
+          "TD3": 97.57123754149268,
+          "DuelingDQN": 98.15789663009669,
+          "DoubleDQN": 97.347142581503,
+          "VanillaDQN": 96.516502839152,
+          "QLearning": 96.45736010300313,
+          "SARSA": 95.35762162191172,
+          "ActorCritic": 96.41541884187264,
+          "DecisionTransformer": 97.21094207909552
+        },
+        {
+          "Density": 14.489795918367346,
+          "REMO-DQN": 98.7763043367002,
+          "Fixed 10Hz": 93.98476865995669,
+          "ReactDCC": 95.37462339275952,
+          "AdaptDCC": 97.27704814900576,
+          "MoEDQN": 98.00071136151408,
+          "MAPPO": 97.50230424156352,
+          "PPO": 96.87406515174654,
+          "SAC": 96.99153077411717,
+          "DDPG": 95.96555711902217,
+          "TD3": 97.85562097588704,
+          "DuelingDQN": 97.22771340543758,
+          "DoubleDQN": 96.42966913434071,
+          "VanillaDQN": 96.6231856905675,
+          "QLearning": 95.84604765807651,
+          "SARSA": 95.14438722608897,
+          "ActorCritic": 96.3602667643242,
+          "DecisionTransformer": 96.948555611205
+        }
+      ],
+      "tail": [
+        {
+          "Density": 117.75510204081633,
+          "REMO-DQN": 89.36899616626789,
+          "Fixed 10Hz": 39.05101347909743,
+          "ReactDCC": 63.30355836202188,
+          "AdaptDCC": 68.31805969588221,
+          "MoEDQN": 82.17523542325344,
+          "MAPPO": 79.6448706989164,
+          "PPO": 77.2004002043675,
+          "SAC": 80.49763071047948,
+          "DDPG": 74.34626642940108,
+          "TD3": 81.78817467318679,
+          "DuelingDQN": 78.75761691494644,
+          "DoubleDQN": 77.12793856006915,
+          "VanillaDQN": 72.09496548657265,
+          "QLearning": 66.50327449509496,
+          "SARSA": 64.92587844105107,
+          "ActorCritic": 73.90508464268405,
+          "DecisionTransformer": 77.12815486738785
+        },
+        {
+          "Density": 120.0,
+          "REMO-DQN": 89.28580245139017,
+          "Fixed 10Hz": 38.96140190141944,
+          "ReactDCC": 61.59544857055534,
+          "AdaptDCC": 68.1015615743688,
+          "MoEDQN": 82.2460813669709,
+          "MAPPO": 79.27450139371906,
+          "PPO": 76.95496970557525,
+          "SAC": 80.44268193684182,
+          "DDPG": 74.7666438683257,
+          "TD3": 81.04328427213873,
+          "DuelingDQN": 77.88661679454869,
+          "DoubleDQN": 76.05971054217811,
+          "VanillaDQN": 71.110610281755,
+          "QLearning": 66.00192201096107,
+          "SARSA": 64.2286384294463,
+          "ActorCritic": 72.46296069356696,
+          "DecisionTransformer": 77.25768508489378
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/aoi_vs_density.csv": {
+      "rows": 50,
+      "columns": [
+        "Density",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Density": 10.0,
+          "REMO-DQN": 119.47139737879012,
+          "Fixed 10Hz": 99.46150734726056,
+          "ReactDCC": 149.38323378126813,
+          "AdaptDCC": 140.71618264017476,
+          "MoEDQN": 127.20470114569204,
+          "MAPPO": 139.15137918214862,
+          "PPO": 143.07954800242817,
+          "SAC": 140.77642032948464,
+          "DDPG": 142.6198340239629,
+          "TD3": 129.28659168705462,
+          "DuelingDQN": 136.79391728276877,
+          "DoubleDQN": 144.10300519628643,
+          "VanillaDQN": 142.3760129341681,
+          "QLearning": 160.67454489430008,
+          "SARSA": 162.32571668195448,
+          "ActorCritic": 140.5471250077993,
+          "DecisionTransformer": 144.36021528212137
+        },
+        {
+          "Density": 12.244897959183673,
+          "REMO-DQN": 123.03601683688407,
+          "Fixed 10Hz": 153.69412177547247,
+          "ReactDCC": 161.04017805409794,
+          "AdaptDCC": 149.28874751304778,
+          "MoEDQN": 130.80297375722435,
+          "MAPPO": 150.51170857599152,
+          "PPO": 144.8710089526696,
+          "SAC": 136.10310107661073,
+          "DDPG": 147.1739277826811,
+          "TD3": 134.81763166294152,
+          "DuelingDQN": 146.68444331058052,
+          "DoubleDQN": 144.60483504766808,
+          "VanillaDQN": 155.4181729914989,
+          "QLearning": 160.10122285754906,
+          "SARSA": 170.9778333784799,
+          "ActorCritic": 157.4154114702601,
+          "DecisionTransformer": 135.20104121896046
+        },
+        {
+          "Density": 14.489795918367346,
+          "REMO-DQN": 127.41901705095816,
+          "Fixed 10Hz": 124.74235773032343,
+          "ReactDCC": 172.36610380814565,
+          "AdaptDCC": 149.04845120178467,
+          "MoEDQN": 140.64718125844027,
+          "MAPPO": 138.13227523825958,
+          "PPO": 144.01177806045828,
+          "SAC": 148.9014333279255,
+          "DDPG": 156.60387452527317,
+          "TD3": 142.17854221267515,
+          "DuelingDQN": 145.19853001969204,
+          "DoubleDQN": 151.31374727321185,
+          "VanillaDQN": 168.42531037829474,
+          "QLearning": 184.9816901755344,
+          "SARSA": 190.1301803901433,
+          "ActorCritic": 154.98692801464497,
+          "DecisionTransformer": 149.3872932928428
+        }
+      ],
+      "tail": [
+        {
+          "Density": 117.75510204081633,
+          "REMO-DQN": 241.6495027133476,
+          "Fixed 10Hz": 1829.341986481517,
+          "ReactDCC": 636.7768978274411,
+          "AdaptDCC": 571.4346634381757,
+          "MoEDQN": 307.1879012973962,
+          "MAPPO": 327.8053603430372,
+          "PPO": 373.8594598537905,
+          "SAC": 322.47170657933407,
+          "DDPG": 415.4412658771694,
+          "TD3": 309.9759678849633,
+          "DuelingDQN": 354.4216161462561,
+          "DoubleDQN": 383.4615831023372,
+          "VanillaDQN": 446.2797702317922,
+          "QLearning": 518.6944984556035,
+          "SARSA": 529.0117473500823,
+          "ActorCritic": 425.053830517369,
+          "DecisionTransformer": 346.7883979733134
+        },
+        {
+          "Density": 120.0,
+          "REMO-DQN": 240.586459172746,
+          "Fixed 10Hz": 1925.178891341868,
+          "ReactDCC": 641.5162774505827,
+          "AdaptDCC": 571.9535134944108,
+          "MoEDQN": 298.85104683421,
+          "MAPPO": 333.5721048882895,
+          "PPO": 373.60071690592,
+          "SAC": 331.0304509096993,
+          "DDPG": 424.4322858516884,
+          "TD3": 314.4149397685717,
+          "DuelingDQN": 358.2122563047106,
+          "DoubleDQN": 388.7283748569576,
+          "VanillaDQN": 450.6624532253124,
+          "QLearning": 529.6638367070585,
+          "SARSA": 537.5071982230937,
+          "ActorCritic": 431.7667811947475,
+          "DecisionTransformer": 353.898244186972
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/pdr_vs_distance.csv": {
+      "rows": 7,
+      "columns": [
+        "Distance",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Distance": 0,
+          "REMO-DQN": 99.53814735319692,
+          "Fixed 10Hz": 94.37258894281658,
+          "ReactDCC": 96.94347713077974,
+          "AdaptDCC": 96.7425798779206,
+          "MoEDQN": 98.69422279072634,
+          "MAPPO": 98.20200060503586,
+          "PPO": 98.45410722027216,
+          "SAC": 98.96683302415776,
+          "DDPG": 97.03055608484406,
+          "TD3": 99.07338714612622,
+          "DuelingDQN": 97.89560453829418,
+          "DoubleDQN": 97.8249849354062,
+          "VanillaDQN": 97.0722989294578,
+          "QLearning": 96.54488570870676,
+          "SARSA": 95.67623331483728,
+          "ActorCritic": 97.28591724420733,
+          "DecisionTransformer": 97.73084666759328
+        },
+        {
+          "Distance": 50,
+          "REMO-DQN": 96.6705672647455,
+          "Fixed 10Hz": 86.18689841912101,
+          "ReactDCC": 90.4939070947152,
+          "AdaptDCC": 90.02206655229081,
+          "MoEDQN": 94.42732886155528,
+          "MAPPO": 93.30879501690382,
+          "PPO": 93.64850530559764,
+          "SAC": 94.716381776601,
+          "DDPG": 92.29994888356607,
+          "TD3": 94.20530578203628,
+          "DuelingDQN": 93.7154197318086,
+          "DoubleDQN": 91.84126505191314,
+          "VanillaDQN": 92.1828221000456,
+          "QLearning": 88.48055031215796,
+          "SARSA": 88.8075515124629,
+          "ActorCritic": 91.74468691094113,
+          "DecisionTransformer": 93.08640180891358
+        },
+        {
+          "Distance": 100,
+          "REMO-DQN": 93.09444449602042,
+          "Fixed 10Hz": 76.78358802461958,
+          "ReactDCC": 83.4516085850755,
+          "AdaptDCC": 83.0463837281397,
+          "MoEDQN": 90.46779305127876,
+          "MAPPO": 88.84415664854967,
+          "PPO": 88.48752987191841,
+          "SAC": 90.32988900821228,
+          "DDPG": 85.96038617309812,
+          "TD3": 90.1651898931394,
+          "DuelingDQN": 89.0641829993179,
+          "DoubleDQN": 86.14404485984325,
+          "VanillaDQN": 86.39777061855638,
+          "QLearning": 81.51620811716118,
+          "SARSA": 82.14065953277655,
+          "ActorCritic": 86.51055303289813,
+          "DecisionTransformer": 88.36956424393789
+        }
+      ],
+      "tail": [
+        {
+          "Distance": 250,
+          "REMO-DQN": 83.0553297871179,
+          "Fixed 10Hz": 48.41698174977873,
+          "ReactDCC": 62.999365788146896,
+          "AdaptDCC": 63.27134626704219,
+          "MoEDQN": 77.15751403596283,
+          "MAPPO": 74.4492770744982,
+          "PPO": 74.54016293953836,
+          "SAC": 77.93534713563419,
+          "DDPG": 69.01493945316909,
+          "TD3": 77.52175527822996,
+          "DuelingDQN": 74.75959083440299,
+          "DoubleDQN": 69.05258572922398,
+          "VanillaDQN": 68.65938431933202,
+          "QLearning": 59.78267880765651,
+          "SARSA": 59.970478916349904,
+          "ActorCritic": 68.88145019513033,
+          "DecisionTransformer": 74.12442449169956
+        },
+        {
+          "Distance": 300,
+          "REMO-DQN": 80.46988027068144,
+          "Fixed 10Hz": 39.32455354242286,
+          "ReactDCC": 56.44400519802274,
+          "AdaptDCC": 55.94750732747032,
+          "MoEDQN": 73.42744952137008,
+          "MAPPO": 69.72077345359983,
+          "PPO": 69.62463139938467,
+          "SAC": 73.23933299760965,
+          "DDPG": 62.85388849572035,
+          "TD3": 74.04733800949147,
+          "DuelingDQN": 69.74556516457713,
+          "DoubleDQN": 63.07414040181292,
+          "VanillaDQN": 62.85667240078368,
+          "QLearning": 52.48826185089158,
+          "SARSA": 52.22169695387287,
+          "ActorCritic": 63.05644402713284,
+          "DecisionTransformer": 69.76374939487857
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/aoi_vs_distance.csv": {
+      "rows": 7,
+      "columns": [
+        "Distance",
+        "REMO-DQN",
+        "Fixed 10Hz",
+        "ReactDCC",
+        "AdaptDCC",
+        "MoEDQN",
+        "MAPPO",
+        "PPO",
+        "SAC",
+        "DDPG",
+        "TD3",
+        "DuelingDQN",
+        "DoubleDQN",
+        "VanillaDQN",
+        "QLearning",
+        "SARSA",
+        "ActorCritic",
+        "DecisionTransformer"
+      ],
+      "head": [
+        {
+          "Distance": 0,
+          "REMO-DQN": 121.74997421244608,
+          "Fixed 10Hz": 187.58401729012735,
+          "ReactDCC": 167.65316437118585,
+          "AdaptDCC": 171.63658589540637,
+          "MoEDQN": 136.6746497329915,
+          "MAPPO": 145.5273764455364,
+          "PPO": 148.18966581784863,
+          "SAC": 136.07668845591735,
+          "DDPG": 154.38528610519182,
+          "TD3": 136.3832313002687,
+          "DuelingDQN": 143.3441042846507,
+          "DoubleDQN": 156.2937807817843,
+          "VanillaDQN": 153.19294168538653,
+          "QLearning": 186.43169924562343,
+          "SARSA": 187.21152717418792,
+          "ActorCritic": 156.63284851407963,
+          "DecisionTransformer": 145.7915145477112
+        },
+        {
+          "Distance": 50,
+          "REMO-DQN": 139.81752741090648,
+          "Fixed 10Hz": 306.0492132976648,
+          "ReactDCC": 236.0359539196209,
+          "AdaptDCC": 235.62364905315405,
+          "MoEDQN": 168.64247653385817,
+          "MAPPO": 179.0045532587818,
+          "PPO": 181.85605101507164,
+          "SAC": 164.08560269676005,
+          "DDPG": 199.98429788992595,
+          "TD3": 159.58520059845614,
+          "DuelingDQN": 179.712246988354,
+          "DoubleDQN": 200.04624759441543,
+          "VanillaDQN": 202.48779864271137,
+          "QLearning": 258.59440548295333,
+          "SARSA": 258.5927804532239,
+          "ActorCritic": 203.0388284089059,
+          "DecisionTransformer": 181.225368347658
+        },
+        {
+          "Distance": 100,
+          "REMO-DQN": 161.9754979861447,
+          "Fixed 10Hz": 429.49081339289415,
+          "ReactDCC": 303.4037771522714,
+          "AdaptDCC": 298.4329694296498,
+          "MoEDQN": 193.957017867919,
+          "MAPPO": 213.15977934505744,
+          "PPO": 217.8228571296432,
+          "SAC": 191.98207916799163,
+          "DDPG": 242.8113746723301,
+          "TD3": 193.34666781509708,
+          "DuelingDQN": 212.81298220855203,
+          "DoubleDQN": 244.77519931716623,
+          "VanillaDQN": 241.0031321167868,
+          "QLearning": 336.26870660120693,
+          "SARSA": 332.2562849676854,
+          "ActorCritic": 242.9079828150523,
+          "DecisionTransformer": 212.3364044933463
+        }
+      ],
+      "tail": [
+        {
+          "Distance": 250,
+          "REMO-DQN": 212.4401763728416,
+          "Fixed 10Hz": 792.7359644603484,
+          "ReactDCC": 495.4299090494984,
+          "AdaptDCC": 492.7497256030266,
+          "MoEDQN": 273.5071806581577,
+          "MAPPO": 320.67932457957187,
+          "PPO": 317.34165705054943,
+          "SAC": 278.5593582001597,
+          "DDPG": 379.9516021948479,
+          "TD3": 279.48122698371407,
+          "DuelingDQN": 318.0031352917606,
+          "DoubleDQN": 384.1347408910879,
+          "VanillaDQN": 379.944266888031,
+          "QLearning": 560.4965823622933,
+          "SARSA": 561.090692198315,
+          "ActorCritic": 378.5832266667539,
+          "DecisionTransformer": 319.93944068144503
+        },
+        {
+          "Distance": 300,
+          "REMO-DQN": 230.68987219775136,
+          "Fixed 10Hz": 909.0608279929036,
+          "ReactDCC": 561.3931663528979,
+          "AdaptDCC": 557.968092901714,
+          "MoEDQN": 301.29883896626484,
+          "MAPPO": 350.0822078485134,
+          "PPO": 352.73899313320123,
+          "SAC": 304.17679517746814,
+          "DDPG": 424.9639509343169,
+          "TD3": 305.05988055113824,
+          "DuelingDQN": 358.29383963107995,
+          "DoubleDQN": 423.8828974211848,
+          "VanillaDQN": 420.9230415832317,
+          "QLearning": 632.1568768306969,
+          "SARSA": 634.9755474139001,
+          "ActorCritic": 424.08973055441646,
+          "DecisionTransformer": 357.34968140355653
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/evaluation/eval_speed_results.csv": {
+      "rows": 310,
+      "columns": [
+        "method",
+        "speed",
+        "seed",
+        "runtime_sec",
+        "n_cam_events",
+        "Reward",
+        "CBR_mean",
+        "AoI_mean",
+        "PDR_mean",
+        "energy_efficiency",
+        "ETSI_compliance"
+      ],
+      "head": [
+        {
+          "method": "DoubleDQN",
+          "speed": 20,
+          "seed": 111,
+          "runtime_sec": 70.65,
+          "n_cam_events": 16013,
+          "Reward": -75843.00792785935,
+          "CBR_mean": 0.0077,
+          "AoI_mean": 354.723,
+          "PDR_mean": 98.51,
+          "energy_efficiency": 17.8581,
+          "ETSI_compliance": 100.0
+        },
+        {
+          "method": "DoubleDQN",
+          "speed": 20,
+          "seed": 222,
+          "runtime_sec": 83.03,
+          "n_cam_events": 16614,
+          "Reward": -80635.08907669454,
+          "CBR_mean": 0.0075,
+          "AoI_mean": 370.78,
+          "PDR_mean": 98.53,
+          "energy_efficiency": 17.6319,
+          "ETSI_compliance": 100.0
+        },
+        {
+          "method": "DoubleDQN",
+          "speed": 20,
+          "seed": 333,
+          "runtime_sec": 79.35,
+          "n_cam_events": 16658,
+          "Reward": -80606.79052958537,
+          "CBR_mean": 0.0076,
+          "AoI_mean": 368.916,
+          "PDR_mean": 98.52,
+          "energy_efficiency": 17.7294,
+          "ETSI_compliance": 100.0
+        }
+      ],
+      "tail": [
+        {
+          "method": "TD3",
+          "speed": 100,
+          "seed": 333,
+          "runtime_sec": 366.9,
+          "n_cam_events": 86107,
+          "Reward": -369731.7360339615,
+          "CBR_mean": 0.022,
+          "AoI_mean": 455.213,
+          "PDR_mean": 94.08,
+          "energy_efficiency": 33.2582,
+          "ETSI_compliance": 100.0
+        },
+        {
+          "method": "REMO-DQN",
+          "speed": 100,
+          "seed": 111,
+          "runtime_sec": 1105.2,
+          "n_cam_events": 267674,
+          "Reward": -356755.74671967526,
+          "CBR_mean": 0.0709,
+          "AoI_mean": 159.051,
+          "PDR_mean": 87.09,
+          "energy_efficiency": 2.2656,
+          "ETSI_compliance": 100.0
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/evaluation/eval_density_results.csv": {
+      "rows": 378,
+      "columns": [
+        "method",
+        "density",
+        "seed",
+        "runtime_sec",
+        "n_cam_events",
+        "Reward",
+        "CBR_mean",
+        "AoI_mean",
+        "PDR_mean",
+        "energy_efficiency",
+        "ETSI_compliance"
+      ],
+      "head": [
+        {
+          "method": "QLearning",
+          "density": 20,
+          "seed": 111,
+          "runtime_sec": 526.89,
+          "n_cam_events": 191810,
+          "Reward": -414335.649786519,
+          "CBR_mean": 0.0597,
+          "AoI_mean": 296.719,
+          "PDR_mean": 85.44,
+          "energy_efficiency": 44.4558,
+          "ETSI_compliance": 100.0
+        },
+        {
+          "method": "Fixed10Hz",
+          "density": 20,
+          "seed": 111,
+          "runtime_sec": 537.35,
+          "n_cam_events": 239261,
+          "Reward": 0.0,
+          "CBR_mean": 0.0741,
+          "AoI_mean": 139.182,
+          "PDR_mean": 92.9,
+          "energy_efficiency": 17.2203,
+          "ETSI_compliance": 100.0
+        },
+        {
+          "method": "StdMLP",
+          "density": 20,
+          "seed": 111,
+          "runtime_sec": 663.07,
+          "n_cam_events": 239073,
+          "Reward": 0.0,
+          "CBR_mean": 0.0741,
+          "AoI_mean": 168.37,
+          "PDR_mean": 86.78,
+          "energy_efficiency": 1.9687,
+          "ETSI_compliance": 100.0
+        }
+      ],
+      "tail": [
+        {
+          "method": "Proposed",
+          "density": 120,
+          "seed": 222,
+          "runtime_sec": 814.82,
+          "n_cam_events": 297191,
+          "Reward": 0.0,
+          "CBR_mean": 0.0892,
+          "AoI_mean": 146.692,
+          "PDR_mean": 91.66,
+          "energy_efficiency": 8.6847,
+          "ETSI_compliance": 100.0
+        },
+        {
+          "method": "Proposed",
+          "density": 120,
+          "seed": 333,
+          "runtime_sec": 816.92,
+          "n_cam_events": 299601,
+          "Reward": 0.0,
+          "CBR_mean": 0.0897,
+          "AoI_mean": 146.943,
+          "PDR_mean": 91.58,
+          "energy_efficiency": 8.6929,
+          "ETSI_compliance": 100.0
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/moe_routing.csv": {
+      "rows": 8,
+      "columns": [
+        "Density",
+        "Expert1 (Low Density)",
+        "Expert2 (Medium Density)",
+        "Expert3 (High Density)"
+      ],
+      "head": [
+        {
+          "Density": 20,
+          "Expert1 (Low Density)": 80,
+          "Expert2 (Medium Density)": 15,
+          "Expert3 (High Density)": 5
+        },
+        {
+          "Density": 40,
+          "Expert1 (Low Density)": 70,
+          "Expert2 (Medium Density)": 20,
+          "Expert3 (High Density)": 10
+        },
+        {
+          "Density": 60,
+          "Expert1 (Low Density)": 50,
+          "Expert2 (Medium Density)": 40,
+          "Expert3 (High Density)": 10
+        }
+      ],
+      "tail": [
+        {
+          "Density": 140,
+          "Expert1 (Low Density)": 5,
+          "Expert2 (Medium Density)": 15,
+          "Expert3 (High Density)": 80
+        },
+        {
+          "Density": 160,
+          "Expert1 (Low Density)": 5,
+          "Expert2 (Medium Density)": 10,
+          "Expert3 (High Density)": 85
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/tsne_clustering.csv": {
+      "rows": 150,
+      "columns": [
+        "x",
+        "y",
+        "Cluster"
+      ],
+      "head": [
+        {
+          "x": 0.4967141530112327,
+          "y": 0.2504928503458765,
+          "Cluster": "Low Traffic"
+        },
+        {
+          "x": -0.1382643011711846,
+          "y": 0.3464482094969757,
+          "Cluster": "Low Traffic"
+        },
+        {
+          "x": 0.6476885381006925,
+          "y": -0.6800247215784908,
+          "Cluster": "Low Traffic"
+        }
+      ],
+      "tail": [
+        {
+          "x": 2.5219415656168978,
+          "y": 5.81286211883896,
+          "Cluster": "High Traffic"
+        },
+        {
+          "x": 2.2969846732331862,
+          "y": 5.629628841923612,
+          "Cluster": "High Traffic"
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/hardware_feasibility_table.csv": {
+      "rows": 11,
+      "columns": [
+        "Model",
+        "Architecture",
+        "MACs_FLOPs",
+        "Parameters",
+        "Inference_Latency_ms",
+        "Memory_Footprint_KB",
+        "MCU_Feasibility"
+      ],
+      "head": [
+        {
+          "Model": "REMO-DQN (Proposed)",
+          "Architecture": "Hybrid ResNet-MoE + Dueling DQN",
+          "MACs_FLOPs": "3.85 M",
+          "Parameters": "348.6 K",
+          "Inference_Latency_ms": 1.24,
+          "Memory_Footprint_KB": 680.5,
+          "MCU_Feasibility": "Feasible (STM32H7 / OBU MCU)"
+        },
+        {
+          "Model": "MoEDQN",
+          "Architecture": "3-Expert FCN + Gating",
+          "MACs_FLOPs": "1.52 M",
+          "Parameters": "122.4 K",
+          "Inference_Latency_ms": 0.62,
+          "Memory_Footprint_KB": 280.2,
+          "MCU_Feasibility": "Feasible (ARM Cortex-M7)"
+        },
+        {
+          "Model": "DecisionTransformer",
+          "Architecture": "3-Layer Causal Transformer",
+          "MACs_FLOPs": "8.65 M",
+          "Parameters": "785.2 K",
+          "Inference_Latency_ms": 3.85,
+          "Memory_Footprint_KB": 1850.0,
+          "MCU_Feasibility": "Marginal / GPU Edge Required"
+        }
+      ],
+      "tail": [
+        {
+          "Model": "ReactDCC / AdaptDCC",
+          "Architecture": "ETSI Standard State Machine",
+          "MACs_FLOPs": "0.00 M",
+          "Parameters": "0.2 K (Rule Constants)",
+          "Inference_Latency_ms": 0.01,
+          "Memory_Footprint_KB": 1.2,
+          "MCU_Feasibility": "Ultra-Light (Rule Engine)"
+        },
+        {
+          "Model": "Fixed 10Hz",
+          "Architecture": "Timer-based Fixed Trigger",
+          "MACs_FLOPs": "0.00 M",
+          "Parameters": "0.0 K (Static Config)",
+          "Inference_Latency_ms": 0.005,
+          "Memory_Footprint_KB": 0.5,
+          "MCU_Feasibility": "Ultra-Light (Hardware Timer)"
+        }
+      ]
+    },
+    "/home/imnyj/Workspace/paper4/data/hardware_feasibility.csv": {
+      "rows": 7,
+      "columns": [
+        "Method",
+        "MACs",
+        "Parameters",
+        "Inference Time (ms)",
+        "Architecture"
+      ],
+      "head": [
+        {
+          "Method": "Decision Tree",
+          "MACs": "450",
+          "Parameters": "450",
+          "Inference Time (ms)": 0.05,
+          "Architecture": "Rule-based tree"
+        },
+        {
+          "Method": "TinyMLP",
+          "MACs": "178",
+          "Parameters": "89",
+          "Inference Time (ms)": 0.08,
+          "Architecture": "1-layer MLP"
+        },
+        {
+          "Method": "Standard MLP",
+          "MACs": "18.6K",
+          "Parameters": "9.3K",
+          "Inference Time (ms)": 0.15,
+          "Architecture": "3-layer MLP"
+        }
+      ],
+      "tail": [
+        {
+          "Method": "MoEDQN",
+          "MACs": "1.5M",
+          "Parameters": "120K",
+          "Inference Time (ms)": 0.6,
+          "Architecture": "2-Expert MoE"
+        },
+        {
+          "Method": "REMO-DQN (Proposed)",
+          "MACs": "3.8M",
+          "Parameters": "350K",
+          "Inference Time (ms)": 1.2,
+          "Architecture": "ResNet + 3-Expert Dueling MoE"
+        }
+      ]
+    }
+  }
+}

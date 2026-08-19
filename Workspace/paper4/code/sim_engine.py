@@ -297,8 +297,10 @@ class SimulationRunner:
         t_start = time.time()
         os.makedirs(self.work_dir, exist_ok=True)
 
-        # Load config.md
-        config_path = os.path.join(_sim_dir, "config.md")
+        # Load config.md (prioritizing project root, then local code/config.md)
+        config_path = os.path.join(_sim_dir, "..", "config.md")
+        if not os.path.exists(config_path):
+            config_path = os.path.join(_sim_dir, "config.md")
         config = load_config(config_path)
 
         # Override config DENSITY and AV_SPEED ONLY if explicitly passed as a sweep variable

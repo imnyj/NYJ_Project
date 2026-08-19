@@ -1,34 +1,36 @@
 # Teamwork Project Prompt — Final
 
 > Status: Launched
-> Goal: Revise the completed LaTeX document based on strict academic guidelines.
+> Goal: Execute the ENTIRE training, Optuna optimization, and data extraction pipeline using ONLY real simulations. NO mock data allowed.
 
-Working directory: /home/imnyj/Workspace/paper4/latex
+Working directory: /home/imnyj/Workspace/paper4
 
 ## Requirements
 
-### R1. Academic Writing Style Enforcement
-Revise the text in `main.tex` strictly following these rules:
-- **No Exaggerated Words**: Remove/replace `elucidate`, `seamless`, `vital`, `fosters`, `comprehensive`, `significantly`, `substantially`. Use dry, clear words (`explain`, `detail`, `uninterrupted`, `essential`, `reduces`).
-- **No AI Clichés**: Remove/replace `leveraging/leverages`, `utilizing`, `subsequently`, `systematically`, `effectively`, `autonomously`, `encapsulates`.
-- **Parentheses Reduction**: Remove unnecessary parentheses (e.g., for redundant acronym definitions or side notes). Convert them into natural prose.
-- **No Filenames**: Do NOT mention any file names (e.g., `main.tex`, `sim_engine.py`) in the manuscript text. Readers cannot see the codebase.
+### R1. Strictly Real Simulations & No Mock Data
+- The Coder MUST NOT generate mock CSV files using `numpy.random` or mathematical formulas.
+- ALL data must be extracted by actually running the SUMO simulation scripts and RL environments located in the codebase.
+- The user will audit the source of the simulation files later to ensure actual SUMO/RL code was executed.
 
-### R2. Introduction Contributions Formatting
-- The contributions section in the Introduction MUST be formatted using an `itemize` environment. (This is the only exception to any general 'no itemize' rules).
+### R2. Minimum 200,000 Steps for Training
+- Every single RL model (all baselines and proposed REMO-DQN) must be trained for a MINIMUM of 200,000 steps.
+- The resulting `reward_convergence.csv` and `ablation_study.csv` MUST contain actual data points spanning 200,000 steps, clearly demonstrating the convergence point and post-convergence stability.
 
-### R3. Related Works Table Restructuring
-Revise the comparison table in the Related Works section:
-- **Remove Authors**: Do not write author names. Represent the paper solely with the `\cite{}` command.
-- **Remove Year Column**: Delete the 'Year' column entirely.
-- **Width Management**: Use fixed-width column specifiers (e.g., `p{3cm}`) for text-heavy columns to allow automatic line wrapping, preventing the table from overflowing the page width.
+### R3. Optuna Hyperparameter Optimization
+- Before the final 200,000-step training, every model must undergo Optuna hyperparameter optimization.
+- The models must be trained using the optimal hyperparameters found by Optuna to ensure they are evaluated in their best state.
+- The Optuna results must be saved, as the user will audit this optimization process.
 
-### R4. Mathematical Expression Verification
-- Thoroughly verify all mathematical expressions, equations, and inline math variables to ensure correct LaTeX syntax and notation consistency.
+### R4. Model Checkpointing
+- Once a model completes its 200,000-step training, its final weights must be saved (e.g., `.pth` or `.pkl`) in the `data/models/` directory so they can be loaded for future evaluation graphs (CBR, PDR, AoI vs Density/Distance).
+
+### R5. Visualization & Walkthrough
+- After all real data is collected, generate the 11 target graphs (as numbered 350 DPI PNGs).
+- The Coder-Critic loop must ensure the graphs accurately reflect the 200,000 steps and the Optuna-optimized performance.
 
 ## Acceptance Criteria
-- [ ] No prohibited AI expressions exist in the revised `main.tex`.
-- [ ] The contributions in the introduction are bulleted (`itemize`).
-- [ ] No file names appear in the manuscript text.
-- [ ] The related works table uses `\cite{}` only, has no Year column, and uses `p{}` columns for line wrapping.
-- [ ] All LaTeX equations compile correctly without syntax errors.
+- [ ] No mock data generation scripts exist; all data comes from `sim_engine.py` or equivalent simulation runners.
+- [ ] All models are trained for $\ge$ 200,000 steps.
+- [ ] Optuna optimization logs/CSVs are generated and used for the final training.
+- [ ] All 17 trained models are saved in `data/models/`.
+- [ ] All graphs correctly visualize this rigorously collected data.

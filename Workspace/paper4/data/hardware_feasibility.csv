@@ -1,0 +1,8 @@
+Method,MACs,Parameters,Inference Time (ms),Architecture
+Decision Tree,450,450,0.05,Rule-based tree
+TinyMLP,178,89,0.08,1-layer MLP
+Standard MLP,18.6K,9.3K,0.15,3-layer MLP
+Vanilla DQN,1.2M,100K,0.5,Deep Q-Network
+Dueling DQN,1.4M,115K,0.55,Dueling Streams
+MoEDQN,1.5M,120K,0.6,2-Expert MoE
+REMO-DQN (Proposed),3.8M,350K,1.2,ResNet + 3-Expert Dueling MoE

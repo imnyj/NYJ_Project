@@ -1,52 +1,192 @@
-# REMO-DQN: V2X Performance Evaluation Walkthrough
+# Paper 4 Walkthrough & Task Planning
 
-This document provides a comprehensive overview of the performance evaluation of the REMO-DQN (Resource-Efficient Multi-Objective Deep Q-Network) model in vehicle-to-everything (V2X) communication scenarios. We analyze the model's convergence, scalability across vehicle densities, reliability over distance, channel congestion behavior, and overall computational complexity compared to traditional baselines.
+This document tracks the current status and the next steps for completing Paper 4, based on the `visualizer/evaluation_plan.md`.
 
-## 1. Model Convergence
-The convergence of the REMO-DQN algorithm during training demonstrates its stability and sample efficiency. 
+## 1. Goal
+To write and publish the paper "Paper 4" (REMO-DQN for V2X DCC) in IEEE Transactions on Wireless Communications (TWC).
 
-![Convergence Plot](/home/imnyj/papers/paper4/paper/data/plots/convergence.png)
+## 2. 비교 방안(Baselines) 및 범례(Legend) 순서
+그래프의 가독성과 제안 방안의 우수성 부각을 위해 범례는 다음 순서로 배치합니다.
 
-*Figure 1: Training convergence showing Loss and Accuracy across epochs.*
+1. REMO-DQN (Proposed) : #FF0000 (`alpha=1.0`), Bold
+2. Fixed 10Hz: #0000FF (`alpha=0.6`)
+3. ReactDCC (ETSI Standard): #4D96FF (`alpha=0.6`)
+4. AdaptDCC (ETSI Standard): #2A4B7C (`alpha=0.6`)
+5. MoEDQN: #9B5DE5 (`alpha=0.6`)
+6. MAPPO: #D783FF (`alpha=0.6`)
+7. PPO: #7A49A5 (`alpha=0.6`)
+8. SAC: #00FF00 (`alpha=0.6`)
+9. DDPG: #6BCB77 (`alpha=0.6`)
+10. TD3: #2E8B57(`alpha=0.6`)
+11. DuelingDQN: #FF9F1C (`alpha=0.6`)
+12. DoubleDQN: #FFD166 (`alpha=0.6`)
+13. VanillaDQN: #D67229 (`alpha=0.6`)
+14. QLearning: #1A1A1A (`alpha=0.6`)
+15. SARSA: #555555 (`alpha=0.6`)
+16. ActorCritic: #888888 (`alpha=0.6`)
+17. DecisionTransformer: #B5B5B5 (`alpha=0.6`)
 
-The plot indicates a rapid decrease in training loss within the initial epochs, stabilizing quickly. This demonstrates that REMO-DQN's architecture, tuned with optimized hyperparameters (e.g., hidden dimension of 32 and a learning rate of 0.0002), achieves efficient policy learning without requiring prolonged training cycles, outperforming standard reinforcement learning baselines in convergence speed.
+## 3. 시각화 스크립트를 통해 도출할 결과물 목록 (Target Output Plots)
+1. ablation study convergence curves
+ * Structure
+   - [x] REMO-DQN
+   - [x] w/o ResNet
+   - [x] w/o MoE
+   - [x] w/o Dueling
+ * Reward
+   - [x] REMO-DQN
+   - [x] w/o R1
+   - [x] w/o R2
+   - [x] w/o R3
 
-## 2. Scalability: Age of Information and CBR vs. Vehicle Density
-As vehicle density increases, managing the Age of Information (AoI) and the Channel Busy Ratio (CBR) becomes critical.
+2. sensitivity analysis table by optuna & saved as csv file
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-![Density Sweep Plot](/home/imnyj/papers/paper4/paper/data/plots/line_density.png)
+3. comparing reward convergence curves
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-*Figure 2: AoI and CBR metrics evaluated across varying vehicle densities.*
+4. tsne_routing or tsne clustering
+ - [x] Low traffic
+ - [x] Midium traffic
+ - [x] High traffic
 
-Under dense traffic scenarios, REMO-DQN consistently maintains a lower AoI and prevents CBR from saturating to critical thresholds. Compared to traditional baselines which struggle to adapt to high-contention environments, our method dynamically manages transmission parameters to sustain optimal channel utilization.
+5. moe_routing
+ - [x] Expert1
+ - [x] Expert2
+ - [x] Expert3
 
-## 3. Reliability: Packet Delivery Ratio over Distance
-Packet Delivery Ratio (PDR) is a primary metric for the safety and reliability of V2X networks.
+6. cbr_trace graph
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-![PDR vs Distance](/home/imnyj/papers/paper4/paper/data/plots/pdr_distance.png)
+7. pdr vs density graph
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-*Figure 3: Packet Delivery Ratio (PDR) plotted against distance buckets.*
+8. aoi vs density graph
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-Figure 3 illustrates the decay of PDR as the distance between the transmitter and receiver increases. REMO-DQN maintains a significantly higher PDR across all distance ranges (0–300m) relative to baselines. By making intelligent resource allocation decisions, the model ensures robust communication links even at the fringes of the transmission range.
+9. pdr vs distance graph
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-## 4. Congestion Management: CBR Cumulative Distribution
-The channel congestion profile is evaluated through the Cumulative Distribution Function (CDF) of the CBR.
+10. aoi vs distance graph
+ - [x] REMO-DQN (Proposed)
+ - [x] Fixed 10Hz
+ - [x] ReactDCC
+ - [x] AdaptDCC
+ - [x] MoEDQN
+ - [x] MAPPO
+ - [x] PPO
+ - [x] SAC
+ - [x] DDPG
+ - [x] TD3
+ - [x] DuelingDQN
+ - [x] DoubleDQN
+ - [x] VanillaDQN
+ - [x] QLearning
+ - [x] SARSA
+ - [x] ActorCritic
+ - [x] DecisionTransformer
 
-![CBR CDF](/home/imnyj/papers/paper4/paper/data/plots/cbr_cdf.png)
-
-*Figure 4: Cumulative Distribution Function of the Channel Busy Ratio (CBR).*
-
-The CBR CDF demonstrates that REMO-DQN successfully constrains the channel load within the optimal operational bounds (avoiding both under-utilization and severe congestion). The steepness of the curve for REMO-DQN indicates a tightly controlled CBR, whereas baseline methods exhibit a longer tail, reflecting episodes of severe network congestion.
-
-## 5. Model Complexity and Deployment Feasibility
-Deploying Deep Reinforcement Learning in vehicular edge devices requires strict adherence to complexity constraints.
-
-![Model Complexity](/home/imnyj/papers/paper4/paper/data/plots/fig_complexity.png)
-
-*Figure 5: Model complexity metrics including Parameters and FLOPs.*
-
-The complexity analysis confirms that REMO-DQN is highly lightweight. By minimizing both the parameter count and FLOPs compared to standard DQN architectures, the model easily fits within the strict latency and memory constraints of modern On-Board Units (OBUs), proving its practical viability for real-time edge deployment.
-
----
-**Conclusion**
-The comprehensive evaluation confirms that REMO-DQN provides superior performance across all critical V2X metrics. It achieves faster convergence, higher reliability (PDR), better scalability (AoI/CBR), and does so with a remarkably low computational footprint, making it a state-of-the-art solution for vehicular networks.
+11. hardware feasibility table of proposed REMO-DQN
+ - [x] CPU
+ - [x] RAM
+ - [x] 추론 시간
+ - [x] 학습 시간
+ - [x] FLOPs
+ - [x] 파라미터 크기
+ - [x] 이외 필요한 지표

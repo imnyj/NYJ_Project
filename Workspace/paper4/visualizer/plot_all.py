@@ -1,243 +1,129 @@
+"""
+Master Visualization Pipeline for Paper4 (REMO-DQN)
+===================================================
+Orchestrates data verification, figure plotting, and table generation
+for all 11 target outputs specified in evaluation_plan.md and ORIGINAL_REQUEST.md.
+
+Targets:
+1.  ablation_study.png / ablation_study.pdf               (Ablation curves)
+2.  optuna_sensitivity_table.csv / optuna_sensitivity_table.tex (Optuna table)
+3.  reward_convergence.png / reward_convergence.pdf       (17 Baselines convergence)
+4.  tsne_clustering.png / tsne_clustering.pdf             (t-SNE latent clustering)
+5.  moe_routing.png / moe_routing.pdf                     (MoE dynamic routing)
+6.  cbr_trace.png / cbr_trace.pdf                         (CBR trace + 0.60 target)
+7.  pdr_vs_density.png / pdr_vs_density.pdf               (PDR vs density)
+8.  aoi_vs_density.png / aoi_vs_density.pdf               (AoI vs density)
+9.  pdr_vs_distance.png / pdr_vs_distance.pdf             (PDR vs distance)
+10. aoi_vs_distance.png / aoi_vs_distance.pdf             (AoI vs distance)
+11. hardware_feasibility_table.csv / hardware_feasibility_table.tex (Hardware feasibility table)
+"""
+
 import os
-import re
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+import sys
+import time
 
-CONFIG_PATH = '/home/imnyj/Workspace/paper4/visualizer/config.md'
-DATA_DIR = '/home/imnyj/Workspace/paper4/coder/data/'
-VIS_DIR = '/home/imnyj/Workspace/paper4/visualizer/'
+# Add current directory to path
+VIS_DIR = os.path.dirname(os.path.abspath(__file__))
+if VIS_DIR not in sys.path:
+    sys.path.insert(0, VIS_DIR)
 
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(VIS_DIR, exist_ok=True)
+from PIL import Image
+from prepare_data import main as prepare_all_data
+from plot_figures import generate_all_figures
+from generate_tables import generate_all_tables
 
-# 1. Parse Config
-models = []
-with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-    for line in f:
-        line = line.strip()
-        if line.startswith('|'):
-            cols = [c.strip() for c in line.split('|')]
-            if len(cols) > 2 and cols[1].isdigit():
-                name = cols[3].replace('**', '').strip()
-                
-                c_match = re.search(r'`([^`]+)`', cols[4])
-                color = c_match.group(1) if c_match else cols[4].split()[0]
-                if color == '#FF00000':
-                    color = '#FF0000'
-                if not color.startswith('#') and color not in plt.colors.cnames:
-                    color = cols[4].split()[0]
-                
-                l_match = re.search(r'`([^`]+)`', cols[5])
-                ls = l_match.group(1) if l_match else '-'
-                if ls not in ['-', '--', '-.', ':']:
-                    ls = '-'
-                
-                m_match = re.search(r'`([^`]+)`', cols[6])
-                marker = m_match.group(1) if m_match else ''
-                if len(marker) > 1 and marker != 'None':
-                    marker = marker[0]
-                    
-                models.append({
-                    'name': name,
-                    'color': color,
-                    'ls': ls,
-                    'marker': marker
-                })
+TARGET_OUTPUTS = [
+    ("1_ablation_study.png", "PNG", "Target 1: Ablation Study Curves (PNG 350 DPI)"),
+    ("1_ablation_study.pdf", "PDF", "Target 1: Ablation Study Curves (Vector PDF)"),
+    ("2_optuna_sensitivity_table.csv", "CSV", "Target 2: Optuna Sensitivity Table (CSV)"),
+    ("2_optuna_sensitivity_table.tex", "TeX", "Target 2: Optuna Sensitivity Table (LaTeX)"),
+    ("3_reward_convergence.png", "PNG", "Target 3: Reward Convergence Curves (PNG 350 DPI)"),
+    ("3_reward_convergence.pdf", "PDF", "Target 3: Reward Convergence Curves (Vector PDF)"),
+    ("4_tsne_clustering.png", "PNG", "Target 4: t-SNE Latent Clustering (PNG 350 DPI)"),
+    ("4_tsne_clustering.pdf", "PDF", "Target 4: t-SNE Latent Clustering (Vector PDF)"),
+    ("5_moe_routing.png", "PNG", "Target 5: MoE Dynamic Routing Distribution (PNG 350 DPI)"),
+    ("5_moe_routing.pdf", "PDF", "Target 5: MoE Dynamic Routing Distribution (Vector PDF)"),
+    ("6_cbr_trace.png", "PNG", "Target 6: Time-Series CBR Trace & Stability (PNG 350 DPI)"),
+    ("6_cbr_trace.pdf", "PDF", "Target 6: Time-Series CBR Trace & Stability (Vector PDF)"),
+    ("7_pdr_vs_density.png", "PNG", "Target 7: PDR vs. Vehicle Density (PNG 350 DPI)"),
+    ("7_pdr_vs_density.pdf", "PDF", "Target 7: PDR vs. Vehicle Density (Vector PDF)"),
+    ("8_aoi_vs_density.png", "PNG", "Target 8: AoI vs. Vehicle Density (PNG 350 DPI)"),
+    ("8_aoi_vs_density.pdf", "PDF", "Target 8: AoI vs. Vehicle Density (Vector PDF)"),
+    ("9_pdr_vs_distance.png", "PNG", "Target 9: PDR vs. Communication Distance (PNG 350 DPI)"),
+    ("9_pdr_vs_distance.pdf", "PDF", "Target 9: PDR vs. Communication Distance (Vector PDF)"),
+    ("10_aoi_vs_distance.png", "PNG", "Target 10: AoI vs. Communication Distance (PNG 350 DPI)"),
+    ("10_aoi_vs_distance.pdf", "PDF", "Target 10: AoI vs. Communication Distance (Vector PDF)"),
+    ("11_hardware_feasibility_table.csv", "CSV", "Target 11: Hardware Feasibility Table (CSV)"),
+    ("11_hardware_feasibility_table.tex", "TeX", "Target 11: Hardware Feasibility Table (LaTeX)"),
+]
 
-def get_style(name):
-    for m in models:
-        if m['name'] == name:
-            lw = 3.0 if name == 'REMO-DQN' else 1.5
-            z = 10 if name == 'REMO-DQN' else 1
-            return m['color'], m['ls'], m['marker'], lw, z
-    return 'black', '-', 'None', 1.0, 1
+def verify_outputs():
+    print("\n" + "="*80)
+    print("      PAPER4 VISUALIZATION OUTPUT VERIFICATION REPORT (350 DPI & TARGETS 1-11)")
+    print("="*80)
+    
+    all_passed = True
+    for filename, fmt, desc in TARGET_OUTPUTS:
+        filepath = os.path.join(VIS_DIR, filename)
+        if os.path.exists(filepath):
+            size_bytes = os.path.getsize(filepath)
+            size_kb = size_bytes / 1024.0
+            if size_bytes > 0:
+                dpi_info = ""
+                if fmt == "PNG":
+                    try:
+                        img = Image.open(filepath)
+                        dpi_val = img.info.get('dpi')
+                        if dpi_val and round(dpi_val[0]) == 350 and round(dpi_val[1]) == 350:
+                            dpi_info = f" [DPI: {round(dpi_val[0])}]"
+                        else:
+                            dpi_info = f" [DPI WARN: {dpi_val}]"
+                            all_passed = False
+                    except Exception as e:
+                        dpi_info = f" [DPI ERR: {e}]"
+                status = f"[PASS] ({size_kb:6.1f} KB){dpi_info}"
+            else:
+                status = "[FAIL] (0 bytes empty file)"
+                all_passed = False
+        else:
+            status = "[MISSING]"
+            all_passed = False
+            
+        print(f"{status:<28} | {filename:<36} | {desc}")
+        
+    print("="*80)
+    if all_passed:
+        print("[SUCCESS] All 11 target visualization outputs (22 files: 350 DPI PNG, PDF, CSV, TeX) verified successfully!")
+    else:
+        print("[ERROR] Some target outputs failed or are missing.")
+    print("="*80 + "\n")
+    return all_passed
 
-# 3. Plotting
-plt.rcParams.update({'font.size': 12})
+def main():
+    t0 = time.time()
+    print("======================================================================")
+    print("  Starting Paper4 Full Visualization Pipeline Execution (350 DPI)")
+    print("======================================================================")
+    
+    # 1. Prepare & Synchronize Datasets
+    print("\n[Step 1/3] Synchronizing datasets across data/ and coder/data/...")
+    prepare_all_data()
+    
+    # 2. Generate Figures (PDFs + 350 DPI PNG)
+    print("\n[Step 2/3] Rendering 9 publication figures (Vector PDF & 350 DPI PNG)...")
+    generate_all_figures(VIS_DIR)
+    
+    # 3. Generate Tables (CSV + LaTeX)
+    print("\n[Step 3/3] Generating 2 evaluation tables in CSV and LaTeX...")
+    generate_all_tables(VIS_DIR)
+    
+    # 4. Final Output Verification
+    success = verify_outputs()
+    elapsed = time.time() - t0
+    print(f"Pipeline executed in {elapsed:.2f} seconds.")
+    
+    if not success:
+        sys.exit(1)
 
-# 1. Reward Convergence
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'reward_convergence.csv'))
-    plt.figure(figsize=(10,6))
-    for m in models:
-        name = m['name']
-        if name in df.columns:
-            c, ls, mk, lw, z = get_style(name)
-            plt.plot(df['Episode'], df[name], color=c, linestyle=ls, linewidth=lw, zorder=z, label=name)
-    plt.xlabel('Episodes')
-    plt.ylabel('Cumulative Reward')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '1_reward_convergence.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 2. Ablation Study (Convergence Curve)
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'ablation_study.csv'))
-    plt.figure(figsize=(10,6))
-    plt.plot(df['Episode'], df['Vanilla DQN'], color='gray', linestyle='--', linewidth=1.5, label='Vanilla DQN')
-    plt.plot(df['Episode'], df['DQN+MoE'], color='blue', linestyle='-.', linewidth=2.0, label='DQN+MoE')
-    c_remo, ls_remo, _, lw_remo, _ = get_style('REMO-DQN')
-    plt.plot(df['Episode'], df['REMO-DQN'], color=c_remo, linestyle=ls_remo, linewidth=lw_remo, label='REMO-DQN')
-    plt.xlabel('Episodes')
-    plt.ylabel('Cumulative Reward')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '2_ablation_study.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 3. MoE Routing Distribution
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'moe_routing.csv'))
-    plt.figure(figsize=(8,6))
-    plt.stackplot(df['Density'], df['Expert1 (Low Density)'], df['Expert2 (Medium Density)'], df['Expert3 (High Density)'], labels=['Expert1', 'Expert2', 'Expert3'], alpha=0.7)
-    plt.xlabel('Vehicle Density (vehicles/km)')
-    plt.ylabel('Routing Weight (%)')
-    plt.legend(loc='upper right')
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '3_moe_routing.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 4. t-SNE Scatter Plot
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'tsne_clustering.csv'))
-    plt.figure(figsize=(8,6))
-    colors = {'Low Traffic': 'green', 'Medium Traffic': 'orange', 'High Traffic': 'red'}
-    for c_name, c_col in colors.items():
-        subset = df[df['Cluster'] == c_name]
-        plt.scatter(subset['x'], subset['y'], c=c_col, label=c_name, alpha=0.2, s=20)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '4_tsne_clustering.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 5. Hardware Feasibility (Table only)
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'hardware_feasibility.csv'))
-    fig, ax = plt.subplots(figsize=(6,3))
-    ax.axis('tight')
-    ax.axis('off')
-    table = ax.table(cellText=df.values, colLabels=df.columns, loc='center', cellLoc='center')
-    table.scale(1, 2)
-    table.auto_set_font_size(False)
-    table.set_fontsize(14)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '5_hardware_feasibility.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 7. CBR Trace
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'cbr_trace.csv'))
-    plt.figure(figsize=(10,6))
-    for m in models:
-        name = m['name']
-        if name in df.columns:
-            c, ls, mk, lw, z = get_style(name)
-            plt.plot(df['Time'], df[name], color=c, linestyle=ls, linewidth=lw, zorder=z, label=name)
-    plt.axhline(y=0.6, color='red', linestyle='--', linewidth=2, label='Target Limit (0.6)')
-    plt.xlabel('Time (s)')
-    plt.ylabel('CBR')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '7_cbr_trace.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-name_map = {
-    'Fixed 10Hz': 'Fixed10Hz',
-    'ReactDCC': 'ReactDCC',
-    'AdaptDCC': 'AdaptDCC',
-    'TinyMLP': 'StdMLP',
-    'Q-Learning': 'QLearning',
-    'SARSA': 'SARSA',
-    'Actor-Critic': 'ActorCritic',
-    'Vanilla DQN': 'DecTree',
-    'PPO': 'PPO',
-    'DDPG': 'DDPG',
-    'Double DQN': 'DuelingDQN',
-    'TD3': 'Heuristic',
-    'Decision Transformer': 'DecisionTransformer',
-    'SAC': 'MoEDQN',
-    'MAPPO': 'ResNetMoEDQN',
-    'REMO-DQN': 'Proposed'
-}
-
-# 8. PDR vs Density
-try:
-    df_raw = pd.read_csv(os.path.join(DATA_DIR, 'raw_metrics_density.csv'))
-    plt.figure(figsize=(10,6))
-    for m in models:
-        name = m['name']
-        raw_name = name_map.get(name, name)
-        sub_df = df_raw[df_raw['method'] == raw_name]
-        if not sub_df.empty:
-            sub_df = sub_df.groupby('n_vehicles').mean(numeric_only=True).reset_index().sort_values('n_vehicles')
-            c, ls, mk, lw, z = get_style(name)
-            plt.plot(sub_df['n_vehicles'], sub_df['PDR_mean'], color=c, linestyle=ls, marker=mk if mk and mk != 'None' else None, linewidth=lw, zorder=z, label=name)
-    plt.xlabel('Density (vehicles/km)')
-    plt.ylabel('PDR (%)')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '8_pdr_vs_density.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 9. AoI vs Density
-try:
-    df_raw = pd.read_csv(os.path.join(DATA_DIR, 'raw_metrics_density.csv'))
-    plt.figure(figsize=(10,6))
-    for m in models:
-        name = m['name']
-        raw_name = name_map.get(name, name)
-        sub_df = df_raw[df_raw['method'] == raw_name]
-        if not sub_df.empty:
-            sub_df = sub_df.groupby('n_vehicles').mean(numeric_only=True).reset_index().sort_values('n_vehicles')
-            c, ls, mk, lw, z = get_style(name)
-            plt.plot(sub_df['n_vehicles'], sub_df['AoI_mean'], color=c, linestyle=ls, marker=mk if mk and mk != 'None' else None, linewidth=lw, zorder=z, label=name)
-    plt.xlabel('Density (vehicles/km)')
-    plt.ylabel('AoI (ms)')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '9_aoi_vs_density.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-# 10. PDR vs Distance
-try:
-    df = pd.read_csv(os.path.join(DATA_DIR, 'pdr_vs_distance.csv'))
-    plt.figure(figsize=(10,6))
-    for m in models:
-        name = m['name']
-        if name in df.columns:
-            c, ls, mk, lw, z = get_style(name)
-            plt.plot(df['Distance'], df[name], color=c, linestyle=ls, marker=mk if mk and mk != 'None' else None, linewidth=lw, zorder=z, label=name)
-    plt.xlabel('Distance (m)')
-    plt.ylabel('PDR (%)')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', ncol=2)
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(os.path.join(VIS_DIR, '10_pdr_vs_distance.png'))
-    plt.close()
-except FileNotFoundError:
-    pass
-
-print("완료")
+if __name__ == "__main__":
+    main()

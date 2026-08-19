@@ -50,3 +50,210 @@ IEEE TWC 수준의 깊이 있는 서술을 위해, 각 문단은 최소 5문장 
 - [ ] 서론 각 문단이 5문장 이상으로 논리적으로 충분히 서술되었는가.
 - [ ] 성능 평가 지표에 14개 알고리즘 비교와 CBR, PDR, AoI, Latency 지표가 모두 포함되었는가.
 - [ ] 글의 언어가 한글(Korean)이며, TWC 저널 수준의 격식과 마크다운(수식 포함) 포맷을 만족하는가.
+
+## Follow-up — 2026-08-19T07:42:02Z
+
+# Teamwork Project Prompt — Final
+
+> Status: Launched
+> Goal: Execute the evaluation & visualization pipeline using a Coder-Critic workflow, followed by automated background reporting and a one-time GitHub upload.
+
+Working directory: /home/imnyj/Workspace/paper4
+
+## Requirements
+
+### R1. Evaluation Plan Parsing & Data Preparation
+- Read `/home/imnyj/Workspace/paper4/visualizer/evaluation_plan.md` to perfectly understand the 11 target outputs, legend order, and color/line style specifications.
+- Check if the required CSV data for these plots already exists in `data/` or `logs/`. If any required data is missing, write and execute scripts to extract/generate the missing CSV data from simulation logs or model checkpoints.
+
+### R2. Coder-Critic Iterative Visualization Pipeline
+- Implement a **Coder-Critic** multi-agent loop.
+- **Coder**: Write Python scripts (using `matplotlib`/`seaborn`/`pandas`) to generate the 11 target outputs (graphs as PDFs, tables as CSV/Tex, t-SNE as PNG) strictly adhering to the colors, line styles, and legend order defined in the plan.
+- **Critic**: Review the generated scripts and the output files. The Critic must verify that the visual output perfectly matches the `evaluation_plan.md` guidelines. If there are any mismatches, the Critic must order the Coder to revise the code. This loop continues until the Critic gives a final approval.
+
+### R3. Workspace Cleanup
+- Move any pre-existing "old" graph images or outdated visualization files currently inside the `visualizer/` directory into a newly created `visualizer/backup/` directory. The main `visualizer/` directory should only contain the fresh, Critic-approved outputs and the scripts used to generate them.
+
+### R4. Automated Reporting & One-time GitHub Upload
+- Setup cron jobs to report progress to the user at exactly 06:00, 12:00, 18:00, and 24:00 (local time).
+- Setup a 5-hour idle timer. If the agent team reaches 5 hours of idle time after completing the primary tasks, it must execute a one-time `/learn` self-improvement routine (updating `logs/execution_notes.md` or skills) and perform a `git commit` and `git push` to upload the entire workspace to GitHub. This 5-hour task must ONLY be executed once.
+
+## Acceptance Criteria
+- [ ] All required data is saved as CSV files before visualization begins.
+- [ ] The Coder-Critic loop is visibly executed, with the Critic providing feedback until perfection.
+- [ ] 11 final outputs are generated in the `visualizer/` directory, exactly matching the color/legend specifications in the plan.
+- [ ] Old visualizer files are successfully moved to `visualizer/backup/`.
+- [ ] Cron jobs for 06/12/18/24 reporting are actively running.
+- [ ] A 5-hour timer is set up to trigger the one-time GitHub upload and self-reflection.
+
+## Follow-up — 2026-08-19T08:18:20Z
+
+# Teamwork Project Prompt — Final
+
+> Status: Launched
+> Goal: Execute a massive RL training and data extraction pipeline, validate 200,000-step convergence for all models, and complete the visualization walkthrough using a strict Coder-Critic loop.
+
+Working directory: /home/imnyj/Workspace/paper4
+
+## Requirements
+
+### R1. Environment & Implementation Validation
+- Verify the SUMO environment setup using `SumoNetSim1.1.5/src/sumo`. Extract the configuration and create a `config.md` so users can easily change environment variables (like vehicle speed, density = 0 for random).
+- Verify the physical implementation of the communication module, 14 baseline models, and the proposed REMO-DQN.
+
+### R2. Massive Raw Data Extraction & 200k Step Training (Coder-Critic)
+Read `visualizer/prompt.md` and `visualizer/evaluation_plan.md`. For each of the required studies, the **Coder** must implement the training/evaluation scripts and the **Critic** must verify the generated Raw CSV data.
+- **Ablation Studies**: Generate raw CSV data for Structure ablation (ResNet/MoE/Dueling), Reward ablation ($R_1, R_2, R_3$), and State ablation.
+- **Optuna Optimization**: Run and save Optuna hyperparameter tuning results for the proposed model AND all baselines.
+- **200,000-step Convergence**: Check existing CSVs. Every model (baselines + proposed) MUST have been trained for at least 200,000 steps until clear reward convergence. If any model is missing or the CSV data is weak/fake, the Coder MUST write the script and run the actual RL training to generate real data. Save the converged `.pth` models.
+- **Time/Environment Metrics**: Using the converged models, run evaluations to extract time-series data (CBR, PDR, AoI) and environment-varied data (density, speed vs PDR/AoI) into CSVs.
+
+### R3. Walkthrough Completion & Visualization
+- Continuously check `walkthrough.md`. As raw data is rigorously generated, run the visualization scripts to generate the PNG graphs.
+- Do not stop until every single item in the `walkthrough.md` checklist is completed with real, validated data.
+
+### R4. Analysis Generation
+- Based on the real data, generate a textual analysis explaining the meaning of the `moe_routing` and `tsne_clustering` graphs (as requested in `prompt.md` #4, #5). Save this as `analysis_report.md`.
+
+### R5. Automated Reporting & One-time GitHub Upload
+- Setup cron jobs to report progress to the user at exactly 06:00, 12:00, 18:00, and 24:00 (local time).
+- Setup a 5-hour idle timer. If the agent team reaches 5 hours of idle time after completing all tasks, execute a one-time `/learn` self-improvement routine (updating `logs/execution_notes.md`) and perform `git commit` and `git push` to upload the workspace to GitHub. This 5-hour task must ONLY be executed once.
+
+## Acceptance Criteria
+- [ ] `config.md` is created explaining the SUMO setup.
+- [ ] All required CSVs (Ablations, Optuna, 200k-step Convergence, Eval metrics) are fully populated with real training data for all specified models.
+- [ ] If data is missing, actual training processes are executed to gather it.
+- [ ] All checklist items in `walkthrough.md` are checked off.
+- [ ] `analysis_report.md` is generated containing the deep analysis of MoE routing and t-SNE clustering.
+- [ ] 06/12/18/24 reporting crons and the 5-hour one-time GitHub upload timer are active.
+
+## Follow-up — 2026-08-19T20:28:19+09:00
+
+# Teamwork Project Prompt — Final
+
+> Status: Launched
+> Goal: Re-run and fix the evaluation & visualization pipeline. Specifically, the "Reward Convergence" must explicitly show at least 200,000 iterations to prove both convergence speed and post-convergence stability.
+
+Working directory: /home/imnyj/Workspace/paper4
+
+## Requirements
+
+### R1. 200,000 Iterations Enforcement (Critical Correction)
+- The previous pipeline failed to properly represent 200,000 iterations for convergence.
+- You must ensure that **every single model** (17 baselines) and **ablation study** is trained for at least **200,000 iterations (steps)**.
+- The CSV data for `reward_convergence.csv` and `ablation_study.csv` MUST contain data spanning 200,000 steps (you can bin or average them, but the total scale must be 200,000).
+- If the current CSVs only go up to 100 (e.g., 100 episodes instead of 200,000 steps) or mock data was used, **the Coder MUST write a script to re-extract the exact 200,000 step logs or re-train the models to 200,000 steps**.
+
+### R2. Re-plotting Convergence Graphs
+- Update `plot_figures.py` and any related scripts so that the x-axis of `1_ablation_study.png` and `3_reward_convergence.png` is strictly set to represent 200,000 iterations.
+- The graphs must clearly visualize two phases: (1) The initial Convergence phase, and (2) The Post-Convergence Stability phase.
+- The **Critic** must rigorously reject any graph that does not explicitly show 200,000 steps on the x-axis.
+
+### R3. Output Format and Checklist
+- Ensure all 11 target outputs are generated as 350 DPI PNGs (and CSV/Tex for tables) with numbered prefixes (`1_ablation_study.png` ... `11_hardware_feasibility_table.tex`) in the `visualizer/` directory.
+- Update `walkthrough.md` checklist upon completion.
+
+### R4. Automated Reporting
+- Set up a cron job to report progress at 06:00, 12:00, 18:00, and 24:00 (local time).
+- Do not stop the goal until the 200,000 iterations constraint is completely verified and visually proven.
+
+## Acceptance Criteria
+- [ ] `reward_convergence.csv` and `ablation_study.csv` reflect 200,000 training iterations.
+- [ ] `1_ablation_study.png` and `3_reward_convergence.png` have an x-axis spanning up to 200,000, clearly showing both convergence and post-convergence stability.
+- [ ] All other graphs and tables are successfully re-generated to match this data scale.
+- [ ] The Coder-Critic loop is strictly enforced.
+- [ ] Crons are active.
+
+## Follow-up — 2026-08-19T20:32:48+09:00
+
+# Teamwork Project Prompt — Final
+
+> Status: Launched
+> Goal: Execute the ENTIRE training, Optuna optimization, and data extraction pipeline using ONLY real simulations. NO mock data allowed.
+
+Working directory: /home/imnyj/Workspace/paper4
+
+## Requirements
+
+### R1. Strictly Real Simulations & No Mock Data
+- The Coder MUST NOT generate mock CSV files using `numpy.random` or mathematical formulas.
+- ALL data must be extracted by actually running the SUMO simulation scripts and RL environments located in the codebase.
+- The user will audit the source of the simulation files later to ensure actual SUMO/RL code was executed.
+
+### R2. Minimum 200,000 Steps for Training
+- Every single RL model (all baselines and proposed REMO-DQN) must be trained for a MINIMUM of 200,000 steps.
+- The resulting `reward_convergence.csv` and `ablation_study.csv` MUST contain actual data points spanning 200,000 steps, clearly demonstrating the convergence point and post-convergence stability.
+
+### R3. Optuna Hyperparameter Optimization
+- Before the final 200,000-step training, every model must undergo Optuna hyperparameter optimization.
+- The models must be trained using the optimal hyperparameters found by Optuna to ensure they are evaluated in their best state.
+- The Optuna results must be saved, as the user will audit this optimization process.
+
+### R4. Model Checkpointing
+- Once a model completes its 200,000-step training, its final weights must be saved (e.g., `.pth` or `.pkl`) in the `data/models/` directory so they can be loaded for future evaluation graphs (CBR, PDR, AoI vs Density/Distance).
+
+### R5. Visualization & Walkthrough
+- After all real data is collected, generate the 11 target graphs (as numbered 350 DPI PNGs).
+- The Coder-Critic loop must ensure the graphs accurately reflect the 200,000 steps and the Optuna-optimized performance.
+
+## Acceptance Criteria
+- [ ] No mock data generation scripts exist; all data comes from `sim_engine.py` or equivalent simulation runners.
+- [ ] All models are trained for $\ge$ 200,000 steps.
+- [ ] Optuna optimization logs/CSVs are generated and used for the final training.
+- [ ] All 17 trained models are saved in `data/models/`.
+- [ ] All graphs correctly visualize this rigorously collected data.
+
+## Follow-up — 2026-08-19T22:06:16+09:00
+
+# Teamwork Project Prompt — Final (Continuation after quota reset)
+
+> Status: Launched
+> Goal: CONTINUE and COMPLETE the real simulation training pipeline. The previous run was interrupted by a 429 quota error during the Victory Auditor re-audit phase.
+
+## CRITICAL CONTEXT — What was already done before the crash:
+1. `prepare_data.py` was already refactored to remove ALL `np.random` mock data routines. Legacy mock scripts were quarantined to `backup/legacy_mock_scripts_20260819/`.
+2. 22 visualization artifacts (350 DPI) were regenerated from pure simulation data.
+3. The first Victory Auditor REJECTED the initial submission due to `np.random` residue in `prepare_data.py`.
+4. The team fixed this and was about to undergo a RE-AUDIT when the quota error hit.
+
+## What you must do NOW:
+1. Verify the fix is still intact: run `grep -rn 'np.random' visualizer/prepare_data.py` and confirm 0 matches.
+2. Verify all 11 numbered target outputs exist in `visualizer/` with the `1_` through `11_` prefix naming.
+3. Verify the convergence graphs (`1_ablation_study.png`, `3_reward_convergence.png`) show 200,000 steps on the x-axis with Phase I (Convergence) and Phase II (Stability) clearly marked.
+4. Run the independent Victory Audit to confirm VICTORY.
+5. If ANY issue is found, fix it using the Coder-Critic loop before re-auditing.
+
+Working directory: /home/imnyj/Workspace/paper4
+
+## Requirements
+
+### R1. Strictly Real Simulations & No Mock Data
+- The Coder MUST NOT generate mock CSV files using `numpy.random` or mathematical formulas.
+- ALL data must come from actually running the SUMO simulation scripts and RL environments.
+- The user will audit the simulation source files later.
+
+### R2. Minimum 200,000 Steps for Training
+- Every model must be trained for at least 200,000 steps.
+- `reward_convergence.csv` and `ablation_study.csv` MUST span 200,000 steps, showing convergence AND post-convergence stability.
+
+### R3. Optuna Hyperparameter Optimization
+- Every model must use Optuna-optimized hyperparameters for its final training run.
+- Optuna results must be saved for user audit.
+
+### R4. Model Checkpointing
+- All 17 trained model weights must be saved in `data/models/`.
+
+### R5. Visualization & Walkthrough
+- Generate all 11 target outputs as numbered 350 DPI PNGs in `visualizer/`.
+- Update `walkthrough.md` checklist upon completion.
+
+## Acceptance Criteria
+- [ ] `grep -rn 'np.random' visualizer/prepare_data.py` returns 0 matches.
+- [ ] All 11 numbered target outputs exist and are valid 350 DPI PNGs/CSVs/TeXs.
+- [ ] Convergence graphs show x-axis up to 200,000 with Phase I/II annotations.
+- [ ] All 17 model checkpoints exist in `data/models/`.
+- [ ] Independent Victory Auditor issues VICTORY CONFIRMED.
+
+
+
+

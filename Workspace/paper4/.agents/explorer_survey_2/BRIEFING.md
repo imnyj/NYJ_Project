@@ -1,45 +1,46 @@
-# BRIEFING — 2026-08-18T12:36:44+09:00
+# BRIEFING — 2026-08-19T07:45:30Z
 
 ## Mission
-Paper4 IEEE TWC 논문 작성을 위한 시스템 모델(ETSI CAM, CSMA/CA MAC, 큐 지연, CBR) 및 MDP 정식화, REMO-DQN 신경망 아키텍처(ResNet 백본, MoE 게이팅, Dueling DQN) 수학적 정밀 분석 및 정식화 완료
+Investigate `/home/imnyj/Workspace/paper4/visualizer/` workspace, identify existing files, check backup status, and define quarantine/backup targets.
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: System Model & REMO-DQN Architecture Explorer 2
+- Roles: investigator, visualizer survey
 - Working directory: /home/imnyj/Workspace/paper4/.agents/explorer_survey_2
-- Original parent: ae998028-71ee-4501-a6aa-7b917e067e00
-- Milestone: Investigation and mathematical formalization of system model and REMO-DQN architecture
+- Original parent: 35416a47-4347-4d2b-b546-6cffd40c5bfe
+- Milestone: visualizer workspace survey
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement code or modify project files (except writing inside /home/imnyj/Workspace/paper4/.agents/explorer_survey_2)
-- All communications and documents must be written in Korean (GEMINI.md Rule 14)
-- Comply with academic writing style (no exaggerated adverbs/adjectives, paragraphs >= 5 sentences) and anti-hallucination rules (exact code reading and citations)
+- Read-only investigation — do NOT implement, modify, or move source files
+- Korean language for report/output
+- Investigate files in `visualizer/`, determine backup needs according to GEMINI.md and project requirements
 
 ## Current Parent
-- Conversation ID: ae998028-71ee-4501-a6aa-7b917e067e00
-- Updated: 2026-08-18T12:36:44+09:00
+- Conversation ID: 35416a47-4347-4d2b-b546-6cffd40c5bfe
+- Updated: 2026-08-19T07:45:30Z
 
 ## Investigation State
 - **Explored paths**:
-  - `/home/imnyj/Workspace/paper4/code/resnet_moe_agent.py`
-  - `/home/imnyj/Workspace/paper4/code/ai_dcc_hook.py`
-  - `/home/imnyj/Workspace/paper4/code/etsi_cam_layer.py`
-  - `/home/imnyj/Workspace/paper4/code/sim_engine.py`
-  - `/home/imnyj/Workspace/paper4/code/aoi_tracker.py`
-  - `/home/imnyj/Workspace/paper4/code/ablation_agents.py`
-  - `/home/imnyj/Workspace/paper4/idea/paper4_overall_plan.md`
+  - `/home/imnyj/Workspace/paper4/visualizer/` (20 files, 2 directories)
+  - `/home/imnyj/Workspace/paper4/visualizer/backup/` (`2026-08-05_1319`, `TinyMLP`)
+  - `/home/imnyj/Workspace/paper4/.agents/ORIGINAL_REQUEST.md`
+  - `/home/imnyj/Workspace/paper4/visualizer/evaluation_plan.md`
+  - `/home/imnyj/Workspace/paper4/visualizer/config.md`
+  - `/home/imnyj/Workspace/paper4/visualizer/prompt.md`
+  - `/home/imnyj/Workspace/paper4/visualizer/plot_all.py`, `plot_utils.py`, `plot_convergence.py`, `plot_line_density.py`, `plot_cbr_cdf.py`, `plot_pdr_distance.py`
 - **Key findings**:
-  - V2X 통신 모델: 802.11p ($5.9\text{ GHz}, 10\text{ MHz}, 3\text{ Mbps}$ BPSK $1/2$), $L_{\text{CAM}}=280\text{ B}$, $T_{\text{tx}}=0.747\text{ ms}$, Nakagami-$m$ ($m=3.0$), 경로손실 $\text{PL}(d)=47.86+20\log_{10}(d)$, 감지반경 $500\text{ m}$, 통신반경 $300\text{ m}$.
-  - ETSI CAM 트리거: $\Delta\theta \ge 4.0^\circ, \Delta d \ge 4.0\text{ m}, \Delta v \ge 0.5\text{ m/s}$, fallback $1.0\text{ s}$, guard $T_{\text{GenCam}} \ge 0.1\text{ s}$.
-  - MDP 정식화: 상태 공간 $s_t \in \mathbb{R}^5$ ($[\text{CBR}, N_{\text{est}}/50, v/25, \Delta t/1.0, \text{CBR}_{\text{smoothed}}]$), 행동 공간 $a_t \in \{0,\dots,15\}$ ($4\times 4$ 그리드), 다중 보상 $R = 0.01\bar{N}_{\text{est}} - 1.0|\text{CBR}_{\text{smoothed}}-0.6| - 0.1\Delta t$.
-  - REMO-DQN 아키텍처: ResNet 백본 (2 Residual blocks, $D_h=128$), MoE 라우터 ($K=3$, $\text{Softmax}$ 게이팅, detached 입력), Dueling DQN ($V(s) \in \mathbb{R}^1, A(s,a) \in \mathbb{R}^{16}$, mean-centered), $\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{TD}} + 0.01\cdot \text{CV}^2(\bar{g})$.
-- **Unexplored areas**: None (조사 및 수학적 정식화 완료)
+  - `visualizer/` contains 11 legacy PNG plot images generated on Aug 5/7 that mismatch the latest `evaluation_plan.md` (17 models vs 16 models, new colors/legend, and new target metrics).
+  - 6 legacy plotting python scripts exist (`plot_all.py`, `plot_utils.py`, etc.) that reference old paths or outdated model configs.
+  - `config.md` is outdated (Aug 3), replaced by `evaluation_plan.md` (Aug 19).
+  - `backup/` exists with subdirectories `2026-08-05_1319/` (9 pngs) and `TinyMLP/` (27 pngs).
+- **Unexplored areas**: None (visualizer directory survey is complete).
 
 ## Key Decisions Made
-- `handoff.md`에 IEEE TWC 수준의 수식, 변수 정의, 아키텍처 다이어그램 및 독립 검증 코드를 완전하게 작성함.
+- Categorized all files in `visualizer/` into: (1) Active/Retained files, (2) Quarantine/Backup target files (11 images + 6 scripts + 1 config + __pycache__), (3) Existing backup structure.
+- Prepared comprehensive handoff report with exact paths, byte sizes, and migration instructions.
 
 ## Artifact Index
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/DISPATCH.md` — Dispatch log
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/BRIEFING.md` — Briefing state
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/handoff.md` — Complete Handoff report
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/progress.md` — Progress heartbeat
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/DISPATCH.md` — Dispatch record
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/BRIEFING.md` — Working memory
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/progress.md` — Progress tracker
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_2/handoff.md` — 5-Component Handoff Report

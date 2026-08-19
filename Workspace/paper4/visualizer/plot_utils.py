@@ -1,59 +1,271 @@
+"""
+Plot Utilities and IEEE Publication Style Standards for Paper4 Visualizer
+========================================================================
+Implements exact color, linestyle, linewidth, alpha, and legend ordering
+as specified in evaluation_plan.md §2.
+"""
+
+import os
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 
-# Mapping: Model Name -> (Color, Line Style, Marker, Line Width, Z-order)
-STYLE_MAP = {
-    "Fixed 10Hz": ("#000000", "--", "x", 1.5, 1),
-    "ReactDCC": ("#8B4513", "-", "v", 1.5, 2),
-    "AdaptDCC": ("#FF0000", "-", "^", 1.5, 3),
-    "TinyMLP": ("#FF69B4", "-", "<", 1.5, 4),
-    "Q-Learning": ("#D3D3D3", "-", ".", 1.5, 5),
-    "SARSA": ("#A9A9A9", "-", ",", 1.5, 6),
-    "Actor-Critic": ("#808080", "-", "1", 1.5, 7),
-    "Vanilla DQN": ("#87CEEB", "-", "s", 1.5, 8),
-    "PPO": ("#0000FF", "-", "p", 1.5, 9),
-    "DDPG": ("#000080", "-", "h", 1.5, 10),
-    "Double DQN": ("#00FFFF", "-", "+", 1.5, 11),
-    "TD3": ("#008080", "-", "d", 1.5, 12),
-    "Decision Transformer": ("#90EE90", "-", "*", 1.5, 13),
-    "SAC": ("#FFA500", "-", "D", 1.5, 14),
-    "MAPPO": ("#808000", "-", "o", 1.5, 15),
-    "REMO-DQN": ("#FF0000", "-", "*", 3.0, 99)
-}
+# Set IEEE Journal typography & layout standards
+plt.rcParams.update({
+    'font.family': 'serif',
+    'font.size': 11,
+    'axes.labelsize': 12,
+    'axes.titlesize': 13,
+    'xtick.labelsize': 10,
+    'ytick.labelsize': 10,
+    'legend.fontsize': 9,
+    'figure.titlesize': 14,
+    'lines.linewidth': 1.6,
+    'lines.markersize': 5,
+    'grid.alpha': 0.35,
+    'grid.linestyle': '--',
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
+    'savefig.dpi': 350,
+    'savefig.bbox': 'tight'
+})
 
-DATA_TO_CONFIG = {
-    "Fixed10Hz": "Fixed 10Hz",
-    "ReactDCC": "ReactDCC",
-    "AdaptDCC": "AdaptDCC",
-    "Heuristic": "Heuristic",
-    "StdMLP": "StdMLP",
-    "Proposed": "REMO-DQN",
-    "DecTree": "Decision Tree",
-    "TinyMLP": "TinyMLP"
-}
+# 17 Baselines specification from evaluation_plan.md §2
+# Order:
+# 1. REMO-DQN (Proposed) : #FF0000 (alpha=1.0, linewidth=2.5, zorder=99, bold)
+# 2. Fixed 10Hz : #0000FF (alpha=0.6, linestyle='--')
+# 3. ReactDCC (ETSI Standard) : #4D96FF (alpha=0.6, linestyle='-.')
+# 4. AdaptDCC (ETSI Standard) : #2A4B7C (alpha=0.6, linestyle=':')
+# 5. MoEDQN : #9B5DE5 (alpha=0.6)
+# 6. MAPPO : #D783FF (alpha=0.6)
+# 7. PPO : #7A49A5 (alpha=0.6)
+# 8. SAC : #00FF00 (alpha=0.6)
+# 9. DDPG : #6BCB77 (alpha=0.6)
+# 10. TD3 : #2E8B57 (alpha=0.6)
+# 11. DuelingDQN : #FF9F1C (alpha=0.6)
+# 12. DoubleDQN : #FFD166 (alpha=0.6)
+# 13. VanillaDQN : #D67229 (alpha=0.6)
+# 14. QLearning : #1A1A1A (alpha=0.6)
+# 15. SARSA : #555555 (alpha=0.6)
+# 16. ActorCritic : #888888 (alpha=0.6)
+# 17. DecisionTransformer : #B5B5B5 (alpha=0.6)
 
-def get_style(data_name):
-    config_name = DATA_TO_CONFIG.get(data_name, data_name)
-    if config_name in STYLE_MAP:
-        return STYLE_MAP[config_name]
-    
-    # Fallback
-    if config_name == "Heuristic": return ("#2E8B57", "-", "H", 1.5, 3) 
-    if config_name == "Decision Tree": return ("#DAA520", "-", "v", 1.5, 4) 
-    if config_name == "StdMLP": return ("#800080", "-", "p", 1.5, 4.5)
-    
-    return ("#000000", "-", "", 1.0, 1)
-
-def apply_legend(ax):
-    handles, labels = ax.get_legend_handles_labels()
-    order_dict = {
-        "Fixed 10Hz": 1, "ReactDCC": 2, "AdaptDCC": 3, "Heuristic": 3.5,
-        "TinyMLP": 4, "Decision Tree": 4.2, "StdMLP": 4.5, "Q-Learning": 5, "SARSA": 6, 
-        "Actor-Critic": 7, "Vanilla DQN": 8, "PPO": 9, "DDPG": 10,
-        "Double DQN": 11, "TD3": 12, "Decision Transformer": 13, 
-        "SAC": 14, "MAPPO": 15, "REMO-DQN": 16
+MODEL_CONFIGS = [
+    {
+        "name": "REMO-DQN (Proposed)",
+        "keys": ["REMO-DQN (Proposed)", "REMO-DQN", "Proposed", "ResNetMoEDQN"],
+        "color": "#FF0000",
+        "linestyle": "-",
+        "marker": "o",
+        "linewidth": 2.5,
+        "alpha": 1.0,
+        "zorder": 99
+    },
+    {
+        "name": "Fixed 10Hz",
+        "keys": ["Fixed 10Hz", "Fixed10Hz"],
+        "color": "#0000FF",
+        "linestyle": "--",
+        "marker": "s",
+        "linewidth": 1.6,
+        "alpha": 0.6,
+        "zorder": 5
+    },
+    {
+        "name": "ReactDCC (ETSI Standard)",
+        "keys": ["ReactDCC (ETSI Standard)", "ReactDCC"],
+        "color": "#4D96FF",
+        "linestyle": "-.",
+        "marker": "^",
+        "linewidth": 1.6,
+        "alpha": 0.6,
+        "zorder": 6
+    },
+    {
+        "name": "AdaptDCC (ETSI Standard)",
+        "keys": ["AdaptDCC (ETSI Standard)", "AdaptDCC"],
+        "color": "#2A4B7C",
+        "linestyle": ":",
+        "marker": "v",
+        "linewidth": 1.6,
+        "alpha": 0.6,
+        "zorder": 7
+    },
+    {
+        "name": "MoEDQN",
+        "keys": ["MoEDQN", "DQN+MoE", "MoE-DQN"],
+        "color": "#9B5DE5",
+        "linestyle": "-",
+        "marker": "D",
+        "linewidth": 1.6,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "MAPPO",
+        "keys": ["MAPPO"],
+        "color": "#D783FF",
+        "linestyle": "-",
+        "marker": "P",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "PPO",
+        "keys": ["PPO"],
+        "color": "#7A49A5",
+        "linestyle": "-",
+        "marker": "p",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "SAC",
+        "keys": ["SAC"],
+        "color": "#00FF00",
+        "linestyle": "-",
+        "marker": "h",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "DDPG",
+        "keys": ["DDPG"],
+        "color": "#6BCB77",
+        "linestyle": "-",
+        "marker": "X",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "TD3",
+        "keys": ["TD3"],
+        "color": "#2E8B57",
+        "linestyle": "-",
+        "marker": "d",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "DuelingDQN",
+        "keys": ["DuelingDQN", "Dueling DQN", "Dueling"],
+        "color": "#FF9F1C",
+        "linestyle": "-",
+        "marker": "<",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "DoubleDQN",
+        "keys": ["DoubleDQN", "Double DQN", "DDQN"],
+        "color": "#FFD166",
+        "linestyle": "-",
+        "marker": ">",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "VanillaDQN",
+        "keys": ["VanillaDQN", "Vanilla DQN", "DQN"],
+        "color": "#D67229",
+        "linestyle": "-",
+        "marker": "x",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "QLearning",
+        "keys": ["QLearning", "Q-Learning"],
+        "color": "#1A1A1A",
+        "linestyle": "-",
+        "marker": "1",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "SARSA",
+        "keys": ["SARSA"],
+        "color": "#555555",
+        "linestyle": "-",
+        "marker": "2",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "ActorCritic",
+        "keys": ["ActorCritic", "Actor-Critic", "A2C"],
+        "color": "#888888",
+        "linestyle": "-",
+        "marker": "3",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
+    },
+    {
+        "name": "DecisionTransformer",
+        "keys": ["DecisionTransformer", "Decision Transformer", "DT"],
+        "color": "#B5B5B5",
+        "linestyle": "-",
+        "marker": "4",
+        "linewidth": 1.5,
+        "alpha": 0.6,
+        "zorder": 8
     }
-    sorted_pairs = sorted(zip(handles, labels), key=lambda x: order_dict.get(x[1], 99))
-    s_handles = [h for h, l in sorted_pairs]
-    s_labels = [l for h, l in sorted_pairs]
-    ax.legend(s_handles, s_labels, bbox_to_anchor=(1.05, 1), loc='upper left', ncol=1)
+]
 
+def get_model_style(col_name):
+    """Find matching model configuration for a column name."""
+    clean_name = col_name.strip()
+    for cfg in MODEL_CONFIGS:
+        if clean_name in cfg["keys"]:
+            return cfg
+    # Fallback
+    return {
+        "name": clean_name,
+        "color": "#000000",
+        "linestyle": "-",
+        "marker": "",
+        "linewidth": 1.2,
+        "alpha": 0.5,
+        "zorder": 1
+    }
+
+def apply_ordered_legend(ax, handles_labels=None, ncol=2, loc="upper left", bbox_to_anchor=(1.02, 1.0)):
+    """Sort and apply legend in the strict 17 baseline order defined in §2."""
+    if handles_labels is None:
+        handles, labels = ax.get_legend_handles_labels()
+    else:
+        handles, labels = handles_labels
+
+    def get_order_idx(label):
+        for i, cfg in enumerate(MODEL_CONFIGS):
+            if label == cfg["name"] or label in cfg["keys"]:
+                return i
+        return 999
+
+    pairs = list(zip(handles, labels))
+    # Deduplicate while preserving order
+    seen = set()
+    unique_pairs = []
+    for h, l in pairs:
+        if l not in seen:
+            seen.add(l)
+            unique_pairs.append((h, l))
+
+    sorted_pairs = sorted(unique_pairs, key=lambda x: get_order_idx(x[1]))
+    s_handles = [p[0] for p in sorted_pairs]
+    s_labels = [p[1] for p in sorted_pairs]
+
+    leg = ax.legend(s_handles, s_labels, loc=loc, bbox_to_anchor=bbox_to_anchor,
+                    ncol=ncol, frameon=True, fancybox=True, edgecolor="#CCCCCC")
+    leg.get_frame().set_alpha(0.95)
+    return leg

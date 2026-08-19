@@ -1,45 +1,41 @@
-# BRIEFING — 2026-08-18T12:37:00+09:00
+# BRIEFING — 2026-08-19T07:46:30Z
 
 ## Mission
-Paper4 IEEE TWC 논문 작성을 위한 실증 실험 데이터 및 14+ 벤치마크 모델 전수 조사와 7대 핵심 지표 분석 리포트 작성 완료.
+Paper4 프로젝트 내 데이터/로그/체크포인트 전수 조사 및 evaluation_plan.md 11대 타겟 결과물에 대한 데이터 가용성 정밀 분석
 
 ## 🔒 My Identity
-- Archetype: Teamwork Explorer
-- Roles: Survey Explorer 1 (Empirical Data & Benchmark Analysis)
+- Archetype: explorer
+- Roles: Teamwork explorer (Data & Log Explorer)
 - Working directory: /home/imnyj/Workspace/paper4/.agents/explorer_survey_1
-- Original parent: ae998028-71ee-4501-a6aa-7b917e067e00
-- Milestone: Paper4 Empirical Data & Benchmark Comprehensive Survey
+- Original parent: 35416a47-4347-4d2b-b546-6cffd40c5bfe
+- Milestone: Data & Log Survey for Evaluation Plan
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement / do NOT modify project source code (only write in own folder)
-- Korean language for report, handoff, and communication
-- Strict anti-hallucination: read files physically, extract exact numbers, cite exact lines and CSV values
-- Academic writing style: objective, factual, no exaggeration, minimum 5 sentences per paragraph in synthesis
+- Read-only investigation — do NOT implement or modify source code
+- All reports and communications in Korean (한글)
+- Output handoff report to /home/imnyj/Workspace/paper4/.agents/explorer_survey_1/handoff.md
+- Report completion to parent orchestrator via send_message
 
 ## Current Parent
-- Conversation ID: ae998028-71ee-4501-a6aa-7b917e067e00
-- Updated: 2026-08-18T12:37:00+09:00
+- Conversation ID: 35416a47-4347-4d2b-b546-6cffd40c5bfe
+- Updated: not yet
 
 ## Investigation State
-- **Explored paths**: `/home/imnyj/Workspace/paper4/coder/data/` (all CSVs), `/home/imnyj/Workspace/paper4/data/models/` (all convergence files), `/home/imnyj/Workspace/paper4/visualizer/` (plot_all.py, config.md), `walkthrough.md`, `idea/baseline_models.md`, `idea/paper4_overall_plan.md`, `code/` (architecture & hooks).
-- **Key findings**: 
-  - 14+ 벤치마크 모델 분류 (Fixed 10Hz, ReactDCC, AdaptDCC, Heuristic, TinyMLP, DecTree, StdMLP, VanillaDQN, DoubleDQN, DuelingDQN, MoEDQN, ActorCritic, DDPG, PPO, SAC, TD3, DecisionTransformer, MAPPO, REMO-DQN).
-  - 7대 핵심 평가 지표 정밀 통계 도출: 
-    1) 학습 수렴도 (REMO-DQN -904,570.64 보상 안정 수렴), 
-    2) CBR 궤적 안정성 (평균 0.3442, Std 0.1008, 0.6 상한 위반 0건), 
-    3) 밀도별 PDR (100 veh/km에서 73.41% 방어, 하락폭 단 3.13%p vs 타 모델 74~91%p 폭락), 
-    4) 밀도별 AoI (전체 평균 373.21 ms 최저치, AdaptDCC 대비 8.59배 우수), 
-    5) 거리별 PDR (300m 최장거리에서 71.67%로 Vanilla 대비 +4.93%p 우위), 
-    6) 하드웨어 실효성 (3.8M MACs, 350K 파라미터, 추론시간 1.2 ms), 
-    7) MoE 라우팅 (고밀도에서 Expert 3 85% 가중치 전이) & t-SNE 클러스터링 분리.
-- **Unexplored areas**: None. Comprehensive survey complete.
+- **Explored paths**:
+  - `/home/imnyj/Workspace/paper4/data/` (models, evaluation, optuna, ablation_structure, ablation_reward, ablation_state)
+  - `/home/imnyj/Workspace/paper4/coder/data/` (ablation_study, moe_routing, tsne_clustering, hardware_feasibility, pdr/aoi vs density, pdr vs distance, cbr_trace, reward_convergence)
+  - `/home/imnyj/Workspace/paper4/code/` (all simulation runners, agents, hooks, optuna scripts, flops calculators)
+  - `/home/imnyj/Workspace/paper4/visualizer/` (evaluation_plan.md, prompt.md, backup/legacy_20260819_pre_critic)
+  - `/home/imnyj/Workspace/paper4/paper/` (paper4_draft_korean.md)
+- **Key findings**:
+  - 11대 타겟 중 6개는 완전 가용(Complete: Optuna, Convergence 100ep, t-SNE, MoE Routing, PDR vs Density, AoI vs Density, HW Feasibility), 3개는 부분 가용(Partial: Ablation Study, CBR Trace, PDR vs Distance), 2개는 추가 생성/추출 필요(Missing/Derivation: AoI vs Distance, Reward Ablation wo_R1/R2/R3).
+- **Unexplored areas**: None (전수 조사 완료).
 
 ## Key Decisions Made
-- Compiled complete empirical statistics and generated `analysis.md` and `handoff.md`.
+- 11대 타겟별 데이터 가용성 3단계 분류(완전 가용 / 부분 가용 / 추가 가공 필요) 및 Coder-Critic 후속 작업을 위한 정밀 데이터 파이프라인 가이드라인 수립.
 
 ## Artifact Index
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/DISPATCH.md` — Dispatch history
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/BRIEFING.md` — Situational awareness
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/progress.md` — Liveness heartbeat
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/analysis.md` — Detailed analysis report
-- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/handoff.md` — 5-component handoff report
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/DISPATCH.md` — Dispatch instructions
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/BRIEFING.md` — Persistent context & identity
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/progress.md` — Liveness & progress tracking
+- `/home/imnyj/Workspace/paper4/.agents/explorer_survey_1/handoff.md` — Final investigation report

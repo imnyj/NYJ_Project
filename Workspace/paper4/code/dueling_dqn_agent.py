@@ -6,38 +6,66 @@ import numpy as np
 import random
 from collections import deque
 
-class DuelingQNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(DuelingQNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 128)
-        self.fc2 = nn.Linear(128, 64)
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
+class DuelingDQN(nn.Module):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM):
+        super(DuelingDQN, self).__init__()
+        self.feature_layer = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU()
+        )
         
-        self.val_fc = nn.Linear(64, 1)
-        self.adv_fc = nn.Linear(64, action_dim)
+        self.value_stream = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, action_dim)
+        )
+    @property
+    def val_fc(self):
+        return self.value_stream
+
+    @property
+    def adv_fc(self):
+        return self.advantage_stream
 
     def forward(self, state):
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        
-        val = self.val_fc(x)
-        adv = self.adv_fc(x)
-        
+        feat = self.feature_layer(state)
+        val = self.value_stream(feat)
+        adv = self.advantage_stream(feat)
         q_vals = val + (adv - adv.mean(dim=1, keepdim=True))
         return q_vals
 
+DuelingQNetwork = DuelingDQN
+
 class DuelingDQNAgent:
-    def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, batch_size=64, target_update_freq=1, buffer_size=100000, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, lr=1e-3, gamma=0.99, batch_size=64, target_update_freq=1, buffer_size=100000, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
         self.gamma = gamma
         self.batch_size = batch_size
         self.target_update_freq = target_update_freq
-        self.action_dim = action_dim
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        self.q_net = DuelingQNetwork(state_dim, action_dim).to(self.device)
-        self.q_target = DuelingQNetwork(state_dim, action_dim).to(self.device)
-        self.q_target.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
+        self.q_network = DuelingDQN(state_dim, action_dim).to(self.device)
+        self.target_network = DuelingDQN(state_dim, action_dim).to(self.device)
+        self.q_net = self.q_network
+        self.q_target = self.target_network
+        self.update_target_network()
+        
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
+        self.criterion = nn.MSELoss()
         
         self.memory = deque(maxlen=buffer_size)
         
@@ -45,14 +73,22 @@ class DuelingDQNAgent:
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
         
+    def update_target_network(self):
+        self.target_network.load_state_dict(self.q_network.state_dict())
+        
     def act(self, state, evaluate=False):
         if not evaluate and random.random() < self.epsilon:
             return random.randint(0, self.action_dim - 1)
             
-        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        self.q_network.eval()
         with torch.no_grad():
-            q_values = self.q_net(state)
+            q_values = self.q_network(state_tensor)
+        self.q_network.train()
         return torch.argmax(q_values).item()
+        
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
         
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -69,11 +105,14 @@ class DuelingDQNAgent:
         dones = torch.FloatTensor(np.array([m[4] for m in batch])).unsqueeze(1).to(self.device)
         
         with torch.no_grad():
-            target_q = rewards + (1 - dones) * self.gamma * self.q_target(next_states).max(1)[0].unsqueeze(1)
+            # DDQN target logic: online network selects action, target network evaluates it
+            next_actions = self.q_network(next_states).argmax(dim=1, keepdim=True)
+            next_q_vals = self.target_network(next_states).gather(1, next_actions)
+            target_q = rewards + self.gamma * next_q_vals * (1 - dones)
             
-        current_q = self.q_net(states).gather(1, actions)
+        current_q = self.q_network(states).gather(1, actions)
         
-        loss = F.mse_loss(current_q, target_q)
+        loss = self.criterion(current_q, target_q)
         
         self.optimizer.zero_grad()
         loss.backward()
@@ -82,15 +121,15 @@ class DuelingDQNAgent:
         return loss.item()
         
     def update_epsilon(self):
-        if self.epsilon > self.epsilon_end:
-            self.epsilon *= self.epsilon_decay
-            
-    def update_target_network(self):
-        self.q_target.load_state_dict(self.q_net.state_dict())
+        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
         
     def save(self, filepath):
-        torch.save(self.q_net.state_dict(), filepath)
+        torch.save(self.q_network.state_dict(), filepath)
         
     def load(self, filepath):
-        self.q_net.load_state_dict(torch.load(filepath, map_location=self.device))
-        self.q_target.load_state_dict(self.q_net.state_dict())
+        checkpoint = torch.load(filepath, map_location=self.device)
+        if isinstance(checkpoint, dict) and "q_net" in checkpoint and not any(k.startswith("feature_layer.") or k.startswith("fc") for k in checkpoint.keys()):
+            self.q_network.load_state_dict(checkpoint["q_net"])
+        else:
+            self.q_network.load_state_dict(checkpoint)
+        self.update_target_network()

@@ -6,32 +6,46 @@ import numpy as np
 import random
 from collections import deque
 
-class QNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim):
-        super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, action_dim)
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
+class DoubleDQN(nn.Module):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM):
+        super(DoubleDQN, self).__init__()
+        self.network = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU(),
+            nn.Linear(128, 128),
+            nn.ReLU(),
+            nn.Linear(128, action_dim)
+        )
 
     def forward(self, state):
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        return self.network(state)
+
+QNetwork = DoubleDQN
 
 class DDQNAgent:
-    def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, tau=0.005, batch_size=64, target_update_freq=1, buffer_size=100000, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, lr=1e-3, gamma=0.99, tau=0.005, batch_size=64, target_update_freq=1, buffer_size=100000, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995):
+        self.state_dim = state_dim
+        self.action_dim = action_dim
         self.gamma = gamma
         self.tau = tau
         self.batch_size = batch_size
         self.target_update_freq = target_update_freq
-        self.action_dim = action_dim
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        self.q_net = QNetwork(state_dim, action_dim).to(self.device)
-        self.q_target = QNetwork(state_dim, action_dim).to(self.device)
-        self.q_target.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
+        self.q_network = DoubleDQN(state_dim, action_dim).to(self.device)
+        self.target_network = DoubleDQN(state_dim, action_dim).to(self.device)
+        self.q_net = self.q_network
+        self.q_target = self.target_network
+        self.update_target_network()
+        
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
+        self.criterion = nn.MSELoss()
         
         self.memory = deque(maxlen=buffer_size)
         
@@ -39,14 +53,22 @@ class DDQNAgent:
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
         
+    def update_target_network(self):
+        self.target_network.load_state_dict(self.q_network.state_dict())
+        
     def act(self, state, evaluate=False):
         if not evaluate and random.random() < self.epsilon:
             return random.randint(0, self.action_dim - 1)
             
-        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        self.q_network.eval()
         with torch.no_grad():
-            q_values = self.q_net(state)
+            q_values = self.q_network(state_tensor)
+        self.q_network.train()
         return torch.argmax(q_values).item()
+        
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
         
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -63,35 +85,37 @@ class DDQNAgent:
         dones = torch.FloatTensor(np.array([m[4] for m in batch])).unsqueeze(1).to(self.device)
         
         with torch.no_grad():
-            # DDQN logic: use q_net to select action, q_target to evaluate it
-            next_actions = self.q_net(next_states).argmax(1, keepdim=True)
-            target_q = rewards + (1 - dones) * self.gamma * self.q_target(next_states).gather(1, next_actions)
+            # DDQN target logic: online network selects action, target network evaluates it
+            next_actions = self.q_network(next_states).argmax(dim=1, keepdim=True)
+            next_q_vals = self.target_network(next_states).gather(1, next_actions)
+            target_q = rewards + (1 - dones) * self.gamma * next_q_vals
             
-        current_q = self.q_net(states).gather(1, actions)
+        current_q = self.q_network(states).gather(1, actions)
         
-        loss = F.mse_loss(current_q, target_q)
+        loss = self.criterion(current_q, target_q)
         
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         
-        # Soft update target network
-        for target_param, param in zip(self.q_target.parameters(), self.q_net.parameters()):
-            target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
-            
-        # Update epsilon
-        if self.epsilon > self.epsilon_end:
-            self.epsilon *= self.epsilon_decay
+        # Soft update target network if tau > 0
+        if self.tau > 0:
+            for target_param, param in zip(self.target_network.parameters(), self.q_network.parameters()):
+                target_param.data.copy_(target_param.data * (1.0 - self.tau) + param.data * self.tau)
             
         return loss.item()
         
+    def update_epsilon(self):
+        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+        
     def save(self, filepath):
-        torch.save({
-            'q_net': self.q_net.state_dict(),
-        }, filepath)
+        torch.save(self.q_network.state_dict(), filepath)
         
     def load(self, filepath):
         checkpoint = torch.load(filepath, map_location=self.device)
-        self.q_net.load_state_dict(checkpoint['q_net'])
-        self.q_target.load_state_dict(checkpoint['q_net'])
+        if isinstance(checkpoint, dict) and "q_net" in checkpoint and not any(k.startswith("network.") for k in checkpoint.keys()):
+            self.q_network.load_state_dict(checkpoint["q_net"])
+        else:
+            self.q_network.load_state_dict(checkpoint)
+        self.update_target_network()
 

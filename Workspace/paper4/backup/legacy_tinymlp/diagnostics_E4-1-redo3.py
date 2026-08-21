@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """E4-1-redo3 Oracle dataset 검증 스크립트.
-oracle_dataset.csv (alpha=0.3, 3-term cost, ETSI P_TX=[0,10,20,30]dBm) 의
-action_idx 분포(0~15), top1/top3 비율, n_unique_actions, cost 통계를
+oracle_dataset.csv (alpha=0.3, 3-term cost, ETSI P_TX max 20dBm) 의
+action_idx 분포, top1/top3 비율, n_unique_actions, cost 통계를
 sampling(every 100th row)으로 계산.
 """
 import json
@@ -36,8 +36,9 @@ header = None
 col = {}
 
 # P_TX grid from meta (dBm)
-p_tx_grid_dbm = meta.get("p_tx_grid", [0.0, 10.0, 20.0, 30.0])
-t_grid = meta.get("t_grid", [0.1, 0.2, 0.5, 1.0])
+from etsi_cam_layer import PTX_GRID_DBM, T_GRID_S
+p_tx_grid_dbm = meta.get("p_tx_grid", list(PTX_GRID_DBM))
+t_grid = meta.get("t_grid", list(T_GRID_S))
 
 # action_idx → (T_idx, P_tx_idx) mapping (row-major: T varies slowest)
 # action_idx = T_idx * len(p_tx_grid) + P_tx_idx
@@ -211,9 +212,10 @@ cost_nan_ok = n_nan_cost == 0
 # [PATCH 2026-05-14] Option C — accept 9/16/25 grids and v3 cost version
 valid_grids = {
     4:  {"t": [0.1, 0.3],              "p": [0.0, 15.0]},
-    9:  {"t": [0.1, 0.3, 1.0],         "p": [0.0, 15.0, 30.0]},
-    16: {"t": [0.1, 0.2, 0.5, 1.0],    "p": [0.0, 10.0, 20.0, 30.0]},
-    25: {"t": [0.1, 0.2, 0.4, 0.7, 1.0], "p": [0.0, 7.5, 15.0, 22.5, 30.0]},
+    9:  {"t": [0.1, 0.3, 1.0],         "p": [0.0, 10.0, 20.0]},
+    16: {"t": [0.1, 0.2, 0.5, 1.0],    "p": [0.0, 10.0, 15.0, 20.0]},
+    24: {"t": [0.1, 0.2, 0.5, 1.0],    "p": [-5.0, 0.0, 5.0, 10.0, 15.0, 20.0]},
+    25: {"t": [0.1, 0.2, 0.4, 0.7, 1.0], "p": [0.0, 5.0, 10.0, 15.0, 20.0]},
 }
 _meta_grid_size = meta.get("n_actions") or meta.get("grid_size")
 _t_grid = meta.get("t_grid")

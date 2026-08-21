@@ -8,10 +8,14 @@ import gc
 import shutil
 
 # Append path to make sure imports work
-sys.path.append("/home/imnyj/Workspace/paper4/code")
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+if _code_dir not in sys.path:
+    sys.path.insert(0, _code_dir)
 
 from sim_engine import SimulationRunner
 from ai_dcc_hook import get_hook
+from etsi_cam_layer import ACTION_DIM
 
 from qlearning_agent import QLearningAgent
 from sarsa_agent import SARSAAgent
@@ -28,9 +32,10 @@ from mappo_agent import MAPPOAgent
 from moe_agent import MoEAgent 
 from resnet_moe_agent import ResNetMoEAgent
 
-OPTUNA_DIR = "/home/imnyj/Workspace/paper4/data/optuna"
-MODELS_DIR = "/home/imnyj/Workspace/paper4/data/models"
-EVAL_DIR = "/home/imnyj/Workspace/paper4/data/evaluation"
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(_project_root, "data"))
+OPTUNA_DIR = os.environ.get("OPTUNA_DIR", os.path.join(DATA_DIR, "optuna"))
+MODELS_DIR = os.environ.get("MODELS_DIR", os.path.join(DATA_DIR, "models"))
+EVAL_DIR = os.environ.get("EVAL_DIR", os.path.join(DATA_DIR, "evaluation"))
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(EVAL_DIR, exist_ok=True)
 
@@ -77,7 +82,7 @@ def load_optuna_params(method_name):
                         params[k] = v
     return params
 
-def create_agent(method_name, state_dim=5, action_dim=16):
+def create_agent(method_name, state_dim=5, action_dim=ACTION_DIM):
     params = load_optuna_params(method_name)
     
     def get_p(key, default):

@@ -17,7 +17,9 @@ plt.rcParams.update({
     'figure.autolayout': True
 })
 
-DATA_DIR = "/home/imnyj/papers/paper4/paper/data"
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(_project_root, "data"))
 CSV_PATH = os.path.join(DATA_DIR, "SA2_results.csv")
 
 # Ensure output dir exists

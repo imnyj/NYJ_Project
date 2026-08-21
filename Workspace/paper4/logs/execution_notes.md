@@ -103,3 +103,36 @@
 2. 실패/재시도 지점: 이전 할당량 초과(429) 중단 상태 복구 후, Zero Mock Data(AST 및 정적 검색 0건) 및 200k 수렴 데이터 무결성 재확인.
 3. 수동 교정 내용: 14개 RL 모델 가중치 역직렬화, 22개 출판 산출물 350 DPI 정합성 및 Phase I/II 200k 스텝 표기 최종 검증 완료.
 
+
+### [2026-08-20] H-6 Tabular Agent State Bounds & Train Step Fix
+1. 수행한 작업: Q-Learning/SARSA 에이전트의 state_bounds를 5차원 모두 (0.0, 1.0)으로 정합, no-op train_step() 추가, action_dim=24 통일 및 독립 검증 스위트 test_h6_tabular.py (8개 테스트) 100% 통과 입증.
+2. 실패/재시도 지점: 없음 (모든 단위 테스트 및 회귀 테스트 1회 통과).
+3. 수동 교정 내용: train_qlearning.py, train_sarsa.py, run_optuna_all_baselines.py, run_full_evaluation.py, run_parallel_evaluation.py 내 잔존하던 action_dim=16 하드코딩을 ACTION_DIM(24)로 일괄 교정.
+
+### [2026-08-20] M-8 Per-Vehicle Local CBR Measurement & Delivery Fix
+1. 수행한 작업: `sim_engine.py` 내 `compute_local_cbr` 수식 정합(300m 이웃+자신 전송량 기반, 다중 입력 포맷 지원), `SimulationRunner.run()` 루프 내 `vdata["cbr"]` 국소 CBR 주입 및 `oracle_generator.py` 연동 정합.
+2. 실패/재시도 지점: AI DCC Hook 테스트 시 초기 1스텝 EMA 평활화 인자(0.5) 미반영으로 인한 수치 불일치를 포착하여 EMA 수렴 단계 검증으로 보강 완료.
+3. 수동 교정 내용: `code/test_m8_local_cbr.py` (7개 테스트) 및 전체 회귀 테스트 스위트 (45개 전 테스트) 100% PASS 입증 완료.
+
+### [2026-08-20] M-9 Hardcoded Absolute Paths Removal & Legacy Scripts Isolation
+1. 수행한 작업: `sim_engine.py` 내 동적 바이너리/환경 탐색 함수(`find_executable`, `get_sumo_env`, `get_sumonetsim_paths`) 구현, `code/` 전역 하드코딩 절대경로 100% 제거, 레거시 및 백업 파일 30여 개 `backup/` 격리 완료.
+2. 실패/재시도 지점: `oracle_generator.py` 내 docstring 구문 오류 및 `test_m9_paths.py` 내 URL 프로토콜 정규식 간섭을 감지하여 정밀 수정 완료.
+3. 수동 교정 내용: `code/test_m9_paths.py` (7개 테스트) 및 전체 연계 회귀 테스트 스위트 (52개 전 테스트) 100% PASS 입증 완료.
+
+
+
+
+### [2026-08-20] M-12 DRL Hook Terminal Transition (done=True) & Lifecycle Fix
+1. 수행한 작업: AIDCCHookBase 공통 베이스 구현, 15개 DRL Hook 클래스 상속 체계 정합, terminate_vehicle 내 done=True 종단 전이 저장 및 상태 추적 딕셔너리 메모리 누수 방지 완전 pop 구현, test_m12_terminal_transitions.py 독립 검증 및 11종 누적 73개 전수 회귀 테스트 100% 통과.
+2. 실패/재시도 지점: DecisionTransformerHook의 단일 스텝 조기 이탈 케이스 및 QLearningAgent의 state_bins 인자 불일치를 감지하여 즉시 정밀 교정 완료.
+3. 수동 교정 내용: etsi_cam_layer.py의 remove_vehicle 연동 강화 및 evaluation 모드(is_training=False)/미존재 vid safe no-op 무결성 입증 완료.
+
+### [2026-08-20] Critic Final Review & 12 Defects 100% Verification (critic_final)
+1. 수행한 작업: 12대 결함(C-3~M-12) 수정 정합성 정밀 실측, 11종 73개 독립 테스트 스위트 전수 실행(100% PASS 확인), 작업공간 백업 격리 상태 검토 및 final_critic_report.md/handoff.md 작성 완료.
+2. 실패/재시도 지점: 없음 (11종 테스트 스위트 일괄 및 개별 실행 전원 exit code 0 및 0 failure 달성).
+3. 수동 교정 내용: 75개 파이썬 모듈 정적 분석 무결성 확인 및 최종 판정 APPROVE 확정 보고.
+
+### [2026-08-20] Victory Auditor 6 Independent Post-Victory Audit
+1. 수행한 작업: 12대 결함(C-3~M-12) 및 13개 검증 항목 전수 실측, 11종 73개 독립 테스트 스위트 및 회귀 테스트 전체 독립 재실행(100% PASS 확인) 및 최종 VICTORY CONFIRMED 판정 완료.
+2. 실패/재시도 지점: 없음 (모든 단위/통합/물리/기하/회귀 테스트 독립 환경에서 0 Failure 0 Error 100% 통과).
+3. 수동 교정 내용: Phase A(타임라인/출처), Phase B(부정행위/체크리스트 포렌식), Phase C(독립 테스트 재실행) 완벽 검증 및 승인 확정.

@@ -74,7 +74,9 @@ def main():
     
     print("Best params:", study.best_params)
     
-    output_dir = "/home/imnyj/Workspace/paper4/data/optuna"
+    code_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(code_dir)
+    output_dir = os.environ.get("OPTUNA_DIR", os.path.join(project_root, "data", "optuna"))
     os.makedirs(output_dir, exist_ok=True)
     output_file = os.path.join(output_dir, "best_params_{hook_name}.csv")
     

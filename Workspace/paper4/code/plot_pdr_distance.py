@@ -3,8 +3,12 @@ import matplotlib.pyplot as plt
 import os
 import numpy as np
 
-ARRAYS_PATH = "/home/imnyj/papers/paper4/paper/data/SA2_arrays.json"
-OUT_DIR = "/home/imnyj/papers/paper4/paper/data/plots"
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(_project_root, "data"))
+ARRAYS_PATH = os.path.join(DATA_DIR, "SA2_arrays.json")
+OUT_DIR = os.path.join(DATA_DIR, "plots")
+os.makedirs(OUT_DIR, exist_ok=True)
 
 with open(ARRAYS_PATH, "r") as f:
     results = json.load(f)

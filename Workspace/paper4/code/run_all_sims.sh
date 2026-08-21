@@ -1,17 +1,18 @@
 #!/bin/bash
-cd /home/imnyj/Workspace/paper4/code
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+PYTHON_BIN="$(which python3)"
 
 # Run training scripts
-/home/imnyj/venv/bin/python3 train_dqn.py
-/home/imnyj/venv/bin/python3 train_moe.py
-/home/imnyj/venv/bin/python3 train_actor_critic.py
-/home/imnyj/venv/bin/python3 train_resnet.py
-/home/imnyj/venv/bin/python3 train_qlearning.py
-/home/imnyj/venv/bin/python3 train_sarsa.py
-/home/imnyj/venv/bin/python3 train_final.py
+"$PYTHON_BIN" train_dqn.py
+"$PYTHON_BIN" train_ddqn.py
+"$PYTHON_BIN" train_dueling_dqn.py
+"$PYTHON_BIN" train_moe.py
+"$PYTHON_BIN" train_resnet.py
+"$PYTHON_BIN" train_actor_critic.py
+"$PYTHON_BIN" train_qlearning.py
+"$PYTHON_BIN" train_sarsa.py
 
 # Run simulations
-/home/imnyj/venv/bin/python3 sweep_density.py
-
-# Maybe aggregator.py?
-/home/imnyj/venv/bin/python3 aggregator.py
+"$PYTHON_BIN" sweep_density.py

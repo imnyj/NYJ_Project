@@ -7,6 +7,11 @@ from sim_engine import SimulationRunner
 from ablation_agents import AblationAgent
 from ai_dcc_hook import DuelingDQNHook, _hooks
 
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(_project_root, "data"))
+STATE_ABLATION_DIR = os.path.join(DATA_DIR, "ablation_state")
+
 def train_and_eval_variant(state_variant_name):
     print(f"\n{'='*50}\nStarting State Ablation: {state_variant_name}\n{'='*50}")
     
@@ -40,7 +45,8 @@ def train_and_eval_variant(state_variant_name):
     hook.set_agent(agent)
     hook.is_training = True
     
-    log_file = f'/home/imnyj/Workspace/paper4/data/ablation_state/{state_variant_name}_train_log.csv'
+    os.makedirs(STATE_ABLATION_DIR, exist_ok=True)
+    log_file = os.path.join(STATE_ABLATION_DIR, f"{state_variant_name}_train_log.csv")
     with open(log_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['Episode', 'Reward', 'Loss', 'Epsilon', 'AoI_mean', 'CBR_mean', 'PDR_mean'])
@@ -84,7 +90,7 @@ def train_and_eval_variant(state_variant_name):
             writer.writerow([ep+1, ep_reward, avg_loss, agent.epsilon, aoi, cbr, pdr])
             
     # Save model
-    model_path = f"/home/imnyj/Workspace/paper4/data/ablation_state/{state_variant_name}_model.pth"
+    model_path = os.path.join(STATE_ABLATION_DIR, f"{state_variant_name}_model.pth")
     agent.save(model_path)
     print(f"Training finished, model saved to {model_path}")
     
@@ -94,7 +100,7 @@ def train_and_eval_variant(state_variant_name):
     eval_runner = SimulationRunner(scenario="urban_grid", n_vehicles=50, seed=100, method=hook_key, method_params={}, duration_steps=500)
     eval_metrics = eval_runner.run()
     
-    eval_file = f'/home/imnyj/Workspace/paper4/data/ablation_state/{state_variant_name}_eval_metrics.csv'
+    eval_file = os.path.join(STATE_ABLATION_DIR, f"{state_variant_name}_eval_metrics.csv")
     with open(eval_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['AoI_mean', 'CBR_mean', 'PDR_mean', 'CBR_var', 'PDR_var', 'Total_Bytes_Tx'])
@@ -111,7 +117,7 @@ def train_and_eval_variant(state_variant_name):
     return eval_metrics
 
 def main():
-    os.makedirs('/home/imnyj/Workspace/paper4/data/ablation_state', exist_ok=True)
+    os.makedirs(STATE_ABLATION_DIR, exist_ok=True)
     
     variants = [
         "Base",

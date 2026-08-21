@@ -5,8 +5,13 @@ import random
 import numpy as np
 from collections import deque
 
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
 class VanillaDQN(nn.Module):
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM):
         super(VanillaDQN, self).__init__()
         
         self.network = nn.Sequential(
@@ -21,7 +26,7 @@ class VanillaDQN(nn.Module):
         return self.network(state)
 
 class DQNAgent:
-    def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -35,6 +40,8 @@ class DQNAgent:
         
         self.q_network = VanillaDQN(state_dim, action_dim).to(self.device)
         self.target_network = VanillaDQN(state_dim, action_dim).to(self.device)
+        self.q_net = self.q_network
+        self.q_target = self.target_network
         self.update_target_network()
         
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
@@ -57,6 +64,9 @@ class DQNAgent:
         
         return torch.argmax(q_vals).item()
         
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
+        
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
         
@@ -76,7 +86,7 @@ class DQNAgent:
         # Current Q
         q_vals = self.q_network(states).gather(1, actions)
         
-        # Next Q from target network (Vanilla DQN)
+        # Next Q from target network (Vanilla DQN - Single target)
         with torch.no_grad():
             next_q_vals = self.target_network(next_states).max(dim=1, keepdim=True)[0]
             target_q_vals = rewards + self.gamma * next_q_vals * (1 - dones)
@@ -96,6 +106,11 @@ class DQNAgent:
         torch.save(self.q_network.state_dict(), filepath)
         
     def load(self, filepath):
-        self.q_network.load_state_dict(torch.load(filepath, map_location=self.device))
+        checkpoint = torch.load(filepath, map_location=self.device)
+        if isinstance(checkpoint, dict) and "q_net" in checkpoint and not any(k.startswith("network.") for k in checkpoint.keys()):
+            self.q_network.load_state_dict(checkpoint["q_net"])
+        else:
+            self.q_network.load_state_dict(checkpoint)
         self.update_target_network()
+
 

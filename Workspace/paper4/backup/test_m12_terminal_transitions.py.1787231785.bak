@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""
+Independent Verification Test Suite for M-12:
+DRL Hook Terminal Transition (done=True) Storage and Lifecycle Management.
+
+Covers:
+1. All DRL Hook classes instantiation and inheritance from AIDCCHookBase.
+2. Single-step predict -> terminate_vehicle stores exactly 1 done=True transition.
+3. State dictionary cleanup (prev_states, prev_actions, prev_cbr, prev_t_gencam) after termination.
+4. Safe handling of non-existent vids, None vids, and no-ops in eval mode (is_training=False).
+5. Multi-step lifecycle: intermediate transitions have done=False, terminal transition has done=True.
+6. Mathematical validation of bootstrap cutoff (y = r when done=True) in replay memory / loss calculation.
+7. Simulator lifecycle integration: arrived vehicles cleanly call remove_vehicle and terminate_vehicle.
+"""
+
+import unittest
+import numpy as np
+import torch
+import os
+import sys
+
+# Ensure local imports work
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from ai_dcc_hook import (
+    AIDCCHookBase,
+    TinyMLPHook,
+    SklearnHook,
+    DuelingDQNHook,
+    MoEDQNHook,
+    ResNetMoEDQNHook,
+    QLearningHook,
+    SARSAHook,
+    ActorCriticHook,
+    PPOHook,
+    DDPGHook,
+    DecisionTransformerHook,
+    VanillaDQNHook,
+    SACHook,
+    MAPPOHook,
+    DDQNHook,
+    DoubleDQNHook,
+    TD3Hook,
+    get_hook
+)
+from dqn_agent import DQNAgent
+from resnet_moe_agent import ResNetMoEAgent
+from qlearning_agent import QLearningAgent
+from sarsa_agent import SARSAAgent
+from actor_critic_agent import ActorCriticAgent
+from sim_engine import SimulationRunner
+from etsi_cam_layer import ETSICAMLayer, ACTION_DIM
+
+
+class MockAgent:
+    """Mock agent recording transition tuples passed to store_transition."""
+    def __init__(self, action_dim=24):
+        self.action_dim = action_dim
+        self.transitions = []
+        self.epsilon = 0.5
+
+    def act(self, *args, **kwargs):
+        return 3
+
+    def store_transition(self, *args, **kwargs):
+        self.transitions.append((args, kwargs))
+
+
+class TestM12TerminalTransitions(unittest.TestCase):
+    
+    def setUp(self):
+        self.all_drl_hook_classes = [
+            DuelingDQNHook,
+            MoEDQNHook,
+            ResNetMoEDQNHook,
+            QLearningHook,
+            SARSAHook,
+            ActorCriticHook,
+            PPOHook,
+            DDPGHook,
+            DecisionTransformerHook,
+            VanillaDQNHook,
+            SACHook,
+            MAPPOHook,
+            DDQNHook,
+            DoubleDQNHook,
+            TD3Hook,
+        ]
+
+    def test_01_all_drl_hooks_inherit_aidcc_base(self):
+        """Verify that all DRL hook classes inherit from AIDCCHookBase and have required methods."""
+        for hook_cls in self.all_drl_hook_classes:
+            hook = hook_cls()
+            self.assertIsInstance(hook, AIDCCHookBase, f"{hook_cls.__name__} does not inherit from AIDCCHookBase")
+            self.assertTrue(hasattr(hook, 'predict'), f"{hook_cls.__name__} lacks predict()")
+            self.assertTrue(hasattr(hook, 'terminate_vehicle'), f"{hook_cls.__name__} lacks terminate_vehicle()")
+            self.assertTrue(hasattr(hook, 'reset_episode'), f"{hook_cls.__name__} lacks reset_episode()")
+            self.assertTrue(hasattr(hook, 'set_agent'), f"{hook_cls.__name__} lacks set_agent()")
+            self.assertTrue(hook.wants_vid(), f"{hook_cls.__name__}.wants_vid() should return True")
+            self.assertEqual(hook.action_dim, ACTION_DIM)
+
+    def test_02_terminal_transition_stored_on_termination(self):
+        """Verify that calling terminate_vehicle on a tracked vehicle stores done=True transition."""
+        for hook_cls in self.all_drl_hook_classes:
+            hook = hook_cls(is_training=True)
+            agent = MockAgent()
+            hook.set_agent(agent)
+            
+            vid = "veh_test_terminal"
+            # 1. First observation (no transition stored yet)
+            t_act, p_act = hook.predict(0.04, 0.2, 0.6, 0.1, 0.04, vid=vid)
+            self.assertEqual(len(agent.transitions), 0, f"{hook_cls.__name__} should not store transition on first step")
+            self.assertIn(vid, hook.prev_states)
+            self.assertIn(vid, hook.prev_actions)
+            
+            # 2. Terminate vehicle -> must store exactly 1 terminal transition with done=True
+            hook.terminate_vehicle(vid)
+            self.assertEqual(len(agent.transitions), 1, f"{hook_cls.__name__} failed to store terminal transition")
+            
+            # Inspect stored transition
+            args, kwargs = agent.transitions[0]
+            if hook_cls == MAPPOHook:
+                # MAPPO store_transition(l_state, g_state, action, reward, next_l_state, next_g_state, done)
+                self.assertEqual(len(args), 7)
+                done_flag = args[6]
+            elif hook_cls == SARSAHook:
+                # SARSA store_transition(s, a, r, s_next, done, next_action=None)
+                self.assertEqual(len(args), 5)
+                done_flag = args[4]
+            else:
+                # Standard store_transition(s, a, r, s_next, done)
+                self.assertEqual(len(args), 5)
+                done_flag = args[4]
+            self.assertTrue(done_flag, f"{hook_cls.__name__} terminal transition must have done=True")
+
+    def test_03_state_dictionaries_cleaned_up_after_termination(self):
+        """Verify that all state tracking dicts are completely emptied of terminated vid."""
+        for hook_cls in self.all_drl_hook_classes:
+            hook = hook_cls(is_training=True)
+            agent = MockAgent()
+            hook.set_agent(agent)
+            
+            vid1, vid2 = "veh_active", "veh_terminated"
+            hook.predict(0.03, 0.1, 0.5, 0.1, 0.03, vid=vid1)
+            hook.predict(0.05, 0.3, 0.7, 0.1, 0.05, vid=vid2)
+            
+            self.assertIn(vid1, hook.prev_states)
+            self.assertIn(vid2, hook.prev_states)
+            self.assertIn(vid1, hook.prev_actions)
+            self.assertIn(vid2, hook.prev_actions)
+            self.assertIn(vid1, hook.prev_cbr)
+            self.assertIn(vid2, hook.prev_cbr)
+            self.assertIn(vid1, hook.prev_t_gencam)
+            self.assertIn(vid2, hook.prev_t_gencam)
+            
+            # Terminate vid2
+            hook.terminate_vehicle(vid2)
+            
+            # vid2 must be completely removed
+            self.assertNotIn(vid2, hook.prev_states)
+            self.assertNotIn(vid2, hook.prev_actions)
+            self.assertNotIn(vid2, hook.prev_cbr)
+            self.assertNotIn(vid2, hook.prev_t_gencam)
+            if hasattr(hook, 'trajectories'):
+                self.assertNotIn(vid2, hook.trajectories)
+                
+            # vid1 must remain intact
+            self.assertIn(vid1, hook.prev_states)
+            self.assertIn(vid1, hook.prev_actions)
+            self.assertIn(vid1, hook.prev_cbr)
+            self.assertIn(vid1, hook.prev_t_gencam)
+
+    def test_04_safe_handling_of_nonexistent_vids_and_eval_mode(self):
+        """Verify that non-existent vids, None vids, and eval mode terminate_vehicle are safe no-ops."""
+        for hook_cls in self.all_drl_hook_classes:
+            # 1. Non-existent vid
+            hook = hook_cls(is_training=True)
+            agent = MockAgent()
+            hook.set_agent(agent)
+            
+            try:
+                hook.terminate_vehicle("ghost_vehicle_999")
+                hook.terminate_vehicle(None)
+            except Exception as e:
+                self.fail(f"{hook_cls.__name__}.terminate_vehicle raised unexpected exception: {e}")
+            self.assertEqual(len(agent.transitions), 0)
+            
+            # 2. Eval mode (is_training=False)
+            eval_hook = hook_cls(is_training=False)
+            eval_hook.set_agent(agent)
+            eval_hook.predict(0.04, 0.2, 0.5, 0.1, 0.04, vid="eval_veh")
+            self.assertIn("eval_veh", eval_hook.prev_states)
+            
+            eval_hook.terminate_vehicle("eval_veh")
+            # Should not store transition to agent
+            self.assertEqual(len(agent.transitions), 0)
+            # Should still clean up memory tracking dictionaries
+            self.assertNotIn("eval_veh", eval_hook.prev_states)
+            self.assertNotIn("eval_veh", eval_hook.prev_actions)
+            self.assertNotIn("eval_veh", eval_hook.prev_cbr)
+            self.assertNotIn("eval_veh", eval_hook.prev_t_gencam)
+
+    def test_05_multi_step_transition_lifecycle_integrity(self):
+        """Verify multi-step lifecycle: step 1 (none), step 2-4 (done=False), terminate (done=True)."""
+        hook = ResNetMoEDQNHook(is_training=True)
+        agent = MockAgent()
+        hook.set_agent(agent)
+        vid = "veh_multi_step"
+        
+        # Step 1
+        hook.predict(0.02, 0.1, 0.5, 0.1, 0.02, vid=vid)
+        self.assertEqual(len(agent.transitions), 0)
+        
+        # Step 2
+        hook.predict(0.03, 0.15, 0.5, 0.1, 0.03, vid=vid)
+        self.assertEqual(len(agent.transitions), 1)
+        self.assertFalse(agent.transitions[0][0][4], "Step 2 transition must have done=False")
+        
+        # Step 3
+        hook.predict(0.04, 0.2, 0.5, 0.1, 0.04, vid=vid)
+        self.assertEqual(len(agent.transitions), 2)
+        self.assertFalse(agent.transitions[1][0][4], "Step 3 transition must have done=False")
+        
+        # Termination
+        hook.terminate_vehicle(vid)
+        self.assertEqual(len(agent.transitions), 3)
+        self.assertTrue(agent.transitions[2][0][4], "Terminal transition must have done=True")
+        
+        # Confirm state tracking is clean
+        self.assertNotIn(vid, hook.prev_states)
+
+    def test_06_real_drl_agents_terminal_bootstrap_mathematics(self):
+        """Verify that done=True eliminates TD bootstrap (target Q = reward) across real DRL agents."""
+        # 1. DQNAgent
+        dqn_agent = DQNAgent(state_dim=5, action_dim=24)
+        s = np.zeros(5, dtype=np.float32)
+        a = 2
+        r = -0.5
+        next_s = np.ones(5, dtype=np.float32)
+        
+        # Store done=True transition
+        dqn_agent.store_transition(s, a, r, next_s, done=True)
+        # Store done=False transition
+        dqn_agent.store_transition(s, a, r, next_s, done=False)
+        self.assertEqual(len(dqn_agent.memory), 2)
+        
+        # Inspect sample batch computation
+        batch = list(dqn_agent.memory)
+        # Transition 0: done=True
+        s0, a0, r0, ns0, d0 = batch[0]
+        self.assertTrue(d0)
+        # Transition 1: done=False
+        s1, a1, r1, ns1, d1 = batch[1]
+        self.assertFalse(d1)
+        
+        # 2. QLearningAgent mathematical verification
+        q_agent = QLearningAgent(state_dim=5, action_dim=24)
+        q_agent.q_table.fill(10.0) # Set arbitrary positive Q values
+        # When done=True, td_target = reward (-0.5), completely ignoring gamma * max(Q)
+        q_agent.store_transition(s, a, r, next_s, done=True)
+        d_s = q_agent._discretize_state(s)
+        # expected Q = 10.0 + alpha * (-0.5 - 10.0) = 10.0 + 0.1 * (-10.5) = 8.95
+        self.assertAlmostEqual(q_agent.q_table[d_s][a], 8.95, places=4)
+
+    def test_07_simulator_vehicle_departure_lifecycle_integration(self):
+        """Verify SimulationRunner cleanly removes and terminates vehicles without error."""
+        hook = get_hook("ResNetMoEDQN")
+        agent = MockAgent()
+        hook.set_agent(agent)
+        hook.is_training = True
+        hook.reset_episode()
+        
+        runner = SimulationRunner(
+            scenario="urban_grid",
+            n_vehicles=20,
+            seed=42,
+            method="ResNetMoEDQN",
+            duration_steps=50
+        )
+        metrics = runner.run()
+        self.assertIsInstance(metrics, dict)
+        self.assertIn("PDR_mean", metrics)
+        self.assertIn("CBR_mean", metrics)
+        
+        # At end of simulation runner, finally block cleanly terminates all vehicles
+        self.assertEqual(len(hook.prev_states), 0, "All vehicles must be cleanly terminated by sim_engine")
+        self.assertEqual(len(hook.prev_actions), 0)
+        self.assertEqual(len(hook.prev_cbr), 0)
+        self.assertGreater(len(agent.transitions), 0, "Simulation should have produced valid transitions")
+        
+        # At least some terminal transitions must have done=True
+        terminal_transitions = [t for t in agent.transitions if t[0][4] is True]
+        self.assertGreater(len(terminal_transitions), 0, "Must have recorded terminal done=True transitions")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

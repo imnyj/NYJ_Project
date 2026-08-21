@@ -379,8 +379,8 @@ model_dict = {
     "param_count": param_count,
     "input_features": FEATURE_COLS,
     "action_grid": "9 actions (T_GenCam × p_tx)",
-    "t_grid": meta.get("t_grid", [0.1, 0.3, 1.0]),
-    "p_tx_grid": meta.get("p_tx_grid", [0.0, 15.0, 30.0]),
+    "t_grid": meta.get("t_grid", [0.1, 0.2, 0.5, 1.0]),
+    "p_tx_grid": meta.get("p_tx_grid", [-5, 0, 5, 10, 15, 20]),
     "seed": SEED,
     "cost_function_version": cost_version,
 }

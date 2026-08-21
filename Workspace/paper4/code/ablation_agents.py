@@ -5,8 +5,28 @@ import random
 import numpy as np
 from collections import deque
 
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
+# 5-Stage Ablation Agent Imports & Exports
+from dqn_agent import VanillaDQN, DQNAgent
+from ddqn_agent import DoubleDQN, DDQNAgent
+from dueling_dqn_agent import DuelingDQN, DuelingDQNAgent
+from moe_agent import MoEDQN, MoEAgent
+from resnet_moe_agent import ResNetMoEDQN, ResNetMoEAgent
+
+STAGE_AGENTS = {
+    1: {"name": "VanillaDQN", "network": VanillaDQN, "agent": DQNAgent, "checkpoint": "vanilla_dqn.pth"},
+    2: {"name": "DoubleDQN", "network": DoubleDQN, "agent": DDQNAgent, "checkpoint": "ddqn.pth"},
+    3: {"name": "DuelingDQN", "network": DuelingDQN, "agent": DuelingDQNAgent, "checkpoint": "dueling_dqn.pth"},
+    4: {"name": "MoEDQN", "network": MoEDQN, "agent": MoEAgent, "checkpoint": "moe_dqn.pth"},
+    5: {"name": "ResNetMoEDQN", "network": ResNetMoEDQN, "agent": ResNetMoEAgent, "checkpoint": "resnet_moe_dqn.pth"},
+}
+
 class ResidualBlock(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim=128):
         super(ResidualBlock, self).__init__()
         self.fc1 = nn.Linear(hidden_dim, hidden_dim)
         self.relu = nn.ReLU()
@@ -199,7 +219,7 @@ class Variant4_NoDueling(nn.Module):
 
 
 class AblationAgent:
-    def __init__(self, variant_type, state_dim, action_dim, num_experts=3, hidden_dim=128, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64):
+    def __init__(self, variant_type=1, state_dim=5, action_dim=ACTION_DIM, num_experts=3, hidden_dim=128, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -226,6 +246,8 @@ class AblationAgent:
         else:
             raise ValueError("variant_type must be 1, 2, 3, or 4")
             
+        self.q_net = self.q_network
+        self.q_target = self.target_network
         self.update_target_network()
         
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
@@ -249,6 +271,9 @@ class AblationAgent:
         self.q_network.train()
         
         return torch.argmax(q_vals).item()
+        
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
         
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))

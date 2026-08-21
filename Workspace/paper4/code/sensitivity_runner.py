@@ -38,11 +38,17 @@ if _sim_dir not in sys.path:
     sys.path.insert(0, _sim_dir)
 
 from sim_engine import SimulationRunner
+from ai_dcc_hook import get_hook
+from dqn_agent import DQNAgent
+from ddqn_agent import DDQNAgent
+from dueling_dqn_agent import DuelingDQNAgent
+from moe_agent import MoEAgent
+from resnet_moe_agent import ResNetMoEAgent
 
 # ---------------------------------------------------------------------------
 # Output paths
 # ---------------------------------------------------------------------------
-DATA_DIR = os.environ.get("DATA_DIR", "/home/imnyj/papers/paper4/paper/data")
+DATA_DIR = os.environ.get("DATA_DIR", os.path.abspath(os.path.join(_sim_dir, "..", "data")))
 os.makedirs(DATA_DIR, exist_ok=True)
 
 CSV_COLUMNS = [
@@ -51,6 +57,108 @@ CSV_COLUMNS = [
     "energy_efficiency", "ETSI_compliance",
     "runtime_sec", "n_cam_events", "status", "error"
 ]
+
+# ---------------------------------------------------------------------------
+# DRL Evaluation Setup & Hook Wiring (C-1, C-2)
+# ---------------------------------------------------------------------------
+DRL_SETUP = {
+    "VanillaDQN": {
+        "class": DQNAgent,
+        "kwargs": {"state_dim": 5, "action_dim": 24},
+        "checkpoints": ["vanilla_dqn.pth", "VanillaDQN.pth"],
+    },
+    "DoubleDQN": {
+        "class": DDQNAgent,
+        "kwargs": {"state_dim": 5, "action_dim": 24},
+        "checkpoints": ["ddqn.pth", "DoubleDQN.pth"],
+    },
+    "DuelingDQN": {
+        "class": DuelingDQNAgent,
+        "kwargs": {"state_dim": 5, "action_dim": 24},
+        "checkpoints": ["dueling_dqn.pth", "DuelingDQN.pth"],
+    },
+    "MoEDQN": {
+        "class": MoEAgent,
+        "kwargs": {"state_dim": 5, "action_dim": 24, "num_experts": 2},
+        "checkpoints": ["moe_dqn.pth", "MoEDQN.pth"],
+    },
+    "ResNetMoEDQN": {
+        "class": ResNetMoEAgent,
+        "kwargs": {"state_dim": 5, "action_dim": 24, "num_experts": 3, "hidden_dim": 128},
+        "checkpoints": ["resnet_moe_dqn.pth", "REMO-DQN.pth", "ResNetMoEDQN.pth"],
+    },
+}
+
+def setup_eval_hook(method: str):
+    """
+    Sets up evaluation hook for DRL models (C-2):
+    - Instantiates agent according to DRL_SETUP
+    - Searches and loads weights (.pth) from code/ and data/models/
+    - Sets agent.epsilon = 0.0 for deterministic evaluation
+    - Injects agent into hook: hook.set_agent(agent)
+    - Sets hook.is_training = False to prevent transition collection during eval
+    - Clears previous episode memory
+    """
+    if not method or method not in DRL_SETUP:
+        return None
+
+    cfg = DRL_SETUP[method]
+    agent_cls = cfg["class"]
+    kwargs = cfg.get("kwargs", {})
+    # Search for checkpoint files in code/ and data/models/
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    workspace_root = os.path.abspath(os.path.join(base_dir, ".."))
+    search_dirs = [
+        base_dir,
+        os.path.join(workspace_root, "data", "models"),
+        os.path.join(base_dir, "..", "data", "models"),
+        os.path.join(base_dir, "data", "models"),
+    ]
+
+    loaded = False
+    loaded_path = None
+    agent = None
+    for ckpt_name in cfg["checkpoints"]:
+        for sdir in search_dirs:
+            cand_path = os.path.normpath(os.path.join(sdir, ckpt_name))
+            if os.path.exists(cand_path):
+                for test_adim in [24, 16]:
+                    try:
+                        cur_kwargs = dict(kwargs)
+                        cur_kwargs["action_dim"] = test_adim
+                        cand_agent = agent_cls(**cur_kwargs)
+                        cand_agent.load(cand_path)
+                        agent = cand_agent
+                        loaded = True
+                        loaded_path = cand_path
+                        break
+                    except Exception:
+                        pass
+                if loaded:
+                    break
+        if loaded:
+            break
+
+    if not loaded:
+        agent = agent_cls(**kwargs)
+        print(f"  [setup_eval_hook] WARNING: Checkpoint not found for {method} in {search_dirs}")
+    else:
+        print(f"  [setup_eval_hook] Loaded weights for {method} (action_dim={getattr(agent, 'action_dim', 'N/A')}) from {loaded_path}")
+
+    # Set evaluation mode
+    if hasattr(agent, "epsilon"):
+        agent.epsilon = 0.0
+    if hasattr(agent, "q_network"):
+        agent.q_network.eval()
+    if hasattr(agent, "q_net"):
+        agent.q_net.eval()
+
+    hook = get_hook(method)
+    hook.set_agent(agent)
+    hook.is_training = False
+    if hasattr(hook, "reset_episode"):
+        hook.reset_episode()
+    return hook
 
 # ---------------------------------------------------------------------------
 # Sweep definitions
@@ -72,10 +180,10 @@ def define_sweeps() -> Dict[str, List[Dict[str, Any]]]:
     sweeps = {}
 
     # ------------------------------------------------------------------
-    # SA1: Vehicle density sweep (n_vehicles), method=ReactDCC
+    # SA1: Vehicle density sweep (n_vehicles)
     # ------------------------------------------------------------------
     sa1_runs = []
-    methods_sa1 = ["ReactDCC", "AdaptDCC", "Heuristic", "Fixed10Hz", "DecTree", "StdMLP", "Proposed"]
+    methods_sa1 = ["ReactDCC", "AdaptDCC", "Heuristic", "Fixed10Hz", "DecTree", "StdMLP", "VanillaDQN", "DoubleDQN", "DuelingDQN", "MoEDQN", "ResNetMoEDQN"]
     for n_veh in [10, 20, 30, 50, 75, 100]:
         for method in methods_sa1:
             for seed in BASE_SEEDS:
@@ -100,7 +208,7 @@ def define_sweeps() -> Dict[str, List[Dict[str, Any]]]:
     # SA2: DCC method comparison, n_vehicles=30
     # ------------------------------------------------------------------
     sa2_runs = []
-    methods = ["ReactDCC", "AdaptDCC", "Heuristic", "Fixed10Hz", "DecTree", "StdMLP", "Proposed"]
+    methods = ["ReactDCC", "AdaptDCC", "Heuristic", "Fixed10Hz", "DecTree", "StdMLP", "VanillaDQN", "DoubleDQN", "DuelingDQN", "MoEDQN", "ResNetMoEDQN"]
     for method in methods:
         for seed in BASE_SEEDS:
             sa2_runs.append({
@@ -191,6 +299,8 @@ def run_one(sweep_id: str, run_cfg: Dict[str, Any]) -> Dict[str, Any]:
         "error": "",
     }
     try:
+        method = run_cfg.get("method", run_cfg["runner_kwargs"].get("method"))
+        setup_eval_hook(method)
         runner = SimulationRunner(**run_cfg["runner_kwargs"])
         metrics = runner.run()
         row.update({

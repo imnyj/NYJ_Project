@@ -6,10 +6,14 @@ import traceback
 import sys
 import argparse
 
-sys.path.append("/home/imnyj/Workspace/paper4/code")
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+if _code_dir not in sys.path:
+    sys.path.insert(0, _code_dir)
 
 from sim_engine import SimulationRunner
 from ai_dcc_hook import get_hook
+from etsi_cam_layer import ACTION_DIM
 
 from qlearning_agent import QLearningAgent
 from sarsa_agent import SARSAAgent
@@ -25,7 +29,8 @@ from dt_agent import DTAgent
 from mappo_agent import MAPPOAgent
 from moe_agent import MoEAgent 
 
-OUTPUT_DIR = "/home/imnyj/Workspace/paper4/data/optuna"
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(_project_root, "data"))
+OUTPUT_DIR = os.environ.get("OPTUNA_DIR", os.path.join(DATA_DIR, "optuna"))
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 N_TRIALS = 2
@@ -107,44 +112,44 @@ def run_optimization(method_name, hook_name, factory):
 
 def main():
     methods = [
-        ("QLearning", "QLearning", lambda t: QLearningAgent(state_bins=[10,10,10,10,10], action_dim=16, 
+        ("QLearning", "QLearning", lambda t: QLearningAgent(state_bins=[10,10,10,10,10], action_dim=ACTION_DIM, 
             alpha=t.suggest_float("alpha", 0.01, 0.5), 
             gamma=t.suggest_float("gamma", 0.9, 0.999), 
             epsilon_decay=t.suggest_float("epsilon_decay", 0.9, 0.999))),
             
-        ("SARSA", "SARSA", lambda t: SARSAAgent(state_bins=[10,10,10,10,10], action_dim=16, 
+        ("SARSA", "SARSA", lambda t: SARSAAgent(state_bins=[10,10,10,10,10], action_dim=ACTION_DIM, 
             alpha=t.suggest_float("alpha", 0.01, 0.5), 
             gamma=t.suggest_float("gamma", 0.9, 0.999), 
             epsilon_decay=t.suggest_float("epsilon_decay", 0.9, 0.999))),
             
-        ("ActorCritic", "ActorCritic", lambda t: ActorCriticAgent(state_dim=5, action_dim=16, 
+        ("ActorCritic", "ActorCritic", lambda t: ActorCriticAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("VanillaDQN", "VanillaDQN", lambda t: DQNAgent(state_dim=5, action_dim=16, 
+        ("VanillaDQN", "VanillaDQN", lambda t: DQNAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]),
             target_update_freq=t.suggest_categorical("target_update_freq", [1, 2, 5]))),
             
-        ("DoubleDQN", "DoubleDQN", lambda t: DDQNAgent(state_dim=5, action_dim=16, 
+        ("DoubleDQN", "DoubleDQN", lambda t: DDQNAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]),
             target_update_freq=t.suggest_categorical("target_update_freq", [1, 2, 5]))),
             
-        ("DuelingDQN", "DuelingDQN", lambda t: DuelingDQNAgent(state_dim=5, action_dim=16, 
+        ("DuelingDQN", "DuelingDQN", lambda t: DuelingDQNAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]),
             target_update_freq=t.suggest_categorical("target_update_freq", [1, 2, 5]))),
             
-        ("DDPG", "DDPG", lambda t: DDPGAgent(state_dim=5, action_dim=16, 
+        ("DDPG", "DDPG", lambda t: DDPGAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr_actor=t.suggest_float("lr_actor", 1e-5, 1e-2, log=True), 
             lr_critic=t.suggest_float("lr_critic", 1e-5, 1e-2, log=True),
             gamma=t.suggest_float("gamma", 0.9, 0.999),
@@ -152,7 +157,7 @@ def main():
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("PPO", "PPO", lambda t: PPOAgent(state_dim=5, action_dim=16, 
+        ("PPO", "PPO", lambda t: PPOAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             eps_clip=t.suggest_float("eps_clip", 0.1, 0.3),
@@ -160,7 +165,7 @@ def main():
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("SAC", "SAC", lambda t: SACAgent(state_dim=5, action_dim=16, 
+        ("SAC", "SAC", lambda t: SACAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             tau=t.suggest_float("tau", 0.001, 0.01),
@@ -168,7 +173,7 @@ def main():
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("TD3", "TD3", lambda t: TD3Agent(state_dim=5, action_dim=16, 
+        ("TD3", "TD3", lambda t: TD3Agent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             tau=t.suggest_float("tau", 0.001, 0.01),
@@ -178,13 +183,13 @@ def main():
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("DecisionTransformer", "DecisionTransformer", lambda t: DTAgent(state_dim=5, action_dim=16, 
+        ("DecisionTransformer", "DecisionTransformer", lambda t: DTAgent(state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("MAPPO", "MAPPO", lambda t: MAPPOAgent(local_state_dim=5, global_state_dim=5, action_dim=16, 
+        ("MAPPO", "MAPPO", lambda t: MAPPOAgent(local_state_dim=5, global_state_dim=5, action_dim=ACTION_DIM, 
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),
             eps_clip=t.suggest_float("eps_clip", 0.1, 0.3),
@@ -192,7 +197,7 @@ def main():
             batch_size=t.suggest_categorical("batch_size", [32, 64, 128]),
             buffer_size=t.suggest_categorical("buffer_size", [10000, 50000, 100000]))),
             
-        ("MoEDQN", "MoEDQN", lambda t: MoEAgent(state_dim=5, action_dim=16, 
+        ("MoEDQN", "MoEDQN", lambda t: MoEAgent(state_dim=5, action_dim=ACTION_DIM, 
             num_experts=t.suggest_int("num_experts", 2, 5),
             lr=t.suggest_float("lr", 1e-5, 1e-2, log=True), 
             gamma=t.suggest_float("gamma", 0.9, 0.999),

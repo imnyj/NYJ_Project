@@ -86,8 +86,9 @@ for layer in model.net:
         weights[f"b{idx}"] = layer.bias.detach().numpy()
         idx += 1
 
-t_grid = [0.1, 0.2, 0.5, 1.0]
-p_tx_grid = [0.0, 10.0, 20.0, 30.0]
+from etsi_cam_layer import PTX_GRID_DBM, T_GRID_S
+t_grid = list(T_GRID_S)
+p_tx_grid = list(PTX_GRID_DBM)
 if n_classes == 9:
     t_grid = [0.1, 0.5, 1.0]
     p_tx_grid = [-10.0, 0.0, 20.0]

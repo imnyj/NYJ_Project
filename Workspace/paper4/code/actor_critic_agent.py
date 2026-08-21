@@ -6,8 +6,13 @@ import random
 import numpy as np
 from collections import deque
 
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
 class ActorCritic(nn.Module):
-    def __init__(self, state_dim, action_dim):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM):
         super(ActorCritic, self).__init__()
         
         self.actor = nn.Sequential(
@@ -34,7 +39,7 @@ class ActorCritic(nn.Module):
 
 
 class ActorCriticAgent:
-    def __init__(self, state_dim, action_dim, lr=1e-3, gamma=0.99, buffer_size=100000, batch_size=64):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, lr=1e-3, gamma=0.99, buffer_size=100000, batch_size=64):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -60,6 +65,9 @@ class ActorCriticAgent:
         m = torch.distributions.Categorical(policy_dist)
         action = m.sample().item()
         return action
+        
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
         
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))

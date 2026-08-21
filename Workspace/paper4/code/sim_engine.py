@@ -23,6 +23,7 @@ import tempfile
 import re
 import subprocess
 import shutil
+import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -94,26 +95,101 @@ def reception_probability(dist_m: float, p_tx_dbm: float = 20.0) -> float:
     return max(0.0, min(1.0, p))
 
 
+def compute_local_n_est(vehicle_positions: Dict[str, Tuple[float, float]],
+                        comm_range_m: float = COMM_RANGE_M) -> Dict[str, int]:
+    """
+    Compute local neighbor count (n_est) for each vehicle within comm_range_m.
+
+    For vehicle vid at (x, y):
+      n_est = sum(1 for ovid, (ox, oy) in vehicle_positions.items()
+                  if ovid != vid and dist((x, y), (ox, oy)) <= comm_range_m)
+    """
+    if not vehicle_positions:
+        return {}
+    vids = list(vehicle_positions.keys())
+    n = len(vids)
+    if n < 2:
+        return {vids[0]: 0} if n == 1 else {}
+    coords = np.array([vehicle_positions[vid] for vid in vids], dtype=np.float32)
+    diff = coords[:, None, :] - coords[None, :, :]
+    dist_sq = np.sum(diff**2, axis=-1)
+    counts = np.sum(dist_sq <= (comm_range_m ** 2), axis=1) - 1
+    return {vids[i]: int(counts[i]) for i in range(n)}
+
+
 def compute_local_cbr(vehicle_positions: Dict[str, Tuple[float, float]],
-                      cam_events_this_step: list,
-                      step_duration_s: float = 0.1,
-                      sense_range_m: float = 500.0) -> Tuple[Dict[str, float], float]:
+                      tx_counts_or_events,
+                      window_duration_s: float = 0.1,
+                      comm_range_m: float = COMM_RANGE_M,
+                      tx_duration_s: float = TX_DURATION_S,
+                      **kwargs) -> Tuple[Dict[str, float], float]:
     """
-    Estimate local Channel Busy Ratio for each vehicle.
-    For each vehicle, count CAMs generated within sense_range_m.
+    Compute local Channel Busy Ratio (CBR) for each vehicle within comm_range_m.
+
+    For each vehicle vid at (x, y), CBR is calculated based on all CAM packets
+    transmitted by vehicles in its sensing/communication neighborhood:
+      S(vid) = { ovid in vehicle_positions | dist((x, y), (ox, oy)) <= comm_range_m }
+      (Note: S(vid) includes vid itself, i.e., N(vid) U {vid})
+
+    Formula:
+      CBR(vid) = min(1.0, (N_tx(vid) * tx_duration_s) / window_duration_s)
+      where N_tx(vid) = sum(tx_count(ovid) for ovid in S(vid))
     """
-    cbr_dict = {}
-    cams_info = [(ev["x"], ev["y"]) for ev in cam_events_this_step]
-    
-    for vid, (x, y) in vehicle_positions.items():
-        n_cams = 0
-        for cx, cy in cams_info:
-            if math.sqrt((x - cx)**2 + (y - cy)**2) <= sense_range_m:
-                n_cams += 1
-        cbr = n_cams * TX_DURATION_S / step_duration_s
-        cbr_dict[vid] = min(cbr, 1.0)
-        
-    cbr_mean = sum(cbr_dict.values()) / len(cbr_dict) if cbr_dict else 0.0
+    if "window_duration" in kwargs:
+        window_duration_s = kwargs["window_duration"]
+    elif "step_duration_s" in kwargs:
+        window_duration_s = kwargs["step_duration_s"]
+    if "sense_range_m" in kwargs and "comm_range_m" not in kwargs:
+        comm_range_m = kwargs["sense_range_m"]
+
+    if not vehicle_positions:
+        return {}, 0.0
+
+    if window_duration_s <= 0.0:
+        return {vid: 0.0 for vid in vehicle_positions}, 0.0
+
+    vids = list(vehicle_positions.keys())
+    n = len(vids)
+    if n == 0:
+        return {}, 0.0
+
+    coords = np.array([vehicle_positions[vid] for vid in vids], dtype=np.float32)
+
+    if isinstance(tx_counts_or_events, dict):
+        tx_arr = np.array([tx_counts_or_events.get(vid, 0) for vid in vids], dtype=np.float32)
+        diff = coords[:, None, :] - coords[None, :, :]
+        dist_sq = np.sum(diff**2, axis=-1)
+        in_range = (dist_sq <= comm_range_m**2)
+        n_cams = in_range @ tx_arr
+        cbr_vals = np.clip((n_cams * tx_duration_s) / window_duration_s, 0.0, 1.0)
+        cbr_dict = {vids[i]: float(cbr_vals[i]) for i in range(n)}
+
+    elif isinstance(tx_counts_or_events, (list, tuple, set)):
+        cams_info = []
+        for ev in tx_counts_or_events:
+            if isinstance(ev, dict):
+                if "x" in ev and "y" in ev:
+                    cams_info.append((ev["x"], ev["y"]))
+                elif "vid" in ev and ev["vid"] in vehicle_positions:
+                    cams_info.append(vehicle_positions[ev["vid"]])
+            elif isinstance(ev, (tuple, list)) and len(ev) >= 2:
+                cams_info.append((ev[0], ev[1]))
+            elif isinstance(ev, str) and ev in vehicle_positions:
+                cams_info.append(vehicle_positions[ev])
+
+        if not cams_info:
+            return {vid: 0.0 for vid in vids}, 0.0
+
+        cams_arr = np.array(cams_info, dtype=np.float32)
+        diff = coords[:, None, :] - cams_arr[None, :, :]
+        dist_sq = np.sum(diff**2, axis=-1)
+        in_range_counts = np.sum(dist_sq <= comm_range_m**2, axis=1)
+        cbr_vals = np.clip((in_range_counts * tx_duration_s) / window_duration_s, 0.0, 1.0)
+        cbr_dict = {vids[i]: float(cbr_vals[i]) for i in range(n)}
+    else:
+        cbr_dict = {vid: 0.0 for vid in vids}
+
+    cbr_mean = float(np.mean(list(cbr_dict.values()))) if cbr_dict else 0.0
     return cbr_dict, cbr_mean
 
 
@@ -129,35 +205,45 @@ def simulate_receptions(cam_events: list,
     Returns list of reception events: {sender, receiver, t_rx, t_gen, dist_m}
     """
     reception_events = []
+    if not cam_events or not vehicle_positions:
+        return reception_events
+
     vehicle_ids = list(vehicle_positions.keys())
+    n = len(vehicle_ids)
+    if n == 0:
+        return reception_events
+
+    coords = np.array([vehicle_positions[vid] for vid in vehicle_ids], dtype=np.float32)
 
     for ev in cam_events:
         sid = ev["vid"]
-        sx, sy = vehicle_positions.get(sid, (ev["x"], ev["y"]))
+        sx, sy = vehicle_positions.get(sid, (ev.get("x", 0.0), ev.get("y", 0.0)))
         t_gen = ev["t_gen"]
         p_tx_dbm = ev["p_tx"]
-        in_range_count = 0
 
-        for rid in vehicle_ids:
+        s_coord = np.array([sx, sy], dtype=np.float32)
+        dists = np.linalg.norm(coords - s_coord, axis=1)
+        
+        in_range_mask = (dists <= COMM_RANGE_M)
+        in_range_count = int(np.sum(in_range_mask))
+        if sid in vehicle_positions:
+            in_range_count = max(0, in_range_count - 1)
+        ev["in_range_count"] = in_range_count
+
+        candidate_indices = np.where(dists <= COMM_RANGE_M * 2)[0]
+
+        for idx in candidate_indices:
+            rid = vehicle_ids[idx]
             if rid == sid:
                 continue
-            rx, ry = vehicle_positions[rid]
-            dist_m = math.sqrt((sx - rx)**2 + (sy - ry)**2)
-            
-            if dist_m <= COMM_RANGE_M:
-                in_range_count += 1
-                
+            dist_m = float(dists[idx])
+
             if not is_warmup:
                 bin_idx = min(int(dist_m / 50.0), 5)
                 if dist_m <= COMM_RANGE_M:
                     dist_tx_counts[bin_idx] += 1
 
-            if dist_m > COMM_RANGE_M * 2:  # Skip far-away vehicles
-                continue
-
-            # Adjust reception probability for channel load (collisions)
             p_rx = reception_probability(dist_m, p_tx_dbm)
-            # MAC layer contention: modified to avoid excessive penalty and reflect density variations
             receiver_cbr = cbr_dict.get(rid, 0.0)
             collision_factor = max(0.1, 1.0 - receiver_cbr * 0.8)
             p_rx *= collision_factor
@@ -165,8 +251,7 @@ def simulate_receptions(cam_events: list,
             if rng.random() < p_rx:
                 if not is_warmup and dist_m <= COMM_RANGE_M:
                     dist_rx_counts[bin_idx] += 1
-                # Propagation delay: negligible at these distances
-                prop_delay_s = dist_m / 3e8  # ~1 us for 300m
+                prop_delay_s = dist_m / 3e8
                 reception_events.append({
                     "sender": sid,
                     "receiver": rid,
@@ -174,8 +259,6 @@ def simulate_receptions(cam_events: list,
                     "t_gen": t_gen,
                     "dist_m": dist_m,
                 })
-        
-        ev["in_range_count"] = in_range_count
 
     return reception_events
 
@@ -201,37 +284,116 @@ def load_config(config_path: str) -> dict:
                         pass
     return config
 
+def find_executable(name: str) -> Optional[str]:
+    """Dynamically locate an executable without hardcoded absolute paths."""
+    path = shutil.which(name)
+    if path:
+        return path
+
+    search_dirs = []
+    if "VIRTUAL_ENV" in os.environ:
+        search_dirs.append(os.path.join(os.environ["VIRTUAL_ENV"], "bin"))
+    if "SUMO_HOME" in os.environ:
+        search_dirs.append(os.path.join(os.environ["SUMO_HOME"], "bin"))
+        search_dirs.append(os.environ["SUMO_HOME"])
+
+    search_dirs.append(os.path.dirname(sys.executable))
+    search_dirs.append(os.path.join(sys.prefix, "bin"))
+    search_dirs.append(os.path.join(os.path.expanduser("~"), "venv", "bin"))
+    search_dirs.append(os.path.join(os.path.expanduser("~"), ".local", "bin"))
+    search_dirs.append("/usr/local/bin")
+    search_dirs.append("/usr/bin")
+
+    for sdir in search_dirs:
+        candidate = os.path.join(sdir, name)
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+        if os.path.isfile(candidate + ".exe") and os.access(candidate + ".exe", os.X_OK):
+            return candidate + ".exe"
+    return None
+
+
+def get_sumo_env() -> dict:
+    """Build environment dictionary with dynamic search paths for SUMO tools."""
+    env = os.environ.copy()
+    extra_paths = []
+    if "VIRTUAL_ENV" in env:
+        extra_paths.append(os.path.join(env["VIRTUAL_ENV"], "bin"))
+    if "SUMO_HOME" in env:
+        extra_paths.append(os.path.join(env["SUMO_HOME"], "bin"))
+    extra_paths.append(os.path.dirname(sys.executable))
+    extra_paths.append(os.path.join(sys.prefix, "bin"))
+    extra_paths.append(os.path.join(os.path.expanduser("~"), "venv", "bin"))
+    extra_paths.append(os.path.join(os.path.expanduser("~"), ".local", "bin"))
+
+    existing_path = env.get("PATH", "")
+    new_path_entries = [p for p in extra_paths if os.path.exists(p) and p not in existing_path]
+    if new_path_entries:
+        env["PATH"] = os.pathsep.join(new_path_entries) + os.pathsep + existing_path
+    return env
+
+
+def get_sumonetsim_paths() -> Tuple[Optional[str], Optional[str]]:
+    """Dynamically locate make_sumo_set.py and rsu.poi.xml without hardcoded paths."""
+    search_roots = []
+    if "SUMONETSIM_DIR" in os.environ:
+        search_roots.append(os.environ["SUMONETSIM_DIR"])
+
+    code_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(code_dir)
+    search_roots.append(os.path.join(project_root, "SumoNetSim"))
+    search_roots.append(os.path.join(project_root, "SumoNetSim1.1.5"))
+
+    user_home = os.path.expanduser("~")
+    search_roots.append(os.path.join(user_home, "SumoNetSim1.1.5"))
+    search_roots.append(os.path.join(user_home, "SumoNetSim1.1.6"))
+    search_roots.append(os.path.join(user_home, "etc", "SumoNetSim1.1.6"))
+    search_roots.append(os.path.join(user_home, "SumoNetSim"))
+
+    source_script = None
+    rsu_source = None
+    for root in search_roots:
+        cand_script = os.path.join(root, "src", "sumo", "make_sumo_set.py") if not root.endswith("make_sumo_set.py") else root
+        if os.path.exists(cand_script):
+            source_script = cand_script
+            cand_rsu = os.path.join(os.path.dirname(cand_script), "rsu.poi.xml")
+            if os.path.exists(cand_rsu):
+                rsu_source = cand_rsu
+            break
+
+    return source_script, rsu_source
+
+
 def generate_sumonetsim_files(work_dir: str, config: dict, seed: int):
-    source_script = "/home/imnyj/SumoNetSim1.1.5/src/sumo/make_sumo_set.py"
-    if not os.path.exists(source_script):
+    source_script, rsu_source = get_sumonetsim_paths()
+    if not source_script or not os.path.exists(source_script):
         return False
-        
+
     with open(source_script, 'r') as f:
         code = f.read()
-        
+
     for k, v in config.items():
         code = re.sub(rf"^{k}\s*=.*", f"{k} = {v}", code, flags=re.MULTILINE)
-        
+
     # Inject seed to restore reproducibility
     code = f"import random\nrandom.seed({seed})\n" + code
-        
+
     script_path = os.path.join(work_dir, "make_sumo_set.py")
     with open(script_path, 'w') as f:
         f.write(code)
-        
+
     if "__main__" not in code:
         with open(script_path, 'a') as f:
             f.write("\n\nif __name__ == '__main__':\n    make_sumo_files()\n")
-            
-    rsu_source = "/home/imnyj/SumoNetSim1.1.5/src/sumo/rsu.poi.xml"
-    if os.path.exists(rsu_source):
+
+    if rsu_source and os.path.exists(rsu_source):
         shutil.copy(rsu_source, os.path.join(work_dir, "rsu.poi.xml"))
-        
-    env = os.environ.copy()
-    env["PATH"] = "/home/imnyj/venv/bin:" + env.get("PATH", "")
-    
+
+    env = get_sumo_env()
+    python_bin = sys.executable or shutil.which("python3") or "python3"
+
     try:
-        subprocess.check_call(["python3", "make_sumo_set.py"], cwd=work_dir, env=env)
+        subprocess.check_call([python_bin, "make_sumo_set.py"], cwd=work_dir, env=env)
         return True
     except subprocess.CalledProcessError:
         return False
@@ -344,7 +506,8 @@ class SimulationRunner:
         dist_rx_counts = [0]*6
 
         # ---- libsumo simulation ----
-        sumo_cmd = ["/home/imnyj/venv/bin/sumo",
+        sumo_bin = find_executable("sumo") or "sumo"
+        sumo_cmd = [sumo_bin,
                        "--net-file", net_path,
                        "--route-files", route_path,
                        "--step-length", str(self.STEP_LENGTH),
@@ -402,18 +565,11 @@ class SimulationRunner:
                     continue
 
                 cbr_dict_prev = getattr(self, "_last_cbr_dict", {})
+                n_est_dict = compute_local_n_est(vehicle_positions, COMM_RANGE_M)
                 for vdata in vehicles_data:
                     vid = vdata["vid"]
-                    x, y = vdata["x"], vdata["y"]
                     vdata["cbr"] = cbr_dict_prev.get(vid, 0.0)
-                    
-                    # Local n_est
-                    n_est = 0
-                    for ovid, (ox, oy) in vehicle_positions.items():
-                        if ovid != vid:
-                            if math.sqrt((x-ox)**2 + (y-oy)**2) <= COMM_RANGE_M:
-                                n_est += 1
-                    vdata["n_est"] = n_est
+                    vdata["n_est"] = n_est_dict.get(vid, 0)
 
                 # Compute CBR from previous step (bootstrapped)
                 cbr_prev_mean = cbr_history[-1] if cbr_history else 0.0

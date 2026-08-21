@@ -17,6 +17,7 @@ Author: Experimenter agent (Stage 2: implement)
 """
 
 import math
+import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
@@ -131,37 +132,39 @@ class AoITracker:
         if n < 2:
             return 0.0
 
+        coords = np.array([vehicle_positions[vid] for vid in vehicle_ids], dtype=np.float32)
+        diff = coords[:, None, :] - coords[None, :, :]
+        dist_sq = np.sum(diff**2, axis=-1)
+        in_range_mask = (dist_sq <= self.comm_range_m**2)
+        np.fill_diagonal(in_range_mask, False)
+
+        s_indices, r_indices = np.where(in_range_mask)
+        if len(s_indices) == 0:
+            return 0.0
+
         aoi_values = []
-        for i, sid in enumerate(vehicle_ids):
-            for j, rid in enumerate(vehicle_ids):
-                if sid == rid:
+        for si, ri in zip(s_indices, r_indices):
+            sid = vehicle_ids[si]
+            rid = vehicle_ids[ri]
+            pair = (sid, rid)
+
+            # Accumulate AoI: time since last CAM was received (or since start)
+            if pair in self.last_received_gen_time:
+                # AoI = current_time - t_gen_of_last_received_cam
+                t_gen_last = self.last_received_gen_time[pair]
+                aoi_ms = (sim_time - t_gen_last) * 1000.0
+            else:
+                # Never received a CAM from this sender: AoI = time since first tx
+                if sid not in self.first_tx_time:
                     continue
-                pair = (sid, rid)
-                sx, sy = vehicle_positions[sid]
-                rx, ry = vehicle_positions[rid]
-                dist = math.sqrt((sx - rx)**2 + (sy - ry)**2)
+                aoi_ms = (sim_time - self.first_tx_time[sid]) * 1000.0
 
-                if dist > self.comm_range_m:
-                    # Out of range: skip this pair
-                    continue
-
-                # Accumulate AoI: time since last CAM was received (or since start)
-                if pair in self.last_received_gen_time:
-                    # AoI = current_time - t_gen_of_last_received_cam
-                    t_gen_last = self.last_received_gen_time[pair]
-                    aoi_ms = (sim_time - t_gen_last) * 1000.0
-                else:
-                    # Never received a CAM from this sender: AoI = time since first tx
-                    if sid not in self.first_tx_time:
-                        continue
-                    aoi_ms = (sim_time - self.first_tx_time[sid]) * 1000.0
-
-                if aoi_ms < 0:
-                    aoi_ms = 0.0
-                elif aoi_ms > 2000.0:
-                    aoi_ms = 2000.0
-                self.current_aoi[pair] = aoi_ms
-                aoi_values.append(aoi_ms)
+            if aoi_ms < 0:
+                aoi_ms = 0.0
+            elif aoi_ms > 2000.0:
+                aoi_ms = 2000.0
+            self.current_aoi[pair] = aoi_ms
+            aoi_values.append(aoi_ms)
 
         if not aoi_values:
             return 0.0

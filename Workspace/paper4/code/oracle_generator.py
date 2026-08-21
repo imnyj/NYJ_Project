@@ -9,7 +9,7 @@ Dynamic-grid search (9/16/25 actions) to produce (state → best_action)
 labels for BC training. Default: 9-action (3×3) — the right-sized main scheme.
 16 and 25 are kept for SA2 ablation (over-parameterization diagnosis).
 
-Output CSV: /home/imnyj/papers/paper4/paper/data/oracle_dataset.csv
+Output CSV: data/oracle_dataset.csv
 Columns:
   vid, sim_time, cbr_global, n_neighbors, v_norm, dt_since_last_cam,
   cbr_smoothed, action_idx (0~N_ACTIONS-1), T_GenCam_chosen, p_tx_chosen, cost,
@@ -20,7 +20,7 @@ Usage:
       [--alpha 0.3] [--beta 0.6] [--gamma 0.1]
       [--cbr_target 0.55] [--seed 42]
       [--grid_size 9|16|25]
-      [--output /home/imnyj/papers/paper4/paper/data/oracle_dataset.csv]
+      [--output data/oracle_dataset.csv]
 
 Author: Experimenter agent (E4-impl-1)
 Patched: 2026-05-14 — 3-term cost + ETSI P_GRID (Step 2)
@@ -47,16 +47,23 @@ import libsumo
 
 # ── local imports ─────────────────────────────────────────────────────────────
 _sim_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_sim_dir)
 if _sim_dir not in sys.path:
     sys.path.insert(0, _sim_dir)
 
 from etsi_cam_layer import ETSICAMLayer, T_GENCAM_MIN, T_GENCAM_MAX, dbm_to_linear
-from sim_engine import reception_probability
+from sim_engine import reception_probability, compute_local_n_est, compute_local_cbr, get_sumonetsim_paths
+
+DEFAULT_ORACLE_CSV = os.path.join(_project_root, "data", "oracle_dataset.csv")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants (mirror sim_engine.py)
 # ─────────────────────────────────────────────────────────────────────────────
-SUMOCFG_PATH  = "/home/imnyj/SumoNetSim1.1.5/src/sumo/generated.sumocfg"
+_src_script, _ = get_sumonetsim_paths()
+SUMOCFG_PATH  = os.environ.get(
+    "SUMOCFG_PATH",
+    os.path.join(os.path.dirname(_src_script), "generated.sumocfg") if _src_script else os.path.join(_project_root, "sumo_networks", "generated.sumocfg")
+)
 STEP_LENGTH   = 0.1          # 100 ms per simulation step
 COMM_RANGE_M  = 300.0        # 802.11p nominal range (m)
 
@@ -80,7 +87,7 @@ COST_VERSION_BY_GRID: Dict[int, str] = {
 # becomes the main right-sized scheme; 16 and 25 are kept for SA2 ablation.
 # Selection at runtime via GRID_SIZE module var (default 9) or --grid_size CLI.
 #
-# P_TX values are ETSI EN 302 663 / TS 102 687 compliant ([0, +30] dBm range).
+# P_TX values are ETSI EN 302 663 / TS 102 687 compliant (max 20 dBm = 100mW).
 
 GRID_PRESETS: Dict[int, Dict[str, List[float]]] = {
     4:  {"T": [0.1, 0.3],
@@ -89,6 +96,8 @@ GRID_PRESETS: Dict[int, Dict[str, List[float]]] = {
          "P": [0.0, 15.0, 20.0]},
     16: {"T": [0.1, 0.2, 0.5, 1.0],
          "P": [0.0, 10.0, 15.0, 20.0]},
+    24: {"T": [0.1, 0.2, 0.5, 1.0],
+         "P": [-5.0, 0.0, 5.0, 10.0, 15.0, 20.0]},
     25: {"T": [0.1, 0.2, 0.4, 0.7, 1.0],
          "P": [0.0, 5.0, 10.0, 15.0, 20.0]},
 }
@@ -226,7 +235,7 @@ def compute_cost(
     """
     3-term combined cost for oracle label generation.
     Modified to heavily penalize AoI (alpha=0.8) to meet user demands.
-    """
+    Returns:
       scalar cost value
     """
     # Avoid division by zero
@@ -330,7 +339,7 @@ def write_meta_json(output_csv: str, alpha: float, beta: float, gamma: float,
         "n_actions":     len(ACTIONS),
         "generated_at":  time.strftime("%Y-%m-%dT%H:%M:%S"),
         "note": (
-            "P_TX_GRID = ETSI EN 302 663 compliant (within [0,+30] dBm). "
+            "P_TX_GRID = ETSI EN 302 663 compliant (within [-5,+20] dBm). "
             "Cost: 3-term (alpha*AoI_norm_effective + beta*|CBR_pred-target| + gamma*E_tx_norm). "
             "PATCH 2026-05-22: AoI_norm is now Effective AoI_norm (t_act / P_rx_target) to penalize low P_tx exploits. "
             "PATCH 2026-05-14: per-vehicle prev-action exploration policy "
@@ -359,7 +368,7 @@ def run_oracle(
     seed: int = 42,
     warmup_s: float = 30.0,
     snapshot_every_n_steps: int = 1,   # collect at every step (100ms)
-    output_csv: str = "/home/imnyj/papers/paper4/paper/data/oracle_dataset.csv",
+    output_csv: str = DEFAULT_ORACLE_CSV,
 ) -> dict:
     """
     Run ReactDCC simulation and produce oracle dataset.
@@ -448,19 +457,25 @@ def run_oracle(
                     "speed":   speed,
                     "heading": heading,
                     "accel":   accel,
-                    "n_est":   len(vehicle_ids) - 1,
                 })
 
             if not vehicles_data:
                 continue
 
+            n_est_dict = compute_local_n_est(vehicle_positions, COMM_RANGE_M)
+            cbr_dict_prev = getattr(oracle_generator, "_last_cbr_dict", {})
+            for vdata in vehicles_data:
+                vid = vdata["vid"]
+                vdata["n_est"] = n_est_dict.get(vid, 0)
+                vdata["cbr"] = cbr_dict_prev.get(vid, 0.0)
+
             # ── CAM layer step (ReactDCC) ─────────────────────────────────────────
             cam_events = cam_layer.step(vehicles_data, sim_time, cbr_prev)
 
             # ── Compute CBR for this step ─────────────────────────────────────
-            n_cams = len(cam_events)
-            cbr_global = min(n_cams * TX_DURATION_S / STEP_LENGTH, 1.0)
-            cbr_prev   = cbr_global
+            cbr_dict, cbr_mean = compute_local_cbr(vehicle_positions, cam_events, STEP_LENGTH, comm_range_m=COMM_RANGE_M)
+            cbr_prev = cbr_mean
+            oracle_generator._last_cbr_dict = cbr_dict
 
             # ── Update per-vehicle oracle states ──────────────────────────────
             # Note: cam_events already occurred; update last_cam_time + EMA
@@ -478,8 +493,9 @@ def run_oracle(
                 # (state, prev_action) pairs — required for non-collapsed labels.
                 ovs.maybe_resample(step, rng, resample_every=EXPLORE_RESAMPLE_STEPS)
 
-                # EMA update
-                ovs.update_ema(cbr_global)
+                # EMA update with local CBR
+                cbr_local = cbr_dict.get(vid, 0.0)
+                ovs.update_ema(cbr_local)
 
                 # Track last_cam_time when this vehicle transmits a CAM.
                 # NOTE: prev_T_GenCam / prev_p_tx are now driven by the
@@ -494,19 +510,7 @@ def run_oracle(
             if sim_time >= warmup_s and (step % snapshot_every_n_steps == 0):
 
                 # Compute n_neighbors for each vehicle (within COMM_RANGE_M)
-                n_neighbors_map: Dict[str, int] = {}
-                vids_list = list(vehicle_positions.keys())
-                for vid in vids_list:
-                    px, py = vehicle_positions[vid]
-                    cnt = 0
-                    for ovid in vids_list:
-                        if ovid == vid:
-                            continue
-                        ox, oy = vehicle_positions[ovid]
-                        dist = math.sqrt((px - ox)**2 + (py - oy)**2)
-                        if dist <= COMM_RANGE_M:
-                            cnt += 1
-                    n_neighbors_map[vid] = cnt
+                n_neighbors_map = compute_local_n_est(vehicle_positions, COMM_RANGE_M)
 
                 for vdata in vehicles_data:
                     vid   = vdata["vid"]
@@ -515,7 +519,7 @@ def run_oracle(
                     ovs = oracle_states[vid]
 
                     # ── Build state 5D ────────────────────────────────────────
-                    cbr_g         = cbr_global
+                    cbr_g         = cbr_dict.get(vid, 0.0)
                     n_neigh       = n_neighbors_map.get(vid, 0)
                     n_neigh_norm  = n_neigh / N_NORM_SCALE
                     v_norm        = speed / V_NORM_SCALE
@@ -638,7 +642,7 @@ def parse_args():
     p.add_argument("--grid_size", type=int, default=9, choices=[9, 16, 25],
                    help="Action grid size: 9 (3x3 main, default) | 16 (4x4 ablation) | 25 (5x5 ablation)")
     p.add_argument("--output", type=str,
-                   default="/home/imnyj/papers/paper4/paper/data/oracle_dataset.csv",
+                   default=DEFAULT_ORACLE_CSV,
                    help="Output CSV path")
     return p.parse_args()
 

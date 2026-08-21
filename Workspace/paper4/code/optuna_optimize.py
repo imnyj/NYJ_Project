@@ -14,7 +14,9 @@ from torch.utils.data import DataLoader, TensorDataset
 
 FEATURE_COLS = ["cbr_global", "n_neighbors", "v_norm", "dt_since_last_cam", "cbr_smoothed"]
 LABEL_COL = "action_idx"
-DATASET_PATH = "/home/imnyj/papers/paper4/paper/data/oracle_dataset.csv"
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+DATASET_PATH = os.environ.get("DATASET_PATH", os.path.join(_project_root, "data", "oracle_dataset.csv"))
 
 # Load data
 df = pd.read_csv(DATASET_PATH)
@@ -131,9 +133,10 @@ if __name__ == "__main__":
             weights[f"b{idx}"] = layer.bias.detach().numpy()
             idx += 1
             
-    # Hardcode action grids as defined
-    t_grid = [0.1, 0.2, 0.5, 1.0]
-    p_tx_grid = [0.0, 10.0, 20.0, 30.0]
+    # Use standard action grid from etsi_cam_layer
+    from etsi_cam_layer import PTX_GRID_DBM, T_GRID_S
+    t_grid = list(T_GRID_S)
+    p_tx_grid = list(PTX_GRID_DBM)
     if n_classes == 9:
         t_grid = [0.1, 0.5, 1.0]
         p_tx_grid = [-10.0, 0.0, 20.0]

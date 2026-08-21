@@ -40,9 +40,13 @@ T_GENCAM_RELAXED    = 0.100  # 10 Hz
 T_GENCAM_ACTIVE     = 0.300  # ~3.3 Hz
 T_GENCAM_RESTRICTED = 1.000  # 1 Hz
 
-# p_tx grid (dBm) for AI-DCC
-PTX_GRID_DBM = [-10, 0, 10, 20]   # 4x4 default grid
-T_GENCAM_GRID = [0.1, 0.2, 0.5, 1.0]  # 4-level default
+# ---------------------------------------------------------------------------
+# Standard Action Grid for AI-DCC (H-4 Standard: 4 intervals x 6 powers = 24 actions)
+# ---------------------------------------------------------------------------
+PTX_GRID_DBM = [-5, 0, 5, 10, 15, 20]  # 6 levels (max 20 dBm = 100mW)
+T_GRID_S = [0.1, 0.2, 0.5, 1.0]        # 4 levels
+ACTION_DIM = len(T_GRID_S) * len(PTX_GRID_DBM)  # 24
+T_GENCAM_GRID = T_GRID_S               # Backward compatibility alias
 
 # Action grids for sensitivity analysis
 ACTION_GRIDS = {
@@ -53,6 +57,10 @@ ACTION_GRIDS = {
     "4x4": {
         "t_grid": [0.1, 0.2, 0.5, 1.0],
         "p_grid": [-10, 0, 10, 20],
+    },
+    "4x6": {
+        "t_grid": [0.1, 0.2, 0.5, 1.0],
+        "p_grid": [-5, 0, 5, 10, 15, 20],
     },
     "5x5": {
         "t_grid": [0.1, 0.2, 0.5, 0.8, 1.0],
@@ -204,11 +212,14 @@ class ETSICAMLayer:
             vs = self.vehicles[vid]
             self.accumulated_energy_mj += vs.total_energy_mj
             self.accumulated_dist_m += vs.odometer_m
-            if vs.method in ["Proposed", "StdMLP", "DecTree", "DuelingDQN", "MoEDQN", "ResNetMoEDQN", "QLearning", "SARSA", "ActorCritic", "PPO", "DDPG", "DecisionTransformer", "VanillaDQN", "SAC", "MAPPO", "DoubleDQN", "TD3", "REMO-DQN", "wo_ResNet", "wo_MoE", "wo_Dueling", "Base", "wo_R1", "wo_R2", "wo_R3", "StateAblation_Base", "StateAblation_wo_Density", "StateAblation_wo_CBR", "StateAblation_wo_Kinematics"]:
-                from ai_dcc_hook import get_hook
-                hook = get_hook(vs.method)
-                if hasattr(hook, 'terminate_vehicle'):
-                    hook.terminate_vehicle(vid)
+            if vs.method not in ["Fixed", "Random", "Static", "Disabled"]:
+                try:
+                    from ai_dcc_hook import get_hook
+                    hook = get_hook(vs.method)
+                    if hasattr(hook, 'terminate_vehicle'):
+                        hook.terminate_vehicle(vid)
+                except Exception:
+                    pass
             self.vehicles.pop(vid)
 
     def step(self, vehicles_data: list, sim_time: float, cbr_global: float) -> list:

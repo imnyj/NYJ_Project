@@ -1,17 +1,13 @@
 ## Current Status
-Last visited: 2026-08-18T13:02:30+09:00
+Last visited: 2026-08-21T04:40:15+09:00
 
 ## Iteration Status
-Current iteration: 2 / 32 (Gate PASS)
+Current iteration: 1 / 32
 
 ## Checklist
-- [x] Initialized workspace files (`DISPATCH.md`, `BRIEFING.md`, `PROJECT.md`, `progress.md`)
-- [x] Phase 0: Survey codebase, experimental data, and MoE literature via 3 parallel Explorers (DONE)
-- [x] Milestone 1: Section 1 Introduction (`paper/01_introduction.md` written and verified)
-- [x] Milestone 2: Section 2 Related Works (`paper/02_related_works.md` written and verified)
-- [x] Milestone 3: Section 3 System Model & REMO-DQN (`paper/03_system_model.md` written and verified)
-- [x] Milestone 4: Section 4 Main Body Scenario Flow (`paper/04_scenario_flow.md` written and verified)
-- [x] Milestone 5: Section 5 Performance Evaluation (`paper/05_performance_evaluation.md` written and verified)
-- [x] Milestone 6: Section 6 Conclusion & Master Draft Synthesis (`paper/paper4_draft_korean.md` written and verified)
-- [x] Final Gate Review: Reviewer 1 APPROVE, Reviewer 2 APPROVE, Challenger 1 APPROVE, Challenger 2 APPROVE, Forensic Auditor CLEAN (Gate Result: PASS)
-- [x] Project Complete: Ready for final handoff and completion report to User/Parent
+- [x] Initialized workspace metadata (`DISPATCH.md`, `BRIEFING.md`, `progress.md`)
+- [x] Phase 0: Survey codebase, train scripts, and evaluation plan via 3 parallel Explorers (DONE)
+- [ ] Milestone 1 (R1): REMO-DQN Training (100 ep, 2000 steps, eps_decay 0.95, random density 30/50/100) & Convergence Verification [IN_PROGRESS: PID 97001 running training on CPU]
+- [ ] Milestone 2 (R2): 16 Baseline Models Full Training & Individual CSV Logging (weights saved in `data/models/`)
+- [ ] Milestone 3 (R3): Evaluation Plan Items 1 (Ablation 5 models) & 3 (17 models total) Integrated CSV Extraction
+- [ ] Final Gate Verification & Synthesis Report

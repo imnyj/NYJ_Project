@@ -2,8 +2,12 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
-CSV_PATH = "/home/imnyj/papers/paper4/paper/data/SA1_results.csv"
-OUT_DIR = "/home/imnyj/papers/paper4/paper/data/plots"
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(_project_root, "data"))
+CSV_PATH = os.path.join(DATA_DIR, "SA1_results.csv")
+OUT_DIR = os.path.join(DATA_DIR, "plots")
+os.makedirs(OUT_DIR, exist_ok=True)
 
 df = pd.read_csv(CSV_PATH)
 # aggregate by method and n_vehicles

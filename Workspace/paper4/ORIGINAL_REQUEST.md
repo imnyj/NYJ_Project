@@ -252,7 +252,172 @@ Working directory: /home/imnyj/Workspace/paper4
 - [ ] All 11 numbered target outputs exist and are valid 350 DPI PNGs/CSVs/TeXs.
 - [ ] Convergence graphs show x-axis up to 200,000 with Phase I/II annotations.
 - [ ] All 17 model checkpoints exist in `data/models/`.
-- [ ] Independent Victory Auditor issues VICTORY CONFIRMED.
+
+
+## Follow-up — 2026-08-20T17:29:56+09:00
+
+# REMO-DQN (Paper4) 코드 전수 수정 프로젝트
+
+REST 모드(논문 코드)의 12개 결함(C-1~M-12)을 `paper4_code_review_report.md`에 기재된 권장 실행 순서(C-3→C-1,C-2→H-4→H-5→H-6→M-7~M-12)에 따라 **한 항목씩** (수정→검증→기록) 사이클로 전부 수정한다. 수정 대상은 오직 `/code/` 디렉토리 내 파일만이며, 각 수정 후 **반드시** 독립 검증 스크립트를 실행하여 통과시킨 뒤 다음 항목으로 넘어간다.
+
+Working directory: /home/imnyj/Workspace/paper4
+Integrity mode: development
+
+## 핵심 컨텍스트
+- **제안 모델**: `ResNetMoEDQN` (ResNet + MoE + Dueling + Double DQN)
+- **TinyMLP/"Proposed" 라벨**: 완전 폐기 (backup/로 이동)
+- **규칙 파일**: `.rules/coder.md`와 `.rules/critic.md`를 반드시 준수
+- **입력 보고서**: `/home/imnyj/Workspace/paper4/paper4_code_review_report.md` — 시작 전에 전부 읽을 것
+
+## 사용자 확정 설계 결정
+
+| 결정 | 선택 |
+|---|---|
+| C-3 CBR_TARGET | 채널 모델 유지, CBR_TARGET은 밀도별 시뮬레이션 측정으로 자동 설정 (스크립트 작성) |
+| H-4 p_tx 그리드 | `[-5, 0, 5, 10, 15, 20]` dBm (6단계), 모든 hook이 `etsi_cam_layer.PTX_GRID_DBM`을 import |
+| H-5 Ablation | VanillaDQN → +Double → +Dueling → +MoE → +ResNet (5단계, 한 번에 한 요소만 변경) |
+| M-10 에피소드 수 | 500 에피소드 |
+| M-10 ε 스케줄 | 지수 디케이 epsilon_decay=0.995 (500ep 후 ≈0.082) |
+| 폐기 코드 | backup/로 이동 (train_final.py, aggregator.py, tinymlp_train*.py 등) |
+| action_dim | 4(t_grid) × 6(p_tx_grid) = 24 (기존 16에서 변경, 모든 .pth 재학습 필요) |
+
+## Requirements
+
+### R1. 12개 항목 전수 수정 (권장 실행 순서 준수)
+
+보고서의 12개 항목을 **정확히 아래 순서**로 수정한다. 하나라도 빠짐없이, 한 번에 몰아서 처리 금지:
+
+**C-3 보상 함수 재설계**:
+- 보상 = `-1.0*over - 0.5*osc - 0.3*stale - 0.05*cost` (over-target only + oscillation + staleness + cost)
+- `DuelingDQNHook.__init__`에 `self.prev_cbr = {}` 추가, `reset_episode`에서 `clear()`
+- **모든 hook의 predict 메서드**(DuelingDQNHook, SARSAHook, DecisionTransformerHook, MAPPOHook 등)에 동일 보상 적용
+- CBR_TARGET: 밀도별 자동 보정 스크립트(`measure_cbr_target.py`) 작성하여 Fixed10Hz 기준 최대 CBR 측정 → `CBR_TARGET = max_cbr * 0.8` 등으로 산출
+- `cost` 항에서 이전 액션의 T_GenCam을 참조하기 위해 `self.prev_t_gencam[vid]` 저장
+
+**C-1 평가 러너 DRL 등록**:
+- `sensitivity_runner.py`의 SA1/SA2 메서드 리스트에 `VanillaDQN`, `DoubleDQN`, `DuelingDQN`, `MoEDQN`, `ResNetMoEDQN` 추가
+- `"Proposed"`(TinyMLP 매핑) 라벨 제거
+- 결과 집계/플롯의 라벨 매핑도 수정
+
+**C-2 러너 가중치 로드 배선**:
+- `setup_eval_hook(method)` 함수 추가: agent 생성 → .pth 로드 → epsilon=0 → set_agent → is_training=False
+- DRL_SETUP dict에 5개 모델(ResNetMoEDQN, MoEDQN, DuelingDQN, DoubleDQN, VanillaDQN) 등록
+- 각 DRL 메서드 실행 전에 `setup_eval_hook()` 호출하도록 배선
+
+**H-4 p_tx 그리드 통일**:
+- `etsi_cam_layer.py`의 `PTX_GRID_DBM = [-5, 0, 5, 10, 15, 20]`으로 변경
+- 모든 hook(DuelingDQNHook, SklearnHook, TinyMLPHook 등)이 `from etsi_cam_layer import PTX_GRID_DBM` 사용
+- 30dBm 포함 그리드 제거
+
+**H-5 Ablation 재구성**:
+- 5단계: VanillaDQN(Single,MLP) → DoubleDQN(Double,MLP) → DuelingDQN(Double,Dueling,MLP) → MoEDQN(Double,Dueling,MoE) → ResNetMoEDQN(Double,Dueling,MoE,ResNet)
+- 기존 에이전트 파일(`dqn_agent.py`, `ddqn_agent.py`, `dueling_dqn_agent.py`, `moe_agent.py`, `resnet_moe_agent.py`)을 활용
+- action_dim=24로 통일
+- 파일명/라벨 정합: vanilla_dqn.pth, ddqn.pth, dueling_dqn.pth, moe_dqn.pth, resnet_moe_dqn.pth
+
+**H-6 Tabular 상태 정규화**:
+- `qlearning_agent.py`, `sarsa_agent.py`의 `state_bounds` 이웃 축을 `(0.0, 1.0)`으로 통일
+- 주석도 정정
+- 빈 `train_step()` no-op 메서드 추가 (AttributeError 방지)
+
+**M-7 n_est 국소 이웃**: 이미 수정됨 확인, 검증만 수행
+
+**M-8 국소 CBR**: 차량별 국소 CBR을 `vdata["cbr"]`로 전달하도록 `sim_engine.py` 수정
+
+**M-9 하드코딩 경로 제거**:
+- `sim_engine.py`의 4개 절대경로 → 환경변수/shutil.which
+- `sensitivity_runner.py`의 기본경로 → 상대경로
+- `aggregator.py` → backup/로 이동
+- `train_final.py` → backup/로 이동
+
+**M-10 학습량 재설정**: 모든 학습 스크립트 `num_episodes=500`, `epsilon_decay=0.995`
+
+**M-11 train_7_models 정정**: 클래스 수 25→24, 라벨 `TinyMLP (Proposed)` → `REMO-DQN (Proposed)`
+
+**M-12 Terminal 전이**: 이미 terminate_vehicle() 존재 확인, 모든 hook에 적용 검증
+
+### R2. 체크리스트 관리
+
+`idea/paper4_code_fix_tasklist.md`를 생성하여 12개 ID 각각에 [파일:라인, 문제, 수정계획, 상태(대기/진행/완료/차단), 검증결과, 근거] 열을 둔다. 각 항목 완료 시 실시간으로 갱신한다.
+
+### R3. 독립 검증
+
+각 항목 수정 후 독립 검증 스크립트를 `/code/` 내에 작성하고 실행:
+- **C-3 검증**: 저밀도에서 T_GenCam=0.1이 유일 최적이 아님 확인
+- **C-2 검증**: ResNetMoEDQN 300step 평가 시 action 분포 ≠ {0}
+- **H-4 검증**: 모든 hook의 max(p_tx) ≤ 20 assert
+- **H-5 검증**: 5단계 에이전트 구조 차이 확인 (파라미터 출력)
+- **H-6 검증**: 정규화 상태 → bin 매핑 정합
+- **회귀 검증**: 베이스라인(Fixed10Hz/ReactDCC/AdaptDCC) 결과 재현
+
+### R4. TinyMLP 폐기 및 코드 정리
+
+아래 파일들을 `backup/legacy_tinymlp/` 및 `backup/legacy_scripts/`로 이동:
+- `train_final.py`, `tinymlp_train.py`, `tinymlp_train_redo3.py`, `tinymlp_train_redo4.py`
+- `aggregator.py` (Windows 절대경로)
+- `*.bak*` 파일들 → `backup/bak_files/`
+
+`get_hook()`의 `"Proposed"` 분기 → TinyMLP 로딩 제거 (또는 주석처리 후 backup 참조 주석)
+
+### R5. Critic 검토
+
+모든 12개 항목 완료 후 `.rules/critic.md` 기준으로 최종 검토:
+- 빈 공간, TODO, pass 확인
+- 의도대로 구현되었는지 확인
+- 오타, 변수명 오류, 데이터 누수, 논리적 결함 검토
+
+## Acceptance Criteria
+
+### 코드 수정 완전성
+- [ ] 12개 항목(C-1~M-12) 전부 '완료(검증 통과)' 또는 '차단(명시 사유+질문)' 상태
+- [ ] `idea/paper4_code_fix_tasklist.md`에 12개 ID의 최종 상태·근거·검증결과가 기록됨
+- [ ] 체크리스트와 실제 코드가 일치
+
+### 보상 함수 (C-3)
+- [ ] 보상이 over-target only + osc + stale + cost 4항으로 구성
+- [ ] 모든 DRL hook의 predict에 동일 보상 적용 (grep으로 `abs(cbr_smoothed - 0.6)` 0건)
+- [ ] `prev_cbr` dict가 존재하고 reset_episode에서 clear됨
+- [ ] 밀도별 CBR_TARGET 측정 스크립트 존재
+
+### 평가 배선 (C-1, C-2)
+- [ ] SA1/SA2 methods에 5개 DRL 모델 등록 (grep으로 확인)
+- [ ] `"Proposed"` 라벨이 methods 리스트에서 제거됨
+- [ ] `setup_eval_hook()` 함수가 존재하고 5개 모델에 대해 agent 생성·로드·주입 수행
+- [ ] DRL 평가 시 action 분포가 단일값(0)이 아님 (300step 테스트)
+
+### 액션 그리드 (H-4)
+- [ ] `etsi_cam_layer.PTX_GRID_DBM = [-5, 0, 5, 10, 15, 20]`
+- [ ] 모든 hook의 p_tx_grid가 이 상수를 import (grep으로 확인)
+- [ ] 30dBm 포함 그리드 0건 (grep으로 확인)
+
+### Ablation (H-5)
+- [ ] 5단계 에이전트가 각각 정확히 1개 컴포넌트만 추가
+- [ ] action_dim=24로 통일
+
+### Tabular (H-6)
+- [ ] state_bounds 이웃 축이 (0.0, 1.0)
+- [ ] train_step() no-op 메서드 존재
+
+### 경로 (M-9)
+- [ ] `/home/imnyj/` 하드코딩 경로가 sim_engine.py에서 환경변수로 대체됨
+- [ ] `g:/` 경로 파일이 backup/로 이동됨
+
+### 학습 설정 (M-10)
+- [ ] 모든 학습 스크립트의 num_episodes ≥ 500
+
+### 폐기 코드 (R4)
+- [ ] TinyMLP 관련 파일이 backup/로 이동됨
+- [ ] `get_hook("Proposed")`가 TinyMLP를 로딩하지 않음
+
+### Critic 통과 (R5)
+- [ ] critic 검토 완료 보고서 존재
+
+## Follow-up — 2026-08-20T17:34:36+09:00
+
+[추가 지시사항] 
+1. 작업 진행 중 API Quota(429 에러) 초과나 토큰 부족 현상이 감지될 경우, 작업을 억지로 진행하지 말고 에이전트를 5시간(18000초) 대기/휴식 상태로 전환한 뒤 자동으로 재개하도록 자체 스케줄링 하세요.
+2. 현재 메인 에이전트가 00시, 06시, 12시, 18시에 정기 보고를 수행하도록 설정해두었습니다. 각 시간 직전에 오케스트레이터가 진척 상황을 요약해서 보고해 주면 도움이 됩니다.
+
 
 
 

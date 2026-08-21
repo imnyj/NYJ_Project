@@ -5,8 +5,13 @@ import random
 import numpy as np
 from collections import deque
 
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
 class ResidualBlock(nn.Module):
-    def __init__(self, hidden_dim):
+    def __init__(self, hidden_dim=128):
         super(ResidualBlock, self).__init__()
         self.fc1 = nn.Linear(hidden_dim, hidden_dim)
         self.relu = nn.ReLU()
@@ -22,7 +27,7 @@ class ResidualBlock(nn.Module):
         return out
 
 class ResNetFeatureExtractor(nn.Module):
-    def __init__(self, state_dim, hidden_dim=128, num_blocks=2):
+    def __init__(self, state_dim=5, hidden_dim=128, num_blocks=2):
         super(ResNetFeatureExtractor, self).__init__()
         self.input_layer = nn.Sequential(
             nn.Linear(state_dim, hidden_dim),
@@ -36,7 +41,7 @@ class ResNetFeatureExtractor(nn.Module):
         return x
 
 class DuelingExpert(nn.Module):
-    def __init__(self, hidden_dim, action_dim):
+    def __init__(self, hidden_dim=128, action_dim=ACTION_DIM):
         super(DuelingExpert, self).__init__()
         self.value_stream = nn.Sequential(
             nn.Linear(hidden_dim, 64),
@@ -56,7 +61,7 @@ class DuelingExpert(nn.Module):
         return q_vals
 
 class ResNetMoEDQN(nn.Module):
-    def __init__(self, state_dim, action_dim, num_experts=3, hidden_dim=128):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, num_experts=3, hidden_dim=128):
         super(ResNetMoEDQN, self).__init__()
         self.feature_extractor = ResNetFeatureExtractor(state_dim, hidden_dim, num_blocks=2)
         
@@ -87,7 +92,7 @@ class ResNetMoEDQN(nn.Module):
         return q_vals
 
 class ResNetMoEAgent:
-    def __init__(self, state_dim, action_dim, num_experts=3, hidden_dim=128, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, num_experts=3, hidden_dim=128, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -100,6 +105,8 @@ class ResNetMoEAgent:
         
         self.q_network = ResNetMoEDQN(state_dim, action_dim, num_experts, hidden_dim).to(self.device)
         self.target_network = ResNetMoEDQN(state_dim, action_dim, num_experts, hidden_dim).to(self.device)
+        self.q_net = self.q_network
+        self.q_target = self.target_network
         self.update_target_network()
         
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
@@ -121,6 +128,9 @@ class ResNetMoEAgent:
         self.q_network.train()
         
         return torch.argmax(q_vals).item()
+        
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
         
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -151,9 +161,6 @@ class ResNetMoEAgent:
         # Load balancing loss (coefficient of variation of gate weights across batch)
         # gate_weights shape: (batch_size, num_experts)
         importance = gate_weights.mean(dim=0) # mean probability per expert
-        # cv^2 = var / mean^2, but mean is 1/num_experts on average.
-        # to prevent division by zero, we use standard form: num_experts * sum(importance^2) - 1
-        # or simply cv squared of importance
         cv_squared = torch.var(importance) / (torch.mean(importance)**2 + 1e-8)
         lb_loss = 0.01 * cv_squared
         
@@ -172,5 +179,9 @@ class ResNetMoEAgent:
         torch.save(self.q_network.state_dict(), filepath)
         
     def load(self, filepath):
-        self.q_network.load_state_dict(torch.load(filepath, map_location=self.device))
+        checkpoint = torch.load(filepath, map_location=self.device)
+        if isinstance(checkpoint, dict) and "q_net" in checkpoint and not any(k.startswith("feature_extractor.") or k.startswith("gating_network.") for k in checkpoint.keys()):
+            self.q_network.load_state_dict(checkpoint["q_net"])
+        else:
+            self.q_network.load_state_dict(checkpoint)
         self.update_target_network()

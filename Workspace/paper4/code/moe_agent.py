@@ -5,8 +5,13 @@ import random
 import numpy as np
 from collections import deque
 
+try:
+    from etsi_cam_layer import ACTION_DIM
+except ImportError:
+    ACTION_DIM = 24
+
 class MoEFeature(nn.Module):
-    def __init__(self, state_dim, num_experts=2):
+    def __init__(self, state_dim=5, num_experts=2):
         super(MoEFeature, self).__init__()
         self.num_experts = num_experts
         
@@ -44,7 +49,7 @@ class MoEFeature(nn.Module):
 
 
 class MoEDQN(nn.Module):
-    def __init__(self, state_dim, action_dim, num_experts=2):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, num_experts=2):
         super(MoEDQN, self).__init__()
         
         self.feature_layer = MoEFeature(state_dim, num_experts)
@@ -78,7 +83,7 @@ class MoEDQN(nn.Module):
 
 
 class MoEAgent:
-    def __init__(self, state_dim, action_dim, num_experts=2, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
+    def __init__(self, state_dim=5, action_dim=ACTION_DIM, num_experts=2, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64, target_update_freq=1):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -92,6 +97,8 @@ class MoEAgent:
         
         self.q_network = MoEDQN(state_dim, action_dim, num_experts).to(self.device)
         self.target_network = MoEDQN(state_dim, action_dim, num_experts).to(self.device)
+        self.q_net = self.q_network
+        self.q_target = self.target_network
         self.update_target_network()
         
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
@@ -113,6 +120,9 @@ class MoEAgent:
         self.q_network.train()
         
         return torch.argmax(q_vals).item()
+        
+    def select_action(self, state, evaluate=False):
+        return self.act(state, evaluate=evaluate)
         
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
@@ -160,5 +170,9 @@ class MoEAgent:
         torch.save(self.q_network.state_dict(), filepath)
         
     def load(self, filepath):
-        self.q_network.load_state_dict(torch.load(filepath, map_location=self.device))
+        checkpoint = torch.load(filepath, map_location=self.device)
+        if isinstance(checkpoint, dict) and "q_net" in checkpoint and not any(k.startswith("feature_layer.") or k.startswith("value_stream.") for k in checkpoint.keys()):
+            self.q_network.load_state_dict(checkpoint["q_net"])
+        else:
+            self.q_network.load_state_dict(checkpoint)
         self.update_target_network()

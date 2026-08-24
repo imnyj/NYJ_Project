@@ -132,44 +132,31 @@ class AoITracker:
         if n < 2:
             return 0.0
 
+        vid_to_idx = {vid: i for i, vid in enumerate(vehicle_ids)}
         coords = np.array([vehicle_positions[vid] for vid in vehicle_ids], dtype=np.float32)
         diff = coords[:, None, :] - coords[None, :, :]
         dist_sq = np.sum(diff**2, axis=-1)
         in_range_mask = (dist_sq <= self.comm_range_m**2)
         np.fill_diagonal(in_range_mask, False)
 
-        s_indices, r_indices = np.where(in_range_mask)
-        if len(s_indices) == 0:
+        if not np.any(in_range_mask):
             return 0.0
 
-        aoi_values = []
-        for si, ri in zip(s_indices, r_indices):
-            sid = vehicle_ids[si]
-            rid = vehicle_ids[ri]
-            pair = (sid, rid)
+        T_matrix = np.full((n, n), -1.0, dtype=np.float32)
+        for sid, ft in self.first_tx_time.items():
+            if sid in vid_to_idx:
+                T_matrix[vid_to_idx[sid], :] = ft
 
-            # Accumulate AoI: time since last CAM was received (or since start)
-            if pair in self.last_received_gen_time:
-                # AoI = current_time - t_gen_of_last_received_cam
-                t_gen_last = self.last_received_gen_time[pair]
-                aoi_ms = (sim_time - t_gen_last) * 1000.0
-            else:
-                # Never received a CAM from this sender: AoI = time since first tx
-                if sid not in self.first_tx_time:
-                    continue
-                aoi_ms = (sim_time - self.first_tx_time[sid]) * 1000.0
+        for (sid, rid), t_gen in self.last_received_gen_time.items():
+            if sid in vid_to_idx and rid in vid_to_idx:
+                T_matrix[vid_to_idx[sid], vid_to_idx[rid]] = t_gen
 
-            if aoi_ms < 0:
-                aoi_ms = 0.0
-            elif aoi_ms > 2000.0:
-                aoi_ms = 2000.0
-            self.current_aoi[pair] = aoi_ms
-            aoi_values.append(aoi_ms)
-
-        if not aoi_values:
+        valid_mask = in_range_mask & (T_matrix >= 0)
+        if not np.any(valid_mask):
             return 0.0
 
-        mean_aoi = sum(aoi_values) / len(aoi_values)
+        aoi_ms = np.clip((sim_time - T_matrix[valid_mask]) * 1000.0, 0.0, 2000.0)
+        mean_aoi = float(np.mean(aoi_ms))
         self.aoi_history.append(mean_aoi)
         self.step_times.append(sim_time)
         return mean_aoi

@@ -1,32 +1,30 @@
-% ==========================================================================
-% Optuna Hyperparameter Sensitivity & Baseline Performance Comparison Table
-% ==========================================================================
+% Optuna Hyperparameter Sensitivity & Performance Comparison Table
 \begin{table*}[t]
 \centering
-\caption{Hyperparameter Search Space, Optimal Parameters via Optuna Bayesian Optimization, and Empirical Multi-Metric Performance Across 17 Baselines}
+\caption{Optuna Hyperparameter Optimization Results and Empirical Performance Across 17 Baselines}
 \label{tab:optuna-sensitivity}
 \resizebox{\textwidth}{!}{
-\begin{tabular}{l l p{6.5cm} r r r r}
+\begin{tabular}{l l p{6.8cm} r r r r}
 \toprule
-\textbf{Baseline / Method} & \textbf{Model Category} & \textbf{Optimal Hyperparameter Vector} & \textbf{Conv. Reward} & \textbf{PDR (\%)} & \textbf{AoI (ms)} & \textbf{CBR} \\
+\textbf{Method} & \textbf{Model Type} & \textbf{Optimal Hyperparameters} & \textbf{Reward} & \textbf{PDR (\%)} & \textbf{AoI (ms)} & \textbf{CBR} \\
 \midrule
-\textbf{REMO-DQN (Proposed)} & ResNet + MoE + Dueling DQN & \small{lr=1.2e-4, gamma=0.985, tau=0.005, batch\_size=64, num\_experts=3, top\_k=2} & -850,665.1 & 96.22 & 145.45 & 0.584 \\
-MoEDQN & MoE + Standard DQN & \small{lr=2.1e-4, gamma=0.975, batch\_size=64, num\_experts=3, top\_k=2} & -849,555.6 & 93.69 & 245.27 & 0.598 \\
-MAPPO & Multi-Agent PPO & \small{lr=1.5e-4, gamma=0.980, eps\_clip=0.20, k\_epochs=8, batch\_size=64} & -853,591.6 & 86.11 & 173.74 & 0.605 \\
-PPO & Proximal Policy Optimization & \small{lr=1.47e-4, gamma=0.972, eps\_clip=0.291, k\_epochs=9, batch\_size=32} & -842,648.9 & 85.97 & 189.22 & 0.608 \\
-SAC & Soft Actor-Critic & \small{lr=1.85e-4, gamma=0.981, tau=0.005, alpha=0.20, batch\_size=64} & -863,086.5 & 91.89 & 145.17 & 0.615 \\
-DDPG & Deep Deterministic Policy Gradient & \small{lr\_actor=1.1e-4, lr\_critic=3.2e-4, gamma=0.965, tau=0.005, batch\_size=64} & -850,172.8 & 91.93 & 145.11 & 0.620 \\
-TD3 & Twin Delayed DDPG & \small{lr=3.79e-4, gamma=0.918, tau=0.005, policy\_delay=2, target\_noise=0.205, batch\_size=64} & -849,564.3 & 95.54 & 494.05 & 0.614 \\
-DuelingDQN & Dueling Deep Q-Network & \small{lr=2.5e-4, gamma=0.980, tau=0.005, batch\_size=64, buffer\_size=50000} & -849,547.1 & 85.88 & 189.22 & 0.625 \\
-DoubleDQN & Double Deep Q-Network & \small{lr=2.8e-4, gamma=0.975, tau=0.005, batch\_size=64, buffer\_size=50000} & -846,556.8 & 91.89 & 147.94 & 0.622 \\
-VanillaDQN & Standard DQN (Mnih et al.) & \small{lr=3.0e-4, gamma=0.970, batch\_size=64, buffer\_size=50000, eps\_decay=0.995} & -855,483.2 & 86.07 & 172.88 & 0.635 \\
-QLearning & Tabular Q-Learning & \small{alpha=0.045, gamma=0.960, eps\_decay=0.992} & -853,687.2 & 83.45 & 313.92 & 0.650 \\
-SARSA & State-Action-Reward-State-Action & \small{alpha=0.028, gamma=0.973, eps\_decay=0.991} & -867,652.1 & 83.12 & 495.61 & 0.655 \\
-ActorCritic & Advantage Actor-Critic (A2C) & \small{lr\_actor=1.5e-4, lr\_critic=4.0e-4, gamma=0.975, batch\_size=32} & -841,575.5 & 91.91 & 145.17 & 0.628 \\
-DecisionTransformer & Transformer-based RL & \small{lr=1.0e-4, gamma=0.990, n\_heads=4, n\_layers=3, context\_len=20} & -875,923.3 & 81.30 & 323.59 & 0.618 \\
-ReactDCC & ETSI TS 102 687 Reactive DCC & \small{Fixed Look-up Table (Interval 25ms-1000ms based on CBR thresholds)} & -982,000.0 & 82.50 & 210.40 & 0.612 \\
-AdaptDCC & ETSI TS 102 687 Adaptive DCC & \small{Gradient descent rate adaptation (Target CBR=0.60, alpha=0.05)} & -978,000.0 & 85.10 & 195.80 & 0.598 \\
-Fixed 10Hz & Standard Constant Rate & \small{Generation Interval = 100ms (Fixed 10 Hz CAM beaconing)} & -995,000.0 & 48.20 & 100.00 & 0.892 \\
+\textbf{REMO-DQN (Proposed)} & ResNet + MoE + Dueling DQN & \small{lr=1.2e-4, gamma=0.985, tau=0.005, batch\_size=64, num\_experts=3, top\_k=2} & -850665.1 & 96.22 & 145.45 & 0.584 \\
+MoEDQN & MoE + Standard DQN & \small{lr=2.1e-4, gamma=0.975, batch\_size=64, num\_experts=3, top\_k=2} & -849555.6 & 93.69 & 245.27 & 0.598 \\
+MAPPO & Multi-Agent PPO & \small{lr=1.5e-4, gamma=0.980, eps\_clip=0.20, k\_epochs=8, batch\_size=64} & -853591.6 & 86.11 & 173.74 & 0.605 \\
+PPO & Proximal Policy Optimization & \small{lr=1.47e-4, gamma=0.972, eps\_clip=0.291, k\_epochs=9, batch\_size=32} & -842648.9 & 85.97 & 189.22 & 0.608 \\
+SAC & Soft Actor-Critic & \small{lr=1.85e-4, gamma=0.981, tau=0.005, alpha=0.20, batch\_size=64} & -863086.5 & 91.89 & 145.17 & 0.615 \\
+DDPG & Deep Deterministic Policy Gradient & \small{lr\_actor=1.1e-4, lr\_critic=3.2e-4, gamma=0.965, tau=0.005, batch\_size=64} & -850172.8 & 91.93 & 145.11 & 0.620 \\
+TD3 & Twin Delayed DDPG & \small{lr=3.79e-4, gamma=0.918, tau=0.005, policy\_delay=2, target\_noise=0.205, batch\_size=64} & -849564.3 & 95.54 & 494.05 & 0.614 \\
+DuelingDQN & Dueling Deep Q-Network & \small{lr=2.5e-4, gamma=0.980, tau=0.005, batch\_size=64, buffer\_size=50000} & -849547.1 & 85.88 & 189.22 & 0.625 \\
+DoubleDQN & Double Deep Q-Network & \small{lr=2.8e-4, gamma=0.975, tau=0.005, batch\_size=64, buffer\_size=50000} & -846556.8 & 91.89 & 147.94 & 0.622 \\
+VanillaDQN & Standard DQN (Mnih et al.) & \small{lr=3.0e-4, gamma=0.970, batch\_size=64, buffer\_size=50000, eps\_decay=0.995} & -855483.2 & 86.07 & 172.88 & 0.635 \\
+QLearning & Tabular Q-Learning & \small{alpha=0.045, gamma=0.960, eps\_decay=0.992} & -853687.2 & 83.45 & 313.92 & 0.650 \\
+SARSA & State-Action-Reward-State-Action & \small{alpha=0.028, gamma=0.973, eps\_decay=0.991} & -867652.1 & 83.12 & 495.61 & 0.655 \\
+ActorCritic & Advantage Actor-Critic (A2C) & \small{lr\_actor=1.5e-4, lr\_critic=4.0e-4, gamma=0.975, batch\_size=32} & -841575.5 & 91.91 & 145.17 & 0.628 \\
+DecisionTransformer & Transformer-based RL & \small{lr=1.0e-4, gamma=0.990, n\_heads=4, n\_layers=3, context\_len=20} & -875923.3 & 81.30 & 323.59 & 0.618 \\
+ReactDCC & ETSI TS 102 687 Reactive DCC & \small{Fixed Look-up Table (Interval 25ms-1000ms based on CBR thresholds)} & -982000.0 & 82.50 & 210.40 & 0.612 \\
+AdaptDCC & ETSI TS 102 687 Adaptive DCC & \small{Gradient descent rate adaptation (Target CBR=0.60, alpha=0.05)} & -978000.0 & 85.10 & 195.80 & 0.598 \\
+Fixed 10Hz & Standard Constant Rate & \small{Generation Interval = 100ms (Fixed 10 Hz CAM beaconing)} & -995000.0 & 48.20 & 100.00 & 0.892 \\
 \bottomrule
 \end{tabular}
 }

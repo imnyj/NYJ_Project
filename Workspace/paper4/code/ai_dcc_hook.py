@@ -106,9 +106,10 @@ class AIDCCHookBase:
     Implements full vehicle lifecycle, C-3 reward formulation,
     and terminal transition (done=True) storage on vehicle exit.
     """
-    def __init__(self, agent=None, is_training=False):
+    def __init__(self, agent=None, is_training=False, reward_variant="Base"):
         self.agent = agent
         self.is_training = is_training
+        self.reward_variant = reward_variant
         self.t_grid = list(T_GRID_S)
         self.p_tx_grid = list(PTX_GRID_DBM)
         self.action_dim = ACTION_DIM
@@ -141,12 +142,26 @@ class AIDCCHookBase:
         self.prev_t_gencam.clear()
         self.episode_reward = 0.0
 
-    def compute_reward(self, cbr_smoothed: float, dt_since_last_cam: float, vid: str = None, t_gencam: float = 0.1) -> float:
+    def compute_reward(self, cbr_smoothed: float, dt_since_last_cam: float, vid: str = None, t_gencam: float = 0.1, reward_variant: str = None) -> float:
+        var = reward_variant if reward_variant is not None else getattr(self, "reward_variant", "Base")
         over = max(0.0, cbr_smoothed - CBR_TARGET)
         osc = abs(cbr_smoothed - self.prev_cbr.get(vid, cbr_smoothed)) if vid is not None else 0.0
         stale = max(0.0, dt_since_last_cam - T_STALE)
         cost = 0.1 / max(t_gencam, 1e-3)
-        reward = -1.0 * over - 0.5 * osc - 0.3 * stale - 0.05 * cost
+        
+        r_cbr = -1.0 * over - 0.5 * osc
+        r_aoi = -0.3 * stale
+        r_cost = -0.05 * cost
+        
+        if var in ["wo_R1", "w/o R1", "wo_AoI"]:
+            reward = r_cbr + r_cost
+        elif var in ["wo_R2", "w/o R2", "wo_CBR"]:
+            reward = r_aoi + r_cost
+        elif var in ["wo_R3", "w/o R3", "wo_PDR", "wo_Cost"]:
+            reward = r_cbr + r_aoi
+        else: # "Base", "REMO-DQN", Full Reward
+            reward = r_cbr + r_aoi + r_cost
+            
         return float(reward)
 
     def predict(self, cbr_global: float, n_neighbors: float, v_norm: float, 
@@ -273,8 +288,8 @@ class DDPGHook(AIDCCHookBase):
 
 
 class DecisionTransformerHook(AIDCCHookBase):
-    def __init__(self, agent=None, is_training=False):
-        super().__init__(agent, is_training)
+    def __init__(self, agent=None, is_training=False, reward_variant="Base"):
+        super().__init__(agent, is_training, reward_variant=reward_variant)
         self.trajectories = {}
         
     def reset_episode(self):
@@ -451,7 +466,9 @@ def get_hook(method="ResNetMoEDQN"):
             _hooks[method] = DDQNHook()
         elif method == "TD3":
             _hooks[method] = TD3Hook()
-        elif method in ["wo_ResNet", "wo_MoE", "wo_Dueling", "Base", "wo_R1", "wo_R2", "wo_R3",
+        elif method in ["wo_R1", "w/o R1", "wo_R2", "w/o R2", "wo_R3", "w/o R3"]:
+            _hooks[method] = ResNetMoEDQNHook(reward_variant=method)
+        elif method in ["wo_ResNet", "wo_MoE", "wo_Dueling", "Base",
                         "StateAblation_Base", "StateAblation_wo_Density", "StateAblation_wo_CBR", "StateAblation_wo_Kinematics"]:
             _hooks[method] = ResNetMoEDQNHook()
         else:

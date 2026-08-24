@@ -219,7 +219,7 @@ class Variant4_NoDueling(nn.Module):
 
 
 class AblationAgent:
-    def __init__(self, variant_type=1, state_dim=5, action_dim=ACTION_DIM, num_experts=3, hidden_dim=128, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.995, buffer_size=100000, batch_size=64):
+    def __init__(self, variant_type=1, state_dim=5, action_dim=ACTION_DIM, num_experts=3, hidden_dim=128, lr=1e-3, gamma=0.99, epsilon_start=1.0, epsilon_end=0.01, epsilon_decay=0.95, buffer_size=100000, batch_size=64, device=None):
         self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
@@ -229,7 +229,10 @@ class AblationAgent:
         self.batch_size = batch_size
         self.variant_type = variant_type
         
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if device is not None:
+            self.device = torch.device(device)
+        else:
+            self.device = torch.device("cuda:3" if torch.cuda.is_available() and torch.cuda.device_count() > 3 else "cuda" if torch.cuda.is_available() else "cpu")
         
         if variant_type == 1:
             self.q_network = Variant1_REMODQN(state_dim, action_dim, num_experts, hidden_dim).to(self.device)

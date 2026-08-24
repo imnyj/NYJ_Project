@@ -80,8 +80,21 @@ def train(num_episodes=100, seed=42, duration_steps=2000,
             writer = csv.writer(f)
             writer.writerow(csv_header)
 
+    # Configure all required model checkpoint target paths
+    primary_model_path = resolve_path(output_model)
+    model_targets = [primary_model_path]
+    std_model_1 = os.path.join(project_root, "data", "models", "resnet_moe_dqn.pth")
+    std_model_2 = os.path.join(project_root, "data", "models", "REMO-DQN.pth")
+    code_local_model = os.path.join(_cur_dir, "resnet_moe_dqn.pth")
+    
+    for m_path in [std_model_1, std_model_2, code_local_model]:
+        abs_m = os.path.abspath(m_path)
+        if abs_m not in [os.path.abspath(p) for p in model_targets]:
+            model_targets.append(abs_m)
+
     print(f"Starting ResNetMoEDQN training: episodes={num_episodes}, duration_steps={duration_steps}, epsilon_decay={epsilon_decay}, min_eps={min_epsilon}")
     print(f"Primary log: {primary_log_path}")
+    print(f"Primary model: {primary_model_path}")
 
     global_step = 0
 
@@ -131,26 +144,17 @@ def train(num_episodes=100, seed=42, duration_steps=2000,
             with open(log_path, 'a', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow(row_data)
+                f.flush()
+                
+        # Periodic checkpoint save (every 10 episodes and final)
+        if (ep + 1) % 10 == 0 or (ep + 1) == num_episodes:
+            for m_path in model_targets:
+                m_dir = os.path.dirname(m_path)
+                if m_dir and not os.path.exists(m_dir):
+                    os.makedirs(m_dir, exist_ok=True)
+                agent.save(m_path)
+            print(f"Checkpoint saved at episode {ep+1} to {primary_model_path}")
             
-    # Save trained weights
-    primary_model_path = resolve_path(output_model)
-    model_targets = [primary_model_path]
-    std_model_1 = os.path.join(project_root, "data", "models", "resnet_moe_dqn.pth")
-    std_model_2 = os.path.join(project_root, "data", "models", "REMO-DQN.pth")
-    code_local_model = os.path.join(_cur_dir, "resnet_moe_dqn.pth")
-    
-    for m_path in [std_model_1, std_model_2, code_local_model]:
-        abs_m = os.path.abspath(m_path)
-        if abs_m not in [os.path.abspath(p) for p in model_targets]:
-            model_targets.append(abs_m)
-
-    for m_path in model_targets:
-        m_dir = os.path.dirname(m_path)
-        if m_dir and not os.path.exists(m_dir):
-            os.makedirs(m_dir, exist_ok=True)
-        agent.save(m_path)
-        print(f"Model saved to {m_path}")
-
     print(f"\nTraining finished successfully across {num_episodes} episodes ({global_step} steps).")
     return agent
 

@@ -193,6 +193,22 @@ def compute_local_cbr(vehicle_positions: Dict[str, Tuple[float, float]],
     return cbr_dict, cbr_mean
 
 
+def reception_probability_vec(dists: np.ndarray, p_tx_dbm: float = 20.0) -> np.ndarray:
+    """Vectorized Nakagami-m reception probability computation."""
+    d0 = 1.0
+    PL_0_dB = 20.0 * math.log10(4.0 * math.pi * d0 * 5.9e9 / 3e8)
+    PL_d = PL_0_dB + 10.0 * PATH_LOSS_EXP * np.log10(np.maximum(dists, 1.0) / d0)
+    p_rx_dbm = p_tx_dbm - PL_d
+    noise_dbm = -174.0 + 10.0 * math.log10(CHANNEL_BW_HZ) + 10.0
+    snr_db = p_rx_dbm - noise_dbm
+    snr_linear = 10.0 ** (snr_db / 10.0)
+    snr_thresh_lin = 10.0 ** (5.0 / 10.0)
+    ratio = np.maximum(snr_linear / snr_thresh_lin, 1e-12)
+    x = NAKAGAMI_M_PARAM / ratio
+    p = np.where(ratio > 50.0, 1.0, np.exp(-x) * (1.0 + x + 0.5 * (x ** 2)))
+    return np.clip(p, 0.0, 1.0)
+
+
 def simulate_receptions(cam_events: list,
                         vehicle_positions: Dict[str, Tuple[float, float]],
                         cbr_dict: Dict[str, float],
@@ -201,7 +217,7 @@ def simulate_receptions(cam_events: list,
                         dist_rx_counts: list,
                         is_warmup: bool = False) -> List[Dict]:
     """
-    Simulate CAM reception by nearby vehicles.
+    Simulate CAM reception by nearby vehicles with vectorized distance/fading checks.
     Returns list of reception events: {sender, receiver, t_rx, t_gen, dist_m}
     """
     reception_events = []
@@ -213,6 +229,7 @@ def simulate_receptions(cam_events: list,
     if n == 0:
         return reception_events
 
+    vid_to_idx = {vid: i for i, vid in enumerate(vehicle_ids)}
     coords = np.array([vehicle_positions[vid] for vid in vehicle_ids], dtype=np.float32)
 
     for ev in cam_events:
@@ -230,35 +247,42 @@ def simulate_receptions(cam_events: list,
             in_range_count = max(0, in_range_count - 1)
         ev["in_range_count"] = in_range_count
 
-        candidate_indices = np.where(dists <= COMM_RANGE_M * 2)[0]
+        cand_mask = (dists <= COMM_RANGE_M * 2)
+        if sid in vid_to_idx:
+            cand_mask[vid_to_idx[sid]] = False
+        cand_indices = np.where(cand_mask)[0]
+        if len(cand_indices) == 0:
+            continue
 
-        for idx in candidate_indices:
-            rid = vehicle_ids[idx]
-            if rid == sid:
-                continue
-            dist_m = float(dists[idx])
+        cand_dists = dists[cand_indices]
+        p_rx_arr = reception_probability_vec(cand_dists, p_tx_dbm)
+        rcv_cbrs = np.array([cbr_dict.get(vehicle_ids[i], 0.0) for i in cand_indices], dtype=np.float32)
+        col_factors = np.maximum(0.1, 1.0 - rcv_cbrs * 0.8)
+        p_success = p_rx_arr * col_factors
 
-            if not is_warmup:
-                bin_idx = min(int(dist_m / 50.0), 5)
-                if dist_m <= COMM_RANGE_M:
-                    dist_tx_counts[bin_idx] += 1
+        rand_vals = np.array([rng.random() for _ in range(len(cand_indices))], dtype=np.float32)
+        rx_success = (rand_vals < p_success)
 
-            p_rx = reception_probability(dist_m, p_tx_dbm)
-            receiver_cbr = cbr_dict.get(rid, 0.0)
-            collision_factor = max(0.1, 1.0 - receiver_cbr * 0.8)
-            p_rx *= collision_factor
+        if not is_warmup:
+            in_range_cand = (cand_dists <= COMM_RANGE_M)
+            for d in cand_dists[in_range_cand]:
+                bin_idx = min(int(d / 50.0), 5)
+                dist_tx_counts[bin_idx] += 1
+            for d in cand_dists[in_range_cand & rx_success]:
+                bin_idx = min(int(d / 50.0), 5)
+                dist_rx_counts[bin_idx] += 1
 
-            if rng.random() < p_rx:
-                if not is_warmup and dist_m <= COMM_RANGE_M:
-                    dist_rx_counts[bin_idx] += 1
-                prop_delay_s = dist_m / 3e8
-                reception_events.append({
-                    "sender": sid,
-                    "receiver": rid,
-                    "t_rx": t_gen + prop_delay_s,
-                    "t_gen": t_gen,
-                    "dist_m": dist_m,
-                })
+        for idx_c in np.where(rx_success)[0]:
+            rid = vehicle_ids[cand_indices[idx_c]]
+            dist_m = float(cand_dists[idx_c])
+            prop_delay_s = dist_m / 3e8
+            reception_events.append({
+                "sender": sid,
+                "receiver": rid,
+                "t_rx": t_gen + prop_delay_s,
+                "t_gen": t_gen,
+                "dist_m": dist_m,
+            })
 
     return reception_events
 

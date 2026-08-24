@@ -1,14 +1,12 @@
-% ==========================================================================
-% Hardware Feasibility & Edge Embedded Complexity Profiling Table
-% ==========================================================================
+% Hardware Feasibility & Complexity Profiling Table
 \begin{table*}[t]
 \centering
-\caption{Computational Complexity, Parameter Count, Inference Latency, and On-Device Memory Footprint for In-Vehicle OBU / MCU Deployment}
+\caption{Hardware Profiling, Computational Complexity, and On-Device Feasibility Analysis on Embedded OBU/MCU Target Platform}
 \label{tab:hardware-feasibility}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l l r r r r l}
 \toprule
-\textbf{Model} & \textbf{Network Structure} & \textbf{MACs/FLOPs} & \textbf{Parameters} & \textbf{Latency (ms)} & \textbf{RAM/Flash (KB)} & \textbf{Deployment Feasibility} \\
+\textbf{Model} & \textbf{Architecture} & \textbf{MACs/FLOPs} & \textbf{Parameters} & \textbf{Latency (ms)} & \textbf{RAM/Flash (KB)} & \textbf{Feasibility Status} \\
 \midrule
 \textbf{REMO-DQN (Proposed)} & Hybrid ResNet-MoE + Dueling DQN & 3.85 M & 348.6 K & 1.240 & 680.5 & Feasible (STM32H7 / OBU MCU) \\
 MoEDQN & 3-Expert FCN + Gating & 1.52 M & 122.4 K & 0.620 & 280.2 & Feasible (ARM Cortex-M7) \\

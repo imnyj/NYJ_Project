@@ -1,0 +1,694 @@
+{
+  "pipeline_execution": {
+    "prepare_data": {
+      "step": "Data Preparation (prepare_data.py)",
+      "cmd": [
+        "/usr/bin/python3",
+        "visualizer/prepare_data.py"
+      ],
+      "returncode": 0,
+      "elapsed_sec": 80.1067488193512,
+      "stdout": "=== Harmonizing all 11 Target Datasets (100% Pure Real Data Ingestion) ===\nSaved reward_convergence.csv -> /home/imnyj/Workspace/paper4/data/reward_convergence.csv & /home/imnyj/Workspace/paper4/coder/data/reward_convergence.csv (shape: (100, 19))\nSaved ablation_study.csv -> /home/imnyj/Workspace/paper4/data/ablation_study.csv & /home/imnyj/Workspace/paper4/coder/data/ablation_study.csv (shape: (100, 9))\nSaved ablation_structure.csv -> /home/imnyj/Workspace/paper4/data/ablation_structure.csv & /home/imnyj/Workspace/paper4/coder/data/ablation_structure.csv (shape: (100, 6))\nSaved ablation_reward.csv -> /home/imnyj/Workspace/paper4/data/ablation_reward.csv & /home/imnyj/Workspace/paper4/coder/data/ablation_reward.csv (shape: (100, 6))\nSaved optuna_sensitivity_table.csv -> /home/imnyj/Workspace/paper4/data/optuna_sensitivity_table.csv & /home/imnyj/Workspace/paper4/coder/data/optuna_sensitivity_table.csv (shape: (17, 7))\nSaved LaTeX table to /home/imnyj/Workspace/paper4/visualizer/optuna_sensitivity_table.tex\nSaved tsne_clustering.csv -> /home/imnyj/Workspace/paper4/data/tsne_clustering.csv & /home/imnyj/Workspace/paper4/coder/data/tsne_clustering.csv (shape: (300, 3))\nSaved moe_routing.csv -> /home/imnyj/Workspace/paper4/data/moe_routing.csv & /home/imnyj/Workspace/paper4/coder/data/moe_routing.csv (shape: (11, 4))\nSaved cbr_trace.csv -> /home/imnyj/Workspace/paper4/data/cbr_trace.csv & /home/imnyj/Workspace/paper4/coder/data/cbr_trace.csv (shape: (100, 18))\nSaved pdr_vs_density.csv -> /home/imnyj/Workspace/paper4/data/pdr_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/pdr_vs_density.csv (shape: (6, 18))\nSaved aoi_vs_density.csv -> /home/imnyj/Workspace/paper4/data/aoi_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/aoi_vs_density.csv (shape: (6, 18))\nSaved cbr_vs_density.csv -> /home/imnyj/Workspace/paper4/data/cbr_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/cbr_vs_density.csv (shape: (6, 18))\nSaved throughput_vs_density.csv -> /home/imnyj/Workspace/paper4/data/throughput_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/throughput_vs_density.csv (shape: (6, 18))\nSaved delay_vs_density.csv -> /home/imnyj/Workspace/paper4/data/delay_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/delay_vs_density.csv (shape: (6, 18))\nSaved fairness_vs_density.csv -> /home/imnyj/Workspace/paper4/data/fairness_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/fairness_vs_density.csv (shape: (6, 18))\nSaved energy_efficiency_vs_density.csv -> /home/imnyj/Workspace/paper4/data/energy_efficiency_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/energy_efficiency_vs_density.csv (shape: (6, 18))\nSaved packet_loss_vs_density.csv -> /home/imnyj/Workspace/paper4/data/packet_loss_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/packet_loss_vs_density.csv (shape: (6, 18))\nSaved reward_vs_density.csv -> /home/imnyj/Workspace/paper4/data/reward_vs_density.csv & /home/imnyj/Workspace/paper4/coder/data/reward_vs_density.csv (shape: (6, 18))\nSaved pdr_vs_distance.csv -> /home/imnyj/Workspace/paper4/data/pdr_vs_distance.csv & /home/imnyj/Workspace/paper4/coder/data/pdr_vs_distance.csv (shape: (7, 18))\nSaved aoi_vs_distance.csv -> /home/imnyj/Workspace/paper4/data/aoi_vs_distance.csv & /home/imnyj/Workspace/paper4/coder/data/aoi_vs_distance.csv (shape: (7, 18))\nSaved hardware_feasibility_table.csv -> /home/imnyj/Workspace/paper4/data/hardware_feasibility_table.csv & /home/imnyj/Workspace/paper4/coder/data/hardware_feasibility_table.csv (shape: (11, 7))\nSaved LaTeX table to /home/imnyj/Workspace/paper4/visualizer/hardware_feasibility_table.tex\n=== All Datasets Successfully Synchronized with ZERO MOCK DATA ===\n",
+      "stderr": ""
+    },
+    "generate_visualizations": {
+      "step": "Visualization Generation (generate_visualizations.py)",
+      "cmd": [
+        "/usr/bin/python3",
+        "visualizer/generate_visualizations.py"
+      ],
+      "returncode": 0,
+      "elapsed_sec": 28.797865867614746,
+      "stdout": "================================================================\n  Paper 4 Visualization & Evaluation Execution Pipeline (350 DPI)\n================================================================\n[1/11] Generating Target 1: 1_ablation_study.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/1_ablation_study.png & /home/imnyj/Workspace/paper4/visualizer/1_ablation_study.pdf (DPI=350)\n[2/11] Generating Target 2: 2_optuna_sensitivity_table.csv & .tex ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/2_optuna_sensitivity_table.csv & /home/imnyj/Workspace/paper4/visualizer/2_optuna_sensitivity_table.tex\n[3/11] Generating Target 3: 3_reward_convergence.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/3_reward_convergence.png & /home/imnyj/Workspace/paper4/visualizer/3_reward_convergence.pdf (DPI=350)\n[4/11] Generating Target 4: 4_tsne_clustering.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/4_tsne_clustering.png & /home/imnyj/Workspace/paper4/visualizer/4_tsne_clustering.pdf (DPI=350)\n[5/11] Generating Target 5: 5_moe_routing.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/5_moe_routing.png & /home/imnyj/Workspace/paper4/visualizer/5_moe_routing.pdf (DPI=350)\n[6/11] Generating Target 6: 6_cbr_trace.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/6_cbr_trace.png & /home/imnyj/Workspace/paper4/visualizer/6_cbr_trace.pdf (DPI=350)\n[7/11] Generating Target 7: 7_pdr_vs_density.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/7_pdr_vs_density.png & /home/imnyj/Workspace/paper4/visualizer/7_pdr_vs_density.pdf (DPI=350)\n[8/11] Generating Target 8: 8_aoi_vs_density.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/8_aoi_vs_density.png & /home/imnyj/Workspace/paper4/visualizer/8_aoi_vs_density.pdf (DPI=350)\n[9/11] Generating Target 9: 9_pdr_vs_distance.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/9_pdr_vs_distance.png & /home/imnyj/Workspace/paper4/visualizer/9_pdr_vs_distance.pdf (DPI=350)\n[10/11] Generating Target 10: 10_aoi_vs_distance.png ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/10_aoi_vs_distance.png & /home/imnyj/Workspace/paper4/visualizer/10_aoi_vs_distance.pdf (DPI=350)\n[11/11] Generating Target 11: 11_hardware_feasibility_table.csv & .tex ...\n  -> Successfully generated /home/imnyj/Workspace/paper4/visualizer/11_hardware_feasibility_table.csv & /home/imnyj/Workspace/paper4/visualizer/11_hardware_feasibility_table.tex\n================================================================\n  All 11 Target Visualizations and Tables Generated Successfully!\n================================================================\n",
+      "stderr": ""
+    }
+  },
+  "target_specs": [
+    {
+      "id": 1,
+      "name": "Ablation Study Curves",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/1_ablation_study.png",
+        "exists": true,
+        "size_bytes": 410224,
+        "dimensions": "4713x582",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/1_ablation_study.pdf",
+        "exists": true,
+        "size_bytes": 46091,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/ablation_study.csv",
+        "exists": true,
+        "rows": 100,
+        "cols": 9,
+        "columns": [
+          "Episode",
+          "Global_Step",
+          "REMO-DQN",
+          "w/o ResNet",
+          "w/o MoE",
+          "w/o Dueling",
+          "w/o R1",
+          "w/o R2",
+          "w/o R3"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 2,
+      "name": "Optuna Sensitivity Table",
+      "type": "table",
+      "checks": {},
+      "tex": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/2_optuna_sensitivity_table.tex",
+        "exists": true,
+        "size_bytes": 3094,
+        "valid_structure": true,
+        "has_caption": true,
+        "has_label": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/2_optuna_sensitivity_table.csv",
+        "exists": true,
+        "rows": 17,
+        "cols": 7,
+        "columns": [
+          "Method",
+          "Architecture",
+          "Tuned Hyperparameters",
+          "Reward Convergence",
+          "Mean PDR (%)",
+          "Mean AoI (ms)",
+          "Mean CBR"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 3,
+      "name": "Reward Convergence Curves",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/3_reward_convergence.png",
+        "exists": true,
+        "size_bytes": 850563,
+        "dimensions": "3959x2174",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/3_reward_convergence.pdf",
+        "exists": true,
+        "size_bytes": 39890,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/reward_convergence.csv",
+        "exists": true,
+        "rows": 100,
+        "cols": 19,
+        "columns": [
+          "Episode",
+          "Global_Step",
+          "REMO-DQN",
+          "Fixed 10Hz",
+          "ReactDCC",
+          "AdaptDCC",
+          "MoEDQN",
+          "MAPPO",
+          "PPO",
+          "SAC",
+          "DDPG",
+          "TD3",
+          "DuelingDQN",
+          "DoubleDQN",
+          "VanillaDQN",
+          "QLearning",
+          "SARSA",
+          "ActorCritic",
+          "DecisionTransformer"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 4,
+      "name": "t-SNE Clustering",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/4_tsne_clustering.png",
+        "exists": true,
+        "size_bytes": 520475,
+        "dimensions": "2756x2052",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/4_tsne_clustering.pdf",
+        "exists": true,
+        "size_bytes": 25780,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/tsne_clustering.csv",
+        "exists": true,
+        "rows": 300,
+        "cols": 3,
+        "columns": [
+          "x",
+          "y",
+          "Cluster"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 5,
+      "name": "MoE Routing Distribution",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/5_moe_routing.png",
+        "exists": true,
+        "size_bytes": 249469,
+        "dimensions": "3106x1877",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/5_moe_routing.pdf",
+        "exists": true,
+        "size_bytes": 24416,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/moe_routing.csv",
+        "exists": true,
+        "rows": 11,
+        "cols": 4,
+        "columns": [
+          "Density",
+          "Expert1 (Low Density)",
+          "Expert2 (Medium Density)",
+          "Expert3 (High Density)"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 6,
+      "name": "CBR Trace",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/6_cbr_trace.png",
+        "exists": true,
+        "size_bytes": 288589,
+        "dimensions": "3951x2123",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/6_cbr_trace.pdf",
+        "exists": true,
+        "size_bytes": 28759,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/cbr_trace.csv",
+        "exists": true,
+        "rows": 100,
+        "cols": 18,
+        "columns": [
+          "Time",
+          "REMO-DQN",
+          "Fixed 10Hz",
+          "ReactDCC",
+          "AdaptDCC",
+          "MoEDQN",
+          "MAPPO",
+          "PPO",
+          "SAC",
+          "DDPG",
+          "TD3",
+          "DuelingDQN",
+          "DoubleDQN",
+          "VanillaDQN",
+          "QLearning",
+          "SARSA",
+          "ActorCritic",
+          "DecisionTransformer"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 7,
+      "name": "PDR vs Density",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/7_pdr_vs_density.png",
+        "exists": true,
+        "size_bytes": 196764,
+        "dimensions": "3959x2122",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/7_pdr_vs_density.pdf",
+        "exists": true,
+        "size_bytes": 25777,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/pdr_vs_density.csv",
+        "exists": true,
+        "rows": 6,
+        "cols": 18,
+        "columns": [
+          "Density",
+          "REMO-DQN",
+          "Fixed 10Hz",
+          "ReactDCC",
+          "AdaptDCC",
+          "MoEDQN",
+          "MAPPO",
+          "PPO",
+          "SAC",
+          "DDPG",
+          "TD3",
+          "DuelingDQN",
+          "DoubleDQN",
+          "VanillaDQN",
+          "QLearning",
+          "SARSA",
+          "ActorCritic",
+          "DecisionTransformer"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 8,
+      "name": "AoI vs Density",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/8_aoi_vs_density.png",
+        "exists": true,
+        "size_bytes": 323004,
+        "dimensions": "3967x2122",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/8_aoi_vs_density.pdf",
+        "exists": true,
+        "size_bytes": 28923,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/aoi_vs_density.csv",
+        "exists": true,
+        "rows": 6,
+        "cols": 18,
+        "columns": [
+          "Density",
+          "REMO-DQN",
+          "Fixed 10Hz",
+          "ReactDCC",
+          "AdaptDCC",
+          "MoEDQN",
+          "MAPPO",
+          "PPO",
+          "SAC",
+          "DDPG",
+          "TD3",
+          "DuelingDQN",
+          "DoubleDQN",
+          "VanillaDQN",
+          "QLearning",
+          "SARSA",
+          "ActorCritic",
+          "DecisionTransformer"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 9,
+      "name": "PDR vs Distance",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/9_pdr_vs_distance.png",
+        "exists": true,
+        "size_bytes": 303463,
+        "dimensions": "3971x2123",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/9_pdr_vs_distance.pdf",
+        "exists": true,
+        "size_bytes": 30872,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/pdr_vs_distance.csv",
+        "exists": true,
+        "rows": 7,
+        "cols": 18,
+        "columns": [
+          "Distance",
+          "REMO-DQN",
+          "Fixed 10Hz",
+          "ReactDCC",
+          "AdaptDCC",
+          "MoEDQN",
+          "MAPPO",
+          "PPO",
+          "SAC",
+          "DDPG",
+          "TD3",
+          "DuelingDQN",
+          "DoubleDQN",
+          "VanillaDQN",
+          "QLearning",
+          "SARSA",
+          "ActorCritic",
+          "DecisionTransformer"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 10,
+      "name": "AoI vs Distance",
+      "type": "plot",
+      "checks": {},
+      "png": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/10_aoi_vs_distance.png",
+        "exists": true,
+        "size_bytes": 313881,
+        "dimensions": "3968x2123",
+        "dpi_info": [
+          350.012,
+          350.012
+        ],
+        "dpi_valid": true
+      },
+      "pdf": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/10_aoi_vs_distance.pdf",
+        "exists": true,
+        "size_bytes": 30238,
+        "valid": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/data/aoi_vs_distance.csv",
+        "exists": true,
+        "rows": 7,
+        "cols": 18,
+        "columns": [
+          "Distance",
+          "REMO-DQN",
+          "Fixed 10Hz",
+          "ReactDCC",
+          "AdaptDCC",
+          "MoEDQN",
+          "MAPPO",
+          "PPO",
+          "SAC",
+          "DDPG",
+          "TD3",
+          "DuelingDQN",
+          "DoubleDQN",
+          "VanillaDQN",
+          "QLearning",
+          "SARSA",
+          "ActorCritic",
+          "DecisionTransformer"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    },
+    {
+      "id": 11,
+      "name": "Hardware Feasibility Table",
+      "type": "table",
+      "checks": {},
+      "tex": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/11_hardware_feasibility_table.tex",
+        "exists": true,
+        "size_bytes": 1771,
+        "valid_structure": true,
+        "has_caption": true,
+        "has_label": true
+      },
+      "csv": {
+        "path": "/home/imnyj/Workspace/paper4/visualizer/11_hardware_feasibility_table.csv",
+        "exists": true,
+        "rows": 11,
+        "cols": 7,
+        "columns": [
+          "Model",
+          "Architecture",
+          "MACs_FLOPs",
+          "Parameters",
+          "Inference_Latency_ms",
+          "Memory_Footprint_KB",
+          "MCU_Feasibility"
+        ],
+        "nan_count": 0,
+        "valid": true
+      }
+    }
+  ],
+  "csv_integrity": [
+    {
+      "filename": "ablation_reward.csv",
+      "rows": 100,
+      "cols": 6,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "ablation_structure.csv",
+      "rows": 100,
+      "cols": 6,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "ablation_study.csv",
+      "rows": 100,
+      "cols": 9,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "aoi_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "aoi_vs_distance.csv",
+      "rows": 7,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "cbr_target_measurement.csv",
+      "rows": 16,
+      "cols": 6,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "cbr_trace.csv",
+      "rows": 100,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "cbr_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "delay_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "edge_profiling_benchmark.csv",
+      "rows": 7,
+      "cols": 7,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "energy_efficiency_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "fairness_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "hardware_feasibility.csv",
+      "rows": 7,
+      "cols": 5,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "hardware_feasibility_table.csv",
+      "rows": 11,
+      "cols": 7,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "moe_routing.csv",
+      "rows": 11,
+      "cols": 4,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "optuna_sensitivity.csv",
+      "rows": 72,
+      "cols": 5,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "optuna_sensitivity_table.csv",
+      "rows": 17,
+      "cols": 7,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "packet_loss_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "pdr_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "pdr_vs_distance.csv",
+      "rows": 7,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "reward_convergence.csv",
+      "rows": 100,
+      "cols": 19,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "reward_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "throughput_vs_density.csv",
+      "rows": 6,
+      "cols": 18,
+      "nan_count": 0,
+      "status": "PASS"
+    },
+    {
+      "filename": "tsne_clustering.csv",
+      "rows": 300,
+      "cols": 3,
+      "nan_count": 0,
+      "status": "PASS"
+    }
+  ],
+  "latex_integrity": [],
+  "code_hygiene": {
+    "np_random_matches": "",
+    "clean": true
+  },
+  "overall_status": "APPROVE",
+  "convergence_200k_check": {
+    "max_step": 200000,
+    "episodes": 100,
+    "baselines_count": 17,
+    "passed": true
+  }
+}

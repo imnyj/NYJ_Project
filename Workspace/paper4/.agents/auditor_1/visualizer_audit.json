@@ -1,0 +1,188 @@
+{
+  "1_ablation_study.png + 1_ablation_study.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 410224,
+      "dimensions": [
+        4713,
+        582
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 46091
+    }
+  },
+  "2_optuna_sensitivity_table.csv + 2_optuna_sensitivity_table.tex": {
+    "primary": {
+      "exists": true,
+      "size": 2279,
+      "rows": 17,
+      "cols": 7
+    },
+    "secondary": {
+      "exists": true,
+      "size": 3353
+    }
+  },
+  "3_reward_convergence.png + 3_reward_convergence.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 850563,
+      "dimensions": [
+        3959,
+        2174
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 39890
+    }
+  },
+  "4_tsne_clustering.png + 4_tsne_clustering.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 520475,
+      "dimensions": [
+        2756,
+        2052
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 25780
+    }
+  },
+  "5_moe_routing.png + 5_moe_routing.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 249469,
+      "dimensions": [
+        3106,
+        1877
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 24416
+    }
+  },
+  "6_cbr_trace.png + 6_cbr_trace.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 288589,
+      "dimensions": [
+        3951,
+        2123
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 28759
+    }
+  },
+  "7_pdr_vs_density.png + 7_pdr_vs_density.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 331508,
+      "dimensions": [
+        3959,
+        2122
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 25777
+    }
+  },
+  "8_aoi_vs_density.png + 8_aoi_vs_density.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 298655,
+      "dimensions": [
+        3959,
+        2122
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 25902
+    }
+  },
+  "9_pdr_vs_distance.png + 9_pdr_vs_distance.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 310273,
+      "dimensions": [
+        3959,
+        2123
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 30748
+    }
+  },
+  "10_aoi_vs_distance.png + 10_aoi_vs_distance.pdf": {
+    "primary": {
+      "exists": true,
+      "size": 315337,
+      "dimensions": [
+        3959,
+        2123
+      ],
+      "dpi": [
+        350.012,
+        350.012
+      ]
+    },
+    "secondary": {
+      "exists": true,
+      "size": 30108
+    }
+  },
+  "11_hardware_feasibility_table.csv + 11_hardware_feasibility_table.tex": {
+    "primary": {
+      "exists": true,
+      "size": 1159,
+      "rows": 11,
+      "cols": 7
+    },
+    "secondary": {
+      "exists": true,
+      "size": 1960
+    }
+  }
+}

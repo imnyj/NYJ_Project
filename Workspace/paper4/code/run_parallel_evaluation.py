@@ -1,25 +1,45 @@
+#!/usr/bin/env python3
+"""
+run_parallel_evaluation.py
+==========================
+Parallel training and evaluation pipeline for 16 models (13 RL Baselines + 3 non-RL Baselines)
+on the Urban Grid DCC scenario for Paper4 (REMO-DQN).
+
+Requirements:
+- 13 RL Baselines: VanillaDQN, DoubleDQN, DuelingDQN, MoEDQN, PPO, SAC, DDPG, TD3,
+                   ActorCritic, MAPPO, DecisionTransformer, QLearning, SARSA
+- 3 non-RL Baselines: Fixed10Hz, ReactDCC, AdaptDCC
+- 100 episodes x 2000 steps (total 200,000 steps per model)
+- epsilon_decay=0.95 (DQN/tabular models), min_epsilon=0.01
+- Dynamic random density: random.choice([30, 50, 100]) per episode
+- Log format: 9-column CSV: [Episode, Global_Step, Reward, AoI_mean, CBR_mean, PDR_mean, Loss, Epsilon, Density]
+- Output weights: data/models/<model_name>.pth (or .pkl)
+- Output CSV: data/models/<model_name>_convergence.csv
+"""
+
 import os
 import csv
-import torch
-import numpy as np
+import random
 import traceback
 import sys
 import gc
 import shutil
 import multiprocessing as mp
 import time
+import argparse
+import numpy as np
+import torch
 
-# Append path to make sure imports work
 _code_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_code_dir)
 if _code_dir not in sys.path:
     sys.path.insert(0, _code_dir)
 
 from sim_engine import SimulationRunner
-from ai_dcc_hook import get_hook
+from ai_dcc_hook import get_hook, CBR_TARGET, T_STALE
 from etsi_cam_layer import ACTION_DIM
 
-# Agent imports...
+# Agent imports
 from qlearning_agent import QLearningAgent
 from sarsa_agent import SARSAAgent
 from actor_critic_agent import ActorCriticAgent
@@ -42,29 +62,37 @@ EVAL_DIR = os.environ.get("EVAL_DIR", os.path.join(DATA_DIR, "evaluation"))
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(EVAL_DIR, exist_ok=True)
 
-rl_methods = [
-    ("QLearning", "QLearning"),
-    ("SARSA", "SARSA"),
-    ("ActorCritic", "ActorCritic"),
+CSV_HEADER = ['Episode', 'Global_Step', 'Reward', 'AoI_mean', 'CBR_mean', 'PDR_mean', 'Loss', 'Epsilon', 'Density']
+
+RL_METHODS = [
     ("VanillaDQN", "VanillaDQN"),
     ("DoubleDQN", "DoubleDQN"),
     ("DuelingDQN", "DuelingDQN"),
-    ("DDPG", "DDPG"),
+    ("MoEDQN", "MoEDQN"),
     ("PPO", "PPO"),
     ("SAC", "SAC"),
+    ("DDPG", "DDPG"),
     ("TD3", "TD3"),
-    ("DecisionTransformer", "DecisionTransformer"),
+    ("ActorCritic", "ActorCritic"),
     ("MAPPO", "MAPPO"),
-    ("MoEDQN", "MoEDQN"),
-    ("REMO-DQN", "ResNetMoEDQN"),  # proposed method
+    ("DecisionTransformer", "DecisionTransformer"),
+    ("QLearning", "QLearning"),
+    ("SARSA", "SARSA"),
 ]
 
-heuristic_methods = ["Proposed", "StdMLP", "DecTree", "ReactDCC", "AdaptDCC", "Heuristic", "Fixed10Hz"]
+NON_RL_METHODS = [
+    ("Fixed10Hz", "Fixed10Hz"),
+    ("ReactDCC", "ReactDCC"),
+    ("AdaptDCC", "AdaptDCC"),
+]
+
+ALL_16_METHODS = RL_METHODS + [(name, name) for name, _ in NON_RL_METHODS]
+
 
 def load_optuna_params(method_name):
     csv_path = os.path.join(OPTUNA_DIR, f"best_params_{method_name}.csv")
     if method_name == "REMO-DQN" and not os.path.exists(csv_path):
-        csv_path = os.path.join(OPTUNA_DIR, f"best_params_ResNetMoEDQN.csv")
+        csv_path = os.path.join(OPTUNA_DIR, "best_params_ResNetMoEDQN.csv")
     
     params = {}
     if os.path.exists(csv_path):
@@ -80,291 +108,343 @@ def load_optuna_params(method_name):
                             params[k] = int(f_v)
                         else:
                             params[k] = f_v
-                    except:
+                    except Exception:
                         params[k] = v
     return params
 
-def create_agent(method_name, state_dim=5, action_dim=ACTION_DIM):
+
+def create_agent(method_name, state_dim=5, action_dim=ACTION_DIM, epsilon_decay=0.95):
     params = load_optuna_params(method_name)
     def get_p(key, default):
         return params.get(key, default)
 
     if method_name == "QLearning":
-        return QLearningAgent(state_bins=[10,10,10,10,10], action_dim=action_dim, alpha=get_p('alpha', 0.1), gamma=get_p('gamma', 0.99), epsilon_decay=get_p('epsilon_decay', 0.995))
+        return QLearningAgent(state_bins=[10,10,10,10,10], action_dim=action_dim,
+                              alpha=get_p('alpha', 0.1), gamma=get_p('gamma', 0.99),
+                              epsilon_decay=epsilon_decay)
     elif method_name == "SARSA":
-        return SARSAAgent(state_bins=[10,10,10,10,10], action_dim=action_dim, alpha=get_p('alpha', 0.1), gamma=get_p('gamma', 0.99), epsilon_decay=get_p('epsilon_decay', 0.995))
+        return SARSAAgent(state_bins=[10,10,10,10,10], action_dim=action_dim,
+                          alpha=get_p('alpha', 0.1), gamma=get_p('gamma', 0.99),
+                          epsilon_decay=epsilon_decay)
     elif method_name == "ActorCritic":
-        return ActorCriticAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
+        return ActorCriticAgent(state_dim=state_dim, action_dim=action_dim,
+                                lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
     elif method_name == "VanillaDQN":
-        return DQNAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
+        return DQNAgent(state_dim=state_dim, action_dim=action_dim,
+                        lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99),
+                        epsilon_decay=epsilon_decay)
     elif method_name == "DoubleDQN":
-        return DDQNAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
+        return DDQNAgent(state_dim=state_dim, action_dim=action_dim,
+                         lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99),
+                         epsilon_decay=epsilon_decay)
     elif method_name == "DuelingDQN":
-        return DuelingDQNAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
+        return DuelingDQNAgent(state_dim=state_dim, action_dim=action_dim,
+                              lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99),
+                              epsilon_decay=epsilon_decay)
     elif method_name == "DDPG":
-        return DDPGAgent(state_dim=state_dim, action_dim=action_dim, lr_actor=get_p('lr_actor', 1e-4), lr_critic=get_p('lr_critic', 1e-3), gamma=get_p('gamma', 0.99))
+        return DDPGAgent(state_dim=state_dim, action_dim=action_dim,
+                         lr_actor=get_p('lr_actor', 1e-4), lr_critic=get_p('lr_critic', 1e-3),
+                         gamma=get_p('gamma', 0.99))
     elif method_name == "PPO":
-        return PPOAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 3e-4), gamma=get_p('gamma', 0.99))
+        return PPOAgent(state_dim=state_dim, action_dim=action_dim,
+                        lr=get_p('lr', 3e-4), gamma=get_p('gamma', 0.99))
     elif method_name == "SAC":
-        return SACAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 3e-4), gamma=get_p('gamma', 0.99))
+        return SACAgent(state_dim=state_dim, action_dim=action_dim,
+                        lr=get_p('lr', 3e-4), gamma=get_p('gamma', 0.99))
     elif method_name == "TD3":
-        return TD3Agent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
+        return TD3Agent(state_dim=state_dim, action_dim=action_dim,
+                        lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99),
+                        noise_decay=epsilon_decay)
     elif method_name == "DecisionTransformer":
-        return DTAgent(state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
+        return DTAgent(state_dim=state_dim, action_dim=action_dim,
+                       lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
     elif method_name == "MAPPO":
-        return MAPPOAgent(local_state_dim=state_dim, global_state_dim=state_dim, action_dim=action_dim, lr=get_p('lr', 3e-4), gamma=get_p('gamma', 0.99))
+        return MAPPOAgent(local_state_dim=state_dim, global_state_dim=state_dim,
+                          action_dim=action_dim, lr=get_p('lr', 3e-4), gamma=get_p('gamma', 0.99))
     elif method_name == "MoEDQN":
-        return MoEAgent(state_dim=state_dim, action_dim=action_dim, num_experts=get_p('num_experts', 2), lr=get_p('lr', 1e-3), gamma=get_p('gamma', 0.99))
-    elif method_name == "REMO-DQN":
-        return ResNetMoEAgent(state_dim=state_dim, action_dim=action_dim, num_experts=get_p('num_experts', 3), hidden_dim=get_p('hidden_dim', 128), batch_size=get_p('batch_size', 64))
+        return MoEAgent(state_dim=state_dim, action_dim=action_dim,
+                        num_experts=get_p('num_experts', 2), lr=get_p('lr', 1e-3),
+                        gamma=get_p('gamma', 0.99), epsilon_decay=epsilon_decay)
+    elif method_name in ["REMO-DQN", "ResNetMoEDQN"]:
+        return ResNetMoEAgent(state_dim=state_dim, action_dim=action_dim,
+                              num_experts=get_p('num_experts', 3), hidden_dim=get_p('hidden_dim', 128),
+                              batch_size=get_p('batch_size', 64), epsilon_decay=epsilon_decay)
     else:
         raise ValueError(f"Unknown RL method {method_name}")
 
-def train_worker(args):
-    name, hook_name, gpu_id = args
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-    TOTAL_EPISODES = 100
-    STEPS_PER_EP = 2000
-    
+
+def train_rl_worker(args):
+    name, hook_name, gpu_id, total_episodes, steps_per_ep, epsilon_decay = args
+    if gpu_id is not None:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+        if torch.cuda.is_available():
+            torch.cuda.set_device(0)
+
     ext = ".pkl" if name in ["QLearning", "SARSA"] else ".pth"
     model_path = os.path.join(MODELS_DIR, f"{name}{ext}")
     log_path = os.path.join(MODELS_DIR, f"{name}_convergence.csv")
-    
+
     # Check existing progress to compute start_ep
     start_ep = 0
     if os.path.exists(log_path):
         with open(log_path, 'r') as f:
             lines = [line.strip() for line in f.readlines() if line.strip()]
-            if len(lines) > 1: # Header line exists + at least 1 episode row
-                try:
-                    last_ep = int(lines[-1].split(',')[0])
-                    start_ep = last_ep
-                except (ValueError, IndexError):
-                    start_ep = len(lines) - 1
+            if len(lines) > 1:
+                # Check header format
+                header_cols = [c.strip() for c in lines[0].split(',')]
+                if len(header_cols) == len(CSV_HEADER):
+                    try:
+                        last_ep = int(lines[-1].split(',')[0])
+                        start_ep = last_ep
+                    except (ValueError, IndexError):
+                        start_ep = len(lines) - 1
+                else:
+                    # Legacy header, restart with proper 9-column format
+                    start_ep = 0
 
-    if start_ep >= TOTAL_EPISODES:
-        print(f"[{name}] Already completed ({start_ep}/{TOTAL_EPISODES} episodes). Skipping...")
+    if start_ep >= total_episodes:
+        print(f"[{name}] Already completed ({start_ep}/{total_episodes} episodes).")
         return name
 
     try:
-        print(f"--- Training {name} starting from Episode {start_ep+1}/{TOTAL_EPISODES} on GPU {gpu_id} ---")
-        agent = create_agent(name)
-        
-        # Load existing weights if available
-        if os.path.exists(model_path):
+        print(f"--- Training {name} starting from Ep {start_ep+1}/{total_episodes} on GPU {gpu_id} ---", flush=True)
+        agent = create_agent(name, epsilon_decay=epsilon_decay)
+
+        if start_ep > 0 and os.path.exists(model_path):
             try:
                 agent.load(model_path)
-                print(f"[{name}] Loaded existing checkpoint from {model_path}")
+                print(f"[{name}] Loaded checkpoint from {model_path}", flush=True)
             except Exception as e:
-                print(f"[{name}] Warning: Could not load checkpoint from {model_path}: {e}")
+                print(f"[{name}] Warning loading checkpoint: {e}", flush=True)
 
-        # Adjust decay state when resuming from start_ep > 0 (even when weights were loaded)
         if start_ep > 0 and hasattr(agent, 'epsilon') and hasattr(agent, 'epsilon_decay'):
             decay_factor = agent.epsilon_decay ** start_ep
             min_eps = getattr(agent, 'epsilon_min', getattr(agent, 'epsilon_end', 0.01))
             initial_eps = getattr(agent, 'epsilon_start', 1.0)
             agent.epsilon = max(min_eps, initial_eps * decay_factor)
-            print(f"[{name}] Adjusted epsilon to {agent.epsilon:.4f} for start_ep={start_ep}")
+            print(f"[{name}] Adjusted epsilon to {agent.epsilon:.4f} for start_ep={start_ep}", flush=True)
 
         hook = get_hook(hook_name)
         hook.set_agent(agent)
         hook.is_training = True
-        
-        # Only initialize header if starting fresh
+
         if start_ep == 0 or not os.path.exists(log_path):
             with open(log_path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(['Episode', 'Global_Step', 'Reward', 'AoI_mean', 'CBR_mean', 'PDR_mean'])
-            
-        global_step = start_ep * STEPS_PER_EP
-        for ep in range(start_ep, TOTAL_EPISODES):
+                writer.writerow(CSV_HEADER)
+
+        global_step = start_ep * steps_per_ep
+        for ep in range(start_ep, total_episodes):
             hook.reset_episode()
+            density_rng = random.Random(42 + ep)
+            density = density_rng.choice([30, 50, 100])
+
             runner = SimulationRunner(
                 scenario="urban_grid",
-                n_vehicles=50,
+                n_vehicles=density,
                 seed=42 + ep,
                 method=hook_name,
-                method_params={},
-                duration_steps=STEPS_PER_EP
+                method_params={'n_vehicles_sweep': density},
+                duration_steps=steps_per_ep
             )
             metrics = runner.run()
-            global_step += STEPS_PER_EP
-            
+            global_step += steps_per_ep
+
+            # Policy update
+            losses = []
             if hasattr(agent, 'memory'):
                 batch_size = getattr(agent, 'batch_size', 64)
                 num_updates = max(1, len(agent.memory) // batch_size)
                 for _ in range(num_updates):
                     if hasattr(agent, 'train_step'):
-                        agent.train_step()
-                    if hasattr(agent, 'update_epsilon'):
-                        agent.update_epsilon()
-            
+                        loss_val = agent.train_step()
+                        if loss_val is not None:
+                            if isinstance(loss_val, (tuple, list)):
+                                losses.append(float(np.mean([float(x) for x in loss_val if x is not None])))
+                            elif isinstance(loss_val, (float, int, np.floating)):
+                                if float(loss_val) > 0.0:
+                                    losses.append(float(loss_val))
+            elif hasattr(agent, 'train_step'):
+                loss_val = agent.train_step()
+                if loss_val is not None:
+                    if isinstance(loss_val, (tuple, list)):
+                        losses.append(float(np.mean([float(x) for x in loss_val if x is not None])))
+                    elif isinstance(loss_val, (float, int, np.floating)):
+                        losses.append(float(loss_val))
+
             if hasattr(agent, 'update_target_network'):
                 agent.update_target_network()
-                
+
+            if hasattr(agent, 'update_epsilon'):
+                agent.update_epsilon()
+            elif hasattr(agent, 'epsilon') and hasattr(agent, 'epsilon_decay'):
+                min_eps = getattr(agent, 'epsilon_min', getattr(agent, 'epsilon_end', 0.01))
+                agent.epsilon = max(min_eps, agent.epsilon * agent.epsilon_decay)
+
+            avg_loss = float(np.mean(losses)) if losses else 0.0
+            eps_val = getattr(agent, 'epsilon', 0.0)
             ep_reward = hook.episode_reward
             aoi = metrics.get('AoI_mean', 0.0)
             cbr = metrics.get('CBR_mean', 0.0)
             pdr = metrics.get('PDR_mean', 0.0)
-            
+
+            row_data = [ep + 1, global_step, ep_reward, aoi, cbr, pdr, avg_loss, eps_val, density]
             with open(log_path, 'a', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow([ep+1, global_step, ep_reward, aoi, cbr, pdr])
-            
-            # Save intermediate model weights after each episode
+                writer.writerow(row_data)
+
+            # Save checkpoint
             agent.save(model_path)
-            
-            print(f"[{name}] Ep {ep+1}/{TOTAL_EPISODES} - Reward: {ep_reward:.2f} (Weights saved)", flush=True)
-        print(f"Saved {name} to {model_path}")
+            print(f"[{name}] Ep {ep+1}/{total_episodes} (Dens:{density}) | R:{ep_reward:.1f} | AoI:{aoi:.1f} | CBR:{cbr:.3f} | PDR:{pdr:.1f}% | Loss:{avg_loss:.4f} | Eps:{eps_val:.3f}", flush=True)
+
+        print(f"[{name}] Completed {total_episodes} episodes. Saved to {model_path}")
         del agent
         gc.collect()
         return name
     except Exception as e:
-        print(f"Error training {name}: {e}")
+        print(f"Error training {name}: {e}", flush=True)
         traceback.print_exc()
         return None
 
-def eval_worker(args):
-    method_display, hook_name, method_type, sweep_var_name, val, seed, gpu_id, out_file, lock = args
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
-    
-    agent = None
-    if method_type == "RL":
-        agent = create_agent(method_display)
-        ext = ".pkl" if method_display in ["QLearning", "SARSA"] else ".pth"
-        model_path = os.path.join(MODELS_DIR, f"{method_display}{ext}")
-        if os.path.exists(model_path):
-            agent.load(model_path)
-        else:
-            print(f"WARNING: Model {model_path} not found. Using untrained agent for {method_display}.")
-    
-    method_params = {}
-    n_vehicles = 50
-    if sweep_var_name == "density":
-        n_vehicles = val
-        method_params['n_vehicles_sweep'] = val
-    elif sweep_var_name == "speed":
-        method_params['speed'] = val
-        
-    if method_display == "AdaptDCC":
-        method_params['cbr_target'] = 0.60
-        
-    hook = None
-    try:
-        if method_type == "RL" or hook_name in ["Proposed", "StdMLP", "DecTree"]:
-            hook = get_hook(hook_name)
-            if agent is not None:
-                hook.set_agent(agent)
-            hook.is_training = False
-            if hasattr(hook, 'reset_episode'):
-                hook.reset_episode()
-        
-        runner = SimulationRunner(
-            scenario='urban_grid',
-            n_vehicles=n_vehicles,
-            seed=seed,
-            method=hook_name,
-            method_params=method_params,
-            duration_steps=1000,
-            warmup_s=30.0
-        )
-        metrics = runner.run()
-        
-        reward = 0.0
-        if hook is not None:
-            reward = getattr(hook, 'episode_reward', 0.0)
-        
-        row = [
-            method_display, val, seed, metrics.get("runtime_sec", 0),
-            metrics.get("n_cam_events", 0), reward, metrics.get("CBR_mean", 0),
-            metrics.get("AoI_mean", 0), metrics.get("PDR_mean", 0),
-            metrics.get("energy_efficiency", 0), metrics.get("ETSI_compliance", 0)
-        ]
-        
-        with lock:
-            with open(out_file, 'a', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(row)
-                
-        if agent is not None:
-            del agent
-            gc.collect()
-        return True
-    except Exception as e:
-        print(f"Error evaluating {method_display} with {sweep_var_name}={val}: {e}")
-        return False
 
-def init_worker(l):
-    global lock
-    lock = l
+def eval_non_rl_worker(args):
+    name, hook_name, gpu_id, total_episodes, steps_per_ep = args
+    log_path = os.path.join(MODELS_DIR, f"{name}_convergence.csv")
+
+    start_ep = 0
+    if os.path.exists(log_path):
+        with open(log_path, 'r') as f:
+            lines = [line.strip() for line in f.readlines() if line.strip()]
+            if len(lines) > 1:
+                header_cols = [c.strip() for c in lines[0].split(',')]
+                if len(header_cols) == len(CSV_HEADER):
+                    try:
+                        last_ep = int(lines[-1].split(',')[0])
+                        start_ep = last_ep
+                    except (ValueError, IndexError):
+                        start_ep = len(lines) - 1
+                else:
+                    start_ep = 0
+
+    if start_ep >= total_episodes:
+        print(f"[{name}] Already completed ({start_ep}/{total_episodes} episodes).")
+        return name
+
+    try:
+        print(f"--- Evaluating non-RL {name} starting from Ep {start_ep+1}/{total_episodes} ---", flush=True)
+        if start_ep == 0 or not os.path.exists(log_path):
+            with open(log_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(CSV_HEADER)
+
+        global_step = start_ep * steps_per_ep
+        for ep in range(start_ep, total_episodes):
+            density_rng = random.Random(42 + ep)
+            density = density_rng.choice([30, 50, 100])
+
+            runner = SimulationRunner(
+                scenario="urban_grid",
+                n_vehicles=density,
+                seed=42 + ep,
+                method=hook_name,
+                method_params={'n_vehicles_sweep': density},
+                duration_steps=steps_per_ep
+            )
+            metrics = runner.run()
+            global_step += steps_per_ep
+
+            aoi = metrics.get('AoI_mean', 0.0)
+            cbr = metrics.get('CBR_mean', 0.0)
+            pdr = metrics.get('PDR_mean', 0.0)
+
+            # Standard C-3 reward evaluation for non-RL baseline
+            # over-target + staleness + transmission cost
+            t_gen_def = 0.1 if name == "Fixed10Hz" else 0.3
+            cost = 0.1 / max(t_gen_def, 1e-3)
+            over = max(0.0, cbr - CBR_TARGET)
+            stale = max(0.0, (aoi / 1000.0) - T_STALE)
+            ep_reward = (-1.0 * over - 0.3 * stale - 0.05 * cost) * (steps_per_ep * density / 10.0)
+
+            row_data = [ep + 1, global_step, ep_reward, aoi, cbr, pdr, 0.0, 0.0, density]
+            with open(log_path, 'a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(row_data)
+
+            print(f"[{name}] Ep {ep+1}/{total_episodes} (Dens:{density}) | R:{ep_reward:.1f} | AoI:{aoi:.1f} | CBR:{cbr:.3f} | PDR:{pdr:.1f}%", flush=True)
+
+        print(f"[{name}] Non-RL evaluation completed {total_episodes} episodes.")
+        return name
+    except Exception as e:
+        print(f"Error evaluating non-RL {name}: {e}", flush=True)
+        traceback.print_exc()
+        return None
+
+
+def dispatch_worker(task_info):
+    t_type, task_args = task_info
+    if t_type == "RL":
+        return train_rl_worker(task_args)
+    else:
+        return eval_non_rl_worker(task_args)
+
+
+def run_all_training(total_episodes=100, steps_per_ep=2000, epsilon_decay=0.95,
+                     num_workers=8, gpus=[0, 1, 2, 3], target_models=None):
+    print("=" * 80)
+    print(f"LAUNCHING PARALLEL CONVERGENCE TRAINING & EVALUATION (16 MODELS)")
+    print(f"Episodes: {total_episodes}, Steps/Ep: {steps_per_ep}, Epsilon Decay: {epsilon_decay}")
+    print(f"GPUs: {gpus}, Workers: {num_workers}")
+    print("=" * 80)
+
+    rl_tasks = []
+    non_rl_tasks = []
+
+    for i, (name, hook_name) in enumerate(RL_METHODS):
+        if target_models and name not in target_models:
+            continue
+        gpu_id = gpus[i % len(gpus)] if gpus else 0
+        rl_tasks.append((name, hook_name, gpu_id, total_episodes, steps_per_ep, epsilon_decay))
+
+    for i, (name, hook_name) in enumerate(NON_RL_METHODS):
+        if target_models and name not in target_models:
+            continue
+        gpu_id = gpus[i % len(gpus)] if gpus else 0
+        non_rl_tasks.append((name, hook_name, gpu_id, total_episodes, steps_per_ep))
+
+    all_tasks = [("RL", t) for t in rl_tasks] + [("NON_RL", t) for t in non_rl_tasks]
+
+    with mp.Pool(processes=min(num_workers, len(all_tasks))) as pool:
+        results = pool.map(dispatch_worker, all_tasks)
+
+    print("\n" + "=" * 80)
+    print(f"All {len(results)} model training/eval tasks completed: {results}")
+    print("=" * 80)
+
 
 def main():
     try:
         mp.set_start_method('spawn', force=True)
     except RuntimeError:
         pass
-    print("=== PART 1: Parallel Training Convergence ===")
-    num_gpus = 4
-    
-    train_tasks = []
-    for i, (name, hook_name) in enumerate(rl_methods):
-        gpu_id = i % num_gpus
-        train_tasks.append((name, hook_name, gpu_id))
-        
-    train_workers = min(len(train_tasks), num_gpus)  # Limit to GPU count for stability
-    print(f"Launching {train_workers} parallel training workers across {num_gpus} GPUs...")
-    with mp.Pool(processes=train_workers) as pool:
-        pool.map(train_worker, train_tasks)
-        
-    print("\n=== PART 2: Parallel Evaluation Experiments ===")
-    eval_methods_info = []
-    for name, hook_name in rl_methods:
-        eval_methods_info.append((name, hook_name, "RL"))
-    for h in heuristic_methods:
-        eval_methods_info.append((h, h, "Heuristic"))
-        
-    manager = mp.Manager()
-    l = manager.Lock()
-    
-    densities = [20, 40, 60, 80, 100, 120]
-    speeds = [20, 40, 60, 80, 100]
-    
-    # Generate all eval tasks
-    eval_tasks = []
-    task_idx = 0
-    
-    out_file_density = os.path.join(EVAL_DIR, f"eval_density_results.csv")
-    if not os.path.exists(out_file_density):
-        with open(out_file_density, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["method", "density", "seed", "runtime_sec", "n_cam_events", "Reward", "CBR_mean", "AoI_mean", "PDR_mean", "energy_efficiency", "ETSI_compliance"])
-            
-    for val in densities:
-        for method_display, hook_name, method_type in eval_methods_info:
-            for seed in [111, 222, 333]:
-                gpu_id = task_idx % num_gpus
-                eval_tasks.append((method_display, hook_name, method_type, "density", val, seed, gpu_id, out_file_density, l))
-                task_idx += 1
-                
-    out_file_speed = os.path.join(EVAL_DIR, f"eval_speed_results.csv")
-    if not os.path.exists(out_file_speed):
-        with open(out_file_speed, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(["method", "speed", "seed", "runtime_sec", "n_cam_events", "Reward", "CBR_mean", "AoI_mean", "PDR_mean", "energy_efficiency", "ETSI_compliance"])
-            
-    for val in speeds:
-        for method_display, hook_name, method_type in eval_methods_info:
-            for seed in [111, 222, 333]:
-                gpu_id = task_idx % num_gpus
-                eval_tasks.append((method_display, hook_name, method_type, "speed", val, seed, gpu_id, out_file_speed, l))
-                task_idx += 1
 
-    eval_workers = 12
-    print(f"Launching {eval_workers} parallel evaluation workers across {num_gpus} GPUs...")
-    with mp.Pool(processes=eval_workers, initializer=init_worker, initargs=(l,)) as pool:
-        pool.map(eval_worker, eval_tasks)
-        
-    print("\n[SUCCESS] Massive data generation completed successfully!")
+    parser = argparse.ArgumentParser(description="Parallel Training & Evaluation for 16 Baselines")
+    parser.add_argument("--episodes", type=int, default=100, help="Episodes per model (default: 100)")
+    parser.add_argument("--duration_steps", type=int, default=2000, help="Steps per episode (default: 2000)")
+    parser.add_argument("--epsilon_decay", type=float, default=0.95, help="Epsilon decay rate (default: 0.95)")
+    parser.add_argument("--workers", type=int, default=8, help="Number of parallel worker processes (default: 8)")
+    parser.add_argument("--gpus", type=int, nargs="+", default=[1, 2, 0, 3], help="GPU device IDs to distribute across")
+    parser.add_argument("--models", type=str, nargs="+", default=None, help="Specific models to run (default: all 16)")
+    args = parser.parse_args()
+
+    run_all_training(
+        total_episodes=args.episodes,
+        steps_per_ep=args.duration_steps,
+        epsilon_decay=args.epsilon_decay,
+        num_workers=args.workers,
+        gpus=args.gpus,
+        target_models=args.models
+    )
+
 
 if __name__ == "__main__":
     main()

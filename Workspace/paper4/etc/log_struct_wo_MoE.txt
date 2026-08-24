@@ -1,0 +1,56 @@
+Warning: Minor green from edge '-E16' to edge 'E17' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E12' to edge 'E19' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E26' to edge '-E1' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E48' to edge '-E29' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E49' to edge 'E72' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 28 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge '-E29' to edge '-E24' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E56' to edge 'E57' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E61' to edge '-E56' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E53' to edge 'E76' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E84' to edge 'E85' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 16 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge '-E12' to edge 'E13' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E5' to edge 'E28' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E49' to edge 'E50' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E60' to edge 'E61' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E104' to edge '-E85' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 16 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge '-E12' to edge 'E13' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E32' to edge 'E33' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E36' to edge 'E37' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E40' to edge '-E21' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E81' to edge '-E76' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 22 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge '-E9' to edge '-E4' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E8' to edge 'E9' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E8' to edge 'E15' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E32' to edge '-E13' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E53' to edge '-E48' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 28 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge '-E32' to edge 'E33' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E45' to edge '-E40' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E56' to edge 'E57' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E37' to edge 'E60' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E64' to edge 'E65' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 22 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge 'E4' to edge 'E11' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E32' to edge 'E33' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E49' to edge 'E50' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E56' to edge 'E57' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E52' to edge '-E33' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 22 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.
+Warning: Minor green from edge '-E11' to edge 'E8' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E24' to edge 'E25' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge 'E21' to edge 'E44' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E50' to edge '-E25' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: Minor green from edge '-E53' to edge '-E48' exceeds 19.44m/s. Maybe a left-turn lane is missing.
+Warning: 26 total messages of type: Minor green from edge '%' to edge '%' exceeds %m/s. Maybe a left-turn lane is missing.
+Success.

@@ -1,7 +1,0 @@
-Parameter,Value
-lr,0.0006647135865318024
-gamma,0.9168818882450419
-eps_clip,0.1130103185970559
-k_epochs,10
-batch_size,32
-buffer_size,50000

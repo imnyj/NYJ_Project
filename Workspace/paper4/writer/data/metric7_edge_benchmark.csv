@@ -1,4 +1,0 @@
-Model,Memory_KB,Latency_ms
-MLP,1.5,0.05
-GRU,48.0,5.2
-ResNet,210.0,22.4

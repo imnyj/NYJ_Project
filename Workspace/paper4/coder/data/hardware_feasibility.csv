@@ -1,4 +1,0 @@
-Method,MACs,Parameters,Inference Time (ms)
-Vanilla DQN,1.2M,100K,0.5
-DQN+MoE,1.5M,120K,0.6
-REMO-DQN,3.8M,350K,1.2

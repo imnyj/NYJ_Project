@@ -1,5 +1,0 @@
-Parameter,Value
-lr,0.0019993101743427423
-gamma,0.9636135177882481
-batch_size,64
-buffer_size,10000

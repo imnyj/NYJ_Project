@@ -1,9 +1,0 @@
-Parameter,Value
-lr,2.2267028748160166e-05
-gamma,0.9327273871305473
-tau,0.005473768542497673
-policy_delay,1
-target_noise,0.20035982985869313
-noise_clip,0.42137852035542317
-batch_size,32
-buffer_size,10000

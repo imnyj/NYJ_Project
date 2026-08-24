@@ -1,7 +1,0 @@
-Parameter,Value
-lr_actor,0.0006647135865318024
-lr_critic,3.247673570627447e-05
-gamma,0.9064401077055427
-tau,0.00953996983528
-batch_size,32
-buffer_size,50000

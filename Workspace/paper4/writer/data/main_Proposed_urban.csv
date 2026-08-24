@@ -1,4 +1,0 @@
-method,scenario,seed,runtime_sec,n_cam_events,CBR_mean,AoI_mean,PDR_mean,energy_efficiency,ETSI_compliance
-Proposed,urban_grid,42,2391.81,1676581,0.5064,390.235,100.0,1.8133,100.0
-Proposed,urban_grid,123,2456.83,1690125,0.5066,394.497,100.0,1.7946,100.0
-Proposed,urban_grid,456,2404.75,1663373,0.5064,398.466,100.0,1.8057,100.0

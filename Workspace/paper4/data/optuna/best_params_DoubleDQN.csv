@@ -1,6 +1,0 @@
-Parameter,Value
-lr,0.0002257999566241571
-gamma,0.9238399858125901
-batch_size,32
-buffer_size,100000
-target_update_freq,2

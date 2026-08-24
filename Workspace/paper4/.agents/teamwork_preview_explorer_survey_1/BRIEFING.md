@@ -1,32 +1,46 @@
-# BRIEFING — 2026-08-19T20:29:15+09:00
+# BRIEFING — 2026-08-24T10:23:15+09:00
 
 ## Mission
-V2X 혼잡 제어(DCC) 강화학습 프로젝트의 200,000 iterations enforcement 관련 data/ 및 logs/, 모델 checkpoint, CSV 파일 상태, 17개 모델 및 Ablation study 로그 실존 여부 및 데이터 파이프라인 분석
+paper4 프로젝트의 시뮬레이션 환경 및 네트워크/통신 계층 정밀 분석 완료 (SUMO, PDR 감쇄, AoI, MoE/t-SNE 연동 등)
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: investigation, synthesis
+- Roles: survey, code analysis, network simulation analysis
 - Working directory: /home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1
-- Original parent: eab22ae6-e7ea-4856-858d-7dbd61a8edb1
-- Milestone: data_and_logs_investigation_200k
+- Original parent: 7dfea915-378a-49b4-8904-dffe87802547
+- Milestone: Simulation Environment & Network/Communication Layer Survey
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement project code
-- Korean language for all outputs and messages
-- Files for content delivery, send_message for coordination
-- Follow 5-Component Handoff Report structure (handoff.md)
+- Read-only investigation — do NOT implement / do NOT modify source code
+- Strictly write outputs to /home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1/
+- Write reports in Korean (GEMINI.md rule 14)
+- Send message to parent agent when completed
 
 ## Current Parent
-- Conversation ID: eab22ae6-e7ea-4856-858d-7dbd61a8edb1
-- Updated: not yet
+- Conversation ID: 7dfea915-378a-49b4-8904-dffe87802547
+- Updated: 2026-08-24T10:23:15+09:00
 
 ## Investigation State
-- **Explored paths**: [TBD]
-- **Key findings**: [TBD]
-- **Unexplored areas**: data/, logs/, checkpoints, visualizer/, scripts
+- **Explored paths**:
+  - `code/sim_engine.py` (libsumo lifecycle, PDR decay model, metrics calculation)
+  - `code/etsi_cam_layer.py` (ETSI EN 302 637-2 CAM trigger & DCC controllers)
+  - `code/aoi_tracker.py` (AoI calculation & tracking logic)
+  - `code/resnet_moe_agent.py` & `code/moe_agent.py` (Architecture, gating, lack of extraction API)
+  - `code/ai_dcc_hook.py` (State, action, C-3 reward mapping)
+  - `SumoNetSim1.1.5/src/sumo/make_sumo_set.py` & `config.md` (SUMO grid network generation)
+  - `visualizer/prepare_data.py` (Fake/analytical formulas & hardcoded arrays identified)
+- **Key findings**:
+  1. SUMO mobility extraction and trajectory feed into communication layer is mathematically sound and operates at 100ms steps.
+  2. PDR decay mathematically accounts for distance (log-distance path loss + Nakagami-3 fading) and density (CBR collision factor up to 80% decay).
+  3. `distance_aoi` is missing in `sim_engine.py` / `aoi_tracker.py`, causing `prepare_data.py` to use analytical formula.
+  4. `resnet_moe_agent.py` requires `get_latent_and_gate` interface to export real 128D feature activation and 3D gating weights.
+- **Unexplored areas**: None for simulation & network layer survey.
 
 ## Key Decisions Made
-- Starting systematic investigation of data, logs, scripts, and checkpoints for 200k steps enforcement.
+- Fully documented all 5 investigation goals with exact mathematical formulas and code locations in `survey_sim.md` and `handoff.md`.
 
 ## Artifact Index
-- /home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1/handoff.md — Final investigation handoff report
+- `/home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1/survey_sim.md` — Comprehensive simulation & network layer survey report
+- `/home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1/handoff.md` — 5-component handoff report
+- `/home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1/progress.md` — Progress tracking
+- `/home/imnyj/Workspace/paper4/.agents/teamwork_preview_explorer_survey_1/DISPATCH.md` — Dispatch log

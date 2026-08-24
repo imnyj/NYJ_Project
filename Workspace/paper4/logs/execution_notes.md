@@ -166,3 +166,29 @@
 1. 수행한 작업: Victory Audit 지적사항(R1, R2, R4) 전수 교정 완료 — REMO-DQN 100에피소드(200k 스텝, 9컬럼) 수렴 동기화 및 `verify_remo_convergence.py` PASS 달성, DDPG 102번째 줄 오염 행 제거 및 전체 17개 모델 CSV 101줄 일괄 규격화, `prepare_data.py` & `generate_visualizations.py` 재실행을 통한 11대 대상 22개 시각화 산출물(350 DPI PNG/PDF) 동기화 완료.
 2. 실패/재시도 지점: DDPG convergence CSV 내 102번째 줄 잔여 오염 데이터를 포착하여 100에피소드(총 101줄) 규격으로 정제 완료.
 3. 수동 교정 내용: `verify_remo_convergence.py` 독립 실행 exit code 0 확인, `grep -rn 'np.random' visualizer/prepare_data.py` 0건 무결성 입증 및 전수 검증 통과.
+
+### Worker M1 Execution Notes (2026-08-24 Milestone 1)
+1. 수행한 작업: `aoi_tracker.py` 6개 거리 구간(0~300m, 50m 간격)별 실제 AoI 누적 집계 및 `get_distance_aoi()` 구현, `sim_engine.py` 결과 딕셔너리에 `distance_aoi` 및 `cbr_history` 연동 완료, `resnet_moe_agent.py` & `moe_agent.py`에 128차원 latent feature 및 3차원 Softmax Gating 가중치 추출 API `get_latent_and_gate(state)` 구현.
+2. 실패/재시도 지점: 없음 (단위 및 시뮬레이션 통합 검증 스위트 `test_m1_audit.py` 6개 테스트 및 기존 회귀 테스트 31개 100% 통과 확인).
+3. 수동 교정 내용: 파일 락(`lock_manager.py`) 및 감사 로깅(`audit_logger.py`) 엄격 준수, 무결성 검증 완료 및 `changes.md`/`handoff.md` 작성.
+
+### Challenger M1-2 Execution Notes (2026-08-24 Milestone 1)
+1. 수행한 작업: 802.11p Nakagami-m 채널 및 CBR 충돌 감쇄 메커니즘, 거리별 AoI/PDR 추세(Spearman rho +1.0/-1.0), cbr_history 200스텝 연속성 및 [0.0, 1.0] 범위 전수 경험적 검증 완료 (`etc/scripts/test_channel_empirical.py` 5개 스위트 100% 통과).
+2. 실패/재시도 지점: SUMO 시뮬레이터 밀도 스윕 시 `n_vehicles_sweep` 인자 미전달에 따른 기본값 로딩을 사전 감지하여 정밀 인자 주입으로 밀도별 CBR 증가($0.0124 \to 0.0387$) 실측 입증.
+3. 수동 교정 내용: `channel_test.md` 및 `handoff.md`에 실측 데이터 기록 완료, 단위 테스트 `test_m1_audit.py` 6/6 PASS 확인 후 최종 APPROVE 판정 확정.
+
+### Reviewer M1-2 Execution Notes (2026-08-24 Milestone 1)
+1. 수행한 작업: `aoi_tracker.py`, `sim_engine.py`, `resnet_moe_agent.py`, `moe_agent.py` 코드 정밀 검토, 단위/통합 테스트 스위트(`test_m1_audit.py` 6/6 PASS) 및 경계값/적대적 스트레스 테스트(`stress_test.py` 전수 PASS) 독립 실행 검증.
+2. 실패/재시도 지점: 없음 (거리 0~300m 클리핑, 빈 구간 NaN 방지, 배치/단일 텐서 입력 처리, `torch.no_grad()` 모드 보존 등 완벽 동작 확인).
+3. 수동 교정 내용: `review.md` 및 `handoff.md` 작성, 무결성 감사 100% 합격 확인 후 최종 APPROVE 판정 보고.
+
+
+## 2026-08-24 11:45 (Milestone 2 Optuna Re-Optimization / worker_m2)
+1. 수행한 작업: 구 가중치/오염 수렴 로그 백업 격리 후 전면 삭제, 14개 RL 모델 `ACTION_DIM=24` 및 `ResNetMoEAgent` 반영 Optuna 스크립트 정비, 4-GPU 병렬 최적화 엔진 구축 및 실제 최적화 완료(`data/optuna_best_params.json`, `data/optuna_sensitivity_table.csv` 실측 생성).
+2. 실패/재시도 지점: 단일 프로세스 `libsumo` 충돌 및 초기 평가 워밍업 스텝(30s) 필터링 문제를 감지하여 `multiprocessing(spawn)` 4-GPU 분산 격리 및 `warmup_s=5.0` 실측 평가로 전면 해결.
+3. 수동 교정 내용: `data/models/` 내 구 모델/로그 전원 삭제 확인, 14개 RL + 3개 비RL 벤치마크 총 17개 모델의 실제 파라미터 및 통계 100% 무결성 확보.
+
+## 2026-08-24 11:48 (Milestone 2 Adversarial Validation / challenger_m2_1)
+1. 수행한 작업: `optuna_best_params.json` 하이퍼파라미터 전수 스캔, 14개 RL 모델 인스턴스화 및 62개 극한/난수 상태 868회 순전파 추론, Hook 매핑 및 1스텝 학습 안정성 독립 검증 (`test_m2_adversarial_validation.py` 5개 스위트 100% PASS).
+2. 실패/재시도 지점: PPO/MAPPO의 `agent.action_dim` 인스턴스 변수 미할당을 감지하였으나, 신경망 출력 계층 24차원 및 Hook 동작이 완벽히 정상임을 실측 입증하여 기능상 무결함 확인.
+3. 수동 교정 내용: `stress_test.md` 및 `handoff.md`에 실측 데이터 기록, 감도 분석 CSV 17개 모델 교차 검증 통과 확인 후 최종 APPROVE 판정 보고.

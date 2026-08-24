@@ -1,24 +1,32 @@
+#!/usr/bin/env python3
 import optuna
 import csv
 import os
+import sys
 import torch
 import numpy as np
 
+_code_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_code_dir)
+if _code_dir not in sys.path:
+    sys.path.insert(0, _code_dir)
+
 from sim_engine import SimulationRunner
 from ai_dcc_hook import get_hook
-from moe_agent import MoEAgent
+from etsi_cam_layer import ACTION_DIM
+from resnet_moe_agent import ResNetMoEAgent
 
 def objective(trial):
-    num_experts = trial.suggest_int("num_experts", 2, 5)
+    num_experts = trial.suggest_int("num_experts", 2, 4)
     lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
-    gamma = trial.suggest_float("gamma", 0.9, 0.999)
+    gamma = trial.suggest_float("gamma", 0.90, 0.999)
     batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
     buffer_size = trial.suggest_categorical("buffer_size", [10000, 50000, 100000])
     target_update_freq = trial.suggest_categorical("target_update_freq", [1, 2, 5])
     
-    agent = MoEAgent(
+    agent = ResNetMoEAgent(
         state_dim=5,
-        action_dim=16,
+        action_dim=ACTION_DIM,
         num_experts=num_experts,
         lr=lr,
         gamma=gamma,
@@ -27,7 +35,7 @@ def objective(trial):
         target_update_freq=target_update_freq
     )
     
-    hook = get_hook("MoEDQN")
+    hook = get_hook("REMO-DQN")
     hook.set_agent(agent)
     
     # --- TRAINING PHASE ---
@@ -38,8 +46,8 @@ def objective(trial):
         runner = SimulationRunner(
             scenario="urban_grid", 
             n_vehicles=10, 
-            seed=42+ep, 
-            method="MoEDQN", 
+            seed=42 + ep + trial.number * 10, 
+            method="REMO-DQN", 
             method_params={}, 
             duration_steps=200
         )
@@ -68,27 +76,27 @@ def objective(trial):
         runner = SimulationRunner(
             scenario="urban_grid", 
             n_vehicles=15, 
-            seed=100+ep, 
-            method="MoEDQN", 
+            seed=100 + ep + trial.number * 10, 
+            method="REMO-DQN", 
             method_params={}, 
             duration_steps=200
         )
         runner.run()
         eval_rewards.append(hook.episode_reward)
         
-    return np.mean(eval_rewards)
+    return float(np.mean(eval_rewards))
 
 def main():
-    study = optuna.create_study(direction="maximize", study_name="MoEDQN")
-    study.optimize(objective, n_trials=2)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    sampler = optuna.samplers.TPESampler(seed=42)
+    study = optuna.create_study(direction="maximize", study_name="REMO-DQN", sampler=sampler)
+    study.optimize(objective, n_trials=15)
     
-    print("Best params:", study.best_params)
+    print(f"[REMO-DQN] Best params:", study.best_params)
     
-    code_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(code_dir)
-    output_dir = os.environ.get("OPTUNA_DIR", os.path.join(project_root, "data", "optuna"))
+    output_dir = os.environ.get("OPTUNA_DIR", os.path.join(_project_root, "data", "optuna"))
     os.makedirs(output_dir, exist_ok=True)
-    output_file = os.path.join(output_dir, "best_params_MoEDQN.csv")
+    output_file = os.path.join(output_dir, "best_params_REMO-DQN.csv")
     
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
@@ -96,7 +104,7 @@ def main():
         for key, value in study.best_params.items():
             writer.writerow([key, value])
             
-    print(f"Best parameters saved to {output_file}")
+    print(f"[REMO-DQN] Best parameters saved to {output_file}")
 
 if __name__ == "__main__":
     main()

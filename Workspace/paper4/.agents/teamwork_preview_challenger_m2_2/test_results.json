@@ -1,0 +1,22 @@
+{
+    "test_cleanliness": true,
+    "test_params_integrity": true,
+    "test_model_instantiation": true,
+    "test_optuna_live_trial": true,
+    "test_sim_eval_live": true,
+    "test_code_audit": true,
+    "details": {
+        "test1": {
+            "models_dir_count": 0,
+            "outside_pth_count": 0,
+            "outside_pkl_count": 0
+        },
+        "test2": {
+            "models_checked": 14,
+            "passed": true
+        },
+        "test3": {
+            "passed": true
+        }
+    }
+}

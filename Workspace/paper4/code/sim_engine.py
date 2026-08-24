@@ -658,9 +658,12 @@ class SimulationRunner:
                 distance_pdr.append(dist_rx_counts[b] / dist_tx_counts[b] * 100.0)
             else:
                 distance_pdr.append(0.0)
+
+        distance_aoi = aoi_tracker.get_distance_aoi()
                 
         return {
             "AoI_mean": round(aoi_mean, 3),
+            "M1_mean_AoI": round(aoi_mean, 3),
             "CBR_mean": round(cbr_mean, 4),
             "PDR_mean": round(pdr_mean, 2),
             "energy_efficiency": round(energy_eff, 4),
@@ -669,4 +672,5 @@ class SimulationRunner:
             "n_cam_events": len(cam_layer.cam_events),
             "cbr_history": cbr_history,
             "distance_pdr": distance_pdr,
+            "distance_aoi": distance_aoi,
         }

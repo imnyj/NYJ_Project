@@ -1,7 +1,7 @@
 Parameter,Value
 num_experts,2
-lr,0.00398909851663667
-gamma,0.9218599058180568
+lr,0.0009287740920006505
+gamma,0.957552821379853
 batch_size,64
-buffer_size,50000
+buffer_size,100000
 target_update_freq,1

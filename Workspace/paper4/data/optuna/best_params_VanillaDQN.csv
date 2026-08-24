@@ -1,6 +1,6 @@
 Parameter,Value
-lr,0.0006632630243265272
-gamma,0.9283329822029354
-batch_size,64
-buffer_size,10000
-target_update_freq,2
+lr,0.00582938454299474
+gamma,0.90876075770314
+batch_size,128
+buffer_size,100000
+target_update_freq,5

@@ -165,6 +165,53 @@ class MoEAgent:
         
     def update_epsilon(self):
         self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+
+    def get_latent_and_gate(self, state):
+        """
+        Extract latent feature vector and gating weights for the given state.
+
+        Parameters:
+            state (np.ndarray or list or torch.Tensor): state vector of shape (5,) or (batch_size, 5).
+
+        Returns:
+            Tuple[np.ndarray, np.ndarray]:
+                - latent_features: shape (128,) for single state, or (batch_size, 128)
+                - gating_weights: shape (num_experts,) for single state, or (batch_size, num_experts)
+        """
+        is_single = False
+        if isinstance(state, (list, tuple)):
+            state = np.array(state, dtype=np.float32)
+
+        if isinstance(state, np.ndarray):
+            if state.ndim == 1:
+                is_single = True
+                state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+            else:
+                state_tensor = torch.FloatTensor(state).to(self.device)
+        elif isinstance(state, torch.Tensor):
+            if state.ndim == 1:
+                is_single = True
+                state_tensor = state.unsqueeze(0).to(self.device)
+            else:
+                state_tensor = state.to(self.device)
+        else:
+            state_tensor = torch.FloatTensor(np.array(state)).unsqueeze(0).to(self.device)
+            is_single = True
+
+        was_training = self.q_network.training
+        self.q_network.eval()
+        with torch.no_grad():
+            features, gate_weights = self.q_network.feature_layer(state_tensor, return_gate_weights=True)
+
+        if was_training:
+            self.q_network.train()
+
+        feat_np = features.cpu().numpy()
+        gate_np = gate_weights.cpu().numpy()
+
+        if is_single:
+            return feat_np.squeeze(0), gate_np.squeeze(0)
+        return feat_np, gate_np
         
     def save(self, filepath):
         torch.save(self.q_network.state_dict(), filepath)

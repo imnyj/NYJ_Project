@@ -16,7 +16,6 @@ Metric output:
 Author: Experimenter agent (Stage 2: implement)
 """
 
-import math
 import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
@@ -54,6 +53,12 @@ class AoITracker:
         # Running AoI measurements (for step-level averaging)
         self.aoi_history: List[float] = []        # mean AoI per step [ms]
         self.step_times: List[float] = []         # sim time per step
+
+        # Distance-binned AoI measurements: 6 bins [0~50, 50~100, 100~150, 150~200, 200~250, 250~300m]
+        # (center distances: 25, 75, 125, 175, 225, 275 m)
+        self.dist_aoi_sum: List[float] = [0.0] * 6
+        self.dist_aoi_count: List[int] = [0] * 6
+        self.dist_aoi_samples: List[List[float]] = [[] for _ in range(6)]
 
         # PDR tracking
         self.cam_tx_count: Dict[str, int] = defaultdict(int)   # per sender
@@ -155,10 +160,23 @@ class AoITracker:
         if not np.any(valid_mask):
             return 0.0
 
-        aoi_ms = np.clip((sim_time - T_matrix[valid_mask]) * 1000.0, 0.0, 2000.0)
-        mean_aoi = float(np.mean(aoi_ms))
+        aoi_matrix = np.clip((sim_time - T_matrix) * 1000.0, 0.0, 2000.0)
+        valid_aoi = aoi_matrix[valid_mask]
+        mean_aoi = float(np.mean(valid_aoi))
         self.aoi_history.append(mean_aoi)
         self.step_times.append(sim_time)
+
+        # Distance binning for AoI (6 bins of 50m up to 300m)
+        dists = np.sqrt(dist_sq[valid_mask])
+        bin_indices = np.clip((dists / 50.0).astype(int), 0, 5)
+        for b in range(6):
+            b_mask = (bin_indices == b)
+            if np.any(b_mask):
+                b_aois = valid_aoi[b_mask]
+                self.dist_aoi_sum[b] += float(np.sum(b_aois))
+                self.dist_aoi_count[b] += int(np.sum(b_mask))
+                self.dist_aoi_samples[b].extend(b_aois.tolist())
+
         return mean_aoi
 
     # -------------------------------------------------------------------------
@@ -169,6 +187,45 @@ class AoITracker:
         if not self.aoi_history:
             return 0.0
         return sum(self.aoi_history) / len(self.aoi_history)
+
+    def get_distance_aoi(self, as_dict: bool = False):
+        """
+        Return mean AoI [ms] across 6 distance bins:
+        [0~50m, 50~100m, 100~150m, 150~200m, 200~250m, 250~300m]
+        (center distances: 25, 75, 125, 175, 225, 275 m).
+
+        Parameters:
+            as_dict (bool): If True, returns a dict with 'distances', 'aoi_mean', 'aoi_std'.
+                           If False, returns a list of 6 float values.
+
+        Returns:
+            List[float] or Dict[str, List[float]]
+        """
+        means = []
+        stds = []
+        for b in range(6):
+            if self.dist_aoi_count[b] > 0:
+                mean_val = self.dist_aoi_sum[b] / self.dist_aoi_count[b]
+                means.append(round(float(mean_val), 3))
+            else:
+                means.append(0.0)
+
+            if len(self.dist_aoi_samples[b]) > 1:
+                stds.append(round(float(np.std(self.dist_aoi_samples[b])), 3))
+            else:
+                stds.append(0.0)
+
+        if as_dict:
+            return {
+                "distances": [25, 75, 125, 175, 225, 275],
+                "aoi_mean": means,
+                "aoi_std": stds
+            }
+        return means
+
+    def get_distance_aoi_dict(self) -> Dict[str, List[float]]:
+        """Convenience method returning distance AoI dictionary with mean and std."""
+        return self.get_distance_aoi(as_dict=True)
 
     def get_pdr(self, vehicle_positions: Optional[Dict[str, Tuple[float, float]]] = None) -> float:
         """
@@ -188,6 +245,9 @@ class AoITracker:
         self.last_received_gen_time.clear()
         self.aoi_history.clear()
         self.step_times.clear()
+        self.dist_aoi_sum = [0.0] * 6
+        self.dist_aoi_count = [0] * 6
+        self.dist_aoi_samples = [[] for _ in range(6)]
         self.cam_tx_count.clear()
         self.cam_rx_count.clear()
         self.cam_rx_within_range = 0

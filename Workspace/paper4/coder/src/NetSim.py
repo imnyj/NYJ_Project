@@ -11,9 +11,7 @@ from typing import Any, Callable, List, Optional, Tuple, Dict
 import xml.etree.ElementTree as ET
 import src.Communications as comm
 import src.sumo.make_sumo_set as sumo_set
-import cv2, time
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+import time
 import traceback
 
 _libsumo_traci_exc = getattr(sumo, "TraCIException", Exception)
@@ -40,8 +38,6 @@ def _node_alive(sim, node) -> bool:
 b_step_log = True
 b_reroute = False
 MAX_EPISODE = 3
-video_enabled: bool = False
-recorder = None
 USE_LIBSUMO = 1
 
 MODE = False
@@ -107,7 +103,7 @@ class Node:
         finally:
             return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
 
-    def send_packet(self, pkt: Packet, wave_rate_mbps: float = 6.0) -> None:
+    def send_packet(self, pkt: Packet, wifi_rate_mbps: float = 6.0) -> None:
         if self.sim is None: raise RuntimeError("Node must be added to a simulator before sending packets")
         if pkt.size_bytes > comm.MAX_FRAME_SIZE:
             total_frags = (pkt.size_bytes + comm.MAX_FRAME_SIZE - 1) // comm.MAX_FRAME_SIZE
@@ -116,7 +112,7 @@ class Node:
                 elif (getattr(self, "is_rsu", False) and getattr(pkt.dst, "is_server", False)) or \
                      (getattr(self, "is_server", False) and getattr(pkt.dst, "is_rsu", False)):
                     medium = "fiber-13hop"
-                else: medium = "wave"
+                else: medium = "wifi"
                 self._send_streaming(pkt, medium)
                 return
         fragments = self._fragment_packet(pkt)
@@ -138,14 +134,14 @@ class Node:
                 self.sim.schedule_event(arrival_time, frag_pkt.dst.receive_packet, frag_pkt)
                 continue
             distance = self.distance_to(frag_pkt.dst)
-            ch_idx, rate_mbps = comm.wave_channel_manager.allocate()
-            data_rate_bps = comm.wave_data_rate(rate_mbps)
-            trans_delay = comm.wave_transmission_delay(frag_pkt.size_bytes, data_rate_bps)
-            prop_delay = comm.wave_propagation_delay(distance)
+            ch_idx, rate_mbps = comm.wifi_channel_manager.allocate()
+            data_rate_bps = comm.wifi_data_rate(rate_mbps)
+            trans_delay = comm.wifi_transmission_delay(frag_pkt.size_bytes, data_rate_bps)
+            prop_delay = comm.wifi_propagation_delay(distance)
             arrival_time = self.sim.current_time + trans_delay + prop_delay
 
             def deliver(dst_node: "Node" = frag_pkt.dst, packet: Packet = frag_pkt, channel_idx: int = ch_idx) -> None:
-                comm.wave_channel_manager.release(channel_idx)
+                comm.wifi_channel_manager.release(channel_idx)
                 dst_node.receive_packet(packet)
 
             self.sim.schedule_event(arrival_time, deliver)
@@ -153,7 +149,7 @@ class Node:
     def update_dwell(self, current_time: float) -> None:
         return
     
-    def send_direct(self, pkt: Packet, wave_rate_mbps: float = 6.0) -> None:
+    def send_direct(self, pkt: Packet, wifi_rate_mbps: float = 6.0) -> None:
         assert pkt.dst is not None and pkt.src is not None, "pkt.src/dst는 Node 객체여야 합니다."
         assert self.sim is not None and pkt.dst.sim is not None, "양쪽 노드가 시뮬레이터에 등록되어 있어야 함."
         arrival = self.sim.current_time + 0
@@ -170,10 +166,10 @@ class Node:
         assert self.sim is not None
         dst = pkt.dst
         distance = self.distance_to(dst)
-        if medium == "wave":
-            ch_idx, rate_mbps = comm.wave_channel_manager.allocate()
-            data_rate_bps = comm.wave_data_rate(rate_mbps)
-            prop_delay = comm.wave_propagation_delay(distance)
+        if medium == "wifi":
+            ch_idx, rate_mbps = comm.wifi_channel_manager.allocate()
+            data_rate_bps = comm.wifi_data_rate(rate_mbps)
+            prop_delay = comm.wifi_propagation_delay(distance)
         elif medium == "fiber-1hop":
             data_rate_bps = comm.fiber_data_rate()
             prop_delay = comm.fiber_propagation_delay(distance)
@@ -183,10 +179,10 @@ class Node:
             prop_delay = comm.fiber_propagation_delay(distance) * 13
             ch_idx = None
         else:
-            ch_idx, rate_mbps = comm.wave_channel_manager.allocate()
-            data_rate_bps = comm.wave_data_rate(rate_mbps)
-            prop_delay = comm.wave_propagation_delay(distance)
-            medium = "wave"
+            ch_idx, rate_mbps = comm.wifi_channel_manager.allocate()
+            data_rate_bps = comm.wifi_data_rate(rate_mbps)
+            prop_delay = comm.wifi_propagation_delay(distance)
+            medium = "wifi"
         step_duration = self.sim.step
         bytes_per_step = max(1, int(data_rate_bps * step_duration / 8))
         bytes_left = pkt.size_bytes
@@ -200,7 +196,7 @@ class Node:
 
         def deliver_step() -> None:
             nonlocal bytes_left, bytes_delivered
-            if medium == "wave":
+            if medium == "wifi":
                 max_range = max(self.comm_range, dst.comm_range)
                 current_distance = self.distance_to(dst)
                 if current_distance > max_range and bytes_left > 0:
@@ -213,7 +209,7 @@ class Node:
                             if track_session and sess_key is not None:
                                 sess = self._stream_sessions.get(sess_key)
                                 if sess is not None: sess["bytes"] = sess.get("bytes", 0.0) + extra_bytes
-                        if ch_idx is not None: comm.wave_channel_manager.release(ch_idx)
+                        if ch_idx is not None: comm.wifi_channel_manager.release(ch_idx)
                         if track_session and sess_key is not None:
                             sess = self._stream_sessions.pop(sess_key, None)
                             if sess:
@@ -232,7 +228,7 @@ class Node:
                 sess = self._stream_sessions.get(sess_key)
                 if sess is not None: sess["bytes"] = sess.get("bytes", 0.0) + send_now
             if bytes_left <= 0:
-                if medium == "wave" and ch_idx is not None: comm.wave_channel_manager.release(ch_idx)
+                if medium == "wifi" and ch_idx is not None: comm.wifi_channel_manager.release(ch_idx)
                 if track_session and sess_key is not None:
                     sess = self._stream_sessions.pop(sess_key, None)
                     if sess:
@@ -247,9 +243,6 @@ class Node:
 
     def receive_packet(self, pkt: Packet, flag=0) -> None:
         assert self.sim is not None
-        if video_enabled and recorder is not None and pkt is not None and pkt.src is not None:
-            recorder.record_message(pkt, pkt.src, self)
-
         if pkt is None or pkt.src is None: return
         if self.sim is None or pkt.src.sim is None: return
         if not _node_alive(self.sim, self): return
@@ -360,175 +353,6 @@ class Node:
     
     def at_created(self) -> None: pass
 
-class VideoRecorder:
-    def __init__(self, net_file: str, output_path: str = "simulation.mp4", canvas_size: int = 1000) -> None:
-        self.net_file = net_file
-        self.canvas_size = canvas_size
-        self.min_x = 0.0
-        self.min_y = 0.0
-        self.max_x = 1.0
-        self.max_y = 1.0
-        try:
-            tree = ET.parse(self.net_file)
-            root = tree.getroot()
-            loc = root.find("location")
-            if loc is not None:
-                conv = loc.get("convBoundary")
-                if conv:
-                    parts = conv.split(",")
-                    if len(parts) == 4:
-                        self.min_x = float(parts[0])
-                        self.min_y = float(parts[1])
-                        self.max_x = float(parts[2])
-                        self.max_y = float(parts[3])
-        except Exception as e:
-            print(f"Error002: {e}"); traceback.print_exc()
-            self.min_x, self.min_y, self.max_x, self.max_y = 0.0, 0.0, 1.0, 1.0
-        width = self.max_x - self.min_x
-        height = self.max_y - self.min_y
-        self.scale = float(self.canvas_size) / max(width if width > 0 else 1.0, height if height > 0 else 1.0)
-        self.road_polylines: list[list[Tuple[float, float]]] = []
-        try:
-            tree = ET.parse(self.net_file)
-            root = tree.getroot()
-            for edge in root.findall("edge"):
-                for lane in edge.findall("lane"):
-                    shape = lane.get("shape")
-                    if shape:
-                        pts: list[Tuple[float, float]] = []
-                        for token in shape.strip().split(" "):
-                            if not token:
-                                continue
-                            try:
-                                x_str, y_str = token.split(",")
-                                pts.append((float(x_str), float(y_str)))
-                            except Exception as e: print(f"Error003: {e}"); traceback.print_exc()
-                        if len(pts) >= 2:
-                            self.road_polylines.append(pts)
-        except Exception as e:
-            print(f"Error004: {e}"); traceback.print_exc()
-            self.road_polylines = []
-        if Image is not None:
-            self.background = Image.new("RGB", (self.canvas_size, self.canvas_size), (0, 0, 0))
-            draw = ImageDraw.Draw(self.background)
-            for poly in self.road_polylines:
-                if len(poly) < 2:
-                    continue
-                pix_pts = [self.world_to_pixel(pt) for pt in poly]
-                flat_pts = []
-                for p in pix_pts:
-                    flat_pts.append(p)
-                draw.line(flat_pts, fill=(80, 80, 80), width=1)
-        else:
-            self.background = None
-        self.fps = 10
-        self.frames_per_event = max(1, int(0.3 * self.fps + 0.5))
-        if cv2 is not None:
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.writer = cv2.VideoWriter(output_path, fourcc, float(self.fps), (self.canvas_size, self.canvas_size))
-        else:
-            self.writer = None
-        self.messages: list[Dict[str, Any]] = []
-        if ImageFont is not None:
-            try:
-                self.font = ImageFont.load_default()
-            except Exception as e:
-                print(f"Error005: {e}"); traceback.print_exc()
-                self.font = None
-        else:
-            self.font = None
-        self.packet_colours: Dict[str, Tuple[int, int, int]] = {
-            'HELLO': (200, 150, 255),      # pastel purple
-            'REQUEST': (0, 255, 255),      # yellow/cyan mixture
-            'DATA': (0, 255, 0),           # green
-            'ACK': (0, 0, 255),            # red
-            'PRECACHE': (255, 0, 255),     # magenta
-        }
-
-    def world_to_pixel(self, pos: Tuple[float, float]) -> Tuple[int, int]:
-        x, y = pos
-        px = int((x - self.min_x) * self.scale)
-        py = int((self.max_y - y) * self.scale)
-        px = max(0, min(self.canvas_size - 1, px))
-        py = max(0, min(self.canvas_size - 1, py))
-        return (px, py)
-
-    def record_message(self, pkt: Packet, src_node: Node, dst_node: Node) -> None:
-        if pkt is None or src_node is None or dst_node is None:
-            return
-        ptype_name = pkt.pkt_type.name if pkt.pkt_type else 'DATA'
-        colour = self.packet_colours.get(ptype_name, (255, 255, 255))
-        src_px = self.world_to_pixel(src_node.pos)
-        dst_px = self.world_to_pixel(dst_node.pos)
-        self.messages.append({'src': src_px, 'dst': dst_px, 'colour': colour, 'life': self.frames_per_event})
-
-    def _draw_arrow(self, draw: ImageDraw.ImageDraw, src: Tuple[int, int], dst: Tuple[int, int], colour: Tuple[int, int, int]) -> None:
-        draw.line([src, dst], fill=colour, width=1)
-        sx, sy = src
-        dx, dy = dst
-        vx = dx - sx
-        vy = dy - sy
-        dist = (vx**2 + vy**2) ** 0.5
-        if dist <= 0.0:
-            return
-        ux = vx / dist
-        uy = vy / dist
-        size = 5
-        left = (-uy, ux)
-        right = (uy, -ux)
-        p1 = (int(dx - ux * size + left[0] * size), int(dy - uy * size + left[1] * size))
-        p2 = (int(dx - ux * size + right[0] * size), int(dy - uy * size + right[1] * size))
-        draw.polygon([dst, p1, p2], fill=colour)
-
-    def record_frame(self, vehicles_dict: Dict[str, Node], rsu_nodes: List[Node], sim_time: float) -> None:
-        if self.background is None or self.writer is None:
-            return
-        img = self.background.copy()
-        draw = ImageDraw.Draw(img)
-        for rsu in rsu_nodes:
-            if getattr(rsu, "pos", None) is None:
-                continue
-            px, py = self.world_to_pixel(rsu.pos)
-            radius = int(getattr(rsu, "comm_range", 0.0) * self.scale)
-            if radius <= 0:
-                continue
-            bbox = (px - radius, py - radius, px + radius, py + radius)
-            draw.ellipse(bbox, outline=(0, 128, 255))
-        for vid, node in vehicles_dict.items():
-            if getattr(node, "pos", None) is None:
-                continue
-            px, py = self.world_to_pixel(node.pos)
-            colour = (255, 255, 255)
-            radius = 3
-            if hasattr(node, "mode"):
-                if node.mode is not None: radius = 6
-                if node.mode == "REQUEST": colour = (255, 0, 0)
-                elif node.mode == "DOWNLOAD": colour = (0, 255, 0)
-            draw.ellipse((px - radius, py - radius, px + radius, py + radius), fill=colour)
-        remaining: list[Dict[str, Any]] = []
-        for msg in self.messages:
-            src_px = msg.get('src')
-            dst_px = msg.get('dst')
-            colour = msg.get('colour', (255, 255, 255))
-            life = msg.get('life', 0)
-            if src_px and dst_px and life > 0:
-                self._draw_arrow(draw, src_px, dst_px, colour)
-                if life - 1 > 0:
-                    remaining.append({'src': src_px, 'dst': dst_px, 'colour': colour, 'life': life - 1})
-        self.messages = remaining
-        if self.font is not None:
-            time_text = f"t={sim_time:.1f}s"
-            draw.text((10, 10), time_text, fill=(255, 255, 255), font=self.font)
-        frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        for _ in range(self.frames_per_event):
-            self.writer.write(frame)
-
-    def release(self) -> None:
-        try:
-            if self.writer is not None:
-                self.writer.release()
-        except Exception as e: print(f"Error006: {e}"); traceback.print_exc()
-
 class Event:
     def __init__(self, time: float, handler: Callable, *args: Any, **kwargs: Any) -> None:
         self.time = time
@@ -582,15 +406,11 @@ class EventSimulator:
             self.schedule_event(0.0, self._step_event)
         while self._event_queue and not self._stopped:
             try:
-                time.sleep(0.001)
                 t, _, event = heapq.heappop(self._event_queue)
-                time.sleep(0.001)
                 if t > self.max_time: break
                 if b_step_log: print(f"[{t:.3f}s] ▶ 이벤트 발생: {event.handler.__name__}({event.args}, {event.kwargs})")
                 self.current_time = t
                 event.handler(*event.args, **event.kwargs)
-                if video_enabled and recorder is not None: recorder.record_frame(vehicles, rsu_list, self.current_time)
-                time.sleep(0.001)
             except Exception as e: print(f"Error007: {e}"); traceback.print_exc()
         if self._stop_reason: print(f"시뮬레이션 강제 중단: {self._stop_reason}")
 
@@ -610,79 +430,6 @@ class VehicleNode(Node):
 class RSUNode(Node):
     def handle_request(self, pkt: Packet) -> None: pass
 
-import tkinter as tk
-from tkinter import ttk
-from typing import Callable, Dict, List
-
-def launch_simulation() -> None:
-    root = tk.Tk()
-    root.title("SumoNetSim Configuration")
-
-    rsu_range_var = tk.DoubleVar(value=800.0)
-    max_episode_var = tk.IntVar(value=1)
-    max_step_var = tk.IntVar(value=3600.0)
-    avg_speed_var = tk.DoubleVar(value=0.0)
-    outage_zone_var = tk.DoubleVar(value=800.0)
-    num_blocks_var = tk.IntVar(value=5)
-    density_var = tk.DoubleVar(value=0.0)
-    reroute_var = tk.BooleanVar(value=False)
-    step_log_var = tk.BooleanVar(value=True)
-    video_var = tk.BooleanVar(value=False)
-
-    i = 0
-    ttk.Label(root, text="Number of episodes").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=max_episode_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Average vehicle speed (km/h)").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=avg_speed_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Vehicle density (/1km-lane)").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=density_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Grid size (number of RSUs along one axis)").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=num_blocks_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="RSU communication range (m)").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=rsu_range_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Max Steps").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=max_step_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Outage zone length (m)").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Entry(root, textvariable=outage_zone_var).grid(row=i, column=1, sticky="we", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Rerouting enabled").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Checkbutton(root, variable=reroute_var).grid(row=i, column=1, sticky="w", padx=5, pady=5)
-    i += 1
-    ttk.Label(root, text="Step Log").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Checkbutton(root, variable=step_log_var).grid(row=i, column=1, sticky="w", padx=5, pady=5)
-    i += 1
-
-    ttk.Label(root, text="Record simulation as video").grid(row=i, column=0, sticky="w", padx=5, pady=5)
-    ttk.Checkbutton(root, variable=video_var).grid(row=i, column=1, sticky="w", padx=5, pady=5)
-    i += 1
-
-    root.columnconfigure(1, weight=1)
-
-    def on_start() -> None:
-        global MODE, MAX_EPISODE, b_reroute, b_step_log
-        global video_enabled
-        sumo_set.RSU_RANGE = rsu_range_var.get()
-        MAX_EPISODE = max_episode_var.get()
-        sumo_set.MAX_STEPS = max_step_var.get()
-        sumo_set.OUTAGE_ZONE = outage_zone_var.get()
-        sumo_set.NUM_BLOCKS = num_blocks_var.get()
-        sumo_set.AV_SPEED = avg_speed_var.get()
-        sumo_set.DENSITY = density_var.get()
-        sumo_set.P_GEN = (sumo_set.DENSITY * sumo_set.SPEED) / 3600.0
-        b_reroute = reroute_var.get()
-        b_step_log = step_log_var.get()
-        video_enabled = video_var.get()
-        root.destroy()
-
-    ttk.Button(root, text="Start Simulation", command=on_start).grid(row=i, column=0, columnspan=2, pady=10)
-    root.mainloop()
-
 vehicles: Dict[str, Node] = {}
 rsu_list: List[Node] = []
 rsu_dict: Dict[str, Node] = {}
@@ -693,7 +440,6 @@ st = 0
 
 def pre_define() -> None:
     global MODE, MAX_EPISODE, b_reroute, b_step_log
-    global video_enabled
     sumo_set.RSU_RANGE = 800.0
     MAX_EPISODE = 1
     sumo_set.MAX_STEPS = 3600.0
@@ -704,13 +450,9 @@ def pre_define() -> None:
     sumo_set.P_GEN = (sumo_set.DENSITY * sumo_set.SPEED) / 3600.0
     b_reroute = False
     b_step_log = True
-    video_enabled = False
 
 def InitSumoNetSim(VehicleClass: type = None, RSUClass: type = None, mode=0) -> None:
-    if mode == 0:
-        launch_simulation()
-    else:
-        pre_define()
+    pre_define()
     global MODE, CFG_DIR, sumo_cmd
     VehicleClass = VehicleClass or VehicleNode
     RSUClass = RSUClass or RSUNode
@@ -766,7 +508,6 @@ class SumoNetSim():
             self.rsu_grid[(r, c)] = n
 
     def run(self) -> None:
-        global recorder, video_enabled
         for ep in range(MAX_EPISODE):
             print(f"Episode {ep + 1}/{MAX_EPISODE}")
             if sumo_set.AV_SPEED == 0 or sumo_set.DENSITY == 0: self.b_init = False
@@ -804,17 +545,11 @@ class SumoNetSim():
                 print(f"ErrorTRAC: {e}"); traceback.print_exc()
                 return
 
-            if video_enabled:
-                out_name = f"simulation_episode{ep+1}.mp4" if MAX_EPISODE > 1 else "simulation.mp4"
-                net_path = NET_FILE
-                recorder = VideoRecorder(net_file=net_path, output_path=out_name, canvas_size=1000)
             vehicle_rsu_states: Dict[str, set[str]] = {}
 
             def step_event() -> None:
                 try:
-                    time.sleep(0.001)
                     sumo.simulationStep()
-                    time.sleep(0.001)
                     self.sim.current_time = sumo.simulation.getTime()
                     current_ids = set(sumo.vehicle.getIDList())
                     
@@ -874,7 +609,6 @@ class SumoNetSim():
             if self.start_message_fn: self.start_message_fn(self.sim, vehicles, rsu_list, sumo_set.T_to_INIT)
             self.sim.run()
 
-            if video_enabled and recorder is not None: recorder.release()
             sumo.close()
             
 _network_cache: Optional[sumolib.net.Net] = None

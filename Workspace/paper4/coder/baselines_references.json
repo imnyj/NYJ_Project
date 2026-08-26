@@ -1,0 +1,110 @@
+[
+  {
+    "id": "ppo",
+    "title": "Proximal policy optimization algorithms",
+    "authors": "John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, Oleg Klimov",
+    "journal_or_booktitle": "arXiv preprint arXiv:1707.06347",
+    "year": "2017",
+    "volume": "",
+    "issue": "",
+    "pages": "",
+    "doi": "10.48550/arXiv.1707.06347",
+    "bibtex_snippet": "@article{ppo,\n  title={Proximal policy optimization algorithms},\n  author={Schulman, John and Wolski, Filip and Dhariwal, Prafulla and Radford, Alec and Klimov, Oleg},\n  journal={arXiv preprint arXiv:1707.06347},\n  year={2017}\n}"
+  },
+  {
+    "id": "sac",
+    "title": "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor",
+    "authors": "Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, Sergey Levine",
+    "journal_or_booktitle": "International Conference on Machine Learning (ICML)",
+    "year": "2018",
+    "volume": "80",
+    "issue": "",
+    "pages": "1856-1865",
+    "doi": "",
+    "bibtex_snippet": "@inproceedings{sac,\n  title={Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor},\n  author={Haarnoja, Tuomas and Zhou, Aurick and Abbeel, Pieter and Levine, Sergey},\n  booktitle={International Conference on Machine Learning},\n  pages={1856--1865},\n  year={2018},\n  organization={PMLR}\n}"
+  },
+  {
+    "id": "td3",
+    "title": "Addressing Function Approximation Error in Actor-Critic Methods",
+    "authors": "Scott Fujimoto, Herke van Hoof, David Meger",
+    "journal_or_booktitle": "International Conference on Machine Learning (ICML)",
+    "year": "2018",
+    "volume": "80",
+    "issue": "",
+    "pages": "",
+    "doi": "",
+    "bibtex_snippet": "@inproceedings{td3,\n  title={Addressing Function Approximation Error in Actor-Critic Methods},\n  author={Fujimoto, Scott and van Hoof, Herke and Meger, David},\n  booktitle={International Conference on Machine Learning},\n  year={2018},\n  organization={PMLR}\n}"
+  },
+  {
+    "id": "qi2025deep",
+    "title": "Deep-Reinforcement-Learning-Based AoI-Aware Resource Allocation for RIS-Aided IoV Networks",
+    "authors": "Kangwei Qi, Qiong Wu, Pingyi Fan, Ning Cheng, Wei Chen, Jiangbo Wang, Khaled B. Letaief",
+    "journal_or_booktitle": "IEEE Transactions on Vehicular Technology",
+    "year": "2025",
+    "volume": "74",
+    "issue": "1",
+    "pages": "",
+    "doi": "10.1109/TVT.2024.3452790",
+    "bibtex_snippet": "@article{qi2025deep,\n  title={Deep-Reinforcement-Learning-Based AoI-Aware Resource Allocation for RIS-Aided IoV Networks},\n  author={Qi, Kangwei and Wu, Qiong and Fan, Pingyi and Cheng, Ning and Chen, Wei and Wang, Jiangbo and Letaief, Khaled B.},\n  journal={IEEE Transactions on Vehicular Technology},\n  volume={74},\n  number={1},\n  year={2025},\n  publisher={IEEE},\n  doi={10.1109/TVT.2024.3452790}\n}"
+  },
+  {
+    "id": "mlika2022deep",
+    "title": "Deep Deterministic Policy Gradient to Minimize the Age of Information in Cellular V2X Communications",
+    "authors": "Zoubeir Mlika, Soumaya Cherkaoui",
+    "journal_or_booktitle": "IEEE Transactions on Intelligent Transportation Systems",
+    "year": "2022",
+    "volume": "23",
+    "issue": "12",
+    "pages": "23597-23612",
+    "doi": "10.1109/TITS.2022.3190799",
+    "bibtex_snippet": "@article{mlika2022deep,\n  title={Deep Deterministic Policy Gradient to Minimize the Age of Information in Cellular V2X Communications},\n  author={Mlika, Zoubeir and Cherkaoui, Soumaya},\n  journal={IEEE Transactions on Intelligent Transportation Systems},\n  volume={23},\n  number={12},\n  pages={23597--23612},\n  year={2022},\n  publisher={IEEE},\n  doi={10.1109/TITS.2022.3190799}\n}"
+  },
+  {
+    "id": "arani2026resilient",
+    "title": "A Resilient AoI-Aware Optimization Framework for Intelligent Transportation Systems Using Deep Reinforcement Learning",
+    "authors": "Atefeh Hajijamali Arani, Hamid Saeedi, Sajedeh Norouzi, Ali Nouruzi, Nizar Zorba, Halim Yanikomeroglu",
+    "journal_or_booktitle": "IEEE Open Journal of the Communications Society",
+    "year": "2026",
+    "volume": "",
+    "issue": "",
+    "pages": "",
+    "doi": "10.1109/OJCOMS.2026.3707734",
+    "bibtex_snippet": "@article{arani2026resilient,\n  title={A Resilient AoI-Aware Optimization Framework for Intelligent Transportation Systems Using Deep Reinforcement Learning},\n  author={Arani, Atefeh Hajijamali and Saeedi, Hamid and Norouzi, Sajedeh and Nouruzi, Ali and Zorba, Nizar and Yanikomeroglu, Halim},\n  journal={IEEE Open Journal of the Communications Society},\n  year={2026},\n  publisher={IEEE},\n  doi={10.1109/OJCOMS.2026.3707734}\n}"
+  },
+  {
+    "id": "azizi2024efficient",
+    "title": "Efficient AoI-Aware Resource Management in VLC-V2X Networks via Multi-Agent RL Mechanism",
+    "authors": "Mohamad Azizi, Farshad Zeinali, Mohammad Robat Mili, Saeed Shokrollahi",
+    "journal_or_booktitle": "IEEE Transactions on Vehicular Technology",
+    "year": "2024",
+    "volume": "73",
+    "issue": "9",
+    "pages": "14009-14014",
+    "doi": "10.1109/TVT.2024.3392738",
+    "bibtex_snippet": "@article{azizi2024efficient,\n  title={Efficient AoI-Aware Resource Management in VLC-V2X Networks via Multi-Agent RL Mechanism},\n  author={Azizi, Mohamad and Zeinali, Farshad and Mili, Mohammad Robat and Shokrollahi, Saeed},\n  journal={IEEE Transactions on Vehicular Technology},\n  volume={73},\n  number={9},\n  pages={14009--14014},\n  year={2024},\n  publisher={IEEE},\n  doi={10.1109/TVT.2024.3392738}\n}"
+  },
+  {
+    "id": "lin2025optimization",
+    "title": "Optimization of Spectrum Resource Allocation for Vehicle Platoon in V2X Networks Based on Deep Reinforcement Learning",
+    "authors": "Zhicong Lin, Hengwei Pan, Yonghua Wang",
+    "journal_or_booktitle": "IEEE Transactions on Vehicular Technology",
+    "year": "2025",
+    "volume": "75",
+    "issue": "6",
+    "pages": "11512-11527",
+    "doi": "10.1109/TVT.2025.3643923",
+    "bibtex_snippet": "@article{lin2025optimization,\n  title={Optimization of Spectrum Resource Allocation for Vehicle Platoon in V2X Networks Based on Deep Reinforcement Learning},\n  author={Lin, Zhicong and Pan, Hengwei and Wang, Yonghua},\n  journal={IEEE Transactions on Vehicular Technology},\n  volume={75},\n  number={6},\n  pages={11512--11527},\n  year={2025},\n  publisher={IEEE},\n  doi={10.1109/TVT.2025.3643923}\n}"
+  },
+  {
+    "id": "zhang2025drl",
+    "title": "DRL-Based Optimization for AoI and Energy Consumption in C-V2X Enabled IoV",
+    "authors": "Zheng Zhang, Qiong Wu, Pingyi Fan, Nan Cheng, Wen Chen, Khaled B. Letaief",
+    "journal_or_booktitle": "IEEE Transactions on Green Communications and Networking",
+    "year": "2025",
+    "volume": "9",
+    "issue": "4",
+    "pages": "2144-2159",
+    "doi": "10.1109/TGCN.2025.3531902",
+    "bibtex_snippet": "@article{zhang2025drl,\n  title={DRL-Based Optimization for AoI and Energy Consumption in C-V2X Enabled IoV},\n  author={Zhang, Zheng and Wu, Qiong and Fan, Pingyi and Cheng, Nan and Chen, Wen and Letaief, Khaled B.},\n  journal={IEEE Transactions on Green Communications and Networking},\n  volume={9},\n  number={4},\n  pages={2144--2159},\n  year={2025},\n  publisher={IEEE},\n  doi={10.1109/TGCN.2025.3531902}\n}"
+  }
+]

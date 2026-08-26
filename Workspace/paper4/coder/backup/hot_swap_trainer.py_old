@@ -1,0 +1,688 @@
+# src/hot_swap_trainer.py
+# ============================================================================
+# Dual-Model Hot-Swap Training Pipeline (S4 / R4)
+#
+# Implements:
+# 1. DualModelHotSwapManager: Zero-downtime atomic hot-swap manager with
+#    strict NaN/Inf validation, cross-device support, and thread-safe mutex.
+# 2. TransitionStreamer: High-throughput non-blocking thread-safe queue
+#    streaming transitions from simulation/serving steps to background trainer.
+# 3. BackgroundTrainer: Dedicated background training worker executing
+#    gradient updates on Rest model and triggering periodic hot-swaps.
+# 4. HotSwapRLScheduler: S1/S2/S3 compliant RL scheduler integrating Act model
+#    serving with retrospective transition assembly.
+# 5. HotSwapTrainer: Master orchestrator for Act/Rest model lifecycle.
+# 6. run_hot_swap_training: Full end-to-end training loop execution function.
+# ============================================================================
+
+from __future__ import annotations
+import math
+import queue
+import random
+import threading
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn as nn
+
+from src.rl_interface import StateVectorizer, RetrospectiveReplayBuffer
+from src.baselines import BASELINE_REGISTRY, BaseRLModel
+
+
+def select_default_devices() -> Tuple[torch.device, torch.device]:
+    """
+    Selects optimal PyTorch devices for Act and Rest models based on available hardware.
+    
+    Returns:
+        (act_device, rest_device)
+        - Multi-GPU (>=2 GPUs): Act on cuda:0, Rest on cuda:1 (Complete hardware isolation)
+        - Single GPU: Act on cuda:0, Rest on cuda:0
+        - CPU: Act on cpu, Rest on cpu
+    """
+    if torch.cuda.is_available():
+        num_devices = torch.cuda.device_count()
+        act_device = torch.device("cuda:0")
+        if num_devices >= 2:
+            rest_device = torch.device("cuda:1")
+        else:
+            rest_device = torch.device("cuda:0")
+    else:
+        act_device = torch.device("cpu")
+        rest_device = torch.device("cpu")
+    return act_device, rest_device
+
+
+class DualModelHotSwapManager:
+    """
+    Manages atomic zero-downtime parameter synchronization between Act and Rest models.
+    
+    Guarantees:
+    1. Safety: Strict NaN/Inf guard validates Rest model weights before transfer.
+    2. Zero-Downtime: Fast serving thread reads Act model with minimal mutex overhead.
+    3. Cross-Device Support: Seamless tensor copying across different GPU/CPU devices.
+    4. Integrity: Copies all module parameters and buffers in-place.
+    """
+
+    def __init__(
+        self,
+        act_model: nn.Module,
+        rest_model: nn.Module,
+        act_device: Optional[Union[str, torch.device]] = None,
+        rest_device: Optional[Union[str, torch.device]] = None,
+        swap_lock: Optional[threading.Lock] = None,
+        on_swap_callback: Optional[Callable[[int], None]] = None,
+    ) -> None:
+        self.act_model = act_model
+        self.rest_model = rest_model
+        self.act_device = torch.device(act_device) if act_device is not None else next(act_model.parameters()).device if list(act_model.parameters()) else torch.device("cpu")
+        self.rest_device = torch.device(rest_device) if rest_device is not None else next(rest_model.parameters()).device if list(rest_model.parameters()) else torch.device("cpu")
+        
+        self.swap_lock = swap_lock if swap_lock is not None else threading.Lock()
+        self.on_swap_callback = on_swap_callback
+
+        self.swap_count = 0
+        self.failed_swaps = 0
+        self.last_swap_time = 0.0
+        self.swap_latencies_ms: List[float] = []
+
+    def validate_weights(self) -> bool:
+        """
+        Validates all parameters and buffers in Rest model against NaN and Inf.
+        Returns True if all tensors are clean and finite, False otherwise.
+        """
+        for name, p in self.rest_model.named_parameters():
+            if torch.isnan(p).any() or torch.isinf(p).any():
+                return False
+        for name, b in self.rest_model.named_buffers():
+            if torch.isnan(b).any() or torch.isinf(b).any():
+                return False
+        return True
+
+    def hot_swap(self) -> bool:
+        """
+        Atomically copies Rest model parameters & buffers into Act model in-place.
+        
+        Returns:
+            bool: True if hot-swap succeeded, False if rejected by safety guard.
+        """
+        # 1. NaN / Inf Safety Guard
+        if not self.validate_weights():
+            self.failed_swaps += 1
+            return False
+
+        # 2. Atomic In-Place Parameter Transfer under Mutex
+        t0 = time.perf_counter()
+        with self.swap_lock:
+            with torch.no_grad():
+                # Copy parameters
+                for p_act, p_rest in zip(self.act_model.parameters(), self.rest_model.parameters()):
+                    if p_act.device == p_rest.device:
+                        p_act.data.copy_(p_rest.data)
+                    else:
+                        p_act.data.copy_(p_rest.data.to(p_act.device))
+                
+                # Copy named buffers (e.g., running stats)
+                for b_act, b_rest in zip(self.act_model.buffers(), self.rest_model.buffers()):
+                    if b_act.device == b_rest.device:
+                        b_act.data.copy_(b_rest.data)
+                    else:
+                        b_act.data.copy_(b_rest.data.to(b_act.device))
+
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        self.swap_latencies_ms.append(latency_ms)
+        self.swap_count += 1
+        self.last_swap_time = time.time()
+
+        if self.on_swap_callback is not None:
+            try:
+                self.on_swap_callback(self.swap_count)
+            except Exception:
+                pass
+
+        return True
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Returns hot-swap execution statistics."""
+        mean_lat = float(np.mean(self.swap_latencies_ms)) if self.swap_latencies_ms else 0.0
+        max_lat = float(np.max(self.swap_latencies_ms)) if self.swap_latencies_ms else 0.0
+        return {
+            "swap_count": self.swap_count,
+            "failed_swaps": self.failed_swaps,
+            "last_swap_time": self.last_swap_time,
+            "mean_swap_latency_ms": round(mean_lat, 4),
+            "max_swap_latency_ms": round(max_lat, 4),
+        }
+
+
+class TransitionStreamer:
+    """
+    Thread-safe non-blocking queue for streaming transition tuples from simulation to trainer.
+    """
+
+    def __init__(self, maxsize: int = 20000) -> None:
+        self.maxsize = int(maxsize)
+        self.queue: queue.Queue = queue.Queue(maxsize=self.maxsize)
+        self.pushed_count = 0
+        self.dropped_count = 0
+        self.drained_count = 0
+
+    def push(
+        self,
+        state: Union[np.ndarray, List[float]],
+        action: Union[np.ndarray, List[float], Tuple[float, ...]],
+        reward: float,
+        next_state: Union[np.ndarray, List[float]],
+        done: bool,
+        delta_t: float,
+    ) -> bool:
+        """
+        Non-blocking transition push. Drops item if queue is full to preserve simulation speed.
+        """
+        item = {
+            "state": state,
+            "action": action,
+            "reward": float(reward),
+            "next_state": next_state,
+            "done": bool(done),
+            "delta_t": float(delta_t),
+        }
+        try:
+            self.queue.put_nowait(item)
+            self.pushed_count += 1
+            return True
+        except queue.Full:
+            self.dropped_count += 1
+            return False
+
+    def push_dict(self, transition: Dict[str, Any]) -> bool:
+        """Convenience push for pre-assembled dictionary."""
+        try:
+            self.queue.put_nowait(transition)
+            self.pushed_count += 1
+            return True
+        except queue.Full:
+            self.dropped_count += 1
+            return False
+
+    def drain(self, max_items: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Drains pending transitions from queue without blocking."""
+        items: List[Dict[str, Any]] = []
+        limit = max_items if max_items is not None else self.queue.qsize() + 100
+        for _ in range(limit):
+            try:
+                item = self.queue.get_nowait()
+                items.append(item)
+                self.queue.task_done()
+            except queue.Empty:
+                break
+        self.drained_count += len(items)
+        return items
+
+    def push_to_buffer(self, replay_buffer: RetrospectiveReplayBuffer, max_items: Optional[int] = None) -> int:
+        """Drains transitions from queue and directly inserts into replay buffer."""
+        items = self.drain(max_items=max_items)
+        for it in items:
+            replay_buffer.push(
+                state=it["state"],
+                action=it["action"],
+                reward=it["reward"],
+                next_state=it["next_state"],
+                done=it["done"],
+                delta_t=it["delta_t"],
+            )
+        return len(items)
+
+    def qsize(self) -> int:
+        return self.queue.qsize()
+
+    def is_empty(self) -> bool:
+        return self.queue.empty()
+
+    def clear(self) -> None:
+        self.drain()
+        self.pushed_count = 0
+        self.dropped_count = 0
+        self.drained_count = 0
+
+
+class BackgroundTrainer:
+    """
+    Dedicated background training worker that consumes transitions from ReplayBuffer,
+    performs gradient updates on Rest model, and triggers periodic atomic hot-swaps.
+    """
+
+    def __init__(
+        self,
+        rest_model: BaseRLModel,
+        replay_buffer: RetrospectiveReplayBuffer,
+        streamer: TransitionStreamer,
+        hot_swap_manager: DualModelHotSwapManager,
+        batch_size: int = 32,
+        train_frequency: int = 1,
+        swap_interval_steps: int = 20,
+        rest_device: Optional[torch.device] = None,
+    ) -> None:
+        self.rest_model = rest_model
+        self.replay_buffer = replay_buffer
+        self.streamer = streamer
+        self.hot_swap_manager = hot_swap_manager
+        self.batch_size = int(batch_size)
+        self.train_frequency = int(train_frequency)
+        self.swap_interval_steps = int(swap_interval_steps)
+        self.rest_device = rest_device or (next(rest_model.parameters()).device if list(rest_model.parameters()) else torch.device("cpu"))
+
+        self.worker_thread: Optional[threading.Thread] = None
+        self.stop_event = threading.Event()
+        self.training_steps = 0
+        self.loss_history: List[Dict[str, float]] = []
+        self.lock = threading.Lock()
+
+    def train_step(self) -> Optional[Dict[str, float]]:
+        """
+        Executes one gradient update step on Rest model and performs hot-swap if scheduled.
+        """
+        # Drain any pending transitions into replay buffer
+        self.streamer.push_to_buffer(self.replay_buffer)
+
+        if not self.replay_buffer.is_ready(self.batch_size):
+            return None
+
+        batch = self.replay_buffer.sample(self.batch_size)
+        
+        # Move batch tensors to Rest model's device
+        if self.rest_device is not None:
+            batch = {k: v.to(self.rest_device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
+
+        self.rest_model.train()
+        loss_dict = self.rest_model.update(batch)
+        
+        with self.lock:
+            self.training_steps += 1
+            self.loss_history.append(loss_dict)
+
+            # Scheduled Hot-swap
+            if self.training_steps % self.swap_interval_steps == 0:
+                self.hot_swap_manager.hot_swap()
+
+        return loss_dict
+
+    def _worker_loop(self) -> None:
+        """Background thread execution loop."""
+        while not self.stop_event.is_set():
+            # Ingest stream and update
+            loss_dict = self.train_step()
+            if loss_dict is None:
+                # Yield briefly when waiting for buffer fill
+                time.sleep(0.002)
+            else:
+                time.sleep(0.0005)
+
+    def start(self) -> None:
+        """Starts background training thread."""
+        if self.worker_thread is not None and self.worker_thread.is_alive():
+            return
+        self.stop_event.clear()
+        self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self.worker_thread.start()
+
+    def stop(self, timeout: float = 3.0) -> None:
+        """Stops background training thread and joins."""
+        if self.worker_thread is None:
+            return
+        self.stop_event.set()
+        self.worker_thread.join(timeout=timeout)
+        self.worker_thread = None
+
+    def get_metrics(self) -> Dict[str, Any]:
+        """Returns background trainer performance and loss summary."""
+        with self.lock:
+            recent_losses = self.loss_history[-50:] if self.loss_history else []
+            mean_loss = float(np.mean([entry["loss"] for entry in recent_losses if "loss" in entry])) if recent_losses else 0.0
+            return {
+                "training_steps": self.training_steps,
+                "loss_history_len": len(self.loss_history),
+                "mean_recent_loss": round(mean_loss, 4),
+                "hot_swap_stats": self.hot_swap_manager.get_stats(),
+            }
+
+
+class HotSwapRLScheduler:
+    """
+    S1/S2/S3 compliant RL scheduler that serves uplink grants using the fast Act model
+    and streams retrospective transitions to the background trainer.
+    """
+
+    def __init__(
+        self,
+        act_model: BaseRLModel,
+        hot_swap_manager: DualModelHotSwapManager,
+        streamer: TransitionStreamer,
+        vectorizer: Optional[StateVectorizer] = None,
+        rsu_range: float = 800.0,
+        alpha_aoi: float = 0.1,
+        beta_error: float = 1.0,
+        gamma_power: float = 0.01,
+    ) -> None:
+        self.act_model = act_model
+        self.hot_swap_manager = hot_swap_manager
+        self.streamer = streamer
+        self.vectorizer = vectorizer or StateVectorizer(rsu_range=rsu_range)
+        self.rsu_range = float(rsu_range)
+        self.alpha_aoi = float(alpha_aoi)
+        self.beta_error = float(beta_error)
+        self.gamma_power = float(gamma_power)
+
+        # Per-vehicle tracking for retrospective transition assembly: vid -> record
+        self.vehicle_records: Dict[str, Dict[str, Any]] = {}
+        self.inference_latencies_ms: List[float] = []
+        self.total_inferences = 0
+
+    def decide_grant(
+        self,
+        vid_or_state: Union[str, Dict[str, Any]],
+        state: Optional[Dict[str, Any]] = None,
+        metrics: Optional[Any] = None,
+    ) -> Tuple[float, int, float]:
+        """
+        Decides uplink grant (delta_s, channel_idx, power_dbm) for a vehicle.
+        Supports both decide_grant(vid, state, metrics) and decide_grant(state).
+        """
+        if isinstance(vid_or_state, dict):
+            st = vid_or_state
+            vid = str(st.get("vid", "veh_unknown"))
+        else:
+            vid = str(vid_or_state)
+            st = state or {}
+
+        # 1. State Vectorization
+        cur_t = float(st.get("current_time", 0.0) or 0.0)
+        s = self.vectorizer.vectorize_from_dict(st)
+
+        # 2. Fast Inference under Act Model (Thread-Safe under hot-swap mutex)
+        t0 = time.perf_counter()
+        self.act_model.eval()
+        with self.hot_swap_manager.swap_lock:
+            grant, raw_action, info = self.act_model.select_action(s, deterministic=False)
+        
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+        self.inference_latencies_ms.append(latency_ms)
+        self.total_inferences += 1
+
+        delta, ch, power = grant
+
+        # 3. Retrospective Transition Assembly
+        if vid in self.vehicle_records:
+            prev = self.vehicle_records[vid]
+            dt = max(0.1, cur_t - prev["time"])
+            err = float(st.get("estimation_error", 0.0))
+            
+            # Retrospective Reward: negative combination of elapsed AoI, estimation error, and Tx power
+            reward = - (self.alpha_aoi * dt + self.beta_error * err + self.gamma_power * max(0.0, power - 20.0))
+
+            # Stream transition to background trainer
+            self.streamer.push(
+                state=prev["state"],
+                action=prev["raw_action"],
+                reward=reward,
+                next_state=s,
+                done=False,
+                delta_t=dt,
+            )
+
+        # 4. Update Vehicle State Record
+        self.vehicle_records[vid] = {
+            "state": s,
+            "raw_action": raw_action,
+            "time": cur_t,
+            "grant": grant,
+        }
+
+        return grant
+
+    def on_vehicle_exit(self, vid: str, exit_time: float, final_error: float = 0.0) -> None:
+        """Closes episode for exiting vehicle and pushes terminal transition."""
+        if vid in self.vehicle_records:
+            prev = self.vehicle_records.pop(vid)
+            dt = max(0.1, exit_time - prev["time"])
+            reward = - (self.alpha_aoi * dt + self.beta_error * final_error)
+            dummy_next_state = np.zeros(16, dtype=np.float32)
+            self.streamer.push(
+                state=prev["state"],
+                action=prev["raw_action"],
+                reward=reward,
+                next_state=dummy_next_state,
+                done=True,
+                delta_t=dt,
+            )
+
+    def reset(self) -> None:
+        """Resets per-episode state."""
+        self.vehicle_records.clear()
+
+    def get_latency_stats(self) -> Dict[str, float]:
+        """Returns serving inference latency percentiles in ms."""
+        if not self.inference_latencies_ms:
+            return {"mean_latency_ms": 0.0, "p50_latency_ms": 0.0, "p95_latency_ms": 0.0, "p99_latency_ms": 0.0}
+        arr = np.array(self.inference_latencies_ms)
+        return {
+            "mean_latency_ms": round(float(np.mean(arr)), 4),
+            "p50_latency_ms": round(float(np.percentile(arr, 50)), 4),
+            "p95_latency_ms": round(float(np.percentile(arr, 95)), 4),
+            "p99_latency_ms": round(float(np.percentile(arr, 99)), 4),
+        }
+
+
+class HotSwapTrainer:
+    """
+    Master Orchestrator for Dual-Model Hot-Swap Training.
+    Manages Act model, Rest model, ReplayBuffer, Streamer, Worker, and Hot-Swap synchronization.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "HybridPPO",
+        state_dim: int = 16,
+        num_channels: int = 4,
+        buffer_capacity: int = 10000,
+        batch_size: int = 32,
+        swap_interval: int = 20,
+        act_device: Optional[Union[str, torch.device]] = None,
+        rest_device: Optional[Union[str, torch.device]] = None,
+        hparams: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self.model_name = model_name
+        self.state_dim = int(state_dim)
+        self.num_channels = int(num_channels)
+        self.buffer_capacity = int(buffer_capacity)
+        self.batch_size = int(batch_size)
+        self.swap_interval = int(swap_interval)
+        self.hparams = hparams or {}
+
+        # Device Placement
+        default_act_dev, default_rest_dev = select_default_devices()
+        self.act_device = torch.device(act_device) if act_device is not None else default_act_dev
+        self.rest_device = torch.device(rest_device) if rest_device is not None else default_rest_dev
+
+        # Instantiate Models
+        if model_name not in BASELINE_REGISTRY:
+            raise ValueError(f"Unknown baseline model: {model_name}. Available: {list(BASELINE_REGISTRY.keys())}")
+
+        model_cls = BASELINE_REGISTRY[model_name]
+        self.act_model = model_cls(state_dim=self.state_dim, num_channels=self.num_channels, **self.hparams).to(self.act_device)
+        self.rest_model = model_cls(state_dim=self.state_dim, num_channels=self.num_channels, **self.hparams).to(self.rest_device)
+
+        # Set operational modes
+        self.act_model.eval()
+        self.rest_model.train()
+
+        # Shared synchronization & infrastructure
+        self.swap_lock = threading.Lock()
+        self.hot_swap_manager = DualModelHotSwapManager(
+            act_model=self.act_model,
+            rest_model=self.rest_model,
+            act_device=self.act_device,
+            rest_device=self.rest_device,
+            swap_lock=self.swap_lock,
+        )
+        
+        # Initial weight sync (Rest -> Act)
+        self.hot_swap_manager.hot_swap()
+
+        self.replay_buffer = RetrospectiveReplayBuffer(capacity=self.buffer_capacity)
+        self.streamer = TransitionStreamer(maxsize=self.buffer_capacity * 2)
+        
+        self.background_trainer = BackgroundTrainer(
+            rest_model=self.rest_model,
+            replay_buffer=self.replay_buffer,
+            streamer=self.streamer,
+            hot_swap_manager=self.hot_swap_manager,
+            batch_size=self.batch_size,
+            swap_interval_steps=self.swap_interval,
+            rest_device=self.rest_device,
+        )
+
+        self.scheduler = HotSwapRLScheduler(
+            act_model=self.act_model,
+            hot_swap_manager=self.hot_swap_manager,
+            streamer=self.streamer,
+        )
+
+    def start(self) -> None:
+        """Starts background training worker."""
+        self.background_trainer.start()
+
+    def stop(self) -> None:
+        """Stops background training worker."""
+        self.background_trainer.stop()
+
+    def step_training_sync(self) -> Optional[Dict[str, float]]:
+        """Executes a single synchronous training update."""
+        return self.background_trainer.train_step()
+
+
+def run_hot_swap_training(
+    model_name: str = "HybridPPO",
+    total_steps: int = 1000,
+    warmup_steps: int = 64,
+    batch_size: int = 32,
+    swap_interval: int = 20,
+    act_device: Optional[Union[str, torch.device]] = None,
+    rest_device: Optional[Union[str, torch.device]] = None,
+    hparams: Optional[Dict[str, Any]] = None,
+    seed: int = 42,
+    num_vehicles: int = 8,
+) -> Dict[str, Any]:
+    """
+    Full end-to-end hot-swap training loop integrating Act model serving,
+    asynchronous background training, and periodic atomic parameter hot-swapping.
+    
+    Args:
+        model_name: Baseline model algorithm name
+        total_steps: Total interaction steps to execute
+        warmup_steps: Replay buffer warmup steps before training begins
+        batch_size: Batch size for Rest model gradient steps
+        swap_interval: Gradient steps between atomic hot-swaps
+        act_device: PyTorch device for Act model (fast serving)
+        rest_device: PyTorch device for Rest model (background training)
+        hparams: Model hyperparameters dictionary
+        seed: Random seed
+        num_vehicles: Simulated vehicle count in workload
+        
+    Returns:
+        Structured training summary dictionary.
+    """
+    # Set seeds
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
+    trainer = HotSwapTrainer(
+        model_name=model_name,
+        batch_size=batch_size,
+        swap_interval=swap_interval,
+        act_device=act_device,
+        rest_device=rest_device,
+        hparams=hparams,
+    )
+
+    trainer.start()
+
+    # Simulated traffic state generator for training
+    t_start = time.perf_counter()
+    vehicles = [f"veh_{i}" for i in range(num_vehicles)]
+    v_pos = {v: np.array([float(i * 30.0), float((i % 3) * 10.0)]) for i, v in enumerate(vehicles)}
+    v_vel = {v: np.array([12.0 + (i % 5) * 2.0, 0.0]) for i, v in enumerate(vehicles)}
+    
+    step_rewards = []
+    aoi_records = []
+    
+    try:
+        sim_time = 0.0
+        for step in range(total_steps):
+            sim_time += 0.5
+            v_idx = step % num_vehicles
+            vid = vehicles[v_idx]
+            
+            # Update kinematics
+            pos = v_pos[vid]
+            vel = v_vel[vid]
+            pos += vel * 0.5
+            if pos[0] > 750.0:
+                pos[0] = -750.0
+            
+            tls_state = "r" if ((step // 20) % 2 == 1) else "g"
+            dist_stop = max(0.0, 400.0 - abs(pos[0]))
+            
+            state_dict = {
+                "vid": vid,
+                "pos": tuple(pos),
+                "vel": tuple(vel),
+                "speed": float(math.hypot(vel[0], vel[1])),
+                "accel": 0.0,
+                "dist_to_rsu": float(math.hypot(pos[0], pos[1])),
+                "current_time": sim_time,
+                "estimation_error": float(np.random.uniform(0.05, 0.4)),
+                "tls_features": {
+                    "state": tls_state,
+                    "dist_to_stopline": dist_stop,
+                    "time_to_switch": float(max(0.0, 20.0 - (step % 20))),
+                    "stop_imminent": 1.0 if (tls_state == "r" and dist_stop < 25.0) else 0.0,
+                    "start_imminent": 1.0 if (tls_state == "g" and dist_stop < 10.0) else 0.0,
+                }
+            }
+
+            grant = trainer.scheduler.decide_grant(vid, state_dict)
+            delta, ch, power = grant
+            aoi_records.append(delta)
+            step_rewards.append(- (0.1 * delta + 0.01 * (power - 20.0)))
+
+            # Allow background training thread to process
+            if step % 10 == 0:
+                time.sleep(0.001)
+
+    finally:
+        trainer.stop()
+
+    elapsed_s = max(1e-4, time.perf_counter() - t_start)
+    latency_stats = trainer.scheduler.get_latency_stats()
+    trainer_metrics = trainer.background_trainer.get_metrics()
+    hot_swap_stats = trainer.hot_swap_manager.get_stats()
+
+    return {
+        "model_name": model_name,
+        "total_steps": total_steps,
+        "elapsed_seconds": round(elapsed_s, 4),
+        "throughput_steps_per_sec": round(total_steps / elapsed_s, 2),
+        "mean_step_reward": round(float(np.mean(step_rewards)), 4) if step_rewards else 0.0,
+        "mean_scheduled_delta": round(float(np.mean(aoi_records)), 4) if aoi_records else 0.0,
+        "training_steps": trainer_metrics["training_steps"],
+        "mean_recent_loss": trainer_metrics["mean_recent_loss"],
+        "swap_count": hot_swap_stats["swap_count"],
+        "failed_swaps": hot_swap_stats["failed_swaps"],
+        "mean_swap_latency_ms": hot_swap_stats["mean_swap_latency_ms"],
+        "inference_latency": latency_stats,
+        "act_device": str(trainer.act_device),
+        "rest_device": str(trainer.rest_device),
+    }

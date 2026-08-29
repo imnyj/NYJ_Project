@@ -94,8 +94,8 @@ class TestAoiEnvGenuine:
             "max_steps": 500,
             "step_length": 1.0,
             "weights": {"w1": 0.6, "w2": 0.15, "w3": 0.15, "w4": 0.1},
-            "p_min": 20.0,
-            "p_max": 30.0,
+            "p_min": 10.0,
+            "p_max": 23.0,
         }
         env = AoiV2IEnv(config=custom_config)
         assert env.warmup_steps == 40
@@ -108,8 +108,8 @@ class TestAoiEnvGenuine:
         assert AoIEnv is AoiV2IEnv
 
     def test_04_env_reset_real_sumo(self):
-        """Verify env.reset() spins up real SUMO, selects target RSU, and returns 16-dim states."""
-        env = AoiV2IEnv(config={"warmup_steps": 60, "max_steps": 100})
+        """Verify env.reset() spins up real SUMO, selects target RSU, and returns 18-dim states."""
+        env = AoiV2IEnv(config={"warmup_steps": 60, "max_steps": 100, "step_length": 1.0})
         obs, info = env.reset(seed=42)
 
         assert isinstance(obs, dict)
@@ -120,7 +120,7 @@ class TestAoiEnvGenuine:
         assert len(obs) == info["n_active"]
 
         for vid, s_vec in obs.items():
-            assert s_vec.shape == (16,)
+            assert s_vec.shape == (18,)
             assert s_vec.dtype == np.float32
             assert np.all(s_vec >= -1.0) and np.all(s_vec <= 1.0)
 
@@ -128,7 +128,7 @@ class TestAoiEnvGenuine:
 
     def test_05_env_step_physical_rollout(self):
         """Verify env.step() advances SUMO simulation time and tracks moving vehicle coordinates."""
-        env = AoiV2IEnv(config={"warmup_steps": 60, "max_steps": 100})
+        env = AoiV2IEnv(config={"warmup_steps": 60, "max_steps": 100, "step_length": 1.0})
         obs, info = env.reset(seed=42)
         initial_time = info["sim_time"]
 
@@ -137,12 +137,12 @@ class TestAoiEnvGenuine:
         # Run 5 steps with hybrid actions
         for step in range(5):
             action_dict = {
-                vid: (1.0 + (i % 3) * 0.5, (i + step) % 4, 25.0)
+                vid: (1.0 + (i % 3) * 0.5, (i + step) % 4, 20.0)
                 for i, vid in enumerate(env.get_active_vehicles())
             }
             obs, rewards, term, trunc, step_info = env.step(action_dict)
 
-            assert step_info["sim_time"] == initial_time + float(step + 1)
+            assert math.isclose(step_info["sim_time"], initial_time + float(step + 1), abs_tol=1e-4)
             assert isinstance(rewards, dict)
             assert step_info["step_reward"] <= 0.0
 
@@ -161,13 +161,14 @@ class TestAoiEnvGenuine:
         """Verify reward calculation strictly follows Conversation.md specification."""
         env = AoiV2IEnv(config={
             "warmup_steps": 60,
+            "step_length": 1.0,
             "weights": {"w_error": 0.5, "w_power": 0.2, "w_congestion": 0.2, "w_redundant": 0.1},
         })
         obs, info = env.reset(seed=42)
 
         # Single step with diverse channel allocation
         action_dict = {
-            vid: (1.0, i % 4, 20.0 + (i % 3) * 5.0)
+            vid: (1.0, i % 4, 10.0 + (i % 3) * 6.5)
             for i, vid in enumerate(env.get_active_vehicles())
         }
         obs, rewards, term, trunc, step_info = env.step(action_dict)

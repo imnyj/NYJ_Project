@@ -1,44 +1,100 @@
-# Handoff Report — Worker M3 (Training, HPO & Evaluation Genuine Integration)
+# Worker M3 Handoff Report: Environment Knobs & HPO Alignment
 
 ## 1. Observation (직접 관찰 결과)
-- **대상 파일 상태 및 가짜 코드 바이패스 전면 제거**:
-  - `src/hot_swap_trainer.py`: `SyntheticVehicle` 및 로컬 기구학적 루프(`v_pos = {v: ...}`)를 완전히 폐기하고, TraCI 및 `libsumo.simulationStep()` 기반의 실시간 다이나믹스 제어 및 4대 안티모킹 단언문(시뮬레이션 시간 전진, 이동 차량 변위 검증, Rayleigh 페이딩 무선 경합 검증, SMDP 유효 보상 검증)을 탑재한 진성 `AoiV2IEnv`로 완벽 교체함.
-  - `src/hpo.py`: Optuna 하이퍼파라미터 튜닝 파이프라인에서 가짜 롤아웃을 제거하고 `AoiV2IEnv` 환경을 직접 생성하여 9종 베이스라인 모델(`HybridPPO`, `HybridSAC`, `HybridTD3`, `MAPPO`, `HyARPPO`, `MPDQN`, `PureAoI`, `DuelingQAoI`, `SACAoI`)의 복합 목적함수(Composite Objective)를 산출하도록 연동함.
-  - `src/evaluate.py`: 합성 환경을 제거하고 다중 밀도(15~55 veh/km-lane) 및 다중 시드(42, 101, 2024, 777, 999)에 대한 6대 IEEE TWC 표준 성능 지표(Mean/Peak AoI, Outage rate, Mean/Max/Low-spd/High-spd Error, Power/Energy, Jain's fairness index for AoI/Error)를 진성 SUMO 환경에서 측정하도록 전면 개편함.
-  - `tests/test_dummy_verification.py`: 9종 베이스라인 추론, Act/Rest 원자적 핫스왑 및 그래디언트 스텝, Optuna 1-trial HPO 평가, 벤치마크 단일 실행 평가 및 15초 이내 검증 완료(<3.5s 달성)를 포함하는 Short Dummy Run 검증 테스트 스위트 14개 항목 구현 완료.
-- **테스트 실행 결과**:
-  - `tests/test_dummy_verification.py`, `tests/test_hot_swap.py`, `tests/test_hpo.py`, `tests/test_evaluation.py`: 76/76 통과 (100%, 23.36s).
-  - 전체 프로젝트 테스트 스위트(`pytest tests/ -v`): 199/199 통과 (100%, 41.58s).
 
-## 2. Logic Chain (논리적 추론 체계)
-1. **진성 시뮬레이터 및 4대 안티모킹 규격 보장**:
-   - `libsumo` 및 `make_sumo_set.py`를 통해 생성된 실제 네트워크와 라우트 파일에서 차량 텔레메트리, 신호등 위상 정보를 실시간 추출하여 16차원 정규화 관측 벡터를 구성함.
-   - `Communications.judge_uplink`를 통한 레일리 페이딩 수신 전력 및 SINR 기반 패킷 성공 확률 계산, 데드레커닝 추정 오차 $e(t) = \|\mathbf{p}(t) - \hat{\mathbf{p}}(t)\|$ 기반의 SMDP 할인 보상($\gamma^\Delta$)을 계산하여 가짜 난수 생성 바이패스를 원천 차단함.
-2. **무중단 Act/Rest 원자적 핫스왑 아키텍처 실증**:
-   - `DualModelHotSwapManager`는 `swap_lock` 뮤텍스 하에서 파라미터 및 버퍼를 메모리 내 직접 복사(`copy_`)하며, NaN/Inf 사전 검증 가드를 통해 학습 발산 시 활성 모델의 오염을 방지함. 다중 GPU 환경(`cuda:0`/`cuda:1`)의 디바이스 간 텐서 전송을 완벽 지원함.
-   - `TransitionStreamer`는 비차단 큐(`queue.Queue`)를 통해 시뮬레이션 스케줄링 스레드와 백그라운드 학습 스레드(`BackgroundTrainer`)를 분리하여 대기 시간 없는 고속 추론을 달성함.
-3. **Optuna HPO 및 IEEE TWC 벤치마크 매트릭스 결합**:
-   - 9종 베이스라인 모델별 맞춤형 하이퍼파라미터 탐색 공간(`sample_hparams`)과 정밀 평가 루프(`evaluate_model_in_env`)를 구현하여 최적 파라미터와 트라이얼 기록을 CSV로 자동 내보내도록 구축함.
-   - `calculate_jains_fairness` 함수 및 6대 IEEE TWC 표준 지표 산출 로직을 탑재하여 `eval_raw_runs.csv`, `eval_summary_by_density.csv`, `eval_leaderboard.csv`의 무결성을 확보함.
+1. **`src/NetSim.py`**:
+   - `pre_define()` (443, 446행)에 과거 잔존값 `sumo_set.RSU_RANGE = 800.0`, `sumo_set.OUTAGE_ZONE = 800.0`이 하드코딩되어 있어 `InitSumoNetSim()` 호출 시 `make_sumo_set.py`의 300.0m 설정이 800.0m로 덮어써지는 문제가 관찰됨.
+   - SUMO 실행 CLI 인수 (532행)에 `"--step-length", "1.0"`으로 하드코딩되어 있어 `generated.sumocfg`의 0.1초 설정이 1.0초로 무력화되는 결함 관찰.
+   - `GetSignalState()` (752행) 기본 인수가 `comm_range: float = 800.0`으로 되어 있었음.
 
-## 3. Caveats (제약 및 주의사항)
-- **헤비 트레이닝 착수 전 사용자 승인 장벽**:
-  - `AoiV2IEnv` 상의 200,000 스텝(2,000 steps $\times$ 100 episodes) 대규모 학습 및 250회 정규 벤치마크 평가는 본 Short Dummy Run 통합 검증 통과 후 사용자의 코드 리뷰 및 승인 하에 진행되어야 함.
+2. **`src/sumo/make_sumo_set.py`**:
+   - 코드 상 `RSU_RANGE: float = 300.0`, `STEP_LENGTH: float = 0.1`로 정의되어 있으나, 서명 캐시 파일인 `src/sumo/.sumo_gen_signature.json`에 과거 실행 결과인 `"RSU_RANGE": 800.0`이 남아있었음.
 
-## 4. Conclusion (최종 결론)
-- M3 작업 요구사항에 따라 `src/hot_swap_trainer.py`, `src/hpo.py`, `src/evaluate.py` 내 모든 가짜/합성 바이패스를 완전히 제거하고 SUMO 기반 `AoiV2IEnv`로 진성 결합 완료함.
-- `tests/test_dummy_verification.py` 14개 검증 테스트 및 전체 199개 통합 테스트가 100% 무결점으로 통과하였으며, 시스템은 200k 스텝 헤비 트레이닝에 완벽하게 대비된 상태임.
+3. **`src/evaluate.py`**:
+   - `evaluate_single_run()` 기본 인수가 `rsu_range: float = 800.0`으로 지정되어 있었음.
+   - `evaluate_single_run()`의 `HeuristicScheduler` 상태 딕셔너리 생성부(239행)에서 `"speed": 10.0`으로 고정 하드코딩되어 있어 정지/출발 예측 시 실제 SUMO 차량 속도가 반영되지 못함.
+   - `instantiate_model()`의 `state_dim` 기본값이 16으로 되어 있어 M2에서 개편된 18차원 상태 벡터와 불일치 발생.
 
-## 5. Verification Method (독립적 검증 명령)
-- **Short Dummy Run 검증 테스트 (14개 항목, ~3.5초 소요)**:
-  ```bash
-  /home/imnyj/venv/bin/pytest tests/test_dummy_verification.py -v
-  ```
-- **핵심 M3 테스트 스위트 (76개 항목, ~23초 소요)**:
-  ```bash
-  /home/imnyj/venv/bin/pytest tests/test_dummy_verification.py tests/test_hot_swap.py tests/test_hpo.py tests/test_evaluation.py -v
-  ```
-- **전체 프로젝트 통합 회귀 테스트 (199개 항목, ~41초 소요)**:
-  ```bash
-  /home/imnyj/venv/bin/pytest tests/ -v
-  ```
+4. **`src/hpo.py`**:
+   - `sample_reward_weights(trial)`가 $w_1 \in [0.10, 1.00]$, $w_2, w_3, w_4 \in [0.02, 0.60]$ 범위에서 샘플링 후 합이 1.0이 되도록 정규화하고 Optuna user attribute로 저장하는 로직이 있으나, `evaluate_trial_multiseed`에서 `state_dim=16` 및 `rsu_range` 기본값 연동이 미비했음.
+
+---
+
+## 2. Logic Chain (논리 추론 체인)
+
+1. **[RSU_RANGE 300m 통일]**: 5.9GHz C-V2X 도심 환경 통신 반경 표준(200~300m)에 맞추어 `NetSim.py`의 `pre_define()` 및 `GetSignalState()`, `evaluate.py`의 기본값을 300.0m로 일치시키고, `make_sumo_set.py`의 `make_sumo_files(force_regenerate=True)`를 실행하여 SUMO 네트워크 파일 및 `.sumo_gen_signature.json`을 300.0m로 갱신함.
+2. **[SUMO step-length 0.1s 적용]**: $\Delta \in [0.1, 45.0]$s의 초미세 갱신 인터벌을 물리적으로 모사하기 위해 SUMO CLI 인수를 `"--step-length", "0.1"`로 변경하여 `generated.sumocfg`의 0.1s 해상도와 일치시킴.
+3. **[실시간 속도 연동]**: `HeuristicScheduler`가 감속/정지 및 출발 상황을 정확히 감지할 수 있도록 `evaluate.py`에서 `env.last_speeds.get(vid, 0.0)` 실측값을 추출하여 `st_dict["speed"]`에 주입함.
+4. **[Optuna HPO 연동]**: $w_1 \sim w_4$ 보상 가중치가 Optuna 최적화 탐색 공간에 포함되어 환경(`AoiV2IEnv`)으로 전달되고, 최적화 결과 및 트라이얼 히스토리가 CSV 파일에 컬럼별로 정확히 기록되도록 보장함.
+
+---
+
+## 3. Caveats (주의사항 및 한계)
+
+1. **기존 베이스라인 테스트 호환성**: `tests/test_evaluation.py` 등 일부 기존 테스트는 과거 하드코딩된 전력 범위(`[20, 30] dBm`) 및 16차원 상태 공간을 단언하고 있어 실패함. 이는 Milestone M4/M5에서 베이스라인 삭제 및 테스트 스위트 개편 시 업데이트될 예정임.
+2. **SUMO step-length 변경에 따른 웜업 스텝 수**: SUMO step-length가 1.0s에서 0.1s로 변경됨에 따라, 동일 물리 시간(초) 동안 차량이 교차로에 도달하기 위해서는 필요한 스텝 수가 10배 증가함(예: 35s = 350 steps). `evaluate_single_run` 실행 시 스텝 수를 충분히 확보해야 통신 범위 내 차량 데이터가 수집됨.
+
+---
+
+## 4. Conclusion (결론 및 완료 상태)
+
+Milestone M3의 4개 독점 파일(`src/NetSim.py`, `src/sumo/make_sumo_set.py`, `src/evaluate.py`, `src/hpo.py`)에 대한 수정이 완료되었으며, 동시성 락(`LockManager`)과 감사 로깅(`AuditLogger`) 하에 안전하게 반영되었습니다.
+
+- `NetSim.py`: `RSU_RANGE = 300.0`, `OUTAGE_ZONE = 300.0`, `--step-length 0.1`, `comm_range = 300.0` 완벽 반영.
+- `make_sumo_set.py`: `RSU_RANGE = 300.0`, `STEP_LENGTH = 0.1` 및 `.sumo_gen_signature.json` 최신화 완료.
+- `evaluate.py`: `rsu_range = 300.0`, 실시간 `env.last_speeds` 연동, `state_dim = STATE_DIM (18)` 반영 완료.
+- `hpo.py`: Optuna $w_1 \sim w_4$ 정규화 샘플링 및 CSV 저장, `STATE_DIM` 및 `rsu_range` 연동 완료.
+
+---
+
+## 5. Verification Method (독립 검증 방법)
+
+독립 검증을 위해 아래 명령어를 실행하여 M3의 모든 요구사항이 충족되었는지 확인할 수 있습니다:
+
+```bash
+/home/imnyj/venv/bin/python -c '
+import optuna
+import tempfile
+import pandas as pd
+import src.NetSim as netsim
+import src.sumo.make_sumo_set as ss
+from src.evaluate import evaluate_single_run, instantiate_model
+from src.heuristic_scheduler import HeuristicScheduler
+from src.hpo import sample_reward_weights, save_study_results, REWARD_WEIGHT_KEYS, REWARD_WEIGHT_RANGES
+
+# 1. Knob 검증
+netsim.pre_define()
+assert ss.RSU_RANGE == 300.0 and ss.OUTAGE_ZONE == 300.0 and ss.STEP_LENGTH == 0.1
+sig = ss.current_generation_signature()
+assert sig["RSU_RANGE"] == 300.0 and sig["STEP_LENGTH"] == 0.1
+print("[PASS] 1. RSU_RANGE=300.0, STEP_LENGTH=0.1 verified")
+
+# 2. 실시간 속도 및 HeuristicScheduler 검증 (400 steps)
+speeds = []
+class InstrumentScheduler(HeuristicScheduler):
+    def decide_grant(self, vid, st_dict):
+        speeds.append(st_dict["speed"])
+        return super().decide_grant(vid, st_dict)
+
+model = InstrumentScheduler()
+res = evaluate_single_run(model, density=25.0, seed=42, n_steps=400, rsu_range=300.0)
+assert len(speeds) > 0 and any(s != 10.0 for s in speeds)
+print(f"[PASS] 2. Real vehicle speed verified ({len(speeds)} records, mean: {sum(speeds)/len(speeds):.2f} m/s)")
+
+# 3. Optuna w1..w4 HPO 검증
+study = optuna.create_study(direction="minimize")
+trial = study.ask()
+w = sample_reward_weights(trial)
+assert abs(sum(w.values()) - 1.0) < 1e-4
+for k in REWARD_WEIGHT_KEYS:
+    assert k in trial.user_attrs
+study.tell(trial, 1.0)
+with tempfile.TemporaryDirectory() as tmpdir:
+    csv_path, best = save_study_results(study, "HybridPPO", output_dir=tmpdir)
+    df = pd.read_csv(csv_path)
+    for k in REWARD_WEIGHT_KEYS:
+        assert k in df.columns
+print("[PASS] 3. Optuna w1..w4 sampling & CSV logging verified")
+print("ALL M3 CHECKS PASSED!")
+'
+```

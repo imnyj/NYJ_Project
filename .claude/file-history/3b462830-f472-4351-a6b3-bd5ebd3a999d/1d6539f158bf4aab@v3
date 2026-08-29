@@ -1,0 +1,20 @@
+import logging
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    logging.info("=" * 70)
+    logging.info("BASELINE SCRAPING NOTICE (Milestone M4 / R4):")
+    logging.info("All unauthorized and prior baseline implementations have been completely scraped.")
+    logging.info("Baseline training loop is halted awaiting user-provided IEEE baseline implementations.")
+    logging.info("Verified canonical IEEE baselines to be provided:")
+    logging.info("  1. SAC (Foundation baseline)")
+    logging.info("  2. SAC-RIS (Qi et al., IEEE TVT 2024, doi: 10.1109/TVT.2024.3452790)")
+    logging.info("  3. DDPG-CV2X (Mlika & Cherkaoui, IEEE TITS 2022, doi: 10.1109/TITS.2022.3190799)")
+    logging.info("  4. DDPG-Resilient (IEEE OJ-COMS 2026, doi: 10.1109/OJCOMS.2026.3707734)")
+    logging.info("  5. MARL-VLC (Azizi et al., IEEE TVT 2024, doi: 10.1109/TVT.2024.3392738)")
+    logging.info("  6. Platoon-DRL (Lin et al., IEEE TVT 2025, doi: 10.1109/TVT.2025.3643923)")
+    logging.info("  7. DRL-IoV (Zhang et al., IEEE TGCN 2025, doi: 10.1109/TGCN.2025.3531902)")
+    logging.info("=" * 70)
+
+if __name__ == "__main__":
+    main()

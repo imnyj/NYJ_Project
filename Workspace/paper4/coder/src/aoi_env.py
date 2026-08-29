@@ -47,7 +47,14 @@ import src.NetSim as net
 import src.sumo.make_sumo_set as ss
 from src.dynamics_predictor import extract_tls_features
 from src.heuristic_scheduler import HeuristicScheduler
-from src.rl_interface import ActionDecoder, StateVectorizer
+from src.rl_interface import (
+    ActionDecoder,
+    StateVectorizer,
+    P_MIN,
+    P_MAX,
+    DELTA_MIN,
+    DELTA_MAX,
+)
 
 # ----------------------------------------------------------------------------
 # Pure Estimation Error Math (Unit-Testable without SUMO)
@@ -396,10 +403,10 @@ class AoiV2IEnv:
         self.nod_path = os.path.join(self.sumo_dir, "generated.nod.xml")
 
         # Environment parameters
-        self.step_length = float(self.config.get("step_length", 1.0))
+        self.step_length = float(self.config.get("step_length", 0.1))
         self.max_steps = int(self.config.get("max_steps", 3600))
         self.warmup_steps = int(self.config.get("warmup_steps", 60))
-        self.rsu_range = float(self.config.get("rsu_range", getattr(ss, "RSU_RANGE", 800.0)))
+        self.rsu_range = float(self.config.get("rsu_range", getattr(ss, "RSU_RANGE", 300.0)))
         self.num_channels = int(self.config.get("num_channels", comm.NUM_SUBCHANNELS))
         self.grid_size = float(getattr(ss, "GRID_SIZE", 14400.0))
         self.network_max_x = 50000.0
@@ -412,9 +419,11 @@ class AoiV2IEnv:
         self.w_congestion = float(weights.get("w3", weights.get("w_congestion", 0.2)))
         self.w_redundant = float(weights.get("w4", weights.get("w_redundant", 0.1)))
 
-        # Power and Error normalization bounds
-        self.p_min = float(self.config.get("p_min", 20.0))
-        self.p_max = float(self.config.get("p_max", 30.0))
+        # Power, Delta, and Error normalization bounds
+        self.p_min = float(self.config.get("p_min", P_MIN))
+        self.p_max = float(self.config.get("p_max", P_MAX))
+        self.delta_min = float(self.config.get("delta_min", DELTA_MIN))
+        self.delta_max = float(self.config.get("delta_max", DELTA_MAX))
         self.norm_error_max = float(self.config.get("norm_error_max", 50.0))
         self.norm_error_sq_max = self.norm_error_max ** 2
 
@@ -422,8 +431,8 @@ class AoiV2IEnv:
         self.vectorizer = StateVectorizer(rsu_range=self.rsu_range, v_max=30.0, a_max=5.0)
         self.decoder = ActionDecoder(
             num_channels=self.num_channels,
-            delta_min=0.5,
-            delta_max=10.0,
+            delta_min=self.delta_min,
+            delta_max=self.delta_max,
             p_min=self.p_min,
             p_max=self.p_max,
         )
@@ -611,9 +620,9 @@ class AoiV2IEnv:
         return observations, info
 
     def _vectorize_state(self, vid: str) -> np.ndarray:
-        """Builds a 16-dimensional normalized state vector from the RSU perspective."""
+        """Builds a normalized state vector from the RSU perspective."""
         if not self.is_running or vid not in self.target_rsu.track:
-            return np.zeros(16, dtype=np.float32)
+            return np.zeros(self.vectorizer.state_dim, dtype=np.float32)
 
         rec = self.target_rsu.track[vid]
         try:

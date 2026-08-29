@@ -1,27 +1,23 @@
-## 2026-08-26T12:59:12Z
+## 2026-08-27T01:54:21Z
 
 <USER_REQUEST>
-You are Explorer Survey 2 (RL Interface & Baselines Requirement Explorer).
+You are Explorer 2 for the AoI-aware V2I uplink RL scheduling pipeline architectural fixes.
+Your working directory is /home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_2/
 
-Your working directory is: /home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_2/
-Please read the original request at: /home/imnyj/Workspace/paper4/coder/ORIGINAL_REQUEST.md
+Read the following reference documents:
+1. /home/imnyj/Workspace/paper4/coder/.agents/ORIGINAL_REQUEST.md
+2. /home/imnyj/Workspace/paper4/Conversation.md
+3. /home/imnyj/Workspace/paper4/idea/scenario.md
 
-Your Mission:
-1. Investigate the Python environment, PyTorch version, CUDA/GPU availability, and available RL libraries or existing RL implementations in `/home/imnyj/Workspace/paper4/coder` or virtual environment.
-2. Analyze the requirements for R1 (Signal-based Dynamics Prediction & Heuristic Baseline S2.5) and R2 (RL Agent Interface & 9 Baselines):
-   - State vectorization requirements.
-   - Hybrid action space: continuous transmission interval & power, discrete subchannel selection. (How to represent and decode this in RL agents).
-   - Retrospective estimation error calculation and transition assembly.
-   - 9 Baseline models:
-     * 3 Basic models: PPO, SAC, TD3 (adapted for hybrid action space)
-     * 3 Latest models: e.g., MAPPO, H-PPO / HyAR / P-DQN or modern hybrid RL architectures
-     * 3 State-of-the-art similar models: AoI / V2I scheduling specific RL baselines
-3. Recommend clear mathematical formulations, architectural designs, and implementation strategies for the 9 baselines and the RL interface.
-4. Write your comprehensive analysis to `/home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_2/handoff.md` and send a message when done.
+Investigate the current codebase focusing on:
+- R2: `src/rl_interface.py`
+  * Action bounds: check the current action bounds definition. Verify Power $\in [10.0, 23.0]$ dBm.
+  * For update interval $\Delta$ (Delta), find how the SUMO environment defines traffic light phases (specifically the Red phase maximum duration) and how $\Delta_{max}$ can be dynamically linked to or set to match the maximum Red traffic light phase in SUMO.
+  * `StateVectorizer`: inspect current state vector dimension and structure. Verify whether it strictly outputs 18 dimensions including `n_queue` and `heading`.
+- Relevant unit and integration tests under `tests/` covering `rl_interface.py` and state/action encoding.
 
-Rules:
-- Read-only exploration! Do NOT modify any existing source code.
-- Write your metadata and reports ONLY into `/home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_2/`.
-- Use Korean for your report and findings.
-
+Run tests if needed using pytest.
+Document your findings, code diff analysis, exact line numbers, and recommended fix strategies in `/home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_2/handoff.md`.
+Use Korean for reporting.
+When done, message the orchestrator with your findings.
 </USER_REQUEST>

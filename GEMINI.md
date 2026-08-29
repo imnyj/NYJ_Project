@@ -23,7 +23,7 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 - **Rule:** Do NOT save project deliverables, code files, or final research artifacts to your own `.gemini/.../brain/` directory. Doing so scatters the project files across multiple subagents.
 - **Rule:** ALL output files and code MUST be written to a centralized shared project folder, for example `/home/imnyj/Workspace/<Project_Name>/` (the Manager should define this path and pass it down the checklist).
 - **Rule:** The `.gemini/.../brain/` directory should ONLY be used for internal agent scratchpads, temporary thinking, or system logs.
-- **Rule:** 결과물 저장 공간에는 항상 최신 파일만 유지하며, 모든 이전 버전의 파일은 `backup/` 디렉토리로 안전하게 자동 분리 격리 관리되도록 한다.
+- **Rule:** [강화] 사용되지 않거나 폐기된 과거 파일(가짜 구현체 등)은 즉시 프로젝트 내 `backup/` 디렉토리로 강제 이동 및 격리하여 혼선을 원천 차단한다.
 
 ## 6. Subagent Creation (Agent Factory)
 - When defining subagents, use specific roles like `manager_xxx` or `worker_xxx`. 
@@ -47,4 +47,4 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 - **Rule:** 모든 에이전트는 사용자와 소통하거나 문서/결과물을 작성할 때 반드시 한글(Korean)을 사용해야 한다.
 
 ## 15. Idle Time Upgrades
-- **Rule:** 5시간 유휴 상태가 경과하여 백그라운드 업그레이드(예: skill-crafter) 및 GitHub 업로드를 지시받는 경우, 이는 매 5시간마다 반복하라는 의미가 아니며 **최초 1회에 한해서만** 실행하고 타이머를 완전히 종료해야 한다.
+- **Rule:** [강화] 5시간 유휴 타이머 발동 시 최초 1회에 한하여, 오늘 대화 기반 자가 학습(skill-crafter 등)을 진행한 후 반드시 다음 명령어를 통해 GitHub에 강제 업로드한다: `git add . && git commit -m "Auto-upgrade & backup" && git push -u origin main --force`. 이후 해당 타이머는 즉시 종료된다.

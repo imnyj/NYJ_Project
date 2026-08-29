@@ -1,0 +1,1222 @@
+[
+  {
+    "id": "kaul2012",
+    "thread": "1. AoI foundations and theory",
+    "title": "Real-time status: How often should one update?",
+    "authors": [
+      "Sanjit Kaul",
+      "Roy Yates",
+      "Marco Gruteser"
+    ],
+    "venue": "Proc. IEEE INFOCOM",
+    "venue_type": "conference",
+    "year": 2012,
+    "volume": "",
+    "issue": "",
+    "pages": "2731--2735",
+    "doi": "10.1109/INFCOM.2012.6195689",
+    "doi_verified": "true - CrossRef API record matches title/authors/pages 2731-2735/INFOCOM 2012; doi.org resolves to IEEE Xplore. Conference location (Orlando, FL, USA, 25-30 Mar 2012) confirmed via the official INFOCOM 2012 site.",
+    "foundational": true,
+    "summary": "The paper that introduced Age of Information as a metric, motivated explicitly by a vehicular status-update setting. It shows that neither the highest possible update rate nor the lowest minimizes average age: there is an optimal, finite update frequency because queueing delay grows with the offered rate.",
+    "supports_claim": "Our core premise that update frequency has an interior optimum -- more updates are not monotonically better -- and hence that Delta is worth learning rather than fixing. Cite in the Introduction and in Related Work Sec. II-A.",
+    "bibitem": "\\bibitem{kaul2012} S. Kaul, R. Yates, and M. Gruteser, ``Real-time status: How often should one update?,'' \\emph{Proc. IEEE INFOCOM}, Orlando, FL, USA, pp. 2731--2735, 2012.",
+    "cited_by_count": {
+      "openalex": 2497,
+      "crossref": 2178,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "costa2016",
+    "thread": "1. AoI foundations and theory",
+    "title": "On the Age of Information in Status Update Systems With Packet Management",
+    "authors": [
+      "Maice Costa",
+      "Marian Codreanu",
+      "Anthony Ephremides"
+    ],
+    "venue": "IEEE Transactions on Information Theory",
+    "venue_type": "journal",
+    "year": 2016,
+    "volume": "62",
+    "issue": "4",
+    "pages": "1897--1910",
+    "doi": "10.1109/TIT.2016.2533395",
+    "doi_verified": "true - CrossRef API record matches title/authors/IEEE Trans. Inf. Theory 62(4) 1897-1910/2016; doi.org resolves.",
+    "foundational": true,
+    "summary": "Formalizes peak AoI (PAoI) alongside average AoI and derives closed-form expressions for M/M/1/1 and M/M/1/2 systems with packet management. Establishes that discarding stale queued updates improves both average and peak age.",
+    "supports_claim": "Justifies our use of a bounded worst-case freshness notion and the choice to have the RSU keep only the most recent state per vehicle rather than queue updates. Cite in Sec. II-A when introducing peak AoI.",
+    "bibitem": "\\bibitem{costa2016} M. Costa, M. Codreanu, and A. Ephremides, ``On the age of information in status update systems with packet management,'' \\emph{IEEE Transactions on Information Theory}, vol. 62, no. 4, pp. 1897--1910, 2016.",
+    "cited_by_count": {
+      "openalex": 758,
+      "crossref": 620,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "sun2017",
+    "thread": "1. AoI foundations and theory",
+    "title": "Update or Wait: How to Keep Your Data Fresh",
+    "authors": [
+      "Yin Sun",
+      "Elif Uysal-Biyikoglu",
+      "Roy D. Yates",
+      "C. Emre Koksal",
+      "Ness B. Shroff"
+    ],
+    "venue": "IEEE Transactions on Information Theory",
+    "venue_type": "journal",
+    "year": 2017,
+    "volume": "63",
+    "issue": "11",
+    "pages": "7492--7508",
+    "doi": "10.1109/TIT.2017.2735804",
+    "doi_verified": "true - CrossRef API record matches title/5 authors/IEEE Trans. Inf. Theory 63(11) 7492-7508/2017; doi.org resolves.",
+    "foundational": true,
+    "summary": "Proves that the zero-wait policy (send a new update the instant the channel frees) is NOT age-optimal in general, and that the optimal sampler is a threshold policy that deliberately waits. Provides the theoretical licence for an agent to choose a strictly positive, state-dependent waiting interval.",
+    "supports_claim": "The single strongest theoretical support for our continuous Delta action and for the redundant-update penalty: waiting is provably optimal under some states. Cite in the Introduction and in the SMDP problem formulation (Sec. III).",
+    "bibitem": "\\bibitem{sun2017} Y. Sun, E. Uysal-Biyikoglu, R. D. Yates, C. E. Koksal, and N. B. Shroff, ``Update or wait: How to keep your data fresh,'' \\emph{IEEE Transactions on Information Theory}, vol. 63, no. 11, pp. 7492--7508, 2017.",
+    "cited_by_count": {
+      "openalex": 878,
+      "crossref": 761,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "kadota2018",
+    "thread": "1. AoI foundations and theory",
+    "title": "Scheduling Policies for Minimizing Age of Information in Broadcast Wireless Networks",
+    "authors": [
+      "Igor Kadota",
+      "Abhishek Sinha",
+      "Elif Uysal-Biyikoglu",
+      "Rahul Singh",
+      "Eytan Modiano"
+    ],
+    "venue": "IEEE/ACM Transactions on Networking",
+    "venue_type": "journal",
+    "year": 2018,
+    "volume": "26",
+    "issue": "6",
+    "pages": "2637--2650",
+    "doi": "10.1109/TNET.2018.2873606",
+    "doi_verified": "true - CrossRef API record matches title/5 authors/IEEE/ACM Trans. Netw. 26(6) 2637-2650/2018; doi.org resolves.",
+    "foundational": true,
+    "summary": "The canonical multi-user AoI scheduling paper. Derives a lower bound on achievable age and develops greedy, randomized, Whittle-index and Max-Weight policies for a base station serving many unreliable links, with performance guarantees relative to the optimum.",
+    "supports_claim": "Positions our RSU as a centralized AoI scheduler over many contending vehicles, and is the reference point for the Whittle-index family of freshness heuristics that a reviewer will expect us to acknowledge. Cite in Sec. II-A.",
+    "bibitem": "\\bibitem{kadota2018} I. Kadota, A. Sinha, E. Uysal-Biyikoglu, R. Singh, and E. Modiano, ``Scheduling policies for minimizing age of information in broadcast wireless networks,'' \\emph{IEEE/ACM Transactions on Networking}, vol. 26, no. 6, pp. 2637--2650, 2018.",
+    "cited_by_count": {
+      "openalex": 642,
+      "crossref": 552,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "maatouk2020",
+    "thread": "1. AoI foundations and theory",
+    "title": "The Age of Incorrect Information: A New Performance Metric for Status Updates",
+    "authors": [
+      "Ali Maatouk",
+      "Saad Kriouile",
+      "Mohamad Assaad",
+      "Anthony Ephremides"
+    ],
+    "venue": "IEEE/ACM Transactions on Networking",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "28",
+    "issue": "5",
+    "pages": "2215--2228",
+    "doi": "10.1109/TNET.2020.3005549",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/IEEE/ACM Trans. Netw. 28(5) 2215-2228/2020; doi.org resolves.",
+    "foundational": false,
+    "summary": "Argues that plain AoI is content-agnostic: information that is old but still correct carries no penalty, and defines Age of Incorrect Information (AoII), which grows only while the receiver's estimate disagrees with the source. Shows the AoII-optimal policy differs structurally from the AoI-optimal one.",
+    "supports_claim": "THE conceptual anchor for the paper's central claim. A vehicle stopped through a red phase produces information that ages but never becomes incorrect, so an AoII-style view -- not raw AoI -- is what our estimation-error term e_t^2 and our redundant-update indicator implement. Cite prominently in the Introduction and again where the reward is defined.",
+    "bibitem": "\\bibitem{maatouk2020} A. Maatouk, S. Kriouile, M. Assaad, and A. Ephremides, ``The age of incorrect information: A new performance metric for status updates,'' \\emph{IEEE/ACM Transactions on Networking}, vol. 28, no. 5, pp. 2215--2228, 2020.",
+    "cited_by_count": {
+      "openalex": 26,
+      "crossref": 347,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": "DISCREPANCY: OpenAlex undercounts this record (likely a split/duplicate work entry); the CrossRef figure is the credible one."
+    }
+  },
+  {
+    "id": "tang2020",
+    "thread": "1. AoI foundations and theory",
+    "title": "Minimizing Age of Information With Power Constraints: Multi-User Opportunistic Scheduling in Multi-State Time-Varying Channels",
+    "authors": [
+      "Haoyue Tang",
+      "Jintao Wang",
+      "Linqi Song",
+      "Jian Song"
+    ],
+    "venue": "IEEE Journal on Selected Areas in Communications",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "38",
+    "issue": "5",
+    "pages": "854--868",
+    "doi": "10.1109/JSAC.2020.2980911",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. JSAC 38(5) 854-868, 2020.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 166,
+      "crossref": 155,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Formulates multi-user AoI minimization under an explicit average transmit-power constraint over multi-state fading channels as a constrained MDP, and derives a threshold-structured, index-based opportunistic scheduler that trades freshness against power.",
+    "supports_claim": "The analytical precedent for our joint freshness-and-power objective: it proves that once power is constrained, the age-optimal schedule becomes channel-opportunistic and threshold-structured. Directly backs the w2*Norm(P_tx) term in our reward and the claim that power must be co-optimized with the update decision, not fixed. Cite in Sec. II-A next to kadota2018.",
+    "bibitem": "\\bibitem{tang2020} H. Tang, J. Wang, L. Song, and J. Song, ``Minimizing age of information with power constraints: Multi-user opportunistic scheduling in multi-state time-varying channels,'' \\emph{IEEE Journal on Selected Areas in Communications}, vol. 38, no. 5, pp. 854--868, 2020."
+  },
+  {
+    "id": "yates2021",
+    "thread": "1. AoI foundations and theory",
+    "title": "Age of Information: An Introduction and Survey",
+    "authors": [
+      "Roy D. Yates",
+      "Yin Sun",
+      "D. Richard Brown",
+      "Sanjit K. Kaul",
+      "Eytan Modiano",
+      "Sennur Ulukus"
+    ],
+    "venue": "IEEE Journal on Selected Areas in Communications",
+    "venue_type": "journal",
+    "year": 2021,
+    "volume": "39",
+    "issue": "5",
+    "pages": "1183--1210",
+    "doi": "10.1109/JSAC.2021.3065072",
+    "doi_verified": "true - CrossRef API record matches title/6 authors/IEEE JSAC 39(5) 1183-1210/2021; doi.org resolves.",
+    "foundational": true,
+    "summary": "The standard survey of the AoI field by its principal contributors, covering queueing analyses, sampling and scheduling policies, energy-harvesting sources and age-aware network design.",
+    "supports_claim": "One-stop citation whenever the paper needs to gesture at the breadth of AoI literature without enumerating it. Cite in the first paragraph of Sec. II-A.",
+    "bibitem": "\\bibitem{yates2021} R. D. Yates, Y. Sun, D. R. Brown, S. K. Kaul, E. Modiano, and S. Ulukus, ``Age of information: An introduction and survey,'' \\emph{IEEE Journal on Selected Areas in Communications}, vol. 39, no. 5, pp. 1183--1210, 2021.",
+    "cited_by_count": {
+      "openalex": 22,
+      "crossref": 1088,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": "DISCREPANCY: OpenAlex undercounts this record (likely a split/duplicate work entry); the CrossRef figure is the credible one."
+    }
+  },
+  {
+    "id": "han2021",
+    "thread": "1. AoI foundations and theory",
+    "title": "Fairness for Freshness: Optimal Age of Information Based OFDMA Scheduling With Minimal Knowledge",
+    "authors": [
+      "Bin Han",
+      "Yao Zhu",
+      "Zhiyuan Jiang",
+      "Muxia Sun",
+      "Hans D. Schotten"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2021,
+    "volume": "20",
+    "issue": "12",
+    "pages": "7903--7919",
+    "doi": "10.1109/TWC.2021.3088719",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 20(12) 7903-7919, 2021.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 2,
+      "crossref": 23,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": "DISCREPANCY: OpenAlex reports only 2 while CrossRef reports 23; OpenAlex appears to have a split record. Treat 23 as the credible figure."
+    },
+    "summary": "Solves AoI-optimal OFDMA subcarrier assignment across many users when the scheduler has minimal channel knowledge, and shows the resulting allocation simultaneously delivers age fairness across users.",
+    "supports_claim": "TARGET-JOURNAL (TWC) grounding for the *subchannel* leg of our action. It establishes that assigning frequency resources to users is itself an AoI decision, which is why ch belongs in the same action vector as Delta rather than being handled by a separate MAC. Cite in Sec. II-A and in the system model where the four subchannels are introduced.",
+    "bibitem": "\\bibitem{han2021} B. Han, Y. Zhu, Z. Jiang, M. Sun, and H. D. Schotten, ``Fairness for freshness: Optimal age of information based OFDMA scheduling with minimal knowledge,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 12, pp. 7903--7919, 2021."
+  },
+  {
+    "id": "rajaraman2021",
+    "thread": "1. AoI foundations and theory",
+    "title": "Not Just Age but Age and Quality of Information",
+    "authors": [
+      "Nived Rajaraman",
+      "Rahul Vaze",
+      "Goonwanth Reddy"
+    ],
+    "venue": "IEEE Journal on Selected Areas in Communications",
+    "venue_type": "journal",
+    "year": 2021,
+    "volume": "39",
+    "issue": "5",
+    "pages": "1325--1338",
+    "doi": "10.1109/JSAC.2021.3065061",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. JSAC 39(5) 1325-1338, 2021.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 14,
+      "crossref": 38,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": "DISCREPANCY: OpenAlex 14 vs CrossRef 38; CrossRef is the more complete count here."
+    },
+    "summary": "Argues that minimizing age alone is the wrong objective when updates differ in informational value, and analyses joint age-and-quality metrics where a fresher but less informative update may be worth skipping.",
+    "supports_claim": "Reinforces maatouk2020 from the scheduling-theory side: freshness must be weighed against how much an update actually tells the receiver. This is the formal warrant for penalizing an update that carries no new information about a stationary vehicle. Cite in the Introduction alongside maatouk2020.",
+    "bibitem": "\\bibitem{rajaraman2021} N. Rajaraman, R. Vaze, and G. Reddy, ``Not just age but age and quality of information,'' \\emph{IEEE Journal on Selected Areas in Communications}, vol. 39, no. 5, pp. 1325--1338, 2021."
+  },
+  {
+    "id": "gong2022",
+    "thread": "1. AoI foundations and theory",
+    "title": "Sleep, Sense or Transmit: Energy-Age Tradeoff for Status Update With Two-Threshold Optimal Policy",
+    "authors": [
+      "Jie Gong",
+      "Jianhang Zhu",
+      "Xiang Chen",
+      "Xiao Ma"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2022,
+    "volume": "21",
+    "issue": "3",
+    "pages": "1751--1765",
+    "doi": "10.1109/TWC.2021.3106395",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 21(3) 1751-1765, 2022.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 25,
+      "crossref": 28,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "A status-update source chooses each epoch among sleeping, sensing and transmitting, and the paper proves the energy-age optimal policy has a two-threshold structure: it deliberately sleeps when the age is low and the channel is poor.",
+    "supports_claim": "TARGET-JOURNAL (TWC) proof that the optimal freshness policy contains an explicit *do-nothing* action selected on state. That is exactly the behaviour our redundant-update penalty is meant to induce for stopped vehicles, and it shows the behaviour is optimal rather than merely convenient. Cite in Sec. II-A and again beside the I_redundant definition.",
+    "bibitem": "\\bibitem{gong2022} J. Gong, J. Zhu, X. Chen, and X. Ma, ``Sleep, sense or transmit: Energy-age tradeoff for status update with two-threshold optimal policy,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 21, no. 3, pp. 1751--1765, 2022."
+  },
+  {
+    "id": "tripathi2024",
+    "thread": "1. AoI foundations and theory",
+    "title": "A Whittle Index Approach to Minimizing Functions of Age of Information",
+    "authors": [
+      "Vishrant Tripathi",
+      "Eytan Modiano"
+    ],
+    "venue": "IEEE/ACM Transactions on Networking",
+    "venue_type": "journal",
+    "year": 2024,
+    "volume": "32",
+    "issue": "6",
+    "pages": "5144--5158",
+    "doi": "10.1109/TNET.2024.3452006",
+    "doi_verified": "true - CrossRef API record matches title/2 authors/IEEE/ACM Trans. Netw. 32(6) 5144-5158/2024; doi.org resolves.",
+    "foundational": false,
+    "summary": "Generalizes Whittle-index scheduling from average age to arbitrary non-decreasing functions of age, proving indexability and giving a low-complexity index policy for multi-source scheduling over unreliable channels.",
+    "supports_claim": "Modern, in-window (2024) grounding for index-based freshness scheduling, and the natural point of contrast with our learned policy: index policies need an explicit age-cost function, whereas our reward mixes estimation error, power and congestion. Cite in Sec. II-A as the state of the art in analytical AoI scheduling.",
+    "bibitem": "\\bibitem{tripathi2024} V. Tripathi and E. Modiano, ``A Whittle index approach to minimizing functions of age of information,'' \\emph{IEEE/ACM Transactions on Networking}, vol. 32, no. 6, pp. 5144--5158, 2024.",
+    "cited_by_count": {
+      "openalex": 20,
+      "crossref": 19,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "chen2020",
+    "thread": "2. AoI in vehicular / V2X networks",
+    "title": "Age of Information Aware Radio Resource Management in Vehicular Networks: A Proactive Deep Reinforcement Learning Perspective",
+    "authors": [
+      "Xianfu Chen",
+      "Celimuge Wu",
+      "Tao Chen",
+      "Honggang Zhang",
+      "Zhi Liu",
+      "Yan Zhang",
+      "Mehdi Bennis"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "19",
+    "issue": "4",
+    "pages": "2268--2281",
+    "doi": "10.1109/TWC.2019.2963667",
+    "doi_verified": "true - CrossRef API record matches title/7 authors/IEEE Trans. Wireless Commun. 19(4) 2268-2281/2020; doi.org resolves. (Note: the DOI is 2019.2963667, not 2019.2963277 which does not exist.)",
+    "foundational": false,
+    "summary": "An RSU allocates frequency bands and schedules transmissions for vehicle pairs in a Manhattan grid to minimize long-term AoI. Decomposes a high-dimensional MDP into per-pair MDPs and uses an LSTM-augmented DRL agent to cope with partial observability and mobility.",
+    "supports_claim": "The closest architectural precedent for RSU-side, AoI-driven scheduling of many vehicles by DRL -- and the contrast we draw: it allocates bands only, whereas we jointly emit interval, power and subchannel. Cite in Sec. II-A/II-B when positioning the proposed scheme.",
+    "bibitem": "\\bibitem{chen2020} X. Chen, C. Wu, T. Chen, H. Zhang, Z. Liu, Y. Zhang, and M. Bennis, ``Age of information aware radio resource management in vehicular networks: A proactive deep reinforcement learning perspective,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 19, no. 4, pp. 2268--2281, 2020.",
+    "cited_by_count": {
+      "openalex": 190,
+      "crossref": 170,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "abbas2023",
+    "thread": "2. AoI in vehicular / V2X networks",
+    "title": "On Minimizing the Age of Information in NOMA-Based Vehicular Networks Using Markov Decision Process",
+    "authors": [
+      "Qamar Abbas",
+      "Syed Ali Hassan",
+      "Haejoon Jung",
+      "M. Shamim Hossain"
+    ],
+    "venue": "IEEE Transactions on Intelligent Transportation Systems",
+    "venue_type": "journal",
+    "year": 2023,
+    "volume": "24",
+    "issue": "12",
+    "pages": "15557--15567",
+    "doi": "10.1109/TITS.2022.3173351",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/IEEE Trans. Intell. Transp. Syst. 24(12) 15557-15567/2023; doi.org resolves.",
+    "foundational": false,
+    "summary": "Casts AoI minimization in a NOMA vehicular uplink as an MDP over transmission decisions and power levels, and characterizes the structure of the optimal stationary policy.",
+    "supports_claim": "Precedent for treating vehicular AoI scheduling as a sequential decision process with power as a decision variable, and a foil for our SMDP extension (they use fixed-slot MDP; our variable Delta forces semi-Markov time). Cite in Sec. III where the SMDP is motivated.",
+    "bibitem": "\\bibitem{abbas2023} Q. Abbas, S. A. Hassan, H. Jung, and M. S. Hossain, ``On minimizing the age of information in NOMA-based vehicular networks using Markov decision process,'' \\emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 24, no. 12, pp. 15557--15567, 2023.",
+    "cited_by_count": {
+      "openalex": 12,
+      "crossref": 10,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "kahraman2024",
+    "thread": "2. AoI in vehicular / V2X networks",
+    "title": "Age of Information in Internet of Things: A Survey",
+    "authors": [
+      "Ibrahim Kahraman",
+      "Alper Kose",
+      "Mutlu Koca",
+      "Emin Anarim"
+    ],
+    "venue": "IEEE Internet of Things Journal",
+    "venue_type": "journal",
+    "year": 2024,
+    "volume": "11",
+    "issue": "6",
+    "pages": "9896--9914",
+    "doi": "10.1109/JIOT.2023.3324879",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/IEEE Internet Things J. 11(6) 9896-9914/2024; doi.org resolves. NOTE: CrossRef spells the first two surnames with diacritics (Ibrahim Kahraman, Alper Kose -> 'Kose' is 'Kose' with o-umlaut). Use \\\"{o} in LaTeX if the writer wants exact orthography.",
+    "foundational": false,
+    "summary": "Recent survey of AoI in IoT covering analytical models, optimization methods, and learning-based approaches, with an explicit section on AoI in vehicular and mobile IoT deployments.",
+    "supports_claim": "In-window survey citation for the applied (non-information-theoretic) AoI literature, useful for the opening of the Related Work section. Cite in Sec. II-A.",
+    "bibitem": "\\bibitem{kahraman2024} I. Kahraman, A. Kose, M. Koca, and E. Anarim, ``Age of information in Internet of Things: A survey,'' \\emph{IEEE Internet of Things Journal}, vol. 11, no. 6, pp. 9896--9914, 2024.",
+    "cited_by_count": {
+      "openalex": 106,
+      "crossref": 110,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "tadele2026",
+    "thread": "2. AoI in vehicular / V2X networks",
+    "title": "Age-of-Information Aware Mobility-Based Vehicular-Fog Formation Using Deep Reinforcement Learning",
+    "authors": [
+      "Seifu Birhanu Tadele",
+      "Binayak Kar",
+      "Frezer Guteta Wakgra",
+      "Madhusanka Liyanage"
+    ],
+    "venue": "IEEE Transactions on Intelligent Transportation Systems",
+    "venue_type": "journal",
+    "year": 2026,
+    "volume": "27",
+    "issue": "7",
+    "pages": "8238--8251",
+    "doi": "10.1109/TITS.2026.3667859",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/IEEE Trans. Intell. Transp. Syst. 27(7) 8238-8251/2026; doi.org resolves. Very recent (2026), citation count still 0, so metadata may still be revised by IEEE.",
+    "foundational": false,
+    "summary": "Uses DRL to form vehicular fog groups where the grouping decision is driven jointly by vehicle mobility and by the AoI of the data each vehicle holds.",
+    "supports_claim": "Demonstrates that current (2026) vehicular-AoI work conditions decisions on mobility state, which is exactly the input our 18-dim RSU observation supplies. Cite in Sec. II-A as evidence that mobility-conditioned AoI control is an active, current line.",
+    "bibitem": "\\bibitem{tadele2026} S. B. Tadele, B. Kar, F. G. Wakgra, and M. Liyanage, ``Age-of-information aware mobility-based vehicular-fog formation using deep reinforcement learning,'' \\emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 27, no. 7, pp. 8238--8251, 2026.",
+    "cited_by_count": {
+      "openalex": 0,
+      "crossref": 0,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "ye2019",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Deep Reinforcement Learning Based Resource Allocation for V2V Communications",
+    "authors": [
+      "Hao Ye",
+      "Geoffrey Ye Li",
+      "Biing-Hwang Fred Juang"
+    ],
+    "venue": "IEEE Transactions on Vehicular Technology",
+    "venue_type": "journal",
+    "year": 2019,
+    "volume": "68",
+    "issue": "4",
+    "pages": "3163--3173",
+    "doi": "10.1109/TVT.2019.2897134",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE Trans. Veh. Technol. 68(4) 3163-3173/2019; doi.org resolves.",
+    "foundational": true,
+    "summary": "The first widely-cited application of deep RL to V2X spectrum and power allocation: each V2V link autonomously picks a subband and power level from local observations, meeting latency constraints without global CSI.",
+    "supports_claim": "Establishes that subchannel-plus-power is the standard V2X action pair -- our action is that pair plus the update interval Delta. Cite in Sec. II-B as the origin of the DRL-for-V2X-resource-allocation line.",
+    "bibitem": "\\bibitem{ye2019} H. Ye, G. Y. Li, and B.-H. F. Juang, ``Deep reinforcement learning based resource allocation for V2V communications,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 68, no. 4, pp. 3163--3173, 2019.",
+    "cited_by_count": {
+      "openalex": 870,
+      "crossref": 792,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "liang2019",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Spectrum Sharing in Vehicular Networks Based on Multi-Agent Reinforcement Learning",
+    "authors": [
+      "Le Liang",
+      "Hao Ye",
+      "Geoffrey Ye Li"
+    ],
+    "venue": "IEEE Journal on Selected Areas in Communications",
+    "venue_type": "journal",
+    "year": 2019,
+    "volume": "37",
+    "issue": "10",
+    "pages": "2282--2292",
+    "doi": "10.1109/JSAC.2019.2933962",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE JSAC 37(10) 2282-2292/2019; doi.org resolves.",
+    "foundational": true,
+    "summary": "Formulates V2X spectrum sharing as a multi-agent RL problem where each vehicle is an agent learning a joint subband and power-level policy, with a shared reward balancing V2I throughput against V2V reliability.",
+    "supports_claim": "The reference multi-agent formulation and the canonical reward-shaping precedent for trading throughput against reliability -- structurally the same multi-objective scalarization our four-term reward performs. Cite in Sec. II-B.",
+    "bibitem": "\\bibitem{liang2019} L. Liang, H. Ye, and G. Y. Li, ``Spectrum sharing in vehicular networks based on multi-agent reinforcement learning,'' \\emph{IEEE Journal on Selected Areas in Communications}, vol. 37, no. 10, pp. 2282--2292, 2019.",
+    "cited_by_count": {
+      "openalex": 566,
+      "crossref": 540,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "tan2021",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Deep Reinforcement Learning for Joint Channel Selection and Power Control in D2D Networks",
+    "authors": [
+      "Junjie Tan",
+      "Ying-Chang Liang",
+      "Lin Zhang",
+      "Gang Feng"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2021,
+    "volume": "20",
+    "issue": "2",
+    "pages": "1363--1378",
+    "doi": "10.1109/TWC.2020.3032991",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 20(2) 1363-1378, 2021.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 136,
+      "crossref": 130,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Learns a joint policy over discrete channel selection and continuous transmit power for interfering D2D links, using only local observations, and shows it approaches centralized-optimization performance.",
+    "supports_claim": "The highest-cited TWC precedent for learning exactly our (discrete channel, continuous power) action pair under mutual interference. Our contribution is then cleanly stated as adding the temporal dimension Delta to this established pair. Cite in Sec. II-B as the anchor and again in Sec. II-C.",
+    "bibitem": "\\bibitem{tan2021} J. Tan, Y.-C. Liang, L. Zhang, and G. Feng, ``Deep reinforcement learning for joint channel selection and power control in D2D networks,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 2, pp. 1363--1378, 2021."
+  },
+  {
+    "id": "zhang2021",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Energy-Efficient Mode Selection and Resource Allocation for D2D-Enabled Heterogeneous Networks: A Deep Reinforcement Learning Approach",
+    "authors": [
+      "Tao Zhang",
+      "Kun Zhu",
+      "Junhua Wang"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2021,
+    "volume": "20",
+    "issue": "2",
+    "pages": "1175--1187",
+    "doi": "10.1109/TWC.2020.3031436",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 20(2) 1175-1187, 2021.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 104,
+      "crossref": 96,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Uses DRL to jointly pick a discrete transmission mode and allocate continuous resources in heterogeneous D2D networks, optimizing energy efficiency under QoS constraints.",
+    "supports_claim": "TARGET-JOURNAL evidence that a discrete structural decision and a continuous resource decision are routinely learned together in wireless, and that energy efficiency is the standard scalarized objective -- the template our four-term reward extends. Cite in Sec. II-B.",
+    "bibitem": "\\bibitem{zhang2021} T. Zhang, K. Zhu, and J. Wang, ``Energy-efficient mode selection and resource allocation for D2D-enabled heterogeneous networks: A deep reinforcement learning approach,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 2, pp. 1175--1187, 2021."
+  },
+  {
+    "id": "guo2022",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Joint Resource Allocation and Power Control for Full-Duplex V2I Communication in High-Density Vehicular Network",
+    "authors": [
+      "Shiqian Guo",
+      "Bin-Jie Hu",
+      "Qingji Wen"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2022,
+    "volume": "21",
+    "issue": "11",
+    "pages": "9497--9508",
+    "doi": "10.1109/TWC.2022.3177199",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 21(11) 9497-9508, 2022.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 35,
+      "crossref": 30,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Jointly optimizes resource block assignment and transmit power for full-duplex V2I links specifically in the high-vehicle-density regime, where co-channel interference dominates.",
+    "supports_claim": "The closest TWC match to our physical setting: V2I uplink, power control, and explicit high-density congestion. Backs both the w3*Norm(C_freq) congestion term and our evaluation across varying traffic densities. Cite in Sec. II-B and in Sec. V where density sweeps are reported.",
+    "bibitem": "\\bibitem{guo2022} S. Guo, B.-J. Hu, and Q. Wen, ``Joint resource allocation and power control for full-duplex V2I communication in high-density vehicular network,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 21, no. 11, pp. 9497--9508, 2022."
+  },
+  {
+    "id": "xu20232",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Deep Reinforcement Learning for Multi-Objective Resource Allocation in Multi-Platoon Cooperative Vehicular Networks",
+    "authors": [
+      "Yuanyuan Xu",
+      "Kun Zhu",
+      "Hu Xu",
+      "Jiequ Ji"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2023,
+    "volume": "22",
+    "issue": "9",
+    "pages": "6185--6198",
+    "doi": "10.1109/TWC.2023.3240425",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 22(9) 6185-6198, 2023. NOTE: id is xu20232 because xu2023 (Yahao Xu, Neurocomputing) already occupies xu2023 under the surname+year rule.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 48,
+      "crossref": 52,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Handles resource allocation in multi-platoon vehicular networks as an explicitly multi-objective DRL problem, learning to balance competing throughput, latency and reliability targets rather than a hand-fixed weighted sum.",
+    "supports_claim": "Directly supports our decision to place the reward weights w1-w4 in the Optuna search space instead of fixing them heuristically: this TWC paper makes the same argument that hand-tuned scalarization weights are a weakness. Cite in Sec. II-B and in Sec. IV where weight optimization is justified.",
+    "bibitem": "\\bibitem{xu20232} Y. Xu, K. Zhu, H. Xu, and J. Ji, ``Deep reinforcement learning for multi-objective resource allocation in multi-platoon cooperative vehicular networks,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 22, no. 9, pp. 6185--6198, 2023."
+  },
+  {
+    "id": "gui2024",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Spectrum-Energy-Efficient Mode Selection and Resource Allocation for Heterogeneous V2X Networks: A Federated Multi-Agent Deep Reinforcement Learning Approach",
+    "authors": [
+      "Jinsong Gui",
+      "Liyan Lin",
+      "Xiaoheng Deng",
+      "Lin Cai"
+    ],
+    "venue": "IEEE/ACM Transactions on Networking",
+    "venue_type": "journal",
+    "year": 2024,
+    "volume": "32",
+    "issue": "3",
+    "pages": "2689--2704",
+    "doi": "10.1109/TNET.2024.3364161",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/IEEE/ACM Trans. Netw. 32(3) 2689-2704/2024; doi.org resolves.",
+    "foundational": false,
+    "summary": "Jointly optimizes transmission mode selection (a discrete decision) and resource/power allocation in heterogeneous V2X using federated multi-agent DRL, targeting spectrum efficiency and energy efficiency simultaneously.",
+    "supports_claim": "Top-venue, in-window evidence that V2X decisions are natively mixed discrete-continuous, and a direct antecedent of the energy term in our reward. Cite in Sec. II-B and again in Sec. II-C to motivate the hybrid action space.",
+    "bibitem": "\\bibitem{gui2024} J. Gui, L. Lin, X. Deng, and L. Cai, ``Spectrum-energy-efficient mode selection and resource allocation for heterogeneous V2X networks: A federated multi-agent deep reinforcement learning approach,'' \\emph{IEEE/ACM Transactions on Networking}, vol. 32, no. 3, pp. 2689--2704, 2024.",
+    "cited_by_count": {
+      "openalex": 25,
+      "crossref": 28,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "saad2025",
+    "thread": "3. V2X resource allocation with RL",
+    "title": "Federated Multiagent Reinforcement Learning for Resource Allocation in NR-V2X Mode 2",
+    "authors": [
+      "Malik Muhammad Saad",
+      "Muhammad Ashar Tariq",
+      "Mahnoor Ajmal",
+      "Dongkyun Kim",
+      "Gautam Srivastava"
+    ],
+    "venue": "IEEE Internet of Things Journal",
+    "venue_type": "journal",
+    "year": 2025,
+    "volume": "12",
+    "issue": "13",
+    "pages": "23402--23417",
+    "doi": "10.1109/JIOT.2025.3555195",
+    "doi_verified": "true - CrossRef API record matches title/5 authors/IEEE Internet Things J. 12(13) 23402-23417/2025; doi.org resolves.",
+    "foundational": false,
+    "summary": "Applies federated multi-agent RL to autonomous (Mode 2) NR-V2X resource selection, learning subchannel choices that reduce packet collisions relative to the standardized sensing-based SPS procedure.",
+    "supports_claim": "Establishes the C-V2X/NR-V2X subchannelized contention model our environment emulates, and the distributed-scheduling alternative against which our RSU-assisted (centralized) design is positioned. Cite in Sec. II-B and in the system model where subchannelization is introduced.",
+    "bibitem": "\\bibitem{saad2025} M. M. Saad, M. A. Tariq, M. Ajmal, D. Kim, and G. Srivastava, ``Federated multiagent reinforcement learning for resource allocation in NR-V2X mode 2,'' \\emph{IEEE Internet of Things Journal}, vol. 12, no. 13, pp. 23402--23417, 2025.",
+    "cited_by_count": {
+      "openalex": 14,
+      "crossref": 16,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "masson2016",
+    "thread": "4. Hybrid / parameterized action-space RL",
+    "title": "Reinforcement Learning with Parameterized Actions",
+    "authors": [
+      "Warwick Masson",
+      "Pravesh Ranchod",
+      "George Konidaris"
+    ],
+    "venue": "Proc. 30th AAAI Conf. Artif. Intell. (AAAI)",
+    "venue_type": "conference",
+    "year": 2016,
+    "volume": "",
+    "issue": "",
+    "pages": "1934--1940",
+    "doi": "10.1609/aaai.v30i1.10226",
+    "doi_verified": "true - DOI resolves (HTTP 200) to the AAAI OJS record, which confirms title, the three authors, AAAI vol. 30 no. 1, 2016. CrossRef confirms the same. Page range 1934-1940 taken from DBLP, since AAAI OJS does not print page numbers.",
+    "foundational": true,
+    "summary": "Introduces the parameterized-action MDP (PAMDP): the agent first picks a discrete action, then supplies continuous parameters for it. Proposes Q-PAMDP, which alternates learning the discrete selector and the continuous parameter policy.",
+    "supports_claim": "The formal definition of the action space our agent uses (discrete subchannel + continuous Delta and p). Cite in Sec. II-C and in Sec. IV where the hybrid policy head is defined. FLAGGED EXCEPTION: ML-conference proceedings (AAAI), admitted under the foundational-works carve-out; it is not an arXiv preprint and has a resolving DOI.",
+    "bibitem": "\\bibitem{masson2016} W. Masson, P. Ranchod, and G. Konidaris, ``Reinforcement learning with parameterized actions,'' \\emph{Proc. 30th AAAI Conf. Artif. Intell. (AAAI)}, Phoenix, AZ, USA, pp. 1934--1940, 2016.",
+    "cited_by_count": {
+      "openalex": 167,
+      "crossref": 127,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "fan2019",
+    "thread": "4. Hybrid / parameterized action-space RL",
+    "title": "Hybrid Actor-Critic Reinforcement Learning in Parameterized Action Space",
+    "authors": [
+      "Zhou Fan",
+      "Rui Su",
+      "Weinan Zhang",
+      "Yong Yu"
+    ],
+    "venue": "Proc. 28th Int. Joint Conf. Artif. Intell. (IJCAI)",
+    "venue_type": "conference",
+    "year": 2019,
+    "volume": "",
+    "issue": "",
+    "pages": "2279--2285",
+    "doi": "10.24963/ijcai.2019/316",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/IJCAI-19 proceedings/pp. 2279-2285/2019; doi.org resolves (HTTP 200). Conference location Macao, China is the standard IJCAI-19 venue.",
+    "foundational": false,
+    "summary": "Proposes H-PPO, a hybrid actor-critic that carries one discrete actor head and one continuous actor head over a shared critic, avoiding both the action-space blow-up of discretization and the relaxation error of continuous-only approximations.",
+    "supports_claim": "The direct methodological antecedent of our HybridPPO policy architecture (shared trunk, separate discrete and continuous heads). Cite in Sec. II-C and in Sec. IV-A when the network is described. FLAGGED EXCEPTION: ML-conference proceedings (IJCAI), admitted under the carve-out; has a resolving DOI and is not an arXiv-only work.",
+    "bibitem": "\\bibitem{fan2019} Z. Fan, R. Su, W. Zhang, and Y. Yu, ``Hybrid actor-critic reinforcement learning in parameterized action space,'' \\emph{Proc. 28th Int. Joint Conf. Artif. Intell. (IJCAI)}, Macao, China, pp. 2279--2285, 2019.",
+    "cited_by_count": {
+      "openalex": 172,
+      "crossref": 149,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "xu2023",
+    "thread": "4. Hybrid / parameterized action-space RL",
+    "title": "Action decoupled SAC reinforcement learning with discrete-continuous hybrid action spaces",
+    "authors": [
+      "Yahao Xu",
+      "Yiran Wei",
+      "Keyang Jiang",
+      "Li Chen",
+      "Di Wang",
+      "Hongbin Deng"
+    ],
+    "venue": "Neurocomputing",
+    "venue_type": "journal",
+    "year": 2023,
+    "volume": "537",
+    "issue": "",
+    "pages": "141--151",
+    "doi": "10.1016/j.neucom.2023.03.054",
+    "doi_verified": "true - CrossRef API record matches title/6 authors/Neurocomputing vol. 537 pp. 141-151/2023 (Elsevier); doi.org resolves (HTTP 200). Neurocomputing volumes have no issue number, so 'no.' is omitted from the bibitem.",
+    "foundational": false,
+    "summary": "Extends Soft Actor-Critic to mixed action spaces by decoupling the discrete and continuous action branches and deriving separate entropy terms for each, so the maximum-entropy objective remains well defined across both.",
+    "supports_claim": "Justifies our off-policy hybrid baselines (SAC-family with a discrete subchannel head) and shows why naive entropy handling breaks in mixed spaces -- a design point we must address in Sec. IV. Cite in Sec. II-C.",
+    "bibitem": "\\bibitem{xu2023} Y. Xu, Y. Wei, K. Jiang, L. Chen, D. Wang, and H. Deng, ``Action decoupled SAC reinforcement learning with discrete-continuous hybrid action spaces,'' \\emph{Neurocomputing}, vol. 537, pp. 141--151, 2023.",
+    "cited_by_count": {
+      "openalex": 50,
+      "crossref": 50,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "li2026",
+    "thread": "4. Hybrid / parameterized action-space RL",
+    "title": "Resource Allocation in NOMA-V2X Networks With Multi-Agent Parameterized Action Space Reinforcement Learning",
+    "authors": [
+      "Juan Li",
+      "Quanzhou Leng",
+      "Menglong Cheng"
+    ],
+    "venue": "IEEE Transactions on Vehicular Technology",
+    "venue_type": "journal",
+    "year": 2026,
+    "volume": "75",
+    "issue": "7",
+    "pages": "14775--14790",
+    "doi": "10.1109/TVT.2026.3662431",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE Trans. Veh. Technol. 75(7) 14775-14790/2026; doi.org resolves. Very recent (2026); page/issue data may still settle.",
+    "foundational": false,
+    "summary": "Applies multi-agent parameterized-action RL to NOMA-V2X, where each agent selects a discrete resource block and continuous power in one shot, showing gains over discretized-action DQN baselines.",
+    "supports_claim": "The single best proof that parameterized-action RL is the current, accepted answer for V2X resource allocation -- i.e. that our hybrid action space is standard practice rather than an idiosyncratic choice. This is the key citation for Sec. II-C, which is currently the thinnest subsection of the draft.",
+    "bibitem": "\\bibitem{li2026} J. Li, Q. Leng, and M. Cheng, ``Resource allocation in NOMA-V2X networks with multi-agent parameterized action space reinforcement learning,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 7, pp. 14775--14790, 2026.",
+    "cited_by_count": {
+      "openalex": 2,
+      "crossref": 2,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "chen2026",
+    "thread": "4. Hybrid / parameterized action-space RL",
+    "title": "Mobile-Edge Computing in SAGINs: A Hybrid Action Space P-DDQN Algorithm for Joint Offloading and Resource Allocation",
+    "authors": [
+      "Haosheng Chen",
+      "Haixia Cui",
+      "Peng Cao",
+      "Yejun He",
+      "Jun Li",
+      "Ivan Wang-Hei Ho",
+      "Victor C. M. Leung"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2026,
+    "volume": "25",
+    "issue": "",
+    "pages": "19115--19130",
+    "doi": "10.1109/TWC.2026.3706356",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. vol. 25, pp. 19115-19130, 2026. NOTE: CrossRef carries no issue number for this record yet (2026 publication), so no. is omitted from the bibitem; re-check before submission.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 0,
+      "crossref": 0,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": "Published 2026; a near-zero count is expected and is not a quality signal."
+    },
+    "summary": "Applies a parameterized double-deep-Q-network (P-DDQN) over a hybrid action space to joint offloading and resource allocation, choosing a discrete target and its continuous resource parameters in one policy.",
+    "supports_claim": "The single most valuable addition for the target journal: it shows TWC itself publishes parameterized-action (P-DQN family) methods, so our hybrid action space is in-scope for the venue rather than an outside import from the ML literature. Cite in Sec. II-C as the TWC-native anchor next to li2026.",
+    "bibitem": "\\bibitem{chen2026} H. Chen, H. Cui, P. Cao, Y. He, J. Li, I. W.-H. Ho, and V. C. M. Leung, ``Mobile-edge computing in SAGINs: A hybrid action space P-DDQN algorithm for joint offloading and resource allocation,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 19115--19130, 2026."
+  },
+  {
+    "id": "sun2020",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "Sampling of the Wiener Process for Remote Estimation Over a Channel With Random Delay",
+    "authors": [
+      "Yin Sun",
+      "Yury Polyanskiy",
+      "Elif Uysal"
+    ],
+    "venue": "IEEE Transactions on Information Theory",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "66",
+    "issue": "2",
+    "pages": "1118--1135",
+    "doi": "10.1109/TIT.2019.2937336",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE Trans. Inf. Theory 66(2) 1118-1135/2020; doi.org resolves.",
+    "foundational": false,
+    "summary": "Proves that the mean-square-optimal sampler for remote estimation is signal-aware and takes a threshold form on the instantaneous estimation error, and that it strictly outperforms the age-optimal (signal-agnostic) sampler. Sampling instants are therefore aperiodic and state-dependent.",
+    "supports_claim": "The rigorous justification for penalizing estimation error e_t^2 rather than raw age, and for letting Delta vary with state instead of being periodic. Together with sun2017 it is the theoretical backbone of Sec. III. Cite where the reward's error term is introduced.",
+    "bibitem": "\\bibitem{sun2020} Y. Sun, Y. Polyanskiy, and E. Uysal, ``Sampling of the Wiener process for remote estimation over a channel with random delay,'' \\emph{IEEE Transactions on Information Theory}, vol. 66, no. 2, pp. 1118--1135, 2020.",
+    "cited_by_count": {
+      "openalex": 219,
+      "crossref": 209,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "xu2020",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "Remote State Estimation With Stochastic Event-Triggered Sensor Schedule and Packet Drops",
+    "authors": [
+      "Liang Xu",
+      "Yilin Mo",
+      "Lihua Xie"
+    ],
+    "venue": "IEEE Transactions on Automatic Control",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "65",
+    "issue": "11",
+    "pages": "4981--4988",
+    "doi": "10.1109/TAC.2020.3004328",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE Trans. Autom. Control 65(11) 4981-4988/2020; doi.org resolves.",
+    "foundational": false,
+    "summary": "Develops an event-triggered sensor schedule under lossy transmission where the decision to send is made from the measurement itself, and shows the resulting estimator stays exact (Gaussian) while the communication rate drops sharply.",
+    "supports_claim": "Canonical control-theoretic statement that not transmitting is itself informative and that transmission rate can be cut without degrading estimate quality -- exactly the mechanism the redundant-update penalty is meant to discover. Cite in Sec. II (a short event-triggered paragraph) and in Sec. III.",
+    "bibitem": "\\bibitem{xu2020} L. Xu, Y. Mo, and L. Xie, ``Remote state estimation with stochastic event-triggered sensor schedule and packet drops,'' \\emph{IEEE Transactions on Automatic Control}, vol. 65, no. 11, pp. 4981--4988, 2020.",
+    "cited_by_count": {
+      "openalex": 44,
+      "crossref": 45,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "perezromero2020",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "Optimization of Multitenant Radio Admission Control Through a Semi-Markov Decision Process",
+    "authors": [
+      "Jordi Perez-Romero",
+      "Oriol Sallent"
+    ],
+    "venue": "IEEE Transactions on Vehicular Technology",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "69",
+    "issue": "1",
+    "pages": "862--875",
+    "doi": "10.1109/TVT.2019.2951322",
+    "doi_verified": "true - CrossRef API record matches title/2 authors/IEEE Trans. Veh. Technol. 69(1) 862-875/2020; doi.org resolves.",
+    "foundational": false,
+    "summary": "Formulates radio admission control as a semi-Markov decision process in which decision epochs are triggered by arrivals rather than by a fixed clock, and solves for the discounted-optimal admission policy over the resulting variable sojourn times.",
+    "supports_claim": "A worked SMDP formulation inside radio resource management -- the methodological template for why our variable Delta makes the process semi-Markov and how the sojourn time must enter the value function. This is the citation Sec. III needs when it claims 'SMDP'. Cite at the SMDP definition.",
+    "bibitem": "\\bibitem{perezromero2020} J. Perez-Romero and O. Sallent, ``Optimization of multitenant radio admission control through a semi-Markov decision process,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 69, no. 1, pp. 862--875, 2020.",
+    "cited_by_count": {
+      "openalex": 11,
+      "crossref": 11,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "huang2020",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "Real-Time Remote Estimation With Hybrid ARQ in Wireless Networked Control",
+    "authors": [
+      "Kang Huang",
+      "Wanchun Liu",
+      "Mahyar Shirvanimoghaddam",
+      "Yonghui Li",
+      "Branka Vucetic"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2020,
+    "volume": "19",
+    "issue": "5",
+    "pages": "3490--3504",
+    "doi": "10.1109/TWC.2020.2974225",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 19(5) 3490-3504, 2020.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 82,
+      "crossref": 72,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Analyses real-time remote estimation over an unreliable wireless link with hybrid ARQ, characterizing how retransmission policy and channel reliability jointly determine steady-state estimation error.",
+    "supports_claim": "Supplies the link between transmission reliability and estimation quality that our Rayleigh-fading SINR model implies but does not itself argue: a failed update leaves the RSU estimate stale, so power and subchannel choices feed back into e_t^2. Cite in Sec. III when the error dynamics under transmission failure are defined.",
+    "bibitem": "\\bibitem{huang2020} K. Huang, W. Liu, M. Shirvanimoghaddam, Y. Li, and B. Vucetic, ``Real-time remote estimation with hybrid ARQ in wireless networked control,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 19, no. 5, pp. 3490--3504, 2020."
+  },
+  {
+    "id": "jiang2021",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "Predictive Wireless Based Status Update for Communication-Agnostic Sampling",
+    "authors": [
+      "Zhiyuan Jiang",
+      "Wei Zhang",
+      "Zixu Cao",
+      "Shan Cao",
+      "Shunqing Zhang",
+      "Shugong Xu"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2021,
+    "volume": "20",
+    "issue": "11",
+    "pages": "6972--6986",
+    "doi": "10.1109/TWC.2021.3078440",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 20(11) 6972-6986, 2021.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 2,
+      "crossref": 1,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": "LOW CITATION COUNT (1-2). Included for topical fit, not impact; the writer may prefer to cite it only in support of a specific sentence rather than as a headline reference."
+    },
+    "summary": "Uses prediction of the source process to decide when a status update is actually needed, so that sampling instants are chosen from predicted signal behaviour rather than from a fixed communication schedule.",
+    "supports_claim": "The nearest TWC analogue of our central mechanism: predict the state, and skip the update when the prediction suffices. Best used as the explicit prior-art sentence in Sec. II-D so a reviewer sees we know the closest work and can state our delta (we predict from traffic-signal and queue context in a real SUMO micro-simulation, and act on a hybrid action space).",
+    "bibitem": "\\bibitem{jiang2021} Z. Jiang, W. Zhang, Z. Cao, S. Cao, S. Zhang, and S. Xu, ``Predictive wireless based status update for communication-agnostic sampling,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 11, pp. 6972--6986, 2021."
+  },
+  {
+    "id": "flanigan2022",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "Optimal Event-Based Policy for Remote Parameter Estimation in Wireless Sensing Architectures Under Resource Constraints",
+    "authors": [
+      "Katherine A. Flanigan",
+      "Jerome P. Lynch"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2022,
+    "volume": "21",
+    "issue": "7",
+    "pages": "5293--5304",
+    "doi": "10.1109/TWC.2021.3139289",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 21(7) 5293-5304, 2022.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 6,
+      "crossref": 7,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Derives the optimal event-based transmission policy for remote parameter estimation over a resource-constrained wireless link, showing that transmitting only on informative events dominates periodic reporting at equal resource cost.",
+    "supports_claim": "Puts the event-triggered argument inside the target journal rather than in the control literature, which matters because a TWC reviewer will want the aperiodic-sampling claim supported from within wireless. Backs the same claim as xu2020 but at the venue we are submitting to. Cite in the event-triggered subsection.",
+    "bibitem": "\\bibitem{flanigan2022} K. A. Flanigan and J. P. Lynch, ``Optimal event-based policy for remote parameter estimation in wireless sensing architectures under resource constraints,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 21, no. 7, pp. 5293--5304, 2022."
+  },
+  {
+    "id": "pang2023",
+    "thread": "5. Semi-Markov / event-triggered and variable-interval decision making",
+    "title": "DRL-Based Resource Allocation in Remote State Estimation",
+    "authors": [
+      "Gaoyang Pang",
+      "Wanchun Liu",
+      "Yonghui Li",
+      "Branka Vucetic"
+    ],
+    "venue": "IEEE Transactions on Wireless Communications",
+    "venue_type": "journal",
+    "year": 2023,
+    "volume": "22",
+    "issue": "7",
+    "pages": "4434--4448",
+    "doi": "10.1109/TWC.2022.3225581",
+    "doi_verified": "true - CrossRef API record matches title/authors/venue/volume/issue/pages/year; doi.org resolves. IEEE Trans. Wireless Commun. 22(7) 4434-4448, 2023.",
+    "foundational": false,
+    "cited_by_count": {
+      "openalex": 40,
+      "crossref": 37,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    },
+    "summary": "Learns, by DRL, how to allocate scarce wireless resources among many sensors whose measurements feed remote estimators, with the reward driven by resulting estimation error rather than by throughput or age.",
+    "supports_claim": "The best TWC bridge between our two halves: it is simultaneously a remote-estimation problem and a learned wireless-resource-allocation problem, and its reward is estimation error -- precisely our e_t^2 term. Strongest single citation for Sec. III and for the reward design. Cite in the new event-triggered/SMDP subsection and in Sec. IV.",
+    "bibitem": "\\bibitem{pang2023} G. Pang, W. Liu, Y. Li, and B. Vucetic, ``DRL-based resource allocation in remote state estimation,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 22, no. 7, pp. 4434--4448, 2023."
+  },
+  {
+    "id": "sun2022",
+    "thread": "6. Mobility prediction and stationarity exploitation",
+    "title": "An eco-driving algorithm based on vehicle to infrastructure (V2I) communications for signalized intersections",
+    "authors": [
+      "Pengyuan Sun",
+      "Daisik Nam",
+      "R. Jayakrishnan",
+      "Wenlong Jin"
+    ],
+    "venue": "Transportation Research Part C: Emerging Technologies",
+    "venue_type": "journal",
+    "year": 2022,
+    "volume": "144",
+    "issue": "",
+    "pages": "Art. no. 103876",
+    "doi": "10.1016/j.trc.2022.103876",
+    "doi_verified": "true - CrossRef API record matches title/4 authors/Transp. Res. Part C vol. 144 art. 103876/2022 (Elsevier); doi.org resolves (HTTP 200). This journal uses article numbers, not page ranges.",
+    "foundational": false,
+    "summary": "Uses V2I-delivered signal phase and timing plus queue state to compute, ahead of time, whether an approaching vehicle will have to stop at the intersection and when it will be able to move again. Validated in microscopic traffic simulation.",
+    "supports_claim": "Direct evidence from the transportation literature that signal state, stop-line distance and queue length are sufficient to predict a vehicle's stop-and-restart behaviour -- which is precisely the inference our redundant-update penalty relies on and precisely the features tls_state, tls_dist and n_queue in our 18-dim observation. Cite in Sec. II-D and where the redundant-update indicator is defined.",
+    "bibitem": "\\bibitem{sun2022} P. Sun, D. Nam, R. Jayakrishnan, and W. Jin, ``An eco-driving algorithm based on vehicle to infrastructure (V2I) communications for signalized intersections,'' \\emph{Transportation Research Part C: Emerging Technologies}, vol. 144, Art. no. 103876, 2022.",
+    "cited_by_count": {
+      "openalex": 66,
+      "crossref": 60,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "yao2023",
+    "thread": "6. Mobility prediction and stationarity exploitation",
+    "title": "Physics-Aware Learning-Based Vehicle Trajectory Prediction of Congested Traffic in a Connected Vehicle Environment",
+    "authors": [
+      "Handong Yao",
+      "Xiaopeng Li",
+      "Xianfeng Yang"
+    ],
+    "venue": "IEEE Transactions on Vehicular Technology",
+    "venue_type": "journal",
+    "year": 2023,
+    "volume": "72",
+    "issue": "1",
+    "pages": "102--112",
+    "doi": "10.1109/TVT.2022.3203906",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE Trans. Veh. Technol. 72(1) 102-112/2023; doi.org resolves.",
+    "foundational": false,
+    "summary": "Combines car-following physics with a learned model to predict vehicle trajectories in congested, connected-vehicle traffic, showing that embedding the physical dynamics sharply reduces prediction error in stop-and-go conditions.",
+    "supports_claim": "Supports our dead-reckoning/prediction step at the RSU: between updates the RSU extrapolates each vehicle's state, and this paper shows such extrapolation is accurate precisely in the congested, queued regime where our stationary vehicles live. Cite in Sec. II-D and in the system model where the RSU's estimator is described.",
+    "bibitem": "\\bibitem{yao2023} H. Yao, X. Li, and X. Yang, ``Physics-aware learning-based vehicle trajectory prediction of congested traffic in a connected vehicle environment,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 72, no. 1, pp. 102--112, 2023.",
+    "cited_by_count": {
+      "openalex": 67,
+      "crossref": 64,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "ding2023",
+    "thread": "6. Mobility prediction and stationarity exploitation",
+    "title": "Incorporating Driving Knowledge in Deep Learning Based Vehicle Trajectory Prediction: A Survey",
+    "authors": [
+      "Zhezhang Ding",
+      "Huijing Zhao"
+    ],
+    "venue": "IEEE Transactions on Intelligent Vehicles",
+    "venue_type": "journal",
+    "year": 2023,
+    "volume": "8",
+    "issue": "8",
+    "pages": "3996--4015",
+    "doi": "10.1109/TIV.2023.3266446",
+    "doi_verified": "true - CrossRef API record matches title/2 authors/IEEE Trans. Intell. Veh. 8(8) 3996-4015/2023; doi.org resolves.",
+    "foundational": false,
+    "summary": "Surveys how road geometry, traffic rules and signal state are injected as prior knowledge into learned trajectory predictors, and catalogues the accuracy gains that result.",
+    "supports_claim": "One-line survey citation for the claim that vehicle future state is predictable from context, letting Sec. II-D assert this without enumerating predictors. Cite at the opening of Sec. II-D.",
+    "bibitem": "\\bibitem{ding2023} Z. Ding and H. Zhao, ``Incorporating driving knowledge in deep learning based vehicle trajectory prediction: A survey,'' \\emph{IEEE Transactions on Intelligent Vehicles}, vol. 8, no. 8, pp. 3996--4015, 2023.",
+    "cited_by_count": {
+      "openalex": 51,
+      "crossref": 51,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "maksimovski2026",
+    "thread": "6. Mobility prediction and stationarity exploitation",
+    "title": "Adaptive Message Generation Rules for V2X Maneuver Coordination Service",
+    "authors": [
+      "Daniel Maksimovski",
+      "Andreas Festag",
+      "Christian Facchi"
+    ],
+    "venue": "IEEE Access",
+    "venue_type": "journal",
+    "year": 2026,
+    "volume": "14",
+    "issue": "",
+    "pages": "6417--6437",
+    "doi": "10.1109/ACCESS.2026.3652364",
+    "doi_verified": "true - CrossRef API record matches title/3 authors/IEEE Access vol. 14 pp. 6417-6437/2026; doi.org resolves. IEEE Access has no issue numbers, so 'no.' is omitted from the bibitem.",
+    "foundational": false,
+    "summary": "Designs adaptive V2X message generation rules that trigger a transmission only when the vehicle's state has changed enough to matter (position, heading and dynamics deltas), instead of at a fixed period, and quantifies the channel-load reduction achieved.",
+    "supports_claim": "The standards-facing counterpart of our contribution: it shows that change-triggered generation is the accepted way to suppress redundant V2X messages, and it is the natural rule-based comparator our learned Delta must beat. Cite in Sec. II-D and in the discussion of the redundant-update penalty.",
+    "bibitem": "\\bibitem{maksimovski2026} D. Maksimovski, A. Festag, and C. Facchi, ``Adaptive message generation rules for V2X maneuver coordination service,'' \\emph{IEEE Access}, vol. 14, pp. 6417--6437, 2026.",
+    "cited_by_count": {
+      "openalex": 2,
+      "crossref": 2,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "sommer2011",
+    "thread": "7. SUMO-based V2X evaluation methodology",
+    "title": "Bidirectionally Coupled Network and Road Traffic Simulation for Improved IVC Analysis",
+    "authors": [
+      "Christoph Sommer",
+      "Reinhard German",
+      "Falko Dressler"
+    ],
+    "venue": "IEEE Transactions on Mobile Computing",
+    "venue_type": "journal",
+    "year": 2011,
+    "volume": "10",
+    "issue": "1",
+    "pages": "3--15",
+    "doi": "10.1109/TMC.2010.133",
+    "doi_verified": "true - CrossRef API record matches title/IEEE Trans. Mobile Comput. 10(1) 3-15/2011; doi.org resolves. NOTE: CrossRef stores the authors with initials only ('C Sommer; R German; F Dressler'); the full given names Christoph / Reinhard / Falko are from the published paper and are used here.",
+    "foundational": true,
+    "summary": "Introduces Veins and, more importantly, the methodological argument that road traffic and network simulation must be bidirectionally coupled: message delivery changes driver behaviour, which changes topology, which changes delivery.",
+    "supports_claim": "The methodological warrant for building on a real SUMO micro-simulation rather than a synthetic mobility trace, and for closing the loop between our scheduling decisions and the traffic state. Cite in Sec. V (simulation setup) as the first justification of the evaluation methodology.",
+    "bibitem": "\\bibitem{sommer2011} C. Sommer, R. German, and F. Dressler, ``Bidirectionally coupled network and road traffic simulation for improved IVC analysis,'' \\emph{IEEE Transactions on Mobile Computing}, vol. 10, no. 1, pp. 3--15, 2011.",
+    "cited_by_count": {
+      "openalex": 1544,
+      "crossref": 1374,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "lopez2018",
+    "thread": "7. SUMO-based V2X evaluation methodology",
+    "title": "Microscopic Traffic Simulation using SUMO",
+    "authors": [
+      "Pablo Alvarez Lopez",
+      "Michael Behrisch",
+      "Laura Bieker-Walz",
+      "Jakob Erdmann",
+      "Yun-Pang Floetteroed",
+      "Robert Hilbrich",
+      "Leonhard Luecken",
+      "Johannes Rummel",
+      "Peter Wagner",
+      "Evamarie Wiessner"
+    ],
+    "venue": "Proc. 21st IEEE Int. Conf. Intell. Transp. Syst. (ITSC)",
+    "venue_type": "conference",
+    "year": 2018,
+    "volume": "",
+    "issue": "",
+    "pages": "2575--2582",
+    "doi": "10.1109/ITSC.2018.8569938",
+    "doi_verified": "true - CrossRef API record matches title/ITSC 2018/pp. 2575-2582; doi.org resolves. Location Maui, HI, USA, 4-7 Nov 2018 confirmed via DBLP and the ITSC 2018 site. NOTE: CrossRef lists Wiessner second; the published author order is alphabetical after Lopez, which is the order used here (and the order used by the standard citation of this paper). Umlauts (Floetteroed = Fl\\\"otteroed, Luecken = L\\\"ucken, Wiessner = Wie\\ssner) should be restored in LaTeX.",
+    "foundational": true,
+    "summary": "The reference paper for SUMO, describing the microscopic mobility models, the TraCI/libsumo control interfaces, and the network-import toolchain. This is the citation SUMO itself asks users to give.",
+    "supports_claim": "Mandatory citation for our traffic environment: SUMO with netconvert-generated networks, a 0.1 s step length, and libsumo-driven stepping. Cite in Sec. V-A.",
+    "bibitem": "\\bibitem{lopez2018} P. A. Lopez, M. Behrisch, L. Bieker-Walz, J. Erdmann, Y.-P. Fl\\\"otter\\\"od, R. Hilbrich, L. L\\\"ucken, J. Rummel, P. Wagner, and E. Wie\\ss ner, ``Microscopic traffic simulation using SUMO,'' \\emph{Proc. 21st IEEE Int. Conf. Intell. Transp. Syst. (ITSC)}, Maui, HI, USA, pp. 2575--2582, 2018.",
+    "cited_by_count": {
+      "openalex": 3264,
+      "crossref": 2758,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  },
+  {
+    "id": "raviglione2024",
+    "thread": "7. SUMO-based V2X evaluation methodology",
+    "title": "ms-van3t: An integrated multi-stack framework for virtual validation of V2X communication and services",
+    "authors": [
+      "F. Raviglione",
+      "C. M. Risma Carletti",
+      "M. Malinverno",
+      "C. Casetti",
+      "C. F. Chiasserini"
+    ],
+    "venue": "Computer Communications",
+    "venue_type": "journal",
+    "year": 2024,
+    "volume": "217",
+    "issue": "",
+    "pages": "70--86",
+    "doi": "10.1016/j.comcom.2024.01.022",
+    "doi_verified": "true - CrossRef API record matches title/5 authors/Computer Communications vol. 217 pp. 70-86/2024 (Elsevier); doi.org resolves (HTTP 200). NOTE: CrossRef stores given names as initials only, so the bibitem uses initials; full given names were not independently confirmed and are therefore not asserted.",
+    "foundational": false,
+    "summary": "Presents ms-van3t, a SUMO + ns-3 co-simulation framework supporting multiple V2X stacks (ETSI ITS-G5, C-V2X, LTE) with ETSI-compliant CAM/DENM/CPM message layers, and argues for co-simulation as the credible validation route for V2X services.",
+    "supports_claim": "In-window (2024) evidence that SUMO coupled to a physical-layer/network model is the accepted evaluation methodology for V2X scheduling work -- the standard our SUMO + Rayleigh-fading SINR environment is written against. Cite in Sec. V-A alongside sommer2011, and use it to justify our 5.9 GHz subchannelized channel model.",
+    "bibitem": "\\bibitem{raviglione2024} F. Raviglione, C. M. Risma Carletti, M. Malinverno, C. Casetti, and C. F. Chiasserini, ``ms-van3t: An integrated multi-stack framework for virtual validation of V2X communication and services,'' \\emph{Computer Communications}, vol. 217, pp. 70--86, 2024.",
+    "cited_by_count": {
+      "openalex": 24,
+      "crossref": 23,
+      "source": "OpenAlex api.openalex.org (works/doi:) and CrossRef is-referenced-by-count, both queried 2026-08-27",
+      "note": ""
+    }
+  }
+]

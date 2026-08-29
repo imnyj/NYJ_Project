@@ -9,10 +9,12 @@
         <route-files value="generated.rou.xml"/>
         <additional-files value="generated.add.xml, rsu.poi.xml"/>
     </input>
-    
+
     <time>
         <begin value="0"/>
         <end value="360000"/>
+        <!-- Resolution must be <= the minimum action update interval (Delta = 0.1 s). -->
+        <step-length value="0.1"/>
     </time>
 
 </sumoConfiguration>

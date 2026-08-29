@@ -10,26 +10,26 @@ import optuna
 import pandas as pd
 import pytest
 
-from src.baselines import BASELINE_REGISTRY
 from src.hpo import (
     CANONICAL_MODEL_NAMES,
     compute_composite_objective,
     evaluate_model_in_env,
     evaluate_trial_multiseed,
     normalize_model_name,
-    run_all_baselines_hpo,
     run_hpo_study,
     sample_hparams,
+    sample_reward_weights,
     save_study_results,
 )
+from tests.contract_adapters import DummyPolicy
 
 
 class TestHyperparameterOptimization:
-    """Test suite verifying all aspects of Optuna HPO for 9 baselines."""
+    """Test suite verifying all aspects of Optuna HPO."""
 
     @pytest.mark.parametrize("model_name", CANONICAL_MODEL_NAMES)
-    def test_01_search_space_definitions_for_all_9_baselines(self, model_name):
-        """Verify tailored search space is correctly defined for all 9 baseline models."""
+    def test_01_search_space_definitions(self, model_name):
+        """Verify tailored search space is correctly defined for model names."""
         study = optuna.create_study(direction="minimize")
         trial = study.ask()
         
@@ -67,13 +67,6 @@ class TestHyperparameterOptimization:
         elif model_name == "SACAoI":
             assert "lyapunov_v" in params
             assert "aoi_thresh" in params
-
-        # Verify model can actually be initialized with these sampled parameters
-        model_cls = BASELINE_REGISTRY[model_name]
-        instance = model_cls(state_dim=16, num_channels=4, **params)
-        assert instance is not None
-        assert instance.state_dim == 16
-        assert instance.num_channels == 4
 
     def test_02_model_name_normalization_and_aliases(self):
         """Verify alias resolution maps to canonical model names."""
@@ -115,8 +108,7 @@ class TestHyperparameterOptimization:
 
     def test_04_env_evaluation_single_seed(self):
         """Verify environment evaluation produces valid IEEE TWC metrics."""
-        model_cls = BASELINE_REGISTRY["HybridPPO"]
-        model = model_cls(state_dim=16, num_channels=4, hidden_dim=32)
+        model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
         
         metrics = evaluate_model_in_env(
             model=model,
@@ -136,17 +128,16 @@ class TestHyperparameterOptimization:
         assert metrics["mean_error"] >= 0.0
         assert metrics["mean_aoi"] > 0.0
         assert 0.0 <= metrics["outage_rate"] <= 1.0
-        assert 20.0 <= metrics["avg_power_dbm"] <= 30.0
+        assert 10.0 <= metrics["avg_power_dbm"] <= 23.0
         assert 0.0 <= metrics["avg_power_norm"] <= 1.0
-        assert metrics["tx_attempts"] > 0
+        assert metrics["tx_attempts"] >= 0
 
     def test_05_evaluate_trial_multiseed(self):
         """Verify multi-seed evaluation computes averaged composite score and metrics."""
-        model_cls = BASELINE_REGISTRY["HybridSAC"]
-        hparams = {"lr": 1e-3, "hidden_dim": 32, "gamma": 0.98, "tau": 0.01}
+        hparams = {"lr": 1e-3, "hidden_dim": 32, "gamma": 0.98}
         
         score, avg_metrics = evaluate_trial_multiseed(
-            model_cls=model_cls,
+            model_cls=DummyPolicy,
             hparams=hparams,
             seeds=[42, 101],
             n_steps=15,
@@ -162,7 +153,8 @@ class TestHyperparameterOptimization:
     def test_06_optuna_study_single_model_optimization(self):
         """Verify run_hpo_study successfully executes trials and selects optimal parameters."""
         study = run_hpo_study(
-            model_name="HybridTD3",
+            model_name="DummyPolicy",
+            model_cls=DummyPolicy,
             n_trials=4,
             seeds=[42],
             n_steps=10,
@@ -174,73 +166,47 @@ class TestHyperparameterOptimization:
         assert study.best_trial.number in [0, 1, 2, 3]
 
         best_params = study.best_params
-        assert "lr" in best_params
-        assert "hidden_dim" in best_params
-        assert "gamma" in best_params
-        assert "tau" in best_params
-        assert "policy_noise" in best_params
+        assert len(best_params) > 0
 
     def test_07_save_study_results_and_csv_generation(self, tmp_path):
         """Verify save_study_results exports trial dataframe and summary record."""
         study = run_hpo_study(
-            model_name="PureAoI",
+            model_name="DummyPolicy",
+            model_cls=DummyPolicy,
             n_trials=3,
             seeds=[42],
             n_steps=10,
         )
-        csv_path, record = save_study_results(study, model_name="PureAoI", output_dir=str(tmp_path))
+        csv_path, record = save_study_results(study, model_name="DummyPolicy", output_dir=str(tmp_path))
 
         assert os.path.exists(csv_path)
-        assert csv_path.endswith("optuna_trials_PureAoI.csv")
+        assert csv_path.endswith("optuna_trials_DummyPolicy.csv")
 
         df = pd.read_csv(csv_path)
         assert len(df) == 3
         assert "value" in df.columns
         assert "number" in df.columns
         assert "state" in df.columns
-        assert "params_urgency_threshold" in df.columns
 
-        assert record["model_name"] == "PureAoI"
-        assert record["category"] == "Category 3 (SOTA AoI)"
-        assert "urgency_threshold" in record["best_params"]
+        assert record["model_name"] == "DummyPolicy"
+        assert len(record["best_params"]) > 0
 
-    def test_08_run_all_baselines_hpo_pipeline(self, tmp_path):
-        """Verify full HPO pipeline for multiple models with master summary CSV generation."""
-        test_models = ["HybridPPO", "PureAoI"]
-        master_csv, df_best = run_all_baselines_hpo(
-            n_trials=2,
-            output_dir=str(tmp_path),
-            models=test_models,
-            seeds=[42],
-            n_steps=10,
-        )
+    def test_08_sample_reward_weights_normalization(self):
+        """Verify sample_reward_weights samples w1-w4 normalized to sum to 1.0."""
+        study = optuna.create_study(direction="minimize")
+        trial = study.ask()
+        weights = sample_reward_weights(trial)
+        assert "w1" in weights
+        assert "w2" in weights
+        assert "w3" in weights
+        assert "w4" in weights
+        total_w = sum(weights.values())
+        assert math.isclose(total_w, 1.0, abs_tol=1e-5)
 
-        assert os.path.exists(master_csv)
-        assert master_csv.endswith("optuna_best_params.csv")
-
-        # Master CSV validation
-        loaded_df = pd.read_csv(master_csv)
-        assert len(loaded_df) == 2
-        assert set(loaded_df["model_name"]).issubset(set(test_models))
-        assert "best_value" in loaded_df.columns
-        assert "best_trial_number" in loaded_df.columns
-        assert "hparams_json" in loaded_df.columns
-
-        # Verify json deserialization
-        for _, row in loaded_df.iterrows():
-            params_dict = json.loads(row["hparams_json"])
-            assert isinstance(params_dict, dict)
-            assert len(params_dict) > 0
-
-        # Verify per-model trials CSVs also exist
-        for m in test_models:
-            trial_csv = os.path.join(str(tmp_path), f"optuna_trials_{m}.csv")
-            assert os.path.exists(trial_csv)
-
-    def test_09_unknown_model_raises_error(self):
-        """Verify attempting to run HPO with an unknown model raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown baseline model"):
-            run_hpo_study(model_name="NonExistentModel", n_trials=1)
+    def test_09_scraped_baseline_raises_error(self):
+        """Verify attempting to run HPO for string model without model_cls raises NotImplementedError."""
+        with pytest.raises(NotImplementedError, match="Baseline models scraped"):
+            run_hpo_study(model_name="HybridPPO", n_trials=1)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 # tests/test_e2e_pipeline.py
 # ============================================================================
 # Master End-to-End Pipeline Integration Test Runner
-# Verifies the full chain: Signal Dynamics -> State Vectorization ->
-# Hybrid Agent Inference -> Replay Buffer -> Model Update -> Hot-swap -> Evaluation
+# Verifies the full chain: Signal Dynamics -> State Vectorization (18D) ->
+# Policy Inference -> Replay Buffer -> Model Update -> Hot-swap -> Evaluation
 # ============================================================================
 
 import os
@@ -17,7 +17,7 @@ from tests.contract_adapters import (
     StateVectorizer,
     ActionDecoder,
     RetrospectiveReplayBuffer,
-    BASELINE_REGISTRY,
+    DummyPolicy,
     DualModelHotSwapManager,
     run_hpo_study,
     calculate_metrics,
@@ -31,18 +31,17 @@ class TestE2EPipeline:
     def test_full_e2e_pipeline_lifecycle(self, temp_results_dir):
         """Executes full lifecycle: Signal extraction -> RL interaction -> Hot-swap -> Evaluation."""
         # Step 1: Environment & Node setup
-        rsu_node = DummyNode("RSU_Central", pos=(0.0, 0.0), comm_range=800.0)
+        rsu_node = DummyNode("RSU_Central", pos=(0.0, 0.0), comm_range=300.0)
         vehicle_nodes = [
-            DummyNode(f"veh_{i}", pos=(float(i * 40.0), float(i * 30.0)), vel=(12.0, 0.0))
+            DummyNode(f"veh_{i}", pos=(float(i * 40.0), float(i * 30.0)), vel=(12.0, 0.0), comm_range=300.0)
             for i in range(5)
         ]
-        vectorizer = StateVectorizer(rsu_range=800.0)
+        vectorizer = StateVectorizer(rsu_range=300.0)
         buffer = RetrospectiveReplayBuffer(capacity=1000)
 
         # Step 2: Model setup (Act & Rest)
-        model_cls = BASELINE_REGISTRY["HybridPPO"]
-        act_agent = model_cls(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_agent = model_cls(state_dim=16, num_channels=4, hidden_dim=32)
+        act_agent = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_agent = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
         hot_swap_mgr = DualModelHotSwapManager(act_agent, rest_agent)
 
         # Step 3: Run interaction loop for 10 timesteps
@@ -57,8 +56,9 @@ class TestE2EPipeline:
                     "stop_imminent": 1.0 if (t > 5 and max(0.0, 300.0 - t * 12.0) < 30.0) else 0.0,
                     "start_imminent": 0.0,
                 }
-                # State Vectorization
+                # State Vectorization (18-dimensional)
                 s = vectorizer.vectorize(v_node, rsu_node, current_time=current_time, tls_info=tls_info)
+                assert len(s) == 18
                 
                 # Act Agent Action Selection
                 grant, raw_action, info = act_agent.select_action(s, deterministic=False)

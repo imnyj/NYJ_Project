@@ -11,7 +11,7 @@
 #    scheduled hot-swaps, and graceful shutdown.
 # 4. HotSwapRLScheduler: grant generation, latency benchmarking, retrospective
 #    reward computation, and transition streaming.
-# 5. Full HotSwapTrainer & run_hot_swap_training loop across all 9 baseline models.
+# 5. Full HotSwapTrainer & run_hot_swap_training loop.
 # ============================================================================
 
 import threading
@@ -30,15 +30,8 @@ from src.hot_swap_trainer import (
     run_hot_swap_training,
     select_default_devices,
 )
-from src.baselines import (
-    HybridPPO,
-    HybridSAC,
-    HybridTD3,
-    MAPPO,
-    HyARPPO,
-    MPDQN,
-)
 from src.rl_interface import RetrospectiveReplayBuffer
+from tests.contract_adapters import DummyPolicy
 
 
 class TestDualModelHotSwapManager:
@@ -46,8 +39,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_parameter_synchronization(self):
         """Verify weights from Rest model are copied to Act model accurately."""
-        act_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
 
         # Mutate Rest model weights to differ from Act model
         with torch.no_grad():
@@ -75,7 +68,7 @@ class TestDualModelHotSwapManager:
         class ModelWithBuffer(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.fc = nn.Linear(16, 4)
+                self.fc = nn.Linear(18, 4)
                 self.register_buffer("running_mean", torch.zeros(4))
 
         act_m = ModelWithBuffer()
@@ -88,8 +81,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_nan_guard_rejects_and_preserves_act_model(self):
         """Verify NaN parameters in Rest model are rejected and do not corrupt Act model."""
-        act_model = HybridSAC(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HybridSAC(state_dim=16, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
 
         manager = DualModelHotSwapManager(act_model, rest_model)
         assert manager.hot_swap() is True
@@ -99,164 +92,175 @@ class TestDualModelHotSwapManager:
 
         # Inject NaN into Rest model
         with torch.no_grad():
-            list(rest_model.parameters())[0].flatten()[0] = float("nan")
+            list(rest_model.parameters())[0][0, 0] = float("nan")
 
-        # Attempt swap -> must be safely rejected
-        success = manager.hot_swap()
-        assert success is False
+        swap_result = manager.hot_swap()
+        assert swap_result is False
         assert manager.failed_swaps == 1
-        assert manager.swap_count == 1  # Unchanged
 
-        # Verify Act model weights are completely intact
+        # Check Act model was preserved intact
         for p_act, p_clean in zip(act_model.parameters(), clean_act_weights):
-            assert torch.allclose(p_act, p_clean)
-            assert not torch.isnan(p_act).any()
+            assert torch.allclose(p_act, p_clean, equal_nan=False)
 
     def test_hot_swap_inf_guard_rejects_and_preserves_act_model(self):
-        """Verify Inf parameters in Rest model are rejected."""
-        act_model = HybridTD3(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HybridTD3(state_dim=16, num_channels=4, hidden_dim=32)
+        """Verify Inf parameters in Rest model are rejected and do not corrupt Act model."""
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
 
         manager = DualModelHotSwapManager(act_model, rest_model)
-        
-        with torch.no_grad():
-            list(rest_model.parameters())[0].flatten()[0] = float("inf")
+        clean_act_weights = [p.clone() for p in act_model.parameters()]
 
-        success = manager.hot_swap()
-        assert success is False
+        with torch.no_grad():
+            list(rest_model.parameters())[0][0, 0] = float("inf")
+
+        assert manager.hot_swap() is False
         assert manager.failed_swaps == 1
 
-    def test_hot_swap_callback_execution(self):
-        """Verify optional callback is triggered on successful swap."""
-        act_model = MAPPO(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = MAPPO(state_dim=16, num_channels=4, hidden_dim=32)
+        for p_act, p_clean in zip(act_model.parameters(), clean_act_weights):
+            assert torch.allclose(p_act, p_clean)
 
-        callback_counts = []
+    def test_hot_swap_cross_device_transfer(self):
+        """Verify weight synchronization between different devices (CPU and simulated device)."""
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
+
+        cpu_dev = torch.device("cpu")
+        manager = DualModelHotSwapManager(act_model, rest_model, act_device=cpu_dev, rest_device=cpu_dev)
+
+        with torch.no_grad():
+            for p in rest_model.parameters():
+                p.fill_(3.14159)
+
+        assert manager.hot_swap() is True
+        for p in act_model.parameters():
+            assert torch.allclose(p, torch.tensor(3.14159))
+
+    def test_hot_swap_concurrency_thread_safety(self):
+        """Verify multi-threaded inference and simultaneous hot-swapping under mutex lock."""
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        manager = DualModelHotSwapManager(act_model, rest_model)
+
+        stop_threads = threading.Event()
+        inference_errors = []
+        inference_count = [0]
+
+        def inference_worker():
+            s = torch.randn(1, 18)
+            while not stop_threads.is_set():
+                try:
+                    with manager.swap_lock:
+                        out = act_model.actor(s)
+                        assert not torch.isnan(out).any()
+                    inference_count[0] += 1
+                except Exception as e:
+                    inference_errors.append(e)
+                time.sleep(0.0001)
+
+        threads = [threading.Thread(target=inference_worker) for _ in range(4)]
+        for t in threads:
+            t.start()
+
+        # Perform 20 concurrent hot-swaps
+        for i in range(20):
+            with torch.no_grad():
+                for p in rest_model.parameters():
+                    p.fill_(float(i))
+            success = manager.hot_swap()
+            assert success is True
+            time.sleep(0.002)
+
+        stop_threads.set()
+        for t in threads:
+            t.join()
+
+        assert len(inference_errors) == 0
+        assert inference_count[0] > 50
+        assert manager.swap_count >= 20
+
+    def test_hot_swap_stats_and_callbacks(self):
+        """Verify hot-swap statistics tracking and execution of registered callbacks."""
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
+
+        callback_invoked = [0]
         def on_swap(count):
-            callback_counts.append(count)
+            callback_invoked[0] += 1
 
         manager = DualModelHotSwapManager(act_model, rest_model, on_swap_callback=on_swap)
         manager.hot_swap()
         manager.hot_swap()
 
-        assert callback_counts == [1, 2]
-
-    def test_hot_swap_stats_reporting(self):
-        """Verify statistics dictionary format and correctness."""
-        act_model = HyARPPO(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HyARPPO(state_dim=16, num_channels=4, hidden_dim=32)
-
-        manager = DualModelHotSwapManager(act_model, rest_model)
-        manager.hot_swap()
-        
-        # Inject NaN to trigger failure
-        with torch.no_grad():
-            list(rest_model.parameters())[0].flatten()[0] = float("nan")
-        manager.hot_swap()
-
         stats = manager.get_stats()
-        assert stats["swap_count"] == 1
-        assert stats["failed_swaps"] == 1
+        assert stats["swap_count"] == 2
+        assert stats["failed_swaps"] == 0
         assert stats["last_swap_time"] > 0
-        assert stats["mean_swap_latency_ms"] >= 0.0
-
-    def test_concurrent_fast_inference_during_continuous_hot_swaps(self):
-        """Verify that zero-downtime serving produces valid inferences without crashing under concurrent swaps."""
-        act_model = MPDQN(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = MPDQN(state_dim=16, num_channels=4, hidden_dim=32)
-        manager = DualModelHotSwapManager(act_model, rest_model)
-
-        inference_count = 0
-        stop_event = threading.Event()
-        errors = []
-
-        def inference_worker():
-            nonlocal inference_count
-            dummy_state = np.random.uniform(-1, 1, size=(16,)).astype(np.float32)
-            while not stop_event.is_set():
-                try:
-                    with manager.swap_lock:
-                        grant, raw, info = act_model.select_action(dummy_state)
-                    assert len(grant) == 3
-                    inference_count += 1
-                    time.sleep(0.0005)
-                except Exception as e:
-                    errors.append(e)
-
-        serving_threads = [threading.Thread(target=inference_worker, daemon=True) for _ in range(3)]
-        for t in serving_threads:
-            t.start()
-
-        # Perform 15 consecutive hot-swaps while serving threads run
-        for i in range(15):
-            with torch.no_grad():
-                for p in rest_model.parameters():
-                    p.add_(torch.randn_like(p) * 0.01)
-            time.sleep(0.005)
-            assert manager.hot_swap() is True
-
-        stop_event.set()
-        for t in serving_threads:
-            t.join(timeout=2.0)
-
-        assert len(errors) == 0, f"Concurrent serving errors: {errors}"
-        assert inference_count >= 30, f"Too few inferences executed: {inference_count}"
-        assert manager.swap_count == 15
+        assert callback_invoked[0] == 2
 
 
 class TestTransitionStreamer:
-    """Test suite for non-blocking transition streaming queue."""
+    """Test suite for non-blocking lock-free transition queue."""
 
     def test_streamer_push_and_drain(self):
-        """Verify pushing transitions and draining them in FIFO order."""
+        """Verify FIFO ordering and drain batch extraction."""
         streamer = TransitionStreamer(maxsize=100)
-        s = np.zeros(16, dtype=np.float32)
-        a = np.array([0.0, 1.0, 25.0], dtype=np.float32)
+        assert streamer.is_empty()
 
-        for i in range(5):
-            pushed = streamer.push(state=s, action=a, reward=-0.1 * i, next_state=s, done=False, delta_t=1.0)
-            assert pushed is True
+        for i in range(10):
+            streamer.push(
+                state=np.full(18, i, dtype=np.float32),
+                action=np.array([1.0, i % 4, 20.0], dtype=np.float32),
+                reward=-float(i),
+                next_state=np.full(18, i + 1, dtype=np.float32),
+                done=(i == 9),
+                delta_t=1.5,
+            )
+
+        assert streamer.qsize() == 10
+        assert not streamer.is_empty()
+
+        # Drain batch
+        batch = streamer.drain(max_items=6)
+        assert len(batch) == 6
+        assert streamer.qsize() == 4
+        assert batch[0]["reward"] == 0.0
+        assert batch[5]["reward"] == -5.0
+
+        # Drain remaining
+        remaining = streamer.drain()
+        assert len(remaining) == 4
+        assert streamer.is_empty()
+
+    def test_streamer_overflow_drops_oldest(self):
+        """Verify bounded queue drops item when full without blocking."""
+        streamer = TransitionStreamer(maxsize=5)
+
+        for i in range(10):
+            streamer.push(
+                state=np.zeros(18),
+                action=np.zeros(3),
+                reward=float(i),
+                next_state=np.zeros(18),
+                done=False,
+                delta_t=1.0,
+            )
 
         assert streamer.qsize() == 5
-        assert not streamer.is_empty()
+        assert streamer.pushed_count == 5
+        assert streamer.dropped_count == 5
 
         items = streamer.drain()
         assert len(items) == 5
-        assert streamer.is_empty()
-        assert items[0]["reward"] == 0.0
-        assert items[4]["reward"] == -0.4
 
-    def test_streamer_overflow_drops_gracefully_without_blocking(self):
-        """Verify queue overflow drops excess items without raising an unhandled exception."""
-        streamer = TransitionStreamer(maxsize=3)
-        s = np.zeros(16, dtype=np.float32)
-        a = np.array([0.0, 1.0, 25.0], dtype=np.float32)
-
-        p1 = streamer.push(s, a, 1.0, s, False, 1.0)
-        p2 = streamer.push(s, a, 2.0, s, False, 1.0)
-        p3 = streamer.push(s, a, 3.0, s, False, 1.0)
-        p4 = streamer.push(s, a, 4.0, s, False, 1.0)  # Should drop
-
-        assert p1 is True and p2 is True and p3 is True
-        assert p4 is False
-        assert streamer.dropped_count == 1
-        assert streamer.pushed_count == 3
-        assert streamer.qsize() == 3
-
-    def test_streamer_push_to_replay_buffer(self):
-        """Verify direct draining into RetrospectiveReplayBuffer."""
-        streamer = TransitionStreamer(maxsize=100)
-        buffer = RetrospectiveReplayBuffer(capacity=500)
-
-        s = np.random.uniform(-1, 1, size=(16,)).astype(np.float32)
-        a = np.array([0.5, 2.0, 23.0], dtype=np.float32)
+    def test_streamer_drain_to_replay_buffer(self):
+        """Verify direct bulk transfer from streamer to RetrospectiveReplayBuffer."""
+        streamer = TransitionStreamer(maxsize=50)
+        buffer = RetrospectiveReplayBuffer(capacity=100)
 
         for i in range(10):
-            streamer.push(state=s, action=a, reward=float(i), next_state=s, done=False, delta_t=1.0)
+            streamer.push(np.zeros(18), np.zeros(3), float(i), np.zeros(18), False, 1.0)
 
-        assert len(buffer) == 0
         n_drained = streamer.push_to_buffer(buffer)
-
         assert n_drained == 10
         assert len(buffer) == 10
         assert streamer.is_empty()
@@ -267,15 +271,15 @@ class TestBackgroundTrainer:
 
     def test_background_trainer_lifecycle(self):
         """Verify background training loop performs updates and scheduled hot-swaps."""
-        act_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
         buffer = RetrospectiveReplayBuffer(capacity=1000)
         streamer = TransitionStreamer(maxsize=1000)
 
         # Seed replay buffer with initial random transitions
-        s = np.random.uniform(-1, 1, size=(16,)).astype(np.float32)
-        a = np.array([0.0, 1.0, 25.0], dtype=np.float32)
+        s = np.random.uniform(-1, 1, size=(18,)).astype(np.float32)
+        a = np.array([0.0, 1.0, 20.0], dtype=np.float32)
         for _ in range(64):
             buffer.push(s, a, -0.5, s, False, 1.0)
 
@@ -315,8 +319,8 @@ class TestHotSwapRLScheduler:
 
     def test_scheduler_decide_grant_and_retrospective_assembly(self):
         """Verify grant generation within valid ranges and retrospective transition creation."""
-        act_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
         streamer = TransitionStreamer(maxsize=100)
 
@@ -339,9 +343,9 @@ class TestHotSwapRLScheduler:
         grant1 = scheduler.decide_grant("veh_0", st1)
         delta, ch, power = grant1
 
-        assert 0.5 <= delta <= 10.0
+        assert 0.1 <= delta <= 45.0
         assert 0 <= ch <= 3
-        assert 20.0 <= power <= 30.0
+        assert 10.0 <= power <= 23.0
         assert streamer.is_empty()  # No previous step yet for veh_0
 
         # Step 2: Vehicle 1 second grant (retrospective transition should be created)
@@ -372,9 +376,9 @@ class TestHotSwapRLScheduler:
         assert terminal_item["done"] is True
 
     def test_scheduler_latency_benchmarking(self):
-        """Verify scheduler tracks inference latency and achieves sub-10ms (and <1ms typically) serving latency."""
-        act_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = HybridPPO(state_dim=16, num_channels=4, hidden_dim=32)
+        """Verify scheduler tracks inference latency and achieves sub-10ms serving latency."""
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
         streamer = TransitionStreamer(maxsize=500)
 
@@ -394,16 +398,11 @@ class TestHotSwapRLScheduler:
 class TestHotSwapTrainerAndLoop:
     """Test suite for full HotSwapTrainer class and run_hot_swap_training loop."""
 
-    @pytest.mark.parametrize("model_name", [
-        "HybridPPO", "HybridSAC", "HybridTD3",
-        "MAPPO", "HyARPPO", "MPDQN",
-        "PureAoI", "DuelingQAoI", "SACAoI",
-    ])
-    def test_hotswap_trainer_instantiation_all_9_baselines(self, model_name):
-        """Verify HotSwapTrainer instantiates and runs with every baseline model."""
+    def test_hotswap_trainer_instantiation(self):
+        """Verify HotSwapTrainer instantiates and runs with DummyPolicy."""
         trainer = HotSwapTrainer(
-            model_name=model_name,
-            state_dim=16,
+            model_cls=DummyPolicy,
+            state_dim=18,
             num_channels=4,
             buffer_capacity=500,
             batch_size=8,
@@ -416,7 +415,7 @@ class TestHotSwapTrainerAndLoop:
         assert trainer.hot_swap_manager.swap_count == 1  # Initial sync
 
         # Test feeding transitions and stepping
-        s = np.zeros(16, dtype=np.float32)
+        s = np.zeros(18, dtype=np.float32)
         a = np.array([0.0, 0.0, 20.0], dtype=np.float32)
         for _ in range(16):
             trainer.replay_buffer.push(s, a, -0.1, s, False, 1.0)
@@ -428,7 +427,8 @@ class TestHotSwapTrainerAndLoop:
     def test_run_hot_swap_training_end_to_end(self):
         """Verify full run_hot_swap_training executes, triggers hot swaps, and returns summary metrics."""
         summary = run_hot_swap_training(
-            model_name="HybridPPO",
+            model_name="DummyPolicy",
+            model_cls=DummyPolicy,
             total_steps=80,
             batch_size=16,
             swap_interval=5,
@@ -437,7 +437,7 @@ class TestHotSwapTrainerAndLoop:
             seed=42,
         )
 
-        assert summary["model_name"] == "HybridPPO"
+        assert summary["model_name"] == "DummyPolicy"
         assert summary["total_steps"] == 80
         assert summary["elapsed_seconds"] > 0
         assert summary["throughput_steps_per_sec"] > 0

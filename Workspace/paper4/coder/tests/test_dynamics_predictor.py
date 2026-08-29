@@ -252,8 +252,8 @@ def test_heuristic_scheduler_imminent_stop_grant():
         },
     }
     interval, ch, power = scheduler.decide_grant("veh_01", state)
-    assert interval == 0.5  # Forced immediate update
-    assert power >= 25.0    # High power for reliability
+    assert interval == scheduler.delta_min  # Forced immediate update
+    assert power >= 23.0    # High power for reliability
     assert 0 <= ch < comm.NUM_SUBCHANNELS
 
 
@@ -273,8 +273,8 @@ def test_heuristic_scheduler_imminent_start_grant():
         },
     }
     interval, ch, power = scheduler.decide_grant("veh_02", state)
-    assert interval == 0.5
-    assert power >= 25.0
+    assert interval == scheduler.delta_min
+    assert power >= 23.0
     assert 0 <= ch < comm.NUM_SUBCHANNELS
 
 
@@ -296,7 +296,7 @@ def test_heuristic_scheduler_long_red_backoff():
     }
     interval, ch, power = scheduler.decide_grant("veh_03", state)
     assert pytest.approx(interval, abs=1e-4) == 7.0
-    assert power == 20.0  # Low power to minimize interference
+    assert power == scheduler.p_low  # Low power to minimize interference
 
 
 def test_heuristic_scheduler_long_red_backoff_max_clamp():
@@ -317,7 +317,7 @@ def test_heuristic_scheduler_long_red_backoff_max_clamp():
     }
     interval, ch, power = scheduler.decide_grant("veh_04", state)
     assert interval == 10.0
-    assert power == 20.0
+    assert power == scheduler.p_low
 
 
 def test_heuristic_scheduler_cruising_dynamic_interval():
@@ -364,37 +364,60 @@ def test_heuristic_scheduler_channel_load_balancing():
 # 6. Live SUMO Integration Test
 # ----------------------------------------------------------------------------
 def test_sumo_simulation_with_heuristic_scheduler():
+    """Drive a short live SUMO run through the heuristic scheduler.
+
+    This test overrides module-level geometry/demand globals in make_sumo_set and
+    NetSim, which are shared process-wide and also drive the cached SUMO XML in
+    src/sumo/. Without restoring them, the overrides leak into every later test in
+    the session and leave generated.net.xml built for a different RSU range than the
+    project's, so the next training run has to regenerate. Everything mutated here is
+    therefore saved up front and restored in a finally block.
+    """
     os.environ["PATH"] = f"/home/imnyj/venv/bin:{os.environ.get('PATH', '')}"
     os.environ.setdefault("SUMO_HOME", "/home/imnyj/venv/lib/python3.12/site-packages/sumo")
 
     import src.NetSim as net
     import src.sumo.make_sumo_set as ss
 
-    ss.RSU_RANGE = 800.0
-    ss.AV_SPEED = 40.0
-    ss.DENSITY = 25.0
-    ss.MAX_STEPS = 60.0
-    ss.SPEED = ss.AV_SPEED / 3.6
-    ss.P_GEN = (ss.DENSITY * ss.SPEED) / 3600.0
-    net.MAX_EPISODE = 1
-    net.b_step_log = False
-    net.b_reroute = False
+    ss_names = ("RSU_RANGE", "AV_SPEED", "DENSITY", "MAX_STEPS", "SPEED", "P_GEN")
+    net_names = ("MAX_EPISODE", "b_step_log", "b_reroute")
+    saved_ss = {n: getattr(ss, n) for n in ss_names}
+    saved_net = {n: getattr(net, n) for n in net_names}
+    saved_warmup = getattr(env, "WARMUP_S", None)
 
-    scheduler = HeuristicScheduler()
-    env.WARMUP_S = 15.0
-    env.set_scheduler(scheduler)
-    env.reset_env()
+    try:
+        ss.RSU_RANGE = 800.0
+        ss.AV_SPEED = 40.0
+        ss.DENSITY = 25.0
+        ss.MAX_STEPS = 60.0
+        ss.SPEED = ss.AV_SPEED / 3.6
+        ss.P_GEN = (ss.DENSITY * ss.SPEED) / 3600.0
+        net.MAX_EPISODE = 1
+        net.b_step_log = False
+        net.b_reroute = False
 
-    sim = net.SumoNetSim(
-        VehicleClass=env.VehicleNode,
-        RSUClass=env.RSUNode,
-        start_message_fn=env.start_message,
-    )
-    sim.run()
+        scheduler = HeuristicScheduler()
+        env.WARMUP_S = 15.0
+        env.set_scheduler(scheduler)
+        env.reset_env()
 
-    summary = env.METRICS.summary()
-    assert summary["registrations_E1"] > 0
-    assert summary["tx_attempts"] > 0
-    assert summary["tx_attempts"] == summary["tx_success"] + summary["tx_fail"]
-    assert summary["tx_success_rate"] >= 0.0
-    assert summary["mean_interval_err_integral"] >= 0.0
+        sim = net.SumoNetSim(
+            VehicleClass=env.VehicleNode,
+            RSUClass=env.RSUNode,
+            start_message_fn=env.start_message,
+        )
+        sim.run()
+
+        summary = env.METRICS.summary()
+        assert summary["registrations_E1"] > 0
+        assert summary["tx_attempts"] > 0
+        assert summary["tx_attempts"] == summary["tx_success"] + summary["tx_fail"]
+        assert summary["tx_success_rate"] >= 0.0
+        assert summary["mean_interval_err_integral"] >= 0.0
+    finally:
+        for name, value in saved_ss.items():
+            setattr(ss, name, value)
+        for name, value in saved_net.items():
+            setattr(net, name, value)
+        if saved_warmup is not None:
+            env.WARMUP_S = saved_warmup

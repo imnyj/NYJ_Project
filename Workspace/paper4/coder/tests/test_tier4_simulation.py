@@ -13,7 +13,6 @@ import src.aoi_env as env
 import src.Communications as comm
 from tests.contract_adapters import (
     HeuristicScheduler,
-    BASELINE_REGISTRY,
     calculate_metrics,
 )
 
@@ -34,7 +33,7 @@ class TestTier4SimulationWorkload:
             
             for v_idx in range(n_vehicles):
                 speed = float(np.random.uniform(0.0, 20.0))
-                dist = float(np.random.uniform(10.0, 750.0))
+                dist = float(np.random.uniform(10.0, 300.0))
                 state_dict = {
                     "speed": speed,
                     "stop_imminent": 1.0 if speed > 5.0 and dist < 30.0 else 0.0,
@@ -77,7 +76,7 @@ class TestTier4SimulationWorkload:
             err = float(np.random.exponential(scale=0.5))
             tx_att = int(np.random.randint(1, 5))
             tx_fail = int(np.random.binomial(tx_att, p=0.1))
-            power = float(np.random.choice([20.0, 25.0, 30.0]))
+            power = float(np.random.choice([10.0, 16.5, 23.0]))
             
             records.append({
                 "aoi": aoi,
@@ -102,7 +101,7 @@ class TestTier4SimulationWorkload:
         assert metrics["mean_error"] >= 0.0
 
         # Invariant 4: Average power bounded
-        assert 20.0 <= metrics["avg_tx_power_dbm"] <= 30.0
+        assert 10.0 <= metrics["avg_tx_power_dbm"] <= 23.0
 
         # Invariant 5: Jain's Fairness in (0, 1]
         assert 0.0 < metrics["jains_fairness_aoi"] <= 1.0
@@ -120,9 +119,8 @@ class TestTier4SimulationWorkload:
             "mean_error", "avg_tx_power_dbm", "total_energy_joules", "jains_fairness_aoi", "jains_fairness_err"
         ]
         raw_data = [
-            ["Heuristic-Dynamic", 25.0, 42, 1.85, 3.20, 0.04, 0.45, 24.5, 0.0012, 0.92, 0.88],
-            ["HybridPPO", 25.0, 42, 1.72, 2.95, 0.03, 0.38, 25.0, 0.0014, 0.94, 0.91],
-            ["HybridSAC", 25.0, 42, 1.68, 2.88, 0.02, 0.35, 24.8, 0.0013, 0.95, 0.93],
+            ["Heuristic-Dynamic", 25.0, 42, 1.85, 3.20, 0.04, 0.45, 18.5, 0.0008, 0.92, 0.88],
+            ["DummyPolicy", 25.0, 42, 1.72, 2.95, 0.03, 0.38, 16.5, 0.0006, 0.94, 0.91],
         ]
         df_raw = pd.DataFrame(raw_data, columns=raw_columns)
         df_raw.to_csv(raw_csv, index=False)
@@ -141,6 +139,6 @@ class TestTier4SimulationWorkload:
         assert os.path.exists(leaderboard_csv)
 
         loaded_raw = pd.read_csv(raw_csv)
-        assert len(loaded_raw) == 3
+        assert len(loaded_raw) == 2
         assert set(raw_columns).issubset(loaded_raw.columns)
         assert not loaded_raw.isnull().any().any(), "CSV contains null values"

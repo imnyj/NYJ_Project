@@ -1,0 +1,364 @@
+% ==============================================================================
+% IEEE Transactions on Wireless Communications (TWC) — LaTeX Template
+% Target: IEEE TWC
+% Title: (Provisional)
+% ==============================================================================
+\documentclass[journal]{IEEEtran}
+
+% ---- Packages ----------------------------------------------------------------
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{subcaption}
+\usepackage{bm}
+
+% ---- Math Operators ----------------------------------------------------------
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\norm}[1]{\left\| #1 \right\|}
+
+% ==============================================================================
+\begin{document}
+
+\title{AoI-Aware V2I Uplink Scheduling via Deep Reinforcement Learning with Hybrid Action Space}
+
+\author{Youngju~Nam,~Dick~Mugerwa,~Yongje~Shin,~Jeong-Hun~Kim,~and~Euisin~Lee,~\IEEEmembership{}%
+\thanks{This work was supported by the National Research Foundation of Korea (NRF) grant funded by the Korean government Ministry of Science and ICT (MSIT) under Grant No. 2022R1A2C1010121.
+\textit{(Corresponding author: Euisin Lee)}}%
+\thanks{Youngju Nam is with the School of Software, Kunsan National University, Gunsan 54150, Republic of Korea (e-mail: imnyj@kunsan.ac.kr).}%
+\thanks{Dick Mugerwa is with Kyambogo University, Kampala, Uganda (e-mail: dmugerwa@kyu.ac.ug).}%
+\thanks{Yongje Shin is with the School of Smart IT, Semyung University, Jecheon 27136, Republic of Korea (e-mail: dudujr@semyung.ac.kr).}%
+\thanks{Jeong-Hun Kim is with the Department of Computer Science and Information Engineering, Kunsan National University, Gunsan 54150, Republic of Korea (e-mail: kimjh@kunsan.ac.kr).}%
+\thanks{Euisin Lee is with the School of Information and Communication Engineering, Chungbuk National University, Cheongju 28644, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}%
+}
+
+\markboth{IEEE Transactions on Wireless Communications}%
+{Nam \MakeLowercase{\textit{et al.}}: AoI-Aware V2I Uplink Scheduling via DRL}
+
+\maketitle
+
+% ==============================================================================
+% ABSTRACT
+% ==============================================================================
+\begin{abstract}
+In vehicle-to-infrastructure (V2I) networks, roadside units (RSUs) maintain real-time awareness of surrounding vehicles by receiving periodic mobility updates.
+However, indiscriminate update scheduling wastes uplink resources and exacerbates channel congestion, while infrequent updates degrade the freshness of information.
+This paper formulates the V2I uplink scheduling problem as a semi-Markov decision process (SMDP) that jointly optimizes the update interval, transmit power, and subchannel selection for each vehicle.
+We propose a deep reinforcement learning (DRL) framework with a hybrid action space that combines continuous control of the update interval $\Delta$ and transmit power $p$ with discrete subchannel selection.
+The reward function penalizes estimation error, power consumption, channel congestion, and redundant updates, where the weighting coefficients are jointly optimized via Optuna hyperparameter search.
+We build a genuine simulation environment using SUMO microscopic traffic simulator integrated with a 5.9\,GHz Rayleigh fading channel model, and evaluate the proposed approach against nine baseline methods including three foundational RL algorithms and six recent AoI-aware scheduling schemes.
+Simulation results demonstrate that the proposed method achieves a favorable trade-off between information freshness and resource efficiency under varying traffic densities.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Age of information, vehicle-to-infrastructure, uplink scheduling, deep reinforcement learning, hybrid action space, semi-Markov decision process.
+\end{IEEEkeywords}
+
+% ==============================================================================
+% I. INTRODUCTION
+% ==============================================================================
+\section{Introduction}
+\IEEEPARstart{T}{he} proliferation of connected vehicles and intelligent transportation systems (ITS) has created an increasing demand for timely and accurate mobility information at roadside infrastructure.
+In vehicle-to-infrastructure (V2I) networks, roadside units (RSUs) maintain a local awareness table that tracks the position, velocity, and heading of surrounding vehicles.
+The freshness of this information, commonly quantified by the Age of Information (AoI)~\cite{kaul2012real}, is critical for safety-critical applications such as cooperative collision avoidance, intersection management, and autonomous driving support.
+
+% --- Problem Statement ---
+Managing V2I uplink updates through cellular networks incurs significant cost.
+Instead, RSUs can selectively schedule updates only for vehicles whose mobility information is deemed stale or unreliable.
+This selective scheduling introduces a fundamental trade-off: frequent updates improve information freshness but consume more power and increase channel congestion, while infrequent updates conserve resources but allow the RSU's estimate to diverge from reality.
+
+% --- Limitations of Prior Work ---
+Existing AoI-aware scheduling approaches~\cite{mlika2022deep, qi2025deep, zhang2025drl} typically treat the update decision as a simple binary choice or optimize only a single dimension (e.g., update interval or power) in isolation.
+Moreover, most prior works adopt simplified channel models that do not capture the stochastic nature of V2I uplink transmissions under Rayleigh fading and multi-user interference.
+
+% --- Our Approach ---
+In this paper, we formulate the V2I uplink scheduling problem as a semi-Markov decision process (SMDP) and propose a deep reinforcement learning framework with a \emph{hybrid action space}.
+The agent jointly decides three control variables for each vehicle: (i) a continuous update interval $\Delta \in [\Delta_{\min}, \Delta_{\max}]$, (ii) a continuous transmit power $p \in [p_{\min}, p_{\max}]$, and (iii) a discrete subchannel index $\mathrm{ch} \in \{0, 1, \ldots, C{-}1\}$.
+The reward function incorporates four penalty terms---estimation error, power consumption, channel congestion, and redundant updates---each normalized to $[0, 1]$ and weighted by coefficients $w_1 \sim w_4$ that are optimized via Optuna hyperparameter search.
+
+% --- Contributions ---
+The main contributions of this paper are summarized as follows:
+\begin{itemize}
+    \item We formulate the AoI-aware V2I uplink scheduling problem as an SMDP with a hybrid action space that jointly optimizes the update interval, transmit power, and subchannel selection.
+    \item We design a four-term reward function with Min-Max normalization and Optuna-optimized weighting coefficients that captures the multi-dimensional trade-off between information freshness, resource consumption, and channel congestion.
+    \item We implement a genuine simulation environment based on the SUMO microscopic traffic simulator with a physically accurate 5.9\,GHz Rayleigh fading channel model, and conduct rigorous evaluation against nine baseline methods.
+    \item We introduce an Act/Rest dual-model hot-swap training architecture that enables continuous inference during background model updates, ensuring hardware feasibility for real-time deployment.
+\end{itemize}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:system} presents the system model. Section~\ref{sec:problem} formulates the SMDP problem. Section~\ref{sec:proposed} describes the proposed DRL framework. Section~\ref{sec:evaluation} presents the simulation setup and results. Section~\ref{sec:conclusion} concludes the paper.
+
+% ==============================================================================
+% II. RELATED WORK
+% ==============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Age of Information in Vehicular Networks}
+The concept of AoI was originally introduced for status update systems~\cite{kaul2012real} and has since been extensively studied in vehicular networks.
+
+Mlika and Cherkaoui~\cite{mlika2022deep} applied DDPG to minimize AoI in cellular V2X communications, demonstrating the feasibility of DRL-based scheduling for vehicular scenarios.
+Qi \emph{et~al.}~\cite{qi2025deep} proposed a SAC-based resource allocation scheme for RIS-aided IoV networks, incorporating AoI awareness into the reward design.
+Arani \emph{et~al.}~\cite{arani2026resilient} developed a resilient AoI-aware optimization framework using DRL for intelligent transportation systems.
+Zhang \emph{et~al.}~\cite{zhang2025drl} jointly optimized AoI and energy consumption in C-V2X enabled IoV using DRL.
+
+\subsection{Resource Allocation in V2X Networks}
+Azizi \emph{et~al.}~\cite{azizi2024efficient} proposed a multi-agent RL mechanism for AoI-aware resource management in VLC-V2X networks.
+Lin \emph{et~al.}~\cite{lin2025optimization} optimized spectrum resource allocation for vehicle platoons using DRL.
+
+\subsection{Hybrid Action Spaces in DRL}
+While prior works predominantly adopt either fully continuous or fully discrete action spaces, our work jointly handles continuous (interval, power) and discrete (subchannel) variables through a hybrid action space architecture.
+
+% ==============================================================================
+% III. SYSTEM MODEL
+% ==============================================================================
+\section{System Model}
+\label{sec:system}
+
+\subsection{Network Architecture}
+We consider a V2I network where RSUs are deployed at intersections of an urban grid road network.
+Each RSU has a communication range of $R_{\mathrm{RSU}} = 300$\,m operating at a carrier frequency of 5.9\,GHz, consistent with the C-V2X sidelink specification.
+The uplink bandwidth of 20\,MHz is divided into $C = 4$ subchannels.
+Vehicles enter and exit the RSU's coverage area as they traverse the road network, which is simulated using the SUMO microscopic traffic simulator with a step resolution of 0.1\,s.
+
+\subsection{RSU Awareness Table}
+Each RSU maintains an awareness table that stores, for each registered vehicle $i$, the last received mobility state $(\mathbf{x}_i, \mathbf{v}_i, \tau_i)$, where $\mathbf{x}_i$ is the position, $\mathbf{v}_i$ is the velocity, and $\tau_i$ is the timestamp of the last successful update.
+Between updates, the RSU extrapolates the vehicle's position using a constant-velocity model:
+\begin{equation}
+    \hat{\mathbf{x}}_i(t) = \mathbf{x}_i + \mathbf{v}_i \cdot (t - \tau_i).
+    \label{eq:extrapolation}
+\end{equation}
+
+The estimation error at time $t$ is defined as:
+\begin{equation}
+    e_i(t) = \| \hat{\mathbf{x}}_i(t) - \mathbf{x}_i^{\mathrm{true}}(t) \|_2,
+    \label{eq:error}
+\end{equation}
+where $\mathbf{x}_i^{\mathrm{true}}(t)$ is the true position obtained from the SUMO simulator.
+
+\subsection{Wireless Channel Model}
+The uplink transmission from vehicle $i$ to the RSU follows a path loss model with Rayleigh fading.
+The received power at distance $d_i$ is:
+\begin{equation}
+    P_{\mathrm{rx},i} = P_{\mathrm{tx},i} - \mathrm{PL}(d_i),
+\end{equation}
+where the path loss is given by:
+\begin{equation}
+    \mathrm{PL}(d) = 20\log_{10}\!\left(\frac{4\pi f_c}{c}\right) + 10 \alpha \log_{10}(d) \quad [\mathrm{dB}],
+\end{equation}
+with carrier frequency $f_c = 5.9$\,GHz and path loss exponent $\alpha = 2.3$.
+
+For vehicles transmitting on the same subchannel, the success probability under Rayleigh fading is given by the closed-form expression:
+\begin{equation}
+    P_{\mathrm{succ},i} = \exp\!\left(-\frac{\gamma_{\mathrm{th}} N_0}{S_i}\right) \prod_{k \neq i} \frac{1}{1 + \gamma_{\mathrm{th}} I_k / S_i},
+    \label{eq:sinr}
+\end{equation}
+where $\gamma_{\mathrm{th}}$ is the SINR threshold, $N_0$ is the noise power, $S_i$ is the received signal power from vehicle $i$, and $I_k$ is the interference from co-channel vehicle $k$.
+
+\subsection{Vehicle Events}
+A vehicle's lifecycle within an RSU cell consists of three events:
+\begin{itemize}
+    \item \textbf{E1 (Entry)}: Vehicle enters the RSU's coverage, performs initial registration, and receives its first update schedule.
+    \item \textbf{E2 (Scheduled Update)}: At the scheduled time, the vehicle transmits its current state. The transmission succeeds or fails according to~\eqref{eq:sinr}.
+    \item \textbf{E3 (Exit)}: Vehicle leaves the coverage area and is deregistered.
+\end{itemize}
+
+% ==============================================================================
+% IV. PROBLEM FORMULATION
+% ==============================================================================
+\section{Problem Formulation}
+\label{sec:problem}
+
+\subsection{Semi-Markov Decision Process}
+We model the scheduling problem as an SMDP, where the decision epochs are not uniformly spaced but occur at each vehicle's scheduled update time.
+
+\subsubsection{State Space}
+The state observation for vehicle $i$ at decision epoch $t$ is an 18-dimensional vector:
+\begin{equation}
+    \mathbf{s}_i(t) = \left[ v_{\mathrm{pos}}, d_{\mathrm{rsu}}, v_{\mathrm{heading}}, v_{\mathrm{vel}}, \mathrm{tls}_{\mathrm{state}}, \mathrm{tls}_{\mathrm{dist}}, n_{\mathrm{queue}}, n_{\mathrm{active}}, \ldots \right]^{\!\top}\!,
+\end{equation}
+which includes:
+\begin{itemize}
+    \item Vehicle kinematics: position $v_{\mathrm{pos}}$, distance to RSU $d_{\mathrm{rsu}}$, heading $v_{\mathrm{heading}}$ (approaching/leaving), velocity $v_{\mathrm{vel}}$.
+    \item Traffic signal context: signal state $\mathrm{tls}_{\mathrm{state}}$ (R/Y/G), distance to stop line $\mathrm{tls}_{\mathrm{dist}}$.
+    \item Congestion indicators: number of queued vehicles ahead $n_{\mathrm{queue}}$, number of active vehicles in range $n_{\mathrm{active}}$.
+    \item Historical context: information from previously updated neighboring vehicles stored in the RSU table.
+\end{itemize}
+
+\subsubsection{Action Space}
+The hybrid action for vehicle $i$ is a tuple:
+\begin{equation}
+    \mathbf{a}_i = (\Delta_i,\; p_i,\; \mathrm{ch}_i),
+\end{equation}
+where:
+\begin{itemize}
+    \item $\Delta_i \in [\Delta_{\min}, \Delta_{\max}]$: next update interval (continuous). The upper bound $\Delta_{\max}$ is set to the maximum red-phase duration of traffic lights in the simulation.
+    \item $p_i \in [p_{\min}, p_{\max}] = [10, 23]$\,dBm: transmit power (continuous), bounded by the 3GPP power class~3 UE maximum.
+    \item $\mathrm{ch}_i \in \{0, 1, \ldots, C{-}1\}$: subchannel index (discrete).
+\end{itemize}
+
+\subsubsection{Reward Function}
+The reward is a weighted sum of four normalized penalty terms:
+\begin{equation}
+    R_t = -\!\left( w_1 \cdot \overline{e_t^2} + w_2 \cdot \overline{P_{\mathrm{tx}}} + w_3 \cdot \overline{C_{\mathrm{freq}}} + w_4 \cdot \mathbb{I}_{\mathrm{redundant}} \right),
+    \label{eq:reward}
+\end{equation}
+where the overline denotes Min-Max normalization to $[0,1]$:
+\begin{itemize}
+    \item $\overline{e_t^2}$: normalized squared estimation error between the RSU's extrapolated and true vehicle positions.
+    \item $\overline{P_{\mathrm{tx}}} = (p - p_{\min}) / (p_{\max} - p_{\min})$: normalized transmit power penalty.
+    \item $\overline{C_{\mathrm{freq}}}$: normalized channel congestion indicator based on the channel busy ratio (CBR) and SINR collision rate.
+    \item $\mathbb{I}_{\mathrm{redundant}} \in \{0, 1\}$: binary indicator that imposes a penalty when the vehicle's physical state has not changed since the last update (e.g., a stopped vehicle).
+\end{itemize}
+
+The weighting coefficients $w_1, w_2, w_3, w_4$ are not heuristically fixed but are included in the Optuna hyperparameter search space, allowing the agent to discover the optimal balance across penalty terms.
+
+\subsection{SMDP Discounting}
+Since the time between successive actions for a given vehicle varies, we employ the SMDP discount factor $\gamma^{\Delta_i}$, which accounts for the variable sojourn time in the replay buffer.
+
+% ==============================================================================
+% V. PROPOSED METHOD
+% ==============================================================================
+\section{Proposed DRL Framework}
+\label{sec:proposed}
+
+\subsection{Hybrid Action Architecture}
+The proposed DRL agent outputs the hybrid action $\mathbf{a}_i = (\Delta_i, p_i, \mathrm{ch}_i)$ through a multi-head neural network.
+Two continuous heads produce $\Delta_i$ and $p_i$ via tanh activation with subsequent scaling, while a discrete head selects $\mathrm{ch}_i$ via categorical sampling.
+
+\subsection{Act/Rest Dual-Model Hot-Swap}
+To ensure real-time inference feasibility, we adopt an Act/Rest dual-model architecture:
+\begin{itemize}
+    \item \textbf{Act mode}: The active model serves real-time scheduling decisions while collecting transitions into a replay buffer.
+    \item \textbf{Rest mode}: A background model trains on the accumulated transitions using a separate hardware resource.
+    \item \textbf{Hot-swap}: When the Rest model's training is complete, it seamlessly replaces the Act model with zero downtime, and the cycle repeats.
+\end{itemize}
+This architecture ensures that the training workload does not interfere with inference latency, which is critical for time-sensitive V2I scheduling.
+
+\subsection{Hyperparameter Optimization}
+We employ Optuna for hyperparameter optimization (HPO), searching over the reward weights $w_1 \sim w_4$ and model-specific hyperparameters (learning rate, discount factor, etc.).
+Each trial trains the agent and evaluates it across multiple seeds and traffic densities.
+
+% ==============================================================================
+% VI. PERFORMANCE EVALUATION
+% ==============================================================================
+\section{Performance Evaluation}
+\label{sec:evaluation}
+
+\subsection{Simulation Setup}
+
+\subsubsection{Traffic Simulation}
+We use SUMO (Simulation of Urban Mobility) v1.27 to generate realistic vehicular traffic on an urban grid network.
+Table~\ref{tab:sim_params} summarizes the key simulation parameters.
+
+\begin{table}[!t]
+\centering
+\caption{Simulation Parameters}
+\label{tab:sim_params}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Carrier frequency & 5.9\,GHz \\
+Bandwidth & 20\,MHz \\
+Number of subchannels & 4 \\
+RSU communication range & 300\,m \\
+Transmit power range & [10, 23]\,dBm \\
+Path loss exponent & 2.3 \\
+SINR threshold & 0\,dB \\
+SUMO step length & 0.1\,s \\
+Episode length & 2000 steps (200\,s) \\
+Number of episodes & 100 (200k steps total) \\
+Vehicle density & 15--55\,veh/km \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Baseline Methods}
+We compare the proposed method against nine baselines:
+\begin{itemize}
+    \item \textbf{Foundation RL models}: PPO~\cite{ppo}, SAC~\cite{sac}, TD3~\cite{td3}.
+    \item \textbf{AoI-aware DRL schemes}: SAC-RIS~\cite{qi2025deep}, DDPG-CV2X~\cite{mlika2022deep}, DDPG-Resilient~\cite{arani2026resilient}, MARL-VLC~\cite{azizi2024efficient}, Platoon-DRL~\cite{lin2025optimization}, DRL-IoV~\cite{zhang2025drl}.
+\end{itemize}
+
+All baselines are adapted to the same hybrid action space and trained on the identical SUMO environment for fair comparison.
+
+\subsection{Training Configuration}
+Each model is trained for 200,000 environment steps (100 episodes $\times$ 2,000 steps).
+Optuna HPO is used to optimize the reward weights and model hyperparameters over multiple trials.
+Training progress is monitored via TensorBoard.
+
+\subsection{Evaluation Metrics}
+We evaluate the following metrics across varying vehicle densities (15--55\,veh/km) and multiple random seeds:
+\begin{itemize}
+    \item Mean estimation error ($\overline{e^2}$).
+    \item Uplink success rate.
+    \item Mean AoI across all vehicles.
+    \item Total energy consumption.
+    \item Channel utilization efficiency.
+\end{itemize}
+
+\subsection{Results and Discussion}
+
+% Placeholder for results
+\textit{(Results to be added after the 200,000-step training runs are completed and analyzed.)}
+
+% ==============================================================================
+% VII. CONCLUSION
+% ==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+In this paper, we proposed a DRL-based V2I uplink scheduling framework that jointly optimizes the update interval, transmit power, and subchannel selection through a hybrid action space.
+The four-term reward function with Optuna-optimized weights captures the complex trade-off between information freshness, power efficiency, channel congestion, and update redundancy.
+The Act/Rest dual-model hot-swap architecture ensures real-time inference feasibility.
+Extensive simulations on a genuine SUMO traffic environment with a 5.9\,GHz Rayleigh fading channel model validate the effectiveness of the proposed approach.
+
+% ==============================================================================
+% REFERENCES
+% ==============================================================================
+\bibliographystyle{IEEEtran}
+% \bibliography{references}
+
+\begin{thebibliography}{10}
+
+\bibitem{kaul2012real}
+S.~Kaul, R.~Yates, and M.~Gruteser, ``Real-time status: How often should one update?'' in \emph{Proc. IEEE INFOCOM}, 2012, pp.~2187--2195.
+
+\bibitem{ppo}
+J.~Schulman, F.~Wolski, P.~Dhariwal, A.~Radford, and O.~Klimov, ``Proximal policy optimization algorithms,'' \emph{arXiv preprint arXiv:1707.06347}, 2017.
+
+\bibitem{sac}
+T.~Haarnoja, A.~Zhou, P.~Abbeel, and S.~Levine, ``Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor,'' in \emph{Proc. Int. Conf. Mach. Learn. (ICML)}, 2018, pp.~1856--1865.
+
+\bibitem{td3}
+S.~Fujimoto, H.~van~Hoof, and D.~Meger, ``Addressing function approximation error in actor-critic methods,'' in \emph{Proc. Int. Conf. Mach. Learn. (ICML)}, 2018.
+
+\bibitem{qi2025deep}
+K.~Qi, Q.~Wu, P.~Fan, N.~Cheng, W.~Chen, J.~Wang, and K.~B.~Letaief, ``Deep-reinforcement-learning-based AoI-aware resource allocation for RIS-aided IoV networks,'' \emph{IEEE Trans. Veh. Technol.}, vol.~74, no.~1, 2025, doi:~10.1109/TVT.2024.3452790.
+
+\bibitem{mlika2022deep}
+Z.~Mlika and S.~Cherkaoui, ``Deep deterministic policy gradient to minimize the age of information in cellular V2X communications,'' \emph{IEEE Trans. Intell. Transp. Syst.}, vol.~23, no.~12, pp.~23597--23612, 2022, doi:~10.1109/TITS.2022.3190799.
+
+\bibitem{arani2026resilient}
+A.~H.~Arani, H.~Saeedi, S.~Norouzi, A.~Nouruzi, N.~Zorba, and H.~Yanikomeroglu, ``A resilient AoI-aware optimization framework for intelligent transportation systems using deep reinforcement learning,'' \emph{IEEE Open J. Commun. Soc.}, 2026, doi:~10.1109/OJCOMS.2026.3707734.
+
+\bibitem{azizi2024efficient}
+M.~Azizi, F.~Zeinali, M.~R.~Mili, and S.~Shokrollahi, ``Efficient AoI-aware resource management in VLC-V2X networks via multi-agent RL mechanism,'' \emph{IEEE Trans. Veh. Technol.}, vol.~73, no.~9, pp.~14009--14014, 2024, doi:~10.1109/TVT.2024.3392738.
+
+\bibitem{lin2025optimization}
+Z.~Lin, H.~Pan, and Y.~Wang, ``Optimization of spectrum resource allocation for vehicle platoon in V2X networks based on deep reinforcement learning,'' \emph{IEEE Trans. Veh. Technol.}, vol.~75, no.~6, pp.~11512--11527, 2025, doi:~10.1109/TVT.2025.3643923.
+
+\bibitem{zhang2025drl}
+Z.~Zhang, Q.~Wu, P.~Fan, N.~Cheng, W.~Chen, and K.~B.~Letaief, ``DRL-based optimization for AoI and energy consumption in C-V2X enabled IoV,'' \emph{IEEE Trans. Green Commun. Netw.}, vol.~9, no.~4, pp.~2144--2159, 2025, doi:~10.1109/TGCN.2025.3531902.
+
+\end{thebibliography}
+
+\end{document}

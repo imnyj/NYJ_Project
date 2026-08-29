@@ -1,250 +1,211 @@
-# Explorer Survey 1 — 코드베이스 구조 및 시뮬레이션 환경 종합 분석 보고서
+# [Survey Report] AoI 기반 V2I 상향링크 RL 파이프라인 아키텍처 분석 및 R1 결함 진단 보고서
 
-**작성자**: Explorer Survey 1 (Codebase Structure & Simulation Environment Explorer)  
-**작성 일시**: 2026-08-26T22:02:00+09:00  
-**대상 디렉토리**: `/home/imnyj/Workspace/paper4/coder`  
-**관련 요구사항**: R1 (S2.5) ~ R7 (S5) 전반의 기존 코드베이스 분석 및 인터페이스 매핑
-
----
-
-## 1. Observation (직접 관측 내용)
-
-### 1.1 전체 파일 트리 및 구성
-`/home/imnyj/Workspace/paper4/coder` 디렉토리 내의 파일 및 모듈 구성은 다음과 같습니다:
-
-```
-/home/imnyj/Workspace/paper4/coder/
-├── ORIGINAL_REQUEST.md          # 최상위 사용자 요구사항 및 R1~R7 체크리스트
-├── workflow.md                  # 논문 워크플로우 및 S1~S5 로드맵 요약
-├── README_S1.md                 # S1 (환경 계층, 이벤트 E1~E3, 회고적 오차 적분) 상세 명세
-├── README_S2.md                 # S2 (확률적 SINR 업링크, 전력/서브채널 간섭) 상세 명세
-├── progress_sync.md             # 프로젝트 공통 진행 현황 동기화 문서
-├── 8. V2V Precaching.py        # 레거시 V2V 프리캐싱 예제 스크립트 (참고용)
-└── src/
-    ├── aoi_env.py               # [핵심] S1+S2 통합 AoI 환경 계층 (VehicleNode, RSUNode, Metrics)
-    ├── NetSim.py                # [핵심] Headless SumoNetSim 코어 (이벤트 시뮬레이터 + TraCI/libsumo 래퍼)
-    ├── Communications.py        # [핵심] 무선 채널 모델 (WiFi 802.11ac, 광섬유, S2 Rayleigh SINR)
-    ├── model.py                 # [레거시] TensorFlow 기반 PPOAgent (PyTorch 전환 대상)
-    ├── install_list.txt         # 패키지 설치 가이드 메모
-    └── sumo/
-        ├── make_sumo_set.py     # SUMO 네트워크 절차적 생성 스크립트 (netconvert 연동)
-        ├── generated.sumocfg    # SUMO 시뮬레이션 설정 파일
-        ├── generated.net.xml    # SUMO 도로망 파일
-        ├── generated.nod.xml    # 노드 정의 (신호등 교차로 및 dead_end)
-        ├── generated.edg.xml    # 엣지 정의
-        ├── generated.add.xml    # 추가 설정 (TAZ 정의)
-        ├── generated.rou.xml    # 교통 흐름 (flow) 정의
-        └── rsu.poi.xml          # RSU POI 정의 파일
-```
+**작성자**: Explorer 1  
+**대상 범위**: R1 (`src/hot_swap_trainer.py`, `src/aoi_env.py` 및 관련 `tests/`)  
+**작성 일시**: 2026-08-27  
 
 ---
 
-### 1.2 실행 런타임 및 하드웨어 환경 실측
-- **OS**: Linux (x86_64)
-- **Python**: 3.12.3 (`/home/imnyj/venv/bin/python`)
-- **SUMO / TraCI**:
-  - SUMO 바이너리: `/home/imnyj/venv/bin/sumo`
-  - netconvert 바이너리: `/home/imnyj/venv/bin/netconvert`
-  - `SUMO_HOME`: `/home/imnyj/venv/lib/python3.12/site-packages/sumo`
-  - `libsumo`: 1.27.1 (고속 C++ 바인딩 활성화: `SUMO_USE_LIBSUMO=1`)
-  - `traci`: 1.27.1, `sumolib`: 1.27.1
-- **딥러닝 / RL 환경**:
-  - `PyTorch`: **2.11.0+cu130** (CUDA 지원 활성화)
-  - `GPU`: **4x NVIDIA GeForce RTX 3090** (24GB VRAM each, 총 96GB VRAM)
-  - `Optuna`: **4.9.0** (하이퍼파라미터 최적화 라이브러리)
-  - `NumPy`: 2.4.6, `SciPy`: 1.17.1, `Pandas`: 2.3.3, `Matplotlib`: 3.10.9
-  - *특이사항*: `tensorflow`는 미설치 상태이므로, 기존 `src/model.py`의 TF 코드는 PyTorch 기반 모듈로 리팩토링되어야 함.
+## 1. Observation (직접 관찰 결과)
+
+### 1.1 4항 보상 수식 ($I_{redundant}$ 패널티) 관찰
+- **Ground Truth (`Conversation.md:21-27`)**:
+  $$R_t = -( w_1 \cdot \text{Norm}(e_t^2) + w_2 \cdot \text{Norm}(P_{tx}) + w_3 \cdot \text{Norm}(C_{freq}) + w_4 \cdot \mathbb{I}_{redundant} )$$
+  * $e_t^2$: 추정 오차 제곱 정규화 ($[0, 1]$)
+  * $P_{tx}$: 송신 전력 정규화 ($[0, 1]$)
+  * $C_{freq}$: 서브채널 경쟁/CBR 정규화 ($[0, 1]$)
+  * $\mathbb{I}_{redundant}$: 물리적 상태 불변(정지) 시 갱신 시도에 대한 바이너리 패널티 ($\{0.0, 1.0\}$)
+  * 기본 가중치: $w_1=0.5, w_2=0.2, w_3=0.2, w_4=0.1$
+- **`src/aoi_env.py` 상태**:
+  * 라인 410-413: 가중치 `w_error=0.5, w_power=0.2, w_congestion=0.2, w_redundant=0.1` 설정.
+  * 라인 857-880:
+    ```python
+    norm_error_sq = float(min(1.0, (err ** 2) / max(1.0, self.norm_error_sq_max)))
+    if vid in transmitting_dict:
+        tx_info = transmitting_dict[vid]
+        ptx = tx_info["p"]
+        norm_ptx = float(np.clip((ptx - self.p_min) / max(1e-6, self.p_max - self.p_min), 0.0, 1.0))
+        ch_contenders = len(transmissions_by_ch[tx_info["ch"] % self.num_channels])
+        norm_cfreq = float(min(1.0, max(0.0, (ch_contenders - 1) / 10.0)))
+        i_redundant = 1.0 if (spd < 0.1 and err < 0.05) else 0.0
+    else:
+        norm_ptx = 0.0
+        norm_cfreq = 0.0
+        i_redundant = 0.0
+
+    r_val = -(
+        self.w_error * norm_error_sq
+        + self.w_power * norm_ptx
+        + self.w_congestion * norm_cfreq
+        + self.w_redundant * i_redundant
+    )
+    ```
+- **`src/hot_swap_trainer.py` 상태**:
+  * 과거 결함(`backup/hot_swap_trainer.py.bak.20260827_102551:929-935`):
+    `reward_val = -(self.w1 * r_err + self.w2 * r_power + self.w3 * cbr)` (3항 수식, $I_{redundant}$ 누락, $w$ 불일치).
+  * 현재 `src/hot_swap_trainer.py:1157-1184`:
+    `_is_redundant_update` 판정 추가 및 4항 보상 수식 적용 완료.
+
+### 1.2 전력 정규화 일반화 (`(p - p_min) / (p_max - p_min)`) 관찰
+- **과거 결함**:
+  `r_power = max(0.0, (p_val - 20.0) / 10.0)` 형태로 하드코딩되어, $p \in [10.0, 23.0]\text{ dBm}$ 설정 시 $p < 20.0$ 구간에서 음수가 되어 패널티가 가산 보상으로 왜곡됨.
+- **현재 구현 상태**:
+  * `src/hot_swap_trainer.py:1165-1168`:
+    ```python
+    p_lo = float(getattr(self.decoder, "p_min", 10.0))
+    p_hi = float(getattr(self.decoder, "p_max", 23.0))
+    if vid in step_tx_power:
+        p_val = step_tx_power[vid]
+        r_power = min(1.0, max(0.0, (p_val - p_lo) / max(1e-6, p_hi - p_lo)))
+    else:
+        r_power = 0.0
+    ```
+  * `src/aoi_env.py:416-417, 864`:
+    `norm_ptx = float(np.clip((ptx - self.p_min) / max(1e-6, self.p_max - self.p_min), 0.0, 1.0))` 형태이나, `self.p_min`과 `self.p_max` 기본값이 `20.0, 30.0`으로 남아 있어 `P_MIN=10.0, P_MAX=23.0`과 기본값 동기화 필요.
+
+### 1.3 `tx_powers[-1]` 전력 크레딧 할당 버그 관찰
+- **과거 결함 (`hot_swap_trainer.py:1076` 백업본)**:
+  `p_val = self.tx_powers[-1] if self.tx_powers else 25.0`
+  루프 내 모든 차량의 보상 계산에 전역 리스트의 마지막 원소를 참조하여, 개별 차량의 고유 전력 제어 학습이 완전히 불가능했음.
+- **현재 구현 상태**:
+  * `src/hot_swap_trainer.py:1030-1043`:
+    스텝별 딕셔너리 `step_tx_power: Dict[str, float]` 및 `step_redundant: Dict[str, float]`에 각 차량의 개별 전력과 갱신 여부를 저장.
+  * 송신하지 않은 차량에 대해서는 `r_power = 0.0`, `i_redundant = 0.0`으로 정확히 귀속 처리됨.
+
+### 1.4 Anti-Mocking Assertion A4 관찰
+- **`src/aoi_env.py:894-913` 및 `src/hot_swap_trainer.py:1210-1227`**:
+  ```python
+  for vid, r_info in reward_details.items():
+      re_ = r_info["r_err"]
+      rp_ = r_info["r_power"]
+      rc_ = r_info["cbr"]
+      ir_ = r_info["i_redundant"]
+      rv = r_info["reward"]
+
+      assert 0.0 <= re_ <= 1.0, f"FATAL: Normalized error term {re_} out of bounds [0, 1]!"
+      assert 0.0 <= rp_ <= 1.0, f"FATAL: Normalized power term {rp_} out of bounds [0, 1]!"
+      assert 0.0 <= rc_ <= 1.0, f"FATAL: Normalized congestion term {rc_} out of bounds [0, 1]!"
+      assert ir_ in (0.0, 1.0), f"FATAL: I_redundant must be binary (0.0 or 1.0), got {ir_}!"
+
+      expected_r = -(self.w1 * re_ + self.w2 * rp_ + self.w3 * rc_ + self.w4 * ir_)
+      assert math.isclose(rv, expected_r, abs_tol=1e-5), (
+          f"FATAL: Reward calculation mismatch for {vid}: {rv} != {expected_r}"
+      )
+      assert rv <= 0.0, f"FATAL: Penalty-based reward must be <= 0, got {rv}"
+  ```
+  * 모든 4개 정규화 항의 $[0, 1]$ 바운드 검사, $I_{redundant}$의 바이너리 검사, 수식 재유도 대조(`isclose`), $R_t \le 0.0$ 비양수성 검증을 매 스텝 강제 수행함을 확인.
+
+### 1.5 Resume 로직 및 체크포인트 `best_reward` 오버라이트 버그 관찰
+- **`src/hot_swap_trainer.py:662-682` (체크포인트 저장/로드)**:
+  ```python
+  def save_checkpoint(self, filepath: str) -> None:
+      checkpoint = {
+          "model_name": self.model_name,
+          "hparams": self.hparams,
+          "rest_state_dict": self.rest_model.state_dict(),
+          "act_state_dict": self.act_model.state_dict(),
+          "training_steps": self.background_trainer.training_steps,
+          "swap_count": self.hot_swap_manager.swap_count,
+      }
+      torch.save(checkpoint, filepath)
+  ```
+  * 관찰: `checkpoint` 딕셔너리에 `best_reward` 필드가 누락되어 있음.
+- **`src/hot_swap_trainer.py:1450` (`run_hot_swap_training`)**:
+  ```python
+  global_step = min(int(start_ep) * steps_per_ep, total_steps)
+  best_reward = -float("inf")
+  ```
+  * 관찰: `resume=True`로 기존 에피소드(예: ep50)부터 재개하더라도 `best_reward`가 항상 `-inf`로 초기화됨.
+  * 라인 1530-1533:
+    ```python
+    if ep_mean_r > best_reward:
+        best_reward = ep_mean_r
+        best_ckpt_path = os.path.join(checkpoint_dir, f"{model_name}_best.pt")
+        trainer.save_checkpoint(best_ckpt_path)
+    ```
+  * 결과: 재개 직후 에피소드(예: ep51)의 성능이 과거 기록보다 현저히 낮더라도(예: ep51 평균 보상 `-80.0`), `-80.0 > -inf`이 성립하여 과거의 우수한 `{model_name}_best.pt`를 즉시 덮어써버림.
+
+### 1.6 테스트 스위트 실행 결과 (`/home/imnyj/venv/bin/pytest -v`)
+- 전체 실행 결과: `38 failed, 166 passed in 54.13s`
+- `tests/test_hot_swap.py` 실행 결과: `2 failed, 22 passed in 24.95s`
+- 주요 실패 원인 및 구체적 에러 트레이스:
+  1. **차원 불일치 (18-dim StateVectorizer vs 16-dim 모델 초기화)**:
+     * `tests/test_hot_swap.py:339` 및 `tests/test_hot_swap.py:387`:
+       `TestHotSwapRLScheduler`에서 `act_model = HybridPPO(state_dim=16, ...)`으로 모델을 16차원으로 생성하였으나, `HotSwapRLScheduler.decide_grant` 내부에서 `StateVectorizer`가 18차원 벡터를 생성하여 모델에 전달함.
+       ```text
+       RuntimeError: mat1 and mat2 shapes cannot be multiplied (1x18 and 16x32)
+       ```
+     * `tests/test_rl_interface.py:58, 112, 137`: `assert vec.shape == (16,)` (실제 18차원 반환으로 단언문 실패)
+     * `tests/test_aoi_env_genuine.py:123`: `assert s_vec.shape == (16,)` (실제 18차원 반환으로 실패)
+     * `tests/test_dummy_verification.py:60`: `assert len(s_vec) == 16`
+  2. **액션 공간 변경 여파**:
+     * $\Delta \in [0.1, 45.0]\text{s}$, $P \in [10.0, 23.0]\text{dBm}$으로 교정되었으나, 기존 테스트(`test_hot_swap.py:344`, `test_dummy_verification.py:98`, `test_evaluation.py:131`, `test_rl_interface.py:168`)가 구 액션 범위($[20, 30]\text{dBm}$, $[0.5, 10]\text{s}$)를 검사하여 실패.
+  3. **폐기 대상 구 베이스라인 의존성**:
+     * `test_baselines_instantiation.py` 등에서 R4에서 완전 삭제될 구 베이스라인 코드 테스트 수행 중 실패.
 
 ---
 
-### 1.3 기존 핵심 모듈 분석
+## 2. Logic Chain (추론 과정 및 분석)
 
-#### 1) `src/aoi_env.py` (S1+S2 환경 계층)
-- **핵심 역할**: 차량 진입(E1) - 갱신 전송(E2) - 이탈(E3)의 이벤트 주도 시뮬레이션 및 유효 AoI(추정 오차 적분), SINR 업링크 판정.
-- **수학적 외삽 및 오차 계산**:
-  - `extrapolate(pos, vel, dt)`: $\hat{x}(t) = pos + vel \cdot dt$ (등속 외삽)
-  - `estimation_error(true_pos, last_pos, last_vel, age)`: $e(t) = \|\text{true\_pos} - \hat{x}(t)\|$
-  - 정지/등속 차량은 $e(t) \approx 0$, 가속/감속/회전 차량은 오차가 급격히 증가함.
-- **주요 클래스**:
-  - `VehicleNode(net.Node)`:
-    - 속도 추정 `_estimate_velocity(t)`, 그랜트 수신 및 다음 갱신 예약 `_apply_grant(t)`.
-    - 매 스텝 `update_dwell(current_time)`에서 E1 진입 등록 및 E2 전송 시도(`pending_tx`에 큐잉).
-  - `RSUNode(net.Node)`:
-    - 단일 타깃 RSU 셀 운영 (`WARMUP_S = 25.0`초 이후 트래픽 최다 RSU 자동 선정).
-    - `on_update(vid, pos, vel, t, is_entry)`: 갱신 성공 시 이전 구간의 오차 적분량(`err_integral`)을 회고적(retrospective)으로 확정 및 기록.
-    - `_resolve_pending()`: 이전 스텝에 큐잉된 전송 시도들을 서브채널별로 묶어 `comm.judge_uplink()`로 SINR 확률 판정 (1-step processing delay 적용).
-  - `Metrics`:
-    - `registrations_E1`, `updates_E2`, `exits_E3`, `interval_err_integrals`, `tx_attempts`, `tx_fail`, `tx_success_rate`, `mean_contenders_per_ch` 등 로깅.
+1. **보상 함수 및 크레딧 할당 무결성**:
+   - `Observation 1.1`, `1.2`, `1.3`에 따라, 과거 트레이너 구현체에 존재하던 3항 축소, 전력 정규화 왜곡, 전역 `tx_powers[-1]` 참조 결함은 `hot_swap_trainer.py` 및 `aoi_env.py`의 핵심 환경 루프에서 4항 Min-Max 정규화 및 per-vehicle 매핑으로 올바르게 구조화됨.
+   - 단, `src/aoi_env.py`의 생성자 파라미터 기본값(`p_min=20.0, p_max=30.0`)이 `src/rl_interface.py`의 표준 상수(`P_MIN=10.0, P_MAX=23.0`)와 상이하므로 동기화가 필요함.
 
-#### 2) `src/Communications.py` (무선 통신 및 S2 SINR 모델)
-- **물리 계층 파라미터**:
-  - 중심 주파수: `FREQ_HZ = 5.9e9` (5.9 GHz ITS 대역)
-  - 경로 손실 지수: `PL_EXP = 2.3` (준개방 도로 환경)
-  - 잡음 지수: `NOISE_FIGURE_DB = 9.0`, 대역폭: `TOTAL_BW_HZ = 20e6` (20 MHz)
-  - 서브채널 수: `NUM_SUBCHANNELS = 4` (서브채널당 5 MHz)
-  - 복조 임계값: `SINR_TH_DB = 0.0 dB` ($\gamma_{th} = 1.0$)
-  - 전송 전력 레벨: `TX_POWER_LEVELS_DBM = [20.0, 25.0, 30.0]` (100mW, 316mW, 1000mW)
-- **Rayleigh Fading SINR 폐형식 판정 (`judge_uplink`)**:
-  $$P_{\text{succ}} = \exp\left(-\gamma_{th} \frac{N_0}{S}\right) \prod_{k \in \text{interferers}} \frac{1}{1 + \gamma_{th} \frac{I_k}{S}}$$
-  - 동일 서브채널에 동시 전송하는 차량 수가 증가할수록 $P_{\text{succ}}$ 급감 (간섭 모델링).
+2. **단언문 A4의 일관성**:
+   - `Observation 1.4`에 따라 `aoi_env.py`와 `hot_swap_trainer.py` 양쪽 모두에서 4대 단언문 중 A4가 수학적 보상 모델과 100% 일치하게 정렬되어 있음. 환경 스텝 시 실시간으로 계산 불일치 및 양수 보상 발생을 차단함.
 
-#### 3) `src/NetSim.py` (시뮬레이터 코어 및 TraCI 인터페이스)
-- `SumoNetSim`: SUMO 프로세스를 `libsumo.start()`로 기동하고, 매 초 `libsumo.simulationStep()`을 호출하여 차량 위치 및 상태를 동기화.
-- 기 구현된 TraCI 보조 함수:
-  - `GetSpeed(vid)`, `GetAcceleration(vid)`, `GetPosition(vid)`
-  - `GetRoutes(vid)`, `GetNextRSU(vid)`
-  - `GetSignalState(rsu_id, vehicle_id)`: 신호등 상태 ('r': 1.0, 'y': 2.0, 'g'/'G': 3.0)
-  - `GetSignalChangeTime(rsu_id)`: 잔여 위상 시간 반환
+3. **체크포인트 Resume 결함의 메커니즘**:
+   - `Observation 1.5`에 따라, `save_checkpoint` 시 `best_reward`를 `.pt`에 기록하지 않고, `run_hot_swap_training`에서 `best_reward = -inf`로 재설정함.
+   - 이로 인해 장기 훈련(20만 스텝)이 네트워크/장비 이슈 등으로 중단 후 재개될 때, 체크포인트 복원 시점 직후의 불안정한 에피소드가 과거 최고 모델(`_best.pt`)을 파괴하는 치명적 데이터 손실이 발생함.
 
 ---
 
-### 1.4 TraCI 신호등 및 정지선 접근 인터페이스 실측 검증
-실제 SUMO 시뮬레이션 환경에서 TraCI/libsumo 호출 결과를 검증한 결과:
-1. `sumo.vehicle.getNextTLS(vid)`:
-   - 반환 구조: `[(tls_id, tls_index, dist_to_stopline, state_char), ...]`
-   - 예시: `('N19', 13, 1166.65, 'r')`
-   - `dist_to_stopline`: 현재 차량 위치에서 해당 신호등 정지선까지의 거리 (미터 단위 정밀 float).
-   - `state_char`: 현재 신호 상태 (`'r'`, `'y'`, `'g'`, `'G'`).
-2. `sumo.trafficlight.getNextSwitch(tls_id)`:
-   - 다음 신호 위상 전환 시각 ($t_{\text{switch}}$) 반환.
-   - 잔여 시간: $\Delta t_{\text{left}} = \max(0.0, t_{\text{switch}} - t_{\text{current}})$.
-3. 동역학 예측 파라미터 (차량 단위):
-   - 선행 차량 추적: `sumo.vehicle.getLeader(vid, max_dist)` -> `(leader_vid, gap)`
-   - 대기 시간: `sumo.vehicle.getWaitingTime(vid)` (정체/정지 대기 시간)
-   - 가속도: `sumo.vehicle.getAcceleration(vid)`
+## 3. Caveats (한계 및 가정 사항)
+
+1. **R4 베이스라인 삭제 작업과의 경계**:
+   - 본 보고서는 R1(트레이너, 환경, 보상, 체크포인트 로직)에 집중 조사하였으며, `src/baselines/` 디렉토리 내의 가짜/구 베이스라인 코드 삭제 및 R2/R3 영역의 변경 사항은 해당 전담 역할의 범위로 둠.
+2. **SUMO 실구동 환경 의존성**:
+   - SUMO 바이너리 및 libsumo가 정상 연동되는 Linux 환경(`/home/imnyj/venv/bin/sumo`)을 기준으로 검증하였음.
 
 ---
 
-## 2. Logic Chain (논리적 연결고리 및 아키텍처 분석)
+## 4. Conclusion (결론 및 권장 수정 전략)
 
-```
-[SUMO / libsumo 1.27.1]
-       │ (Step 1.0s, getNextTLS, getSpeed, getPosition)
-       ▼
-[NetSim.py (SumoNetSim)]
-       │ (VehicleNode.update_dwell, RSUNode.update_dwell)
-       ▼
-[aoi_env.py (S1 + S2 + S2.5)]
-  ├─ S1: E1 진입 / E2 갱신 / E3 이탈 + 등속 외삽 오차 적분 e(t)
-  ├─ S2: 3-튜플 그랜트 (Δ, ch, p) + Communications.py Rayleigh SINR 성공 판정
-  └─ S2.5: 신호등 상태, 정지선 거리, 잔여 위상 기반 동역학 예측
-       │
-       ▼
-[RL Agent Interface (S3)]
-  ├─ State Vectorization & Normalization (차량별/RSU 관측 상태)
-  ├─ Hybrid Action Decoding (연속 Δ/p + 이산 ch)
-  └─ Transition Buffer: (s_t, a_t, r_t, s_{t+1}, d_t) with Retrospective Reward
-       │
-       ▼
-[Optuna HPO (R3) & 9 RL Baselines (R2)]
-  ├─ Basic (3종): PPO, SAC, TD3
-  ├─ Latest (3종): MAPPO, IPPO / HAPPO 등
-  └─ SOTA/Similar (3종): DDPG/A2C/REMO-DQN 등
-       │
-       ▼
-[Dual-Model Hot-swap Training Loop (S4 / R4)]
-  ├─ Serving Worker (Inference / Env Interaction)
-  └─ Learner Process (PyTorch GPU Training, RTX 3090, Model Hot-swap)
-       │
-       ▼
-[Evaluation Harness (S5 / R5)]
-  └─ Density & Seed Sweep Benchmark (RL Baselines vs Heuristic vs Static) -> CSV Output
-```
+### 4.1 R1 핵심 수정 권장안 (Actionable Fixes)
 
-### 2.1 S2.5 동역학 예측 및 휴리스틱 트리거 (R1)
-- **동기**: S1/S2 실측에서 "정지 차량은 오차가 0에 가까워 갱신이 불필요"하지만, "이동 중이던 차량이 정지하는 순간" RSU가 이를 모르면 낡은 속도로 외삽하여 추정 위치가 교차로를 지나쳐 날아가는 심각한 오차(Ghost Car)가 발생함.
-- **해결 원리**:
-  1. `STOP_IMMINENT` (정지 임박): $v > 1.0\,\text{m/s}$ 이고 (신호가 'r'/'y' 이며 정지선 거리 $d \le v^2 / (2 a_{\text{decel}})$ 또는 $d \le 30\,\text{m}$).
-  2. `START_IMMINENT` (출발 임박): $v < 0.5\,\text{m/s}$ 이고 (신호가 'g'/'G'로 변경되었거나 잔여 빨간불 시간 $\le 2.0\,\text{s}$).
-- **휴리스틱 베이스라인 (Heuristic Policy)**:
-  - 위 상태 변화 트리거 발생 시 즉시 강제 전송(`forced_update = True`, $\Delta = 0.5\text{s}$), 평시 정속/정지 상태에서는 백오프 ($\Delta = 3.0\sim 5.0\text{s}$) 적용.
+1. **`src/hot_swap_trainer.py` Checkpoint & Resume 로직 개선**:
+   - `HotSwapTrainer.save_checkpoint(filepath, best_reward=None)`:
+     * 체크포인트 딕셔너리에 `"best_reward": best_reward` 저장.
+   - `HotSwapTrainer.load_checkpoint(filepath)`:
+     * 로드된 `checkpoint` 딕셔너리를 반환하여 메타데이터 접근 허용.
+   - `run_hot_swap_training(..., resume=False)`:
+     * `resume=True` 시, `checkpoint_dir` 내 `{model_name}_best.pt` 또는 최신 `_ep*.pt` 파일에서 `best_reward`를 로드:
+       ```python
+       best_ckpt_path = os.path.join(checkpoint_dir, f"{model_name}_best.pt")
+       if os.path.exists(best_ckpt_path):
+           ckpt_data = torch.load(best_ckpt_path, map_location="cpu")
+           best_reward = float(ckpt_data.get("best_reward", -float("inf")))
+       ```
+     * 매 에피소드 종료 후 `trainer.save_checkpoint(ckpt_path, best_reward=best_reward)` 호출로 항상 현재 `best_reward` 메타데이터 유지.
 
-### 2.2 RL State / Action / Reward 명세 (S3 / R2)
-1. **State Space ($s_t$)**:
-   - 나이: $\tau_{\text{age}} = t - t_{\text{last\_update}}$ (정규화: $\tau / 10.0$)
-   - 동역학: 속도 $v / v_{\max}$, 가속도 $a / a_{\max}$
-   - 신호 맥락: 신호 상태 one-hot (`[is_red, is_yellow, is_green]`), 정지선 거리 $d_{\text{tls}} / 500.0$, 잔여 위상 시간 $t_{\text{phase\_left}} / 30.0$, 예측 플래그 `[stop_imminent, start_imminent]`
-   - 로컬/채널: RSU와의 거리 $d_{\text{rsu}} / R_{\text{comm}}$, 직전 전송 성공 여부
-   - 전역 혼잡: RSU 관측 차량 수 $N_{\text{active}} / N_{\max}$, CBR(채널 사용률)
-2. **Action Space ($a_t$)**:
-   - 하이브리드 액션: $(\Delta, ch, p)$
-   - $\Delta \in [\Delta_{\min}, \Delta_{\max}]$: 연속 갱신 주기 (예: $[0.2, 5.0]$초)
-   - $ch \in \{0, 1, \dots, C-1\}$: 이산 서브채널 선택 (4개)
-   - $p \in [p_{\min}, p_{\max}]$: 연속 전송 전력 (예: $[20.0, 30.0]$ dBm)
-3. **Reward ($r_t$)**:
-   - 소급 오차 적분 및 혼잡/실패 페널티:
-     $$r_t = -\int_{t_{\text{prev}}}^{t} e(t) dt - \lambda_1 \cdot \text{CBR} - \lambda_2 \cdot \mathbb{I}(\text{tx}) - \beta \cdot (1 - P_{\text{succ}})$$
+2. **`src/aoi_env.py` 파라미터 표준화**:
+   - `rl_interface`에서 `P_MIN, P_MAX, DELTA_MIN, DELTA_MAX`를 임포트하여 기본값으로 설정:
+     `self.p_min = float(self.config.get("p_min", P_MIN))`
+     `self.p_max = float(self.config.get("p_max", P_MAX))`
+   - `ActionDecoder` 생성자 호출 시에도 표준 상수를 사용하도록 통일.
 
----
-
-## 3. Caveats (주의사항 및 위험 요소)
-
-1. **환경 변수 및 바이너리 경로**:
-   - SUMO 및 netconvert가 `/home/imnyj/venv/bin`에 위치하므로, 모든 실행 스크립트는 반드시 `export PATH="/home/imnyj/venv/bin:$PATH"` 및 `export SUMO_HOME="/home/imnyj/venv/lib/python3.12/site-packages/sumo"`를 설정하거나 `/home/imnyj/venv/bin/python` 인터프리터를 직접 사용해야 합니다.
-2. **`make_sumo_set.py` 파라미터 초기화 주의점**:
-   - `step`, `GRID_SIZE`, `EDGE_LENGTH` 등은 모듈 import 시점에 1회 계산되므로, 외부에서 `OUTAGE_ZONE` 등을 수정한 후에는 반드시 기하 구조 파생 변수를 재계산해야 합니다. (S1/S2 기본 2400m 격자 유지 권장)
-3. **`libsumo` 단일 스레드 제약**:
-   - `libsumo`는 프로세스 내 단일 인스턴스만 지원합니다. 다중 시뮬레이션을 병렬 실행(예: Optuna HPO, 평가 하네스 병렬화)할 때는 `multiprocessing`을 통해 개별 프로세스로 SUMO를 격리 기동해야 합니다.
-4. **PyTorch 기반 통일**:
-   - 시스템에 PyTorch 2.11.0+cu130이 정상 설치되어 있고 RTX 3090 GPU가 4장 할당되어 있으므로, 9개 베이스라인 모델은 모두 PyTorch로 구현하는 것이 안정성과 성능 측면에서 최적입니다.
-5. **R6 제약 준수 (Critical)**:
-   - 9개 베이스라인 구축, Optuna 최적화, S4/S5 평가 하네스 검증이 완전히 완료되기 전까지는 독자적인 제안 기법(Proposed Method) 개발에 착수하지 않고 사용자 승인을 대기해야 합니다.
-
----
-
-## 4. Conclusion (최종 종합 결론)
-
-1. **코드베이스 및 시뮬레이션 환경 조사 완료**:
-   - S1(유효 AoI 오차 계산) 및 S2(Rayleigh SINR 통신 모델)가 `src/aoi_env.py` 및 `src/Communications.py`에 완전하고 정합성 있게 구축되어 있음을 확인하였습니다.
-2. **S2.5 인터페이스 검증 완료**:
-   - TraCI의 `getNextTLS`, `getNextSwitch`, `getLeader` 등을 통해 신호등 상태, 정지선 거리, 잔여 시간 및 동역학 예측을 즉각 추출할 수 있음을 실측으로 검증하였습니다.
-3. **9개 베이스라인 및 파이프라인 개발 준비 완료**:
-   - 하이브리드 액션 공간 지원이 가능한 PyTorch RL 구조(Actor-Critic 기반 하이브리드 정책 헤드 분기)와 Optuna HPO, Act/Rest 분리 핫스왑 학습 루프 및 평가 하네스 구축을 위한 기술적 준비가 완료되었습니다.
+3. **관련 단위 테스트(`tests/`) 갱신**:
+   - 18차원 관측 벡터(`STATE_DIM=18`) 및 신규 액션 범위($P \in [10.0, 23.0]\text{dBm}$, $\Delta \in [0.1, 45.0]\text{s}$)를 테스트 단언문에 반영하여 회귀 테스트 패스 달성.
 
 ---
 
 ## 5. Verification Method (독립 검증 방법)
 
-### 5.1 S1+S2 환경 동작 검증
-다음 명령어로 S1+S2 환경의 정상 동작을 즉시 검증할 수 있습니다:
-
-```bash
-export PATH="/home/imnyj/venv/bin:$PATH"
-export SUMO_HOME="/home/imnyj/venv/lib/python3.12/site-packages/sumo"
-/home/imnyj/venv/bin/python -c "
-import random
-import src.NetSim as net, src.sumo.make_sumo_set as ss, src.aoi_env as env
-ss.RSU_RANGE=800.0; ss.AV_SPEED=45.0; ss.DENSITY=25.0; ss.MAX_STEPS=40.0
-ss.SPEED=ss.AV_SPEED/3.6; ss.P_GEN=(ss.DENSITY*ss.SPEED)/3600.0
-net.MAX_EPISODE=1; net.b_step_log=False; net.b_reroute=False
-random.seed(5); env.WARMUP_S=10.0; env.reset_env()
-sim=net.SumoNetSim(VehicleClass=env.VehicleNode, RSUClass=env.RSUNode,
-                   start_message_fn=env.start_message)
-sim.run()
-print('Simulation summary:', env.METRICS.summary())
-"
-```
-
-### 5.2 TraCI 신호등 및 동역학 데이터 추출 검증
-```bash
-export PATH="/home/imnyj/venv/bin:$PATH"
-export SUMO_HOME="/home/imnyj/venv/lib/python3.12/site-packages/sumo"
-/home/imnyj/venv/bin/python -c "
-import libsumo as sumo
-import src.NetSim as net, src.sumo.make_sumo_set as ss, src.aoi_env as env
-ss.RSU_RANGE=800.0; ss.AV_SPEED=45.0; ss.DENSITY=25.0; ss.MAX_STEPS=30.0
-ss.SPEED=ss.AV_SPEED/3.6; ss.P_GEN=(ss.DENSITY*ss.SPEED)/3600.0
-net.MAX_EPISODE=1; net.b_step_log=False; net.b_reroute=False
-env.WARMUP_S=5.0; env.reset_env()
-
-class TestVehicle(env.VehicleNode):
-    def update_dwell(self, current_time: float):
-        super().update_dwell(current_time)
-        tls = sumo.vehicle.getNextTLS(self.id)
-        if tls and current_time == 20.0:
-            print(f'Vehicle {self.id}: speed={self.speed():.2f}, next_tls={tls[0]}')
-
-sim = net.SumoNetSim(VehicleClass=TestVehicle, RSUClass=env.RSUNode)
-sim.run()
-"
-```
+1. **단위 테스트 실행**:
+   ```bash
+   /home/imnyj/venv/bin/pytest tests/test_hot_swap.py tests/test_aoi_env_genuine.py -v
+   ```
+2. **Resume 로직 무결성 검증 시나리오**:
+   - 2 에피소드 실행 후 의도적으로 약한 보상(-999.0)을 갖는 에피소드로 `resume=True` 실행 시 `_best.pt`가 덮어써지지 않고 유지되는지 단위 테스트로 검증.
+3. **보상 단언문 A4 발화 검증**:
+   - `env.step()` 실행 시 A4 단언문 통과 여부 및 $R_t \le 0$ 검증.

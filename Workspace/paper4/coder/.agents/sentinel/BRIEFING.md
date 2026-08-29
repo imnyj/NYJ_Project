@@ -1,35 +1,35 @@
-# BRIEFING — 2026-08-27T00:02:00+09:00
+# BRIEFING — 2026-08-27T10:53:03+09:00
 
 ## Mission
-Sentinel monitoring and lifecycle orchestration for genuine SUMO-integrated V2I AoI RL pipeline and 9 baselines implementation, dummy verification, and halt before massive 200k-step run.
+Sentinel monitoring and lifecycle orchestration for architectural fixes (R1: Trainer & Env 4-term reward / power norm / tx_powers / A4 / resume best_reward; R2: Action bounds Pmax=23 / Delta_max red-light sync / StateVectorizer 18-dim; R3: RSU_RANGE=300, step-length=0.1, evaluate speed fix, HPO w1-w4; R4: delete old baselines) and halt before new baseline phase.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: /home/imnyj/Workspace/paper4/coder/.agents/sentinel
-- Orchestrator: ba919436-abcb-4a7c-adf4-43263891d24a
-- Victory Auditor: f324d031-1e4c-439d-ab30-a327e8b8dc4b
+- Orchestrator: 3d6a38f8-f0cb-48c4-98ea-b46062a1aceb
+- Victory Auditor: to be spawned on victory claim
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
 - Victory Audit is MANDATORY before reporting completion
-- Hardcoded anti-mocking assertions using real NetSim.py and Communications.py
-- Halt after implementation & verification (R4) before 200k-step heavy compute
+- Route: General (teamwork_preview_orchestrator)
+- Halt after implementation & verification before next baseline phase
 
 ## User Context
-- **Last user request**: Implement genuine SUMO V2I AoI scheduling RL pipeline with 9 baselines, Optuna HPO framework, anti-mocking verification script, and halt for user review prior to 200k-step runs.
+- **Last user request**: Architectural fixes for Trainer/Env (4-term reward, power norm, tx_power, A4, resume), RL interface bounds (Power [10, 23], dynamic Delta_max, 18-dim state), Knobs & HPO (RSU_RANGE=300, step=0.1, speed fix, w1-w4 HPO), and Baselines deletion.
 - **Pending clarifications**: none
-- **Delivered results**: Genuine SUMO V2I AoI pipeline, 9 baselines, anti-mocking assertions, verify_environment.py, 199/199 tests passed, pre-compute halt confirmed.
+- **Delivered results**: Previous milestone (genuine SUMO pipeline setup) completed and audited. Starting architectural fixes & baseline scraping milestone.
 
 ## Project Status
-- **Phase**: complete
+- **Phase**: in progress
 
 ## Victory Audit Status
-- **Triggered**: yes
-- **Verdict**: VICTORY CONFIRMED
+- **Triggered**: no
+- **Verdict**: pending
 - **Retry count**: 0
 
 ## Artifact Index
 - /home/imnyj/Workspace/paper4/coder/.agents/ORIGINAL_REQUEST.md — Original User Request
 - /home/imnyj/Workspace/paper4/coder/ORIGINAL_REQUEST.md — Original User Request
-- /home/imnyj/Workspace/paper4/idea/scenario.md — Scenario reference
 - /home/imnyj/Workspace/paper4/Conversation.md — Design & Architecture reference
+- /home/imnyj/Workspace/paper4/idea/scenario.md — Scenario reference

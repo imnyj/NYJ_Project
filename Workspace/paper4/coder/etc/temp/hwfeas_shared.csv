@@ -1,0 +1,2 @@
+episode,global_step,mean_reward,mean_loss,swap_count,mean_aoi,peak_aoi,packet_loss_rate,mean_error,max_error,low_speed_error,high_speed_error,avg_tx_power_dbm,total_energy_joules,jains_fairness_aoi,jains_fairness_err,tx_attempts,tx_fails
+1,600,-0.3513,0.0,83,2.9771,2.9771,0.9215,4.2405,48.5931,2.4516,4.4128,11.682,0.239232,0.7916,0.6987,12532,11548

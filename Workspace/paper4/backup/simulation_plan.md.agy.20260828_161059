@@ -1,0 +1,117 @@
+# 베이스라인 구현 검증 및 시뮬레이션 실행 계획
+
+## 1. 구현 검증 결과 ✅
+
+> [!IMPORTANT]
+> **9개 베이스라인 모두 구현 완료 및 검증 통과.**
+
+| # | 카테고리 | 모델명 | 파일 | 인스턴스화 | select_action | update | save |
+|---|----------|--------|------|:---:|:---:|:---:|:---:|
+| 1 | Basic | PPO | [sb3_ppo.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/sb3_ppo.py) | ✅ | ✅ | ✅ | ✅ |
+| 2 | Basic | SAC | [sb3_sac.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/sb3_sac.py) | ✅ | ✅ | ✅ | ✅ |
+| 3 | Basic | TD3 | [sb3_td3.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/sb3_td3.py) | ✅ | ✅ | ✅ | ✅ |
+| 4 | Latest | RES-MAPDDPG | [res_mapddpg.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/res_mapddpg.py) | ✅ | ✅ | ✅ | ✅ |
+| 5 | Latest | MA2HDQN | [ma2hdqn.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/ma2hdqn.py) | ✅ | ✅ | ✅ | ✅ |
+| 6 | Latest | I-HAMAPPO | [i_hamappo.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/i_hamappo.py) | ✅ | ✅ | ✅ | ✅ |
+| 7 | Similar | SPAM-D3QN | [spam_d3qn.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/spam_d3qn.py) | ✅ | ✅ | ✅ | ✅ |
+| 8 | Similar | CARLTON | [carlton.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/carlton.py) | ✅ | ✅ | ✅ | ✅ |
+| 9 | Similar | MADDPG-MT | [maddpg_mt.py](file:///home/imnyj/Workspace/paper4/coder/src/baselines/maddpg_mt.py) | ✅ | ✅ | ✅ | ✅ |
+
+- **pytest**: 118 passed, 0 failed (49.2s)
+- **`run_all.py`**: 200,000 steps (100 ep × 2000 steps) 올바르게 설정, resume 지원, `setsid nohup` 세션 분리 실행 가이드 포함
+
+## 2. 워크스테이션 하드웨어
+
+| 리소스 | 사양 |
+|--------|------|
+| CPU | Intel i9-10900X (20 threads) @ 3.70GHz |
+| RAM | 125 GiB (100 GiB 여유) |
+| GPU | **RTX 3090 × 4** (각 24GB, 총 96GB VRAM) |
+| Disk | 163 GB 여유 |
+
+## 3. 벤치마크 결과
+
+| 항목 | 측정값 |
+|------|--------|
+| 200 steps (PPO) | 3.2초 |
+| 1 에피소드 (2000 steps) 추정 | ~32초 |
+| 1 모델 (200k steps) 추정 | **~54분** |
+| 9 모델 순차 실행 추정 | **~8시간** |
+
+## 4. 시뮬레이션 실행 계획 (Claude + Antigravity 분담)
+
+> [!TIP]
+> SUMO(libsumo)는 단일 인스턴스당 1 CPU 코어를 점유합니다. GPU 4장과 CPU 20코어를 활용하여 **최대 4개 모델을 동시에 병렬 실행**할 수 있습니다.
+
+### 분담 구조
+
+```mermaid
+graph TB
+    subgraph "GPU 0 + CPU 0-4"
+        A["Antigravity 그룹 A<br/>PPO, SAC, TD3"]
+    end
+    subgraph "GPU 1 + CPU 5-9"
+        B["Antigravity 그룹 B<br/>RES-MAPDDPG, MA2HDQN"]
+    end
+    subgraph "GPU 2 + CPU 10-14"
+        C["Claude 그룹 C<br/>I-HAMAPPO, SPAM-D3QN"]
+    end
+    subgraph "GPU 3 + CPU 15-19"
+        D["Claude 그룹 D<br/>CARLTON, MADDPG-MT"]
+    end
+```
+
+### 실행 명령어
+
+**Antigravity 담당 (GPU 0-1, 모델 5개)**:
+```bash
+# 그룹 A: Basic 3종 (순차 실행, GPU 0)
+setsid nohup env CUDA_VISIBLE_DEVICES=0 \
+  /home/imnyj/venv/bin/python run_all.py \
+  --models PPO SAC TD3 --seed 42 \
+  > logs/training_groupA.log 2>&1 < /dev/null &
+
+# 그룹 B: Latest 2종 (순차 실행, GPU 1)  
+setsid nohup env CUDA_VISIBLE_DEVICES=1 \
+  /home/imnyj/venv/bin/python run_all.py \
+  --models RES-MAPDDPG MA2HDQN --seed 42 \
+  > logs/training_groupB.log 2>&1 < /dev/null &
+```
+
+**Claude 담당 (GPU 2-3, 모델 4개)**:
+```bash
+# 그룹 C: Latest 1종 + Similar 1종 (순차 실행, GPU 2)
+setsid nohup env CUDA_VISIBLE_DEVICES=2 \
+  /home/imnyj/venv/bin/python run_all.py \
+  --models I-HAMAPPO SPAM-D3QN --seed 42 \
+  > logs/training_groupC.log 2>&1 < /dev/null &
+
+# 그룹 D: Similar 2종 (순차 실행, GPU 3)
+setsid nohup env CUDA_VISIBLE_DEVICES=3 \
+  /home/imnyj/venv/bin/python run_all.py \
+  --models CARLTON MADDPG-MT --seed 42 \
+  > logs/training_groupD.log 2>&1 < /dev/null &
+```
+
+### 예상 소요 시간
+
+| 그룹 | 모델 수 | 예상 소요 | 완료 예상 |
+|------|---------|-----------|-----------|
+| A (GPU 0) | 3 | ~2.7h | 가장 늦음 |
+| B (GPU 1) | 2 | ~1.8h | |
+| C (GPU 2) | 2 | ~1.8h | |
+| D (GPU 3) | 2 | ~1.8h | |
+| **총 (병렬)** | **9** | **~2.7h** | 순차 8h → 병렬 **2.7h**으로 단축 |
+
+### 모니터링
+
+두 에이전트 모두 다음 명령으로 진행 상황을 체크:
+```bash
+# 각 그룹 로그 실시간 확인
+tail -f logs/training_groupA.log
+# 텐서보드 확인
+tensorboard --logdir logs/tensorboard/ --port 6006
+```
+
+> [!WARNING]
+> `setsid nohup`으로 실행하기 때문에 SSH 연결이 끊겨도 훈련이 중단되지 않습니다. 다만 **실행 전 사용자 승인**이 반드시 필요합니다.

@@ -1,5 +1,17 @@
 # AoI-aware V2I Uplink RL Scheduling Pipeline — 진행 현황 및 인계 동기화 문서 (progress_sync.md)
 
+> [!CAUTION]
+> **이 문서는 2026-08-27T02:57 시점에서 멈춰 있으며, 상당 부분이 폐기된 내용이다.**
+> 아래 4절의 baseline 9종(HybridPPO / HybridSAC / HybridTD3 / MAPPO / HyARPPO / MPDQN /
+> PureAoI / DuelingQAoI / SACAoI)은 **전부 폐기**되었다. 현행 확정 목록은
+> PPO, SAC, TD3, RES-MAPDDPG, MA2HDQN, I-HAMAPPO, SPAM-D3QN, CARLTON, MADDPG-MT이며
+> 근거는 `Conversation.md` 4번 절과 `librarian/baselines_v2.json`에 있다.
+> 5절의 실행 명령(`hot_swap_trainer.py --model HybridPPO` 등)도 현재 인터페이스와 맞지 않는다.
+> **최신 상태는 `simulation_plan.md`(rev.3)와 `review/claude_audit_20260828.md`를 볼 것.**
+> 2026-08-28 22시 기준 판정: Δ 액션 미반영 등 치명 결함으로 **본훈련 착수 불가**.
+
+---
+
 **최종 갱신 일시**: 2026-08-27T02:57:00+09:00  
 **현재 진행 상태**: **Phase 2 완료 / Gate 100% PASS / Pre-Compute Halt (사용자 코드 리뷰 및 20만 스텝 착수 승인 대기)**  
 **프로젝트 루트**: `/home/imnyj/Workspace/paper4/coder`

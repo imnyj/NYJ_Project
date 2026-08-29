@@ -32,13 +32,13 @@ class HeuristicScheduler:
     """
     def __init__(
         self,
-        delta_min: float = 0.5,
-        delta_max: float = 10.0,
+        delta_min: float = 0.1,
+        delta_max: float = 45.0,
         delta_cruise_steady: float = 3.5,
         delta_cruise_accel: float = 1.5,
-        p_high: float = 25.0,
-        p_mid: float = 25.0,
-        p_low: float = 20.0,
+        p_high: float = 23.0,
+        p_mid: float = 20.0,
+        p_low: float = 10.0,
         num_subchannels: int = comm.NUM_SUBCHANNELS,
         sumo_conn: Any = None,
     ) -> None:

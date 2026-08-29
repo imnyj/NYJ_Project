@@ -440,10 +440,10 @@ st = 0
 
 def pre_define() -> None:
     global MODE, MAX_EPISODE, b_reroute, b_step_log
-    sumo_set.RSU_RANGE = 800.0
+    sumo_set.RSU_RANGE = 300.0
     MAX_EPISODE = 1
     sumo_set.MAX_STEPS = 3600.0
-    sumo_set.OUTAGE_ZONE = 800.0
+    sumo_set.OUTAGE_ZONE = 300.0
     sumo_set.NUM_BLOCKS = 5
     sumo_set.AV_SPEED = random.uniform(20.0, 60.0)
     sumo_set.DENSITY = random.uniform(5.0, 20.0)
@@ -529,7 +529,7 @@ class SumoNetSim():
             base_args = [
                 "sumo",
                 "-c", CFG_DIR,
-                "--step-length", "1.0",
+                "--step-length", "0.1",
                 "--no-step-log", "true",
                 "--duration-log.disable", "true",
                 "--quit-on-end", "false",
@@ -749,7 +749,7 @@ def GetSignalState(
     rsu_id: Optional[str],
     vehicle_id: Optional[str] = None,
     dir_flag: Optional[int] = None,
-    comm_range: float = 800.0,
+    comm_range: float = 300.0,
 ) -> float:
     """
     RSU가 차량의 통신 범위 내에 있으면 즉시 다음 신호 정보를 사용하고,

@@ -1,0 +1,603 @@
+{
+  "_meta": {
+    "generated": "2026-08-27",
+    "generated_by": "librarian agent (fresh search; prior baseline list in Conversation.md section 4 / run_all.py / writer/main.tex was discarded and NOT reused)",
+    "venue_policy": "IEEE / ACM / Elsevier-ScienceDirect / Springer top-tier / Nature-family only. arXiv and MDPI excluded, except the three foundational RL papers in category 'basic'.",
+    "verification_method": "Every DOI was (1) resolved through https://doi.org/ and confirmed to land on an IEEE Xplore document page, (2) cross-checked field-by-field (title, full author list, venue, volume, issue, page range, issue year) against Crossref REST API, OpenAlex API, and dblp. All three agreed on every field for every entry. Abstracts were retrieved from the Semantic Scholar Graph API and used to write the summary and implementability fields. PMLR page ranges for SAC/TD3 were read directly from proceedings.mlr.press/v80.",
+    "known_caveat_early_access_year": "IEEE assigns a DOI at early-access time, so the DOI year token can precede the issue year (e.g. 10.1109/TVT.2025.3640225 appears in the June 2026 issue, vol. 75 no. 6). Citations below use the FINAL ISSUE year, which is what Crossref and dblp report and what IEEE prints on the article.",
+    "venue_concentration_note": "All three category-A picks landed in IEEE Transactions on Vehicular Technology. This was not a search artifact of one query - it is where the 2026 hybrid-action AoI/resource-allocation work is concentrated. Alternatives in TITS, IoT-J and OJCOMS were found and are listed under considered_and_rejected with their rejection reasons; implementability was the deciding factor, not venue spread."
+  },
+  "baselines": [
+    {
+      "id": "li2026",
+      "category": "latest",
+      "title": "Resource Allocation in NOMA-V2X Networks With Multi-Agent Parameterized Action Space Reinforcement Learning",
+      "authors": [
+        "Juan Li",
+        "Quanzhou Leng",
+        "Menglong Cheng"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "venue_type": "journal",
+      "year": 2026,
+      "volume": "75",
+      "issue": "7",
+      "pages": "14775--14790",
+      "doi": "10.1109/TVT.2026.3662431",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11373895; title, all 3 authors, TVT vol. 75 no. 7 pp. 14775-14790, 2026 confirmed identically by Crossref, OpenAlex and dblp",
+      "method_name": "RES-MAPDDPG",
+      "summary": "Proposes res-MAPDDPG, a residual multi-agent parameterized-action-space DDPG in which every agent emits a discrete action together with the continuous parameters attached to that discrete choice, so subchannel/resource-block selection and transmit power are learned in one policy rather than two stages. The NOMA V2I side is handled separately by user grouping plus convex optimization, and only the V2V side is learned. Picked because the parameterized action space is structurally identical to our hybrid action (discrete ch with continuous Delta and p hanging off it) and it is the newest V2X paper that learns exactly that structure.",
+      "implementability": "IMPLEMENTABLE with one clearly-scoped subtraction. Original observation is per-agent local CSI plus interference measurements; original action is (discrete RB index, continuous power). Adaptation for us: keep only the res-MAPDDPG learner. Feed the 18-dim RSU-side observation; the discrete head chooses one of our 4 subchannels and the continuous head emits the 2-dim (Delta, p) as that subchannel's action parameters - a 1-dim to 2-dim widening of the parameter vector, no architectural change. Instantiate one shared-parameter actor per in-range vehicle, all hosted at the RSU (our setting is single-RSU centralised, so 'multi-agent' costs us nothing extra). DROP the NOMA grouping + convex-optimization V2I stage: our uplink is orthogonal-subchannel with the existing Rayleigh SINR contention model and we have no SIC receiver. Consequence to state honestly in the paper: without NOMA this degenerates to a parameterized-action DDPG baseline, which is precisely the comparison we want. No new infrastructure required.",
+      "bibitem": "\\bibitem{li2026} J. Li, Q. Leng and M. Cheng, ``Resource Allocation in NOMA-V2X Networks With Multi-Agent Parameterized Action Space Reinforcement Learning,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 7, pp. 14775--14790, 2026.",
+      "cited_by_count": "2",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27 (Semantic Scholar agrees: 2). 2026 paper - per the coordinator's rule, NOT compared on citations against other 2026 papers."
+    },
+    {
+      "id": "hong2026",
+      "category": "latest",
+      "title": "Joint Sub-Band Allocation and Power Control for Dynamic Vehicular Networks Based on Multi-Agent Deep Reinforcement Learning",
+      "authors": [
+        "Zeyi Hong",
+        "Pengfei Sun",
+        "Qintuya Si",
+        "Yang Liu",
+        "Tianshuang Qiu"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "venue_type": "journal",
+      "year": 2026,
+      "volume": "75",
+      "issue": "6",
+      "pages": "11423--11437",
+      "doi": "10.1109/TVT.2025.3640225",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11278196; title, all 5 authors, TVT vol. 75 no. 6 pp. 11423-11437 confirmed identically by Crossref, OpenAlex and dblp. Year note: DOI token says 2025 (early access 2025-12-04) but the final issue is June 2026, so the citation year is 2026 - Crossref and dblp both report 2026.",
+      "method_name": "MA2HDQN",
+      "summary": "Proposes MA2HDQN, which splits the hybrid action space explicitly: a multi-agent dueling double DQN (MA-D3QN) branch handles the discrete sub-band allocation while an improved DDPG (i-DDPG) branch handles continuous power control, plus an adaptive learning-rate rule driven by recent environment feedback and multi-step Q-value updates for faster, more stable convergence. Picked because its action space (discrete sub-band + continuous power) is our action space minus Delta, making it the nearest-to-drop-in 2026 baseline and the cleanest test of whether branch-splitting beats a single parameterized policy on our problem.",
+      "implementability": "IMPLEMENTABLE - closest to drop-in of all nine. Original observation is per-link local channel and interference state; original action is (discrete sub-band, continuous power). Adaptation for us: point the D3QN branch at our 4 subchannels and widen the i-DDPG branch output from 1-dim (p) to 2-dim (Delta, p), with Delta passed through our existing geometric mapping over [0.1, 45] s. Observation is our 18-dim RSU-side vector unchanged. The multi-agent framing collapses to one shared-parameter agent instance per in-range vehicle, all executed at the RSU - identical semantics for a single-RSU scheduler. The adaptive learning rate and multi-step update are algorithm-internal and carry over verbatim. NO infrastructure gap whatsoever: no RIS, no VLC, no NOMA/SIC, no second RSU, no platoon.",
+      "bibitem": "\\bibitem{hong2026} Z. Hong, P. Sun, Q. Si, Y. Liu and T. Qiu, ``Joint Sub-Band Allocation and Power Control for Dynamic Vehicular Networks Based on Multi-Agent Deep Reinforcement Learning,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 6, pp. 11423--11437, 2026.",
+      "cited_by_count": "1",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27. 2026 issue (early access Dec 2025) - not compared on citations against other 2026 papers."
+    },
+    {
+      "id": "chen2026",
+      "category": "latest",
+      "title": "Hybrid-Action DRL-Based Resource Allocation for Semantic-Aware Computation Offloading in Vehicular Edge Networks",
+      "authors": [
+        "Quan Chen",
+        "Xiaoqin Song",
+        "Tiecheng Song",
+        "Yang Yang"
+      ],
+      "venue": "IEEE Transactions on Wireless Communications",
+      "venue_type": "journal",
+      "year": 2026,
+      "volume": "25",
+      "issue": "",
+      "pages": "6790--6805",
+      "doi": "10.1109/TWC.2025.3626670",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11226898; title, all 4 authors, IEEE TWC vol. 25, pp. 6790-6805 confirmed identically by Crossref, OpenAlex and dblp. ISSUE NUMBER LEFT EMPTY ON PURPOSE: none of the three indexes has assigned one yet (Crossref issue=null, OpenAlex issue=None, dblp number=None), so the bibitem omits the 'no.' field rather than inventing a number. Year note: dblp and Crossref report 2026; OpenAlex reports 2025 from the early-access date.",
+      "cited_by_count": "2",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27 (Semantic Scholar agrees: 2). 2026 paper - per the coordinator's rule, NOT compared on citations against other 2026 papers.",
+      "method_name": "I-HAMAPPO",
+      "summary": "Proposes I-HAMAPPO, an importance-based hybrid-action multi-agent PPO that jointly optimises CONTINUOUS and DISCRETE decision variables in one policy for semantic-aware computation offloading in vehicular edge networks, evaluated on real vehicle trajectories from the highD dataset. A utility function combines task delay, energy consumption and semantic similarity, and an importance evaluation module scores semantic features so only task-relevant information is transmitted. Selected because it is the target journal (IEEE TWC), the domain is vehicular, and hybrid-action MAPPO is the closest published learner to our exact action structure.",
+      "implementability": "IMPLEMENTABLE, with the semantic half removed. Original observation is a per-vehicle view of task queue, channel and edge-server state; original action is mixed - discrete offloading/resource selection plus continuous semantic compression ratio and communication resource share. Adaptation for us: keep the I-HAMAPPO learner exactly as specified - discrete branch selects one of our 4 subchannels, continuous branch emits (Delta, p) - and feed it our 18-dim RSU-side observation. The multi-agent PPO runs one shared-parameter actor per in-range vehicle, all hosted at the RSU, matching our single-RSU centralised scheduler. DROP the importance evaluation module and the semantic compression ratio action: we transmit mobility state, not semantic features, so there is no semantic similarity term and nothing to compress. STATE HONESTLY IN THE PAPER that roughly half the original contribution (the semantic/IEM half) is not reproduced and only the hybrid-action MAPPO learner named in the title is being compared. No infrastructure gap: no RIS, no VLC, no MIMO array, no second RSU, no platoon.",
+      "bibitem": "\\bibitem{chen2026} Q. Chen, X. Song, T. Song and Y. Yang, ``Hybrid-Action DRL-Based Resource Allocation for Semantic-Aware Computation Offloading in Vehicular Edge Networks,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 6790--6805, 2026."
+    },
+    {
+      "id": "bai2024",
+      "category": "similar",
+      "title": "AoI-Aware Joint Scheduling and Power Allocation in Intelligent Transportation System: A Deep Reinforcement Learning Approach",
+      "authors": [
+        "Guangming Bai",
+        "Long Qu",
+        "Juan Liu",
+        "Dechao Sun"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "venue_type": "journal",
+      "year": 2024,
+      "volume": "73",
+      "issue": "4",
+      "pages": "5781--5795",
+      "doi": "10.1109/TVT.2023.3333825",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10321738; title, all 4 authors, TVT vol. 73 no. 4 pp. 5781-5795, 2024 confirmed identically by Crossref, OpenAlex and dblp",
+      "method_name": "SPAM-D3QN",
+      "summary": "Studies vehicle data-packet scheduling and power allocation for AoI minimisation in a Manhattan-grid V2I network, modelled as a SINGLE-AGENT MDP sitting at the infrastructure side. Proposes SPAM, a Dueling Double DQN with Prioritized Experience Replay to cope with the scarcity of high-value transitions, reporting 22.6% lower average AoI than plain D3QN baselines. This is the single closest published work to our formulation - same actor (the roadside infrastructure), same two decisions (who/when to schedule and at what power), same objective (AoI), same V2I grid topology - and is exactly the comparison a reviewer will demand.",
+      "implementability": "IMPLEMENTABLE, requires only an action discretisation we control. Original observation is the infrastructure-side view of per-vehicle AoI and channel state; original action is fully discrete: (which vehicle to schedule, which power level). Adaptation for us: the agent already lives where ours lives, so the observation is our 18-dim RSU vector unchanged. Discretise our two continuous axes for the D3QN head - p into L levels over [10, 23] dBm and Delta into K levels drawn from the SAME geometric grid we use for the continuous mapping over [0.1, 45] s - and treat the subchannel as the third discrete factor. PER carries over untouched. RISK TO MANAGE: the joint action space is K x L x 4, which explodes if K and L are generous; use a factored/branching Q-head or a deliberately coarse grid (e.g. K=8, L=4) and report the grid explicitly in the paper. This baseline is scientifically valuable precisely because it is the fully-discretised reference point - it quantifies what our continuous Delta and p actually buy.",
+      "bibitem": "\\bibitem{bai2024} G. Bai, L. Qu, J. Liu and D. Sun, ``AoI-Aware Joint Scheduling and Power Allocation in Intelligent Transportation System: A Deep Reinforcement Learning Approach,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 4, pp. 5781--5795, 2024.",
+      "cited_by_count": "26",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27."
+    },
+    {
+      "id": "cohen2025",
+      "category": "similar",
+      "title": "SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks",
+      "authors": [
+        "Yaniv Cohen",
+        "Tomer Gafni",
+        "Ronen Greenberg",
+        "Kobi Cohen"
+      ],
+      "venue": "IEEE Transactions on Wireless Communications",
+      "venue_type": "journal",
+      "year": 2025,
+      "volume": "24",
+      "issue": "1",
+      "pages": "228--243",
+      "doi": "10.1109/TWC.2024.3491035",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10750207; title, all 4 authors, IEEE TWC vol. 24 no. 1 pp. 228-243 confirmed identically by Crossref, OpenAlex and dblp. Year: Crossref and dblp report the Jan 2025 issue; OpenAlex reports 2024 from the early-access date. An arXiv preprint (2402.17773) exists but the citation used is the TWC version.",
+      "cited_by_count": "14",
+      "cited_by_count_source": "OpenAlex cited_by_count = 14, queried 2026-08-27. Semantic Scholar reports 18 for the same work (it merges the arXiv preprint's citations). Both numbers recorded; neither is fabricated.",
+      "method_name": "CARLTON",
+      "summary": "Proposes CARLTON, a multi-agent RL framework for distributed dynamic channel allocation that explicitly rejects the usual perfect-orthogonality and one-to-one user-channel assumptions, instead modelling inter-carrier interference and channel reuse across overlapping networks. It uses Centralized Training with Decentralized Execution over the DeepMellow value-based algorithm to maximise a global SINR measure subject to per-network QoS-SINR targets. Selected because our environment is literally a bandwidth split into 4 frequency-separated subchannels contended by many vehicles under a Rayleigh SINR model - the exact problem CARLTON is built for - and because it is published in our target journal.",
+      "implementability": "IMPLEMENTABLE, requires adding the two continuous axes. Original observation is each transmitter's local SINR/interference measurements; original action is purely DISCRETE - which of K channels to occupy. Adaptation for us: the SINR-aware reward and the CTDE/DeepMellow learner transfer directly onto our Rayleigh SINR contention model with K=4, and the observation becomes our 18-dim RSU-side vector. Because CARLTON has no power and no timing action, we extend it the same way bai2024 is extended: add discretised heads for p (L levels over [10,23] dBm) and Delta (K levels on our geometric grid over [0.1,45] s), keeping the value-based DeepMellow update. Agents are the in-range vehicles with centralised training at the RSU - our deployment is centralised anyway, so CTDE costs nothing. RISK TO MANAGE: like bai2024 this is a fully value-based/discretised design, so the two discretised baselines will share a failure mode; keep their grids identical so the comparison isolates the learner rather than the grid. NOTE it contributes no AoI term of its own - the AoI objective comes from our reward, and that substitution must be stated.",
+      "bibitem": "\\bibitem{cohen2025} Y. Cohen, T. Gafni, R. Greenberg and K. Cohen, ``SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 24, no. 1, pp. 228--243, 2025."
+    },
+    {
+      "id": "parvini2023",
+      "category": "similar",
+      "title": "AoI-Aware Resource Allocation for Platoon-Based C-V2X Networks via Multi-Agent Multi-Task Reinforcement Learning",
+      "authors": [
+        "Mohammad Parvini",
+        "Mohammad Reza Javan",
+        "Nader Mokari",
+        "Bijan Abbasi",
+        "Eduard A. Jorswieck"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "venue_type": "journal",
+      "year": 2023,
+      "volume": "72",
+      "issue": "8",
+      "pages": "9880--9896",
+      "doi": "10.1109/TVT.2023.3259688",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10077432; title, venue, TVT vol. 72 no. 8 pp. 9880-9896, 2023 confirmed identically by Crossref, OpenAlex and dblp. Author-name caveat: Crossref and dblp both print the 4th author as 'Bijan Abbasi'; OpenAlex expands it to 'Bijan Abbasi Arand'. The 2-of-3 majority form used in the bibitem is 'B. Abbasi'.",
+      "method_name": "MADDPG-MT",
+      "summary": "AoI-aware radio resource management for C-V2X platooning, solved distributedly with two novel MADDPG variants: Modified MADDPG, which trains a global critic (to induce cooperation) alongside a per-agent exclusive local critic, and Modified MADDPG with TASK DECOMPOSITION, which splits each agent's holistic reward into multiple sub-rewards and learns a task-wise value function for each. Picked because our reward is literally a weighted sum of four heterogeneous terms, so the task-decomposition idea maps onto our problem more directly than onto the paper's own.",
+      "implementability": "IMPLEMENTABLE, and the reward-decomposition idea fits our reward better than most. Original observation is a per-platoon-leader local view; original action is per-link (sub-band, power) for CAM dissemination. Adaptation for us: agents become the in-range vehicles rather than platoon leaders, with all actors and critics executing at the RSU - legitimate because our scheduler is centralised at one RSU, so CTDE's 'centralised critic' is not an extra assumption but the actual deployment. The global critic consumes the concatenated RSU table, which the environment already maintains as info_others. The task-decomposed reward maps 1:1 onto our four terms: e^2 (estimation error), P_tx (power), C_freq (congestion) and I_redundant (redundant update) each get their own value head. DROP the platoon/leader-follower CAM structure - our SUMO scenario has no platoons and no intra-platoon V2V links. RISK TO MANAGE: the agent count varies as vehicles enter and leave the 300 m range, so the global critic needs fixed-size padding with a validity mask (or a permutation-invariant pooling encoder); this must be implemented, it is not in the original paper.",
+      "bibitem": "\\bibitem{parvini2023} M. Parvini, M. R. Javan, N. Mokari, B. Abbasi and E. A. Jorswieck, ``AoI-Aware Resource Allocation for Platoon-Based C-V2X Networks via Multi-Agent Multi-Task Reinforcement Learning,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 72, no. 8, pp. 9880--9896, 2023.",
+      "cited_by_count": "121",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27. By far the most-cited paper in the whole candidate pool - a major reason it is retained."
+    },
+    {
+      "id": "schulman2017",
+      "category": "basic",
+      "title": "Proximal Policy Optimization Algorithms",
+      "authors": [
+        "John Schulman",
+        "Filip Wolski",
+        "Prafulla Dhariwal",
+        "Alec Radford",
+        "Oleg Klimov"
+      ],
+      "venue": "arXiv preprint arXiv:1707.06347",
+      "venue_type": "preprint",
+      "year": 2017,
+      "volume": "",
+      "issue": "",
+      "pages": "",
+      "doi": "10.48550/arXiv.1707.06347",
+      "doi_verified": "true - resolves to arxiv.org/abs/1707.06347; title and all 5 authors confirmed by dblp (CoRR abs/1707.06347, 2017). This is the sole-exception venue permitted for the three foundational RL papers.",
+      "method_name": "PPO",
+      "summary": "Introduces the clipped-surrogate policy-gradient objective that made on-policy actor-critic training stable without trust-region machinery. The universally cited foundation paper for PPO. Included as a required foundational baseline, not selected by search.",
+      "implementability": "IMPLEMENTED VIA STABLE-BASELINES3 (SB3 `PPO`), wrapped for our hybrid action space. SB3's PPO natively supports Box and Discrete but not a mixed tuple, so the wrapper exposes a 3-dim Box in [-1,1]: dims 0 and 1 map to Delta (geometric over [0.1,45] s) and p (linear over [10,23] dBm), and dim 2 is binned into the 4 subchannels. Alternative if the binning proves lossy: a MultiInputPolicy with a custom distribution combining DiagGaussian for (Delta,p) and Categorical for ch. The wrapper choice must be identical across PPO/SAC/TD3 so the three basic baselines stay comparable, and must be stated in the paper.",
+      "bibitem": "\\bibitem{schulman2017} J. Schulman, F. Wolski, P. Dhariwal, A. Radford and O. Klimov, ``Proximal Policy Optimization Algorithms,'' \\emph{arXiv preprint arXiv:1707.06347}, 2017.",
+      "cited_by_count": "",
+      "cited_by_count_source": "LOOKUP FAILED - not fabricated. OpenAlex has no clean record for DOI 10.48550/arXiv.1707.06347 (direct lookup 404s; its title-search record returns 11351 with visibly corrupted authorship metadata, so it is not trustworthy). Semantic Scholar returned HTTP 429 on every retry within this session. Citation count was not a selection criterion for the foundational three, which are mandated."
+    },
+    {
+      "id": "haarnoja2018",
+      "category": "basic",
+      "title": "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor",
+      "authors": [
+        "Tuomas Haarnoja",
+        "Aurick Zhou",
+        "Pieter Abbeel",
+        "Sergey Levine"
+      ],
+      "venue": "Proceedings of the 35th International Conference on Machine Learning (ICML)",
+      "venue_type": "conference",
+      "year": 2018,
+      "volume": "80",
+      "issue": "",
+      "pages": "1861--1870",
+      "doi": "",
+      "doi_verified": "false - ICML 2018 proceedings (PMLR v80) carry no DOI. Verified instead against proceedings.mlr.press/v80/haarnoja18b.html, which states 'Proceedings of the 35th International Conference on Machine Learning, PMLR 80:1861-1870, 2018' and lists all four authors; dblp independently confirms the ICML 2018 record. NOTE: dblp's page range for this entry is 1856-1865, which is the printed-proceedings pagination; the PMLR page (1861-1870) is the authoritative and conventionally cited one and is what the bibitem uses. Venue city/country: Stockholm, Sweden (ICML 2018, Stockholmsmassan).",
+      "method_name": "SAC",
+      "summary": "Off-policy maximum-entropy actor-critic: augments the RL objective with a policy-entropy term, giving strong sample efficiency and robustness on continuous control. The universally cited foundation paper for SAC. Included as a required foundational baseline, not selected by search.",
+      "implementability": "IMPLEMENTED VIA STABLE-BASELINES3 (SB3 `SAC`), wrapped for our hybrid action space using the SAME 3-dim Box wrapper as PPO and TD3 (dims 0,1 -> Delta, p; dim 2 binned to one of 4 subchannels). SAC is Box-only in SB3, so the binning wrapper is mandatory rather than optional here. Entropy target must be re-tuned for a 3-dim action; put target_entropy in the Optuna search space alongside the reward weights w1-w4.",
+      "bibitem": "\\bibitem{haarnoja2018} T. Haarnoja, A. Zhou, P. Abbeel and S. Levine, ``Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,'' \\emph{Proceedings of the 35th International Conference on Machine Learning (ICML)}, Stockholm, Sweden, pp. 1861--1870, 2018.",
+      "cited_by_count": "3500",
+      "cited_by_count_source": "OpenAlex cited_by_count for the arXiv record (10.48550/arXiv.1801.01290), queried 2026-08-27. CAVEAT: OpenAlex splits this work into an arXiv record (3500) and a separate ICML record (474) and does not merge them, so the true figure is substantially higher than either number. Reported as measured, not as authoritative. Not a selection criterion."
+    },
+    {
+      "id": "fujimoto2018",
+      "category": "basic",
+      "title": "Addressing Function Approximation Error in Actor-Critic Methods",
+      "authors": [
+        "Scott Fujimoto",
+        "Herke van Hoof",
+        "David Meger"
+      ],
+      "venue": "Proceedings of the 35th International Conference on Machine Learning (ICML)",
+      "venue_type": "conference",
+      "year": 2018,
+      "volume": "80",
+      "issue": "",
+      "pages": "1587--1596",
+      "doi": "",
+      "doi_verified": "false - ICML 2018 proceedings (PMLR v80) carry no DOI. Verified instead against proceedings.mlr.press/v80/fujimoto18a.html, which states 'Proceedings of the 35th International Conference on Machine Learning, PMLR 80:1587-1596, 2018' and lists all three authors; dblp independently confirms the ICML 2018 record. NOTE: dblp's page range for this entry is 1582-1591 (printed-proceedings pagination); the PMLR range 1587-1596 is authoritative and is what the bibitem uses. Venue city/country: Stockholm, Sweden.",
+      "method_name": "TD3",
+      "summary": "Twin Delayed DDPG: clipped double-Q learning, delayed policy updates and target-policy smoothing to suppress the overestimation bias of deterministic actor-critic methods. The universally cited foundation paper for TD3. Included as a required foundational baseline, not selected by search.",
+      "implementability": "IMPLEMENTED VIA STABLE-BASELINES3 (SB3 `TD3`), wrapped for our hybrid action space using the SAME 3-dim Box wrapper as PPO and SAC. TD3 is deterministic, so the binned third dimension gives a hard subchannel choice with no exploration of its own - exploration must come from the action noise, and the noise scale on dim 2 needs to be large enough to actually cross bin boundaries. Flag this in the paper: it is the honest reason a purely-continuous method is expected to underperform the hybrid-action baselines on the discrete subchannel decision.",
+      "bibitem": "\\bibitem{fujimoto2018} S. Fujimoto, H. van Hoof and D. Meger, ``Addressing Function Approximation Error in Actor-Critic Methods,'' \\emph{Proceedings of the 35th International Conference on Machine Learning (ICML)}, Stockholm, Sweden, pp. 1587--1596, 2018.",
+      "cited_by_count": "2372",
+      "cited_by_count_source": "OpenAlex cited_by_count for the arXiv record (10.48550/arXiv.1802.09477), queried 2026-08-27. Same split-record caveat as SAC: a separate ICML record carries 410. Reported as measured. Not a selection criterion."
+    }
+  ],
+  "considered_and_rejected": [
+    {
+      "title": "AoI and Energy-Aware Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning Framework",
+      "authors": [
+        "Jingyi Xu",
+        "Xuying Zhou",
+        "Meiyan Song",
+        "Wei Wang",
+        "Dusit Niyato",
+        "Chau Yuen"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "year": 2026,
+      "volume": "75",
+      "issue": "8",
+      "pages": "18102--18115",
+      "doi": "10.1109/TVT.2026.3675626",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11442965; Crossref, OpenAlex and dblp agree on all fields",
+      "cited_by_count": "0",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27.",
+      "reason": "DEMOTED IN THE 2026-08-27 RE-SEARCH (was baseline #2 in the previous version). Displaced by chen2026. Reasons, in order: (a) VENUE - chen2026 is in IEEE TWC, the target journal, which now ranks above TVT; (b) DOMAIN - this paper's setting is mobile crowdsensing, not V2X, a weakness already flagged in the previous round, whereas chen2026 is vehicular and uses real highD vehicle trajectories; (c) PIPELINE COST - this paper needs an offline pretraining dataset generated from a documented behaviour policy, an extra step chen2026 does not require. WHAT IS LOST BY DROPPING IT: it was the only paper found in any venue that treats the SAMPLING/UPDATE INTERVAL itself as a learned decision, i.e. a direct analogue of our Delta. If the user values that analogue above venue tier, this is the entry to restore - it remains fully implementable as assessed in the previous round."
+    },
+    {
+      "title": "Deep Deterministic Policy Gradient to Minimize the Age of Information in Cellular V2X Communications",
+      "authors": [
+        "Zoubeir Mlika",
+        "Soumaya Cherkaoui"
+      ],
+      "venue": "IEEE Transactions on Intelligent Transportation Systems",
+      "year": 2022,
+      "volume": "23",
+      "issue": "12",
+      "pages": "23597--23612",
+      "doi": "10.1109/TITS.2022.3190799",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/9839316; Crossref, OpenAlex and dblp agree on all fields",
+      "cited_by_count": "32",
+      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27.",
+      "reason": "DEMOTED IN THE 2026-08-27 RE-SEARCH (was baseline #5 in the previous version). Displaced by cohen2025. Reasons: (a) VENUE - cohen2025 is in IEEE TWC, the target journal; this is TITS, now third-priority; (b) YEAR - 2022, outside the 2025-2026 window the user has now emphasised, and it was already carrying a year flag in the previous round; (c) FIT - cohen2025's problem (K frequency-separated subchannels reused under inter-carrier interference, optimised against an explicit SINR objective) describes our contention model more literally than this paper's NOMA resource-block scheduling, which requires SIC we do not have. *** THE ONE PLACE THE CITATION CRITERION ARGUES AGAINST MY CHOICE: this paper has 32 citations versus cohen2025's 14 (OpenAlex) / 18 (Semantic Scholar). I chose venue and year over citation count because the coordinator ranked TWC placement first and citations only as a tiebreak at similar fit, and the fits are not identical. If the user weights citations more heavily than venue, restore this entry - it was fully implementable as assessed in the previous round and remains so. ***"
+    },
+    {
+      "title": "Distributed Age-of-Information Scheduling With NOMA via Deep Reinforcement Learning",
+      "authors": [
+        "Congwei Zhang",
+        "Yifei Zou",
+        "Zuyuan Zhang",
+        "Dongxiao Yu",
+        "Jorge Torres Gomez",
+        "Tian Lan",
+        "Falko Dressler",
+        "Xiuzhen Cheng"
+      ],
+      "venue": "IEEE Transactions on Mobile Computing",
+      "year": 2025,
+      "volume": "24",
+      "issue": "1",
+      "pages": "30--44",
+      "doi": "10.1109/TMC.2024.3459101",
+      "doi_verified": "true - Crossref confirms TMC vol. 24 no. 1 pp. 30-44, Jan 2025; full author list from Crossref",
+      "cited_by_count": "12",
+      "cited_by_count_source": "OpenAlex cited_by_count = 12; Semantic Scholar reports 20 for the same work. Both recorded.",
+      "reason": "STRONGEST NEAR-MISS OF THE RE-SEARCH. Tier-2 venue (TMC), 2025, well cited, and its core contribution - decomposing decision making into separate agents for AoI efficiency, AoI fairness and a high-level policy that BALANCES CONFLICTING OBJECTIVES - maps beautifully onto our four-term reward. Rejected only because it duplicates the methodological slot already held by parvini2023 (also objective/reward decomposition), and parvini2023 has 121 citations against this paper's 12-20 and is in-domain for V2X. Secondary concern: its transmission model is NOMA, which we do not have. IF THE USER WANTS A SECOND TIER-1/2 VENUE IN THE LIST, this is the best candidate to swap in for parvini2023 - but it costs 100+ citations to do so."
+    },
+    {
+      "title": "Safe Deep Reinforcement Learning for Resource Allocation With Peak Age of Information Violation Guarantees",
+      "authors": [
+        "Berire Gunes Reyhan",
+        "Sinem Coleri"
+      ],
+      "venue": "IEEE Transactions on Communications",
+      "year": 2025,
+      "volume": "73",
+      "issue": "12",
+      "pages": "14197--14211",
+      "doi": "10.1109/TCOMM.2025.3591167",
+      "doi_verified": "true - Crossref confirms TCOM vol. 73 no. 12 pp. 14197-14211, Dec 2025",
+      "cited_by_count": "2",
+      "cited_by_count_source": "OpenAlex cited_by_count = 2; Semantic Scholar reports 4. Both recorded.",
+      "reason": "Very close on OBJECTIVE - it minimises transmit power subject to a Peak-AoI violation probability constraint, which is nearly our exact trade-off - and the teacher-student safe-DRL structure is implementable (the teacher becomes a feasibility check on our power/interval bounds). Rejected on two grounds: the domain is a wireless networked control system with multiple sensors rather than a vehicular network, and its first stage derives finite-blocklength optimality conditions that presuppose an analytical channel model our SUMO+Rayleigh simulator does not expose in closed form. Low citation count (2-4) also gave it no tiebreak advantage over the retained entries."
+    },
+    {
+      "title": "Multi-Agent Reinforcement Learning for Multi-Cell Spectrum and Power Allocation",
+      "authors": [
+        "Yiming Zhang",
+        "Dongning Guo"
+      ],
+      "venue": "IEEE Transactions on Communications",
+      "year": 2025,
+      "volume": "73",
+      "issue": "8",
+      "pages": "5980--5992",
+      "doi": "10.1109/TCOMM.2025.3534565",
+      "doi_verified": "true - Crossref confirms TCOM vol. 73 no. 8 pp. 5980-5992, Aug 2025",
+      "cited_by_count": "10",
+      "cited_by_count_source": "OpenAlex cited_by_count = 10; Semantic Scholar reports 16 but dates the work 2023 because it merges an earlier preprint, so the 16 is inflated relative to the TCOM version. Both recorded with that caveat.",
+      "reason": "Tempting: MAPPO agents that jointly manage spectrum, power AND scheduling from local information only - three decisions that line up with our ch, p and Delta - in a tier-2 venue with reasonable citations. Rejected because the objective is packet delay under stochastic traffic arrivals with NO AoI or freshness term at all, and the setting is multi-cell cellular rather than a single RSU serving vehicles; the per-cell agent abstraction does not correspond to anything in our topology. hong2026 covers the spectrum-plus-power action space with a better structural match to our single-RSU setting."
+    },
+    {
+      "title": "Energy-Efficient and Intelligent ISAC in V2X Networks With Spiking Neural Networks-Driven DRL",
+      "authors": [
+        "Chen Shang",
+        "Jiadong Yu",
+        "Dinh Thai Hoang"
+      ],
+      "venue": "IEEE Transactions on Wireless Communications",
+      "year": 2026,
+      "volume": "25",
+      "issue": "",
+      "pages": "1182--1195",
+      "doi": "10.1109/TWC.2025.3589438",
+      "doi_verified": "true - Crossref confirms IEEE TWC vol. 25 pp. 1182-1195, 2026; issue number not yet assigned in Crossref",
+      "cited_by_count": "9",
+      "cited_by_count_source": "OpenAlex cited_by_count = 9; Semantic Scholar reports 16. Both recorded.",
+      "reason": "TARGET JOURNAL (TWC) + V2X + RSU-side MDP + DRL + power allocation, and unusually well cited for a 2026 paper - the most attractive TWC candidate on paper. REJECTED because the action it actually learns is BEAMFORMING (jointly with power), which requires a multi-antenna array at the RSU. We model a single-antenna Rayleigh SINR link; adding beamforming changes the physical layer, not the agent. Deleting beamforming would leave only power allocation, which is a subset of what hong2026 and li2026 already provide. The spiking-neural-network angle is interesting for the inference-cost concern raised in scenario.md, but that is a separate hardware-feasibility study, not a scheduling baseline."
+    },
+    {
+      "title": "AoI-Aware Online Transmission Optimization for WBANs With Unreliable Information Delivery",
+      "authors": [
+        "Siqi Mu",
+        "Yang Lu",
+        "Ruihong Jiang",
+        "Wei Chen",
+        "Bo Ai",
+        "Dusit Niyato"
+      ],
+      "venue": "IEEE Transactions on Wireless Communications",
+      "year": 2026,
+      "volume": "25",
+      "issue": "",
+      "pages": "5622--5639",
+      "doi": "10.1109/TWC.2025.3620434",
+      "doi_verified": "true - Crossref confirms IEEE TWC vol. 25 pp. 5622-5639, 2026; issue number not yet assigned in Crossref",
+      "cited_by_count": "1",
+      "cited_by_count_source": "OpenAlex cited_by_count = 1; Semantic Scholar reports 2. Both recorded.",
+      "reason": "TARGET JOURNAL (TWC) and the problem shape is close - joint transmit POWER CONTROL and sensor SCHEDULING minimising long-term average power subject to an average-AoI constraint under unreliable delivery. Rejected on two grounds: (a) it is NOT a deep-RL method - it derives a closed-form power expression and solves a constrained MDP by a Lagrangian ONLINE LEARNING algorithm, so it would enter our results table as a non-neural baseline and would not exercise the hybrid action space at all; (b) the domain is wireless body area networks with human-movement link dynamics, unrelated to vehicular mobility. Worth restoring only if the user wants a deliberately non-DRL optimisation baseline in the comparison."
+    },
+    {
+      "title": "Age of Information-Oriented Link Scheduling in Device-to-Device Networks",
+      "authors": [
+        "Lixin Wang",
+        "Qian Wang",
+        "He Chen",
+        "Shidong Zhou"
+      ],
+      "venue": "IEEE Transactions on Wireless Communications",
+      "year": 2025,
+      "volume": "24",
+      "issue": "11",
+      "pages": "9357--9372",
+      "doi": "10.1109/TWC.2025.3572690",
+      "doi_verified": "true - Crossref confirms IEEE TWC vol. 24 no. 11 pp. 9357-9372, Nov 2025",
+      "cited_by_count": "2",
+      "cited_by_count_source": "OpenAlex cited_by_count = 2; Semantic Scholar also reports 2.",
+      "reason": "TARGET JOURNAL (TWC), 2025, and squarely about AoI-oriented scheduling. Rejected because the method is NOT reinforcement learning: it is a Lyapunov drift-minimisation framework realised either by an unsupervised message-passing neural network or by a Gurobi solver, plus a greedy heuristic. It also decides only WHICH D2D LINKS ACTIVATE - no transmit power, no channel, no update interval - so it cannot produce our action vector. A Gurobi dependency is additionally undesirable for a reproducible baseline suite."
+    },
+    {
+      "title": "Mobility and QoS-Aware Energy Efficient Scheduling for Highway Environments Using Deep Reinforcement Learning",
+      "authors": [
+        "Guta Gobena Kumbi",
+        "Syed Maaz Shahid",
+        "Tho Minh Duong",
+        "Sungoh Kwon"
+      ],
+      "venue": "IEEE Transactions on Wireless Communications",
+      "year": 2026,
+      "volume": "25",
+      "issue": "",
+      "pages": "10921--10934",
+      "doi": "10.1109/TWC.2025.3650195",
+      "doi_verified": "true - Crossref confirms IEEE TWC vol. 25 pp. 10921-10934, 2026; issue number not yet assigned in Crossref",
+      "cited_by_count": "0",
+      "cited_by_count_source": "OpenAlex cited_by_count = 0; Semantic Scholar also reports 0. Normal for a 2026 paper.",
+      "reason": "TARGET JOURNAL (TWC) + vehicular mobility (highway UE) + DRL scheduling, and it exploits the same insight we do, that mobility state predicts channel quality and should drive allocation. Rejected because it is a DOWNLINK cellular scheduler minimising network energy under QoS, with no AoI or information-freshness objective, no uplink update-interval decision, and no subchannel action of the kind we have. The mobility-exploitation idea is closer to our motivation than to our method."
+    },
+    {
+      "title": "AoI Minimization Based on Deep Reinforcement Learning and Matching Game for IoT Information Collection in SAGIN",
+      "authors": [
+        "Guobin Zhang",
+        "Xin Wei",
+        "Xiao Tan",
+        "Zhu Han",
+        "Guangchi Zhang"
+      ],
+      "venue": "IEEE Transactions on Communications",
+      "year": 2025,
+      "volume": "73",
+      "issue": "8",
+      "pages": "5950--5964",
+      "doi": "10.1109/TCOMM.2025.3525566",
+      "doi_verified": "true - Crossref confirms TCOM vol. 73 no. 8 pp. 5950-5964, Aug 2025",
+      "cited_by_count": "",
+      "cited_by_count_source": "LOOKUP NOT PERFORMED for OpenAlex; Semantic Scholar reported 29. Recorded as measured from a single source only - treat the 29 as unconfirmed.",
+      "reason": "Highest citation count among the AoI+DRL papers surfaced in the re-search (29 per Semantic Scholar, unconfirmed by a second source) and it combines DRL with a Gale-Shapley matching game, the same decomposition idea that made mlika2022 attractive. REJECTED because the learned action is UAV TRAJECTORY AND DESTINATION DESIGN plus HAP coverage/height configuration - agent-controlled mobility and aerial infrastructure we do not have and cannot simulate. Same rejection ground as the multi-UAV entry below."
+    },
+    {
+      "title": "Age-of-Information Aware Mobility-Based Vehicular-Fog Formation Using Deep Reinforcement Learning",
+      "authors": [
+        "Seifu Birhanu Tadele",
+        "Binayak Kar",
+        "Frezer Guteta Wakgra",
+        "Madhusanka Liyanage"
+      ],
+      "venue": "IEEE Transactions on Intelligent Transportation Systems",
+      "year": 2026,
+      "volume": "27",
+      "issue": "7",
+      "pages": "8238--8251",
+      "doi": "10.1109/TITS.2026.3667859",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11493616; Crossref and OpenAlex agree on all fields",
+      "reason": "INFRASTRUCTURE WE DO NOT HAVE. The learned action is RSU association and vehicular-fog membership across a MULTI-RSU fog infrastructure - it decides which RSU/vehicle joins which fog, not transmit power, subchannel or update interval. Mobility is Gauss-Markov, not SUMO. Our single-RSU environment cannot express its action space at all, and adding a second RSU plus fog compute nodes would be a different paper. Otherwise a strong and very on-topic 2026 AoI paper - overrule me if you are willing to extend the environment to two RSUs."
+    },
+    {
+      "title": "Multiagent Deep Reinforcement Learning for Optimal Resource Allocation in AoI-Aware Energy-Efficient Platoon-Based C-V2X Networks",
+      "authors": [
+        "Yuxiang Zheng",
+        "Long D. Nguyen",
+        "Trung Q. Duong"
+      ],
+      "venue": "IEEE Internet of Things Journal",
+      "year": 2026,
+      "volume": "13",
+      "issue": "6",
+      "pages": "10814--10828",
+      "doi": "10.1109/JIOT.2025.3650400",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11321271; Crossref and dblp agree on all fields",
+      "reason": "PLATOON STRUCTURE ABSENT FROM OUR ENVIRONMENT. The formulation is built on platoon leaders, leader-follower intra-platoon V2V links and CAM dissemination within a platoon; our SUMO scenario is unstructured urban traffic at a signalised intersection with no platoon formation. Stripping the platoon out leaves a generic MADRL resource allocator that parvini2023 already covers more thoroughly. Secondary concern: I could not retrieve its abstract from any open source, so the rejection rests on the title's explicit platoon framing rather than on a read of the method."
+    },
+    {
+      "title": "A Resilient AoI-Aware Optimization Framework for Intelligent Transportation Systems Using Deep Reinforcement Learning",
+      "authors": [
+        "Atefeh Hajijamali Arani",
+        "Hamid Saeedi",
+        "Sajedeh Norouzi",
+        "Ali Nouruzi",
+        "Nizar Zorba",
+        "Halim Yanikomeroglu"
+      ],
+      "venue": "IEEE Open Journal of the Communications Society",
+      "year": 2026,
+      "volume": "7",
+      "issue": "",
+      "pages": "7420--7437",
+      "doi": "10.1109/OJCOMS.2026.3707734",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11580379; Crossref confirms IEEE OJ-COMS vol. 7 pp. 7420-7437, 2026",
+      "reason": "HALF THE METHOD IS AN ACTION WE DO NOT CONTROL. RAO's contribution is the TIGHT COUPLING of vehicular PATH PLANNING (routing decisions) with AoI-aware resource allocation, plus a resiliency penalty on AoI-violation severity and duration. Our RSU does not re-route vehicles - it only sets (Delta, p, ch) - so implementing RAO means deleting the routing half and keeping a DDPG with a reshaped reward, which no longer reproduces the paper. THIS IS THE CLOSEST CALL IN THE REJECT LIST: the resiliency-aware AoI penalty alone is portable to our reward and would be a defensible baseline if the user wants a non-TVT 2026 entry. Overrule me if so. Also note this DOI was on the previously discarded list; it was re-found independently and is rejected on method grounds, not by association."
+    },
+    {
+      "title": "Deep-Reinforcement-Learning-Based AoI-Aware Resource Allocation for RIS-Aided IoV Networks",
+      "authors": [
+        "Kangwei Qi",
+        "Qiong Wu",
+        "Pingyi Fan",
+        "Nan Cheng",
+        "Wen Chen",
+        "Jiangzhou Wang",
+        "Khaled B. Letaief"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "year": 2025,
+      "volume": "74",
+      "issue": "1",
+      "pages": "1365--1378",
+      "doi": "10.1109/TVT.2024.3452790",
+      "doi_verified": "true - Crossref confirms TVT vol. 74 no. 1 pp. 1365-1378, Jan 2025 (the previously discarded list cited this as '2024', which was wrong)",
+      "reason": "RIS HARDWARE WE DO NOT HAVE. A large part of the action vector is the reconfigurable intelligent surface phase-shift configuration, and the reported gains come from RIS-assisted channel shaping. Our Rayleigh-fading SINR model has no RIS element and simulating one would change the physical layer, not just the agent."
+    },
+    {
+      "title": "Efficient AoI-Aware Resource Management in VLC-V2X Networks via Multi-Agent RL Mechanism",
+      "authors": [
+        "Mohamad Azizi",
+        "Farshad Zeinali",
+        "Mohammad Robat Mili",
+        "Saeed Shokrollahi"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "year": 2024,
+      "volume": "73",
+      "issue": "9",
+      "pages": "14009--14014",
+      "doi": "10.1109/TVT.2024.3392738",
+      "doi_verified": "true - Crossref confirms TVT vol. 73 no. 9 pp. 14009-14014, Sep 2024",
+      "reason": "VISIBLE-LIGHT CHANNEL WE DO NOT SIMULATE. The method allocates resources over a VLC link with LED-headlamp geometry and Lambertian optical path loss. Our environment is 5.9 GHz RF with Rayleigh fading; there is no VLC channel to allocate over."
+    },
+    {
+      "title": "DRL-Based Optimization for AoI and Energy Consumption in C-V2X Enabled IoV",
+      "authors": [
+        "Zheng Zhang",
+        "Qiong Wu",
+        "Pingyi Fan",
+        "Nan Cheng",
+        "Wen Chen",
+        "Khaled B. Letaief"
+      ],
+      "venue": "IEEE Transactions on Green Communications and Networking",
+      "year": 2025,
+      "volume": "9",
+      "issue": "4",
+      "pages": "2144--2159",
+      "doi": "10.1109/TGCN.2025.3531902",
+      "doi_verified": "true - Crossref confirms TGCN vol. 9 no. 4 pp. 2144-2159, Dec 2025",
+      "reason": "CHANNEL MODEL MISMATCH. The whole point of the paper is NOMA with successive interference cancellation layered on top of C-V2X mode-4 semi-persistent scheduling for DISTRIBUTED V2V resource selection. We model orthogonal-subchannel V2I uplink with an RSU-side scheduler and no SIC receiver, so both the multiple-access scheme and the decision locus differ. Adapting it would mean rewriting the SINR model."
+    },
+    {
+      "title": "Optimization of Spectrum Resource Allocation for Vehicle Platoon in V2X Networks Based on Deep Reinforcement Learning",
+      "authors": [
+        "Zhicong Lin",
+        "Hengwei Pan",
+        "Yonghua Wang"
+      ],
+      "venue": "IEEE Transactions on Vehicular Technology",
+      "year": 2026,
+      "volume": "75",
+      "issue": "6",
+      "pages": "11512--11527",
+      "doi": "10.1109/TVT.2025.3643923",
+      "doi_verified": "true - Crossref confirms TVT vol. 75 no. 6 pp. 11512-11527, June 2026 (the previously discarded list cited this as '2025', which was wrong)",
+      "reason": "PLATOON STRUCTURE ABSENT FROM OUR ENVIRONMENT, same reason as the Zheng et al. entry above. Additionally it optimises spectrum only, with no AoI objective and no update-interval decision, so it is a weaker methodological match than hong2026 which occupies the same TVT issue and the same (sub-band, power) action space."
+    },
+    {
+      "title": "Hybrid-Action Multi-Agent Reinforcement Learning for Simultaneous Task Offloading and Resource Allocation in Space Computing Power Networks",
+      "authors": [
+        "Junyu Lai",
+        "Hao Lang",
+        "Huasuo Liu",
+        "Di Wu",
+        "Quan Chen",
+        "Weiwei Jiang"
+      ],
+      "venue": "IEEE Internet of Things Journal",
+      "year": 2026,
+      "volume": "",
+      "issue": "",
+      "pages": "",
+      "doi": "10.1109/JIOT.2026.3702157",
+      "doi_verified": "true - Crossref record exists but is early access: no volume, issue or final page range yet (page field reads '1-1'), so it cannot be cited in the required journal format",
+      "reason": "WRONG DOMAIN plus INCOMPLETE CITATION. Satellite computing-power networks with task offloading; there is no AoI objective and no vehicular mobility. Its hybrid-action MARL idea is already better represented by li2026 and hong2026, which are in-domain and have complete bibliographic records."
+    },
+    {
+      "title": "A Two-Layered Reinforcement Learning Framework for AoI-Aware Trajectory Planning and Scheduling Optimization in Multi-UAV Networks",
+      "authors": [
+        "Kang Fu",
+        "Qingjie Zhao",
+        "Lei Wang"
+      ],
+      "venue": "IEEE Internet of Things Journal",
+      "year": 2026,
+      "volume": "13",
+      "issue": "3",
+      "pages": "4668--4682",
+      "doi": "10.1109/JIOT.2025.3636204",
+      "doi_verified": "true - Crossref confirms IoT-J vol. 13 no. 3 pp. 4668-4682, 1 Feb 2026",
+      "reason": "UAV MOBILITY ACTION WE DO NOT HAVE. The outer layer of the two-layer framework plans UAV trajectories - a mobility action controlled by the agent. Our RSU is fixed at the intersection and vehicle motion is driven by SUMO's car-following and traffic-signal logic, not by the policy. Only the inner scheduling layer would survive, which is a strictly weaker version of bai2024."
+    },
+    {
+      "title": "Joint Optimization of Age of Information and Energy Consumption in NR-V2X System Based on Deep Reinforcement Learning",
+      "authors": [],
+      "venue": "Sensors (MDPI)",
+      "year": 2024,
+      "volume": "24",
+      "issue": "13",
+      "pages": "4338",
+      "doi": "10.3390/s24134338",
+      "doi_verified": "partial - the Crossref record exists and matches title/venue/year, but I did not verify the author list because the paper was excluded on venue grounds before that step",
+      "reason": "VENUE EXCLUDED BY POLICY. MDPI. Listed here only so it is on record that an otherwise topically close AoI+energy NR-V2X DRL paper was found and deliberately not used."
+    }
+  ]
+}

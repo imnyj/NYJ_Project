@@ -1,0 +1,44 @@
+import os
+import sys
+import logging
+
+# Add src to pythonpath
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+from src.hot_swap_trainer import run_hot_swap_training
+
+MODELS = [
+    "HybridPPO", "HybridSAC", "HybridTD3",
+    "MAPPO", "HyARPPO", "MPDQN",
+    "PureAoI", "DuelingQAoI", "SACAoI"
+]
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    
+    # User requested: 100 episodes of 2000 steps = 200,000 steps per model.
+    # run_hot_swap_training treats `total_steps` as the TOTAL across all episodes
+    # and derives steps_per_ep = total_steps // episodes, so the product must be
+    # passed here. Passing steps_per_episode directly capped every model at 2,000
+    # steps (20 per episode), i.e. 1% of the requirement.
+    episodes = 100
+    steps_per_episode = 2000
+    total_steps = episodes * steps_per_episode  # 200,000
+
+    for model_name in MODELS:
+        logging.info(f"========== Starting training for {model_name} ==========")
+        try:
+            summary = run_hot_swap_training(
+                model_name=model_name,
+                total_steps=total_steps,
+                episodes=episodes,
+                seed=42,
+                resume=True,
+            )
+            logging.info(f"========== Finished training for {model_name} ==========")
+            logging.info(f"Summary: {summary}")
+        except Exception as e:
+            logging.error(f"Failed training {model_name}: {e}", exc_info=True)
+
+if __name__ == "__main__":
+    main()

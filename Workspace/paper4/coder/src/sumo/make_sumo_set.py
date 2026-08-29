@@ -7,6 +7,9 @@ and robust concurrency guarantees.
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
+import json
 import os
 import random
 import shutil
@@ -16,17 +19,26 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 # ============= Control Variables ===============
-OUTAGE_ZONE: float = 800.0
+# OUTAGE_ZONE is the uncovered gap between the coverage discs of two adjacent
+# RSUs. The original design used OUTAGE_ZONE == RSU_RANGE (800/800), i.e. an
+# edge is 2/3 covered and 1/3 outage. That 1:1 ratio is preserved when the
+# range is reduced to a realistic 5.9 GHz urban value (see RSU_RANGE below).
+OUTAGE_ZONE: float = 300.0
 AV_SPEED: float = 40.0           # 평균 속도 (km/h). 0이면 에피소드마다 임의로 설정
 DENSITY: float = 20.0            # 평균 밀도 (/1km-lane). 0이면 에피소드마다 임의로 설정
 P_GEN: float = 0.005
 NUM_BLOCKS: int = 6
 MAX_STEPS: float = 3600.0
 CORNER_SPEED_LIMIT: float = 50.0 / 3.6
+STEP_LENGTH: float = 0.1         # SUMO simulation resolution (s). Must be <= the
+                                 # minimum action update interval Delta = 0.1 s.
 
 # ============= Environment Variables ===============
-RSU_RANGE: float = 800.0                           # Communication range of RSU
-EDGE_LENGTH: float = RSU_RANGE * 2.0 + OUTAGE_ZONE # Distance between RSUs (2400m)
+# 300 m is the defensible upper bound for an ITS-G5 / C-V2X 5.9 GHz RSU in an
+# urban NLOS-prone environment with path-loss exponent 2.3 (typical reported
+# reliable range 200-300 m). The previous 800 m was not defensible.
+RSU_RANGE: float = 300.0                           # Communication range of RSU
+EDGE_LENGTH: float = RSU_RANGE * 2.0 + OUTAGE_ZONE # Distance between RSUs (900m)
 GRID_SIZE: float = NUM_BLOCKS * EDGE_LENGTH        # Network Size
 NUM_LANES: int = 2                                 # Lane Number
 SPEED: float = AV_SPEED / 3.6                      # average speed of vehicles
@@ -121,6 +133,75 @@ def are_sumo_files_valid(base_path: Optional[str] = None) -> bool:
     return all(_is_valid_xml_file(os.path.join(target_dir, f)) for f in required_files)
 
 
+SIGNATURE_FILE: str = ".sumo_gen_signature.json"
+
+# Parameters that must match EXACTLY for the cached SUMO files to be reusable.
+# DENSITY is included because it is baked into the per-flow `probability`
+# attribute of generated.rou.xml; without this check a caller that changes
+# `ss.DENSITY` silently keeps the previously generated traffic demand, which
+# makes any density sweep a no-op.
+_SIGNATURE_EXACT_KEYS = (
+    "RSU_RANGE",
+    "OUTAGE_ZONE",
+    "NUM_BLOCKS",
+    "NUM_LANES",
+    "DENSITY",
+    "AV_SPEED",
+    "DEL_SPEED",
+    "STEP_LENGTH",
+)
+
+
+def current_generation_signature(num_blocks: Optional[int] = None) -> Dict[str, float]:
+    """Snapshot of every module-level knob that changes the generated SUMO files."""
+    nb = int(num_blocks) if num_blocks is not None else int(NUM_BLOCKS)
+    if num_blocks is None and nb == 5:
+        nb = 6  # mirrors the legacy normalisation performed by make_sumo_files()
+    elif nb < 2:
+        nb = 6
+    sig: Dict[str, float] = {k: float(globals()[k]) for k in _SIGNATURE_EXACT_KEYS}
+    sig["NUM_BLOCKS"] = float(nb)
+    sig["MAX_STEPS"] = float(MAX_STEPS)
+    return sig
+
+
+def _read_generation_signature(base_path: Optional[str] = None) -> Optional[Dict[str, float]]:
+    path = os.path.join(base_path or BASE_PATH, SIGNATURE_FILE)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return {str(k): float(v) for k, v in data.items()}
+    except Exception:
+        return None
+
+
+def _write_generation_signature(base_path: Optional[str] = None) -> None:
+    path = os.path.join(base_path or BASE_PATH, SIGNATURE_FILE)
+    _atomic_write_text(path, json.dumps(current_generation_signature(), indent=2, sort_keys=True))
+
+
+def generation_signature_matches(
+    base_path: Optional[str] = None, num_blocks: Optional[int] = None
+) -> bool:
+    """True when the cached SUMO files were generated with the current parameters.
+
+    All geometry/demand knobs must match exactly. `MAX_STEPS` only sets the flow
+    `end=` horizon, so a cached file whose horizon is at least as long as the one
+    now requested is still usable; this avoids regenerating on every episode just
+    because a caller shortened its step budget.
+    """
+    stored = _read_generation_signature(base_path)
+    if stored is None:
+        return False
+    wanted = current_generation_signature(num_blocks=num_blocks)
+    for key in _SIGNATURE_EXACT_KEYS + ("NUM_BLOCKS",):
+        if key not in stored or abs(stored[key] - wanted[key]) > 1e-9:
+            return False
+    if stored.get("MAX_STEPS", -1.0) + 1e-9 < wanted["MAX_STEPS"]:
+        return False
+    return True
+
+
 def CalcP_GEN(density: float) -> float:
     """Calculate vehicle generation probability based on traffic density."""
     global L_tot, L_path_avg, T_to_INIT
@@ -144,16 +225,56 @@ def make_dead_end_nodes(netfile: str, dead_end_nodes: Union[Dict[str, Any], set,
     _atomic_write_tree(netfile, tree)
 
 
-def make_sumo_files(force_regenerate: bool = False, num_blocks: Optional[int] = None) -> None:
+GENERATION_LOCK_FILE: str = ".sumo_gen.lock"
+
+
+@contextlib.contextmanager
+def _generation_lock(base_path: Optional[str] = None):
+    """Serialise SUMO file generation across processes.
+
+    Every training process regenerates into the same src/sumo/ directory, and the
+    seven generated files only make sense as a mutually consistent set. Individual
+    writes are atomic, but without a lock two processes running different densities
+    can interleave and leave, say, a net.xml from one parameter set beside a
+    rou.xml from another. An exclusive flock over the whole check-and-generate
+    section makes the set consistent; the lock file is never deleted, so the
+    inode stays stable for concurrent openers.
+    """
+    path = os.path.join(base_path or BASE_PATH, GENERATION_LOCK_FILE)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _make_sumo_files_impl(force_regenerate: bool = False, num_blocks: Optional[int] = None) -> None:
     """Generate all SUMO network, route, add, poi, and configuration files atomically.
 
     If force_regenerate is False and all required SUMO files already exist with valid
-    content, re-generation is skipped to prevent unnecessary I/O overhead and race conditions.
+    content AND were generated from the current parameter set (see
+    `generation_signature_matches`), re-generation is skipped to prevent unnecessary
+    I/O overhead and race conditions. A changed DENSITY / RSU_RANGE / NUM_BLOCKS /
+    STEP_LENGTH forces regeneration, so callers that sweep those knobs actually get
+    a network and demand matching what they asked for.
     """
-    global NUM_BLOCKS, GRID_SIZE, step, SPEED, MAX_SPEED
+    global NUM_BLOCKS, GRID_SIZE, step, SPEED, MAX_SPEED, EDGE_LENGTH
 
-    # Check if existing files are complete and valid
-    if not force_regenerate and are_sumo_files_valid(BASE_PATH):
+    # EDGE_LENGTH is fully derived from RSU_RANGE / OUTAGE_ZONE. Re-derive it here so
+    # external callers that override those module globals (e.g. src/NetSim.py) get a
+    # consistent geometry instead of a stale import-time value.
+    EDGE_LENGTH = RSU_RANGE * 2.0 + OUTAGE_ZONE
+
+    # Check if existing files are complete, valid, and generated from these parameters
+    if (
+        not force_regenerate
+        and are_sumo_files_valid(BASE_PATH)
+        and generation_signature_matches(BASE_PATH, num_blocks=num_blocks)
+    ):
         return
 
     # Normalize NUM_BLOCKS cleanly and consistently
@@ -334,7 +455,7 @@ def make_sumo_files(force_regenerate: bool = False, num_blocks: Optional[int] = 
     _atomic_write_text(os.path.join(BASE_PATH, "rsu.poi.xml"), "\n".join(poi_content))
 
     # 7. Generate and atomically write generated.sumocfg
-    cfg_content = """<?xml version="1.0" encoding="UTF-8"?>
+    cfg_content = f"""<?xml version="1.0" encoding="UTF-8"?>
 
 <!-- generated for SUMO simulation -->
 
@@ -345,12 +466,34 @@ def make_sumo_files(force_regenerate: bool = False, num_blocks: Optional[int] = 
         <route-files value="generated.rou.xml"/>
         <additional-files value="generated.add.xml, rsu.poi.xml"/>
     </input>
-    
+
     <time>
         <begin value="0"/>
         <end value="360000"/>
+        <!-- Resolution must be <= the minimum action update interval (Delta = 0.1 s). -->
+        <step-length value="{STEP_LENGTH}"/>
     </time>
 
 </sumoConfiguration>
 """
     _atomic_write_text(os.path.join(BASE_PATH, "generated.sumocfg"), cfg_content)
+    _write_generation_signature(BASE_PATH)
+
+
+def make_sumo_files(force_regenerate: bool = False, num_blocks: Optional[int] = None) -> None:
+    """Generate the SUMO file set, serialised against other processes.
+
+    Training runs in parallel across GPUs all regenerate into this same directory,
+    so the check-and-generate section is held under an exclusive lock. The cheap
+    "already valid for these parameters" test runs once before taking the lock to
+    keep the common case lock-free, and again inside it because another process may
+    have generated exactly what we needed while we waited.
+    """
+    if (
+        not force_regenerate
+        and are_sumo_files_valid(BASE_PATH)
+        and generation_signature_matches(BASE_PATH, num_blocks=num_blocks)
+    ):
+        return
+    with _generation_lock(BASE_PATH):
+        _make_sumo_files_impl(force_regenerate=force_regenerate, num_blocks=num_blocks)

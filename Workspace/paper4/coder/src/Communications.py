@@ -16,7 +16,8 @@
 # ============================================================================
 
 import math
-from typing import Tuple, Optional
+import random
+from dataclasses import dataclass
 
 # --------------------------------------------------------------------------
 # Physical constants
@@ -152,25 +153,119 @@ def relay_bytes_per_step(distance_wifi_m: float, distance_fiber_m: float,
 
 
 # ============================================================================
-# Uplink SINR model (S2) -- probabilistic, interference-aware
+# Uplink PHY model (S2) -- IEEE 802.11p (10 MHz OFDM) at 5.9 GHz,
+# interference-aware and probabilistic.
 #
-# Vehicles transmit small state packets to the RSU on one of NUM_SUBCHANNELS.
+# Vehicles transmit small status packets to the RSU on one of NUM_SUBCHANNELS.
 # Transmissions overlapping on the SAME subchannel interfere. Success is judged
-# probabilistically under independent Rayleigh fading on desired and interfering
-# links (standard closed form):
+# under independent Rayleigh fading on the desired and every interfering link
+# (standard closed form):
 #     P_succ = exp(-th*N0/S) * PROD_k 1/(1 + th*I_k/S)
 # Higher tx power raises one's own S (up) but also raises interference to others
 # (down) -> a natural power/congestion trade-off. More co-channel contenders
 # lower every success probability -> the congestion mechanism.
+#
+# Link budget (all dB):
+#     Prx(d) = Ptx + G_tx + G_rx - PL(d) - X_shadow
+# with PL(d) = PL(1 m) + 10*n*log10(d), free-space reference at 1 m, n = 2.3.
+# The antenna gains are what make the budget a real one: a vehicle roof whip is
+# ~3 dBi and an RSU mast antenna ~9 dBi, so a link that looks 12 dB short
+# without them closes with them.
 # ============================================================================
-FREQ_HZ             = 5.9e9          # ITS band
-PL_EXP              = 2.3            # path-loss exponent (semi-open road)
+FREQ_HZ             = 5.9e9          # ITS band (US/EU 5.9 GHz DSRC/ITS-G5)
+PL_EXP              = 2.3            # path-loss exponent (semi-open urban road)
 _PL_REF_DB          = 20.0 * math.log10(4.0 * math.pi * FREQ_HZ / C_LIGHT)  # PL at 1 m
-NOISE_FIGURE_DB     = 9.0
-TOTAL_BW_HZ         = 20e6
+NOISE_FIGURE_DB     = 9.0            # RSU receiver noise figure
+
+# 802.11p uses 10 MHz channels (half-clocked 802.11a). Four of them span
+# 40 MHz, which fits inside the US 5.9 GHz ITS allocation (5.850-5.925 GHz).
 NUM_SUBCHANNELS     = 4
-SINR_TH_DB          = 0.0           # decoding threshold gamma_th
+SUBCHANNEL_BW_HZ    = 10e6
+TOTAL_BW_HZ         = SUBCHANNEL_BW_HZ * NUM_SUBCHANNELS   # 40 MHz aggregate
+
+# Antenna gains. Omitting these was the main physical omission of the previous
+# model: it charged the full path loss to the transmit power alone.
+G_TX_DBI            = 3.0            # vehicle roof-mounted omni whip
+G_RX_DBI            = 9.0            # RSU mast-mounted omni with downtilt
+
+# Log-normal shadowing standard deviation (dB). 4 dB is the usual figure for an
+# urban/semi-open road link with partial obstruction; set to 0.0 to recover the
+# pure path-loss + Rayleigh behaviour of the previous model.
+SHADOWING_SIGMA_DB  = 4.0
+
+# Kept for backwards compatibility with src/aoi_env.py's discrete power ladder.
+# The production action space is continuous [10, 23] dBm and is owned by
+# src/rl_interface.py::ActionDecoder -- do not read link budgets from here.
 TX_POWER_LEVELS_DBM = [20.0, 25.0, 30.0]
+
+# --------------------------------------------------------------------------
+# OFDM framing (IEEE 802.11p, 10 MHz channel = half-clocked 802.11a)
+# --------------------------------------------------------------------------
+OFDM_SYMBOL_TIME_S   = 8e-6     # 6.4 us useful + 1.6 us guard interval
+PREAMBLE_SIGNAL_TIME_S = 40e-6  # 32 us PLCP preamble + one 8 us SIGNAL symbol
+SERVICE_BITS         = 16       # PLCP SERVICE field, prepended to the PSDU
+TAIL_BITS            = 6        # convolutional-code tail, appended to the PSDU
+
+#: Default status-update payload. An ETSI CAM carrying position, speed, heading
+#: and the basic vehicle container lands around 300 B on the wire.
+STATUS_UPDATE_BYTES  = 300
+
+
+@dataclass(frozen=True)
+class Mcs:
+    """One IEEE 802.11p modulation-and-coding scheme on a 10 MHz channel.
+
+    `bits_per_symbol` is N_DBPS, the number of *data* bits an OFDM symbol
+    carries: 48 data subcarriers x bits/subcarrier x code rate. It satisfies
+    rate = bits_per_symbol / OFDM_SYMBOL_TIME_S by construction, which is what
+    makes the airtime model and the rate label consistent with each other.
+
+    `req_sinr_db` is the SINR the receiver needs to decode this MCS. The ladder
+    is the standard 5/8/10/13/16/19/22/25 dB progression for OFDM MCS 0-7; the
+    per-rate receiver sensitivity follows from it as noise floor + req_sinr_db
+    (see `sensitivity_dbm`), e.g. QPSK 1/2 -> -95 + 10 = -85 dBm.
+    """
+    rate_mbps: float
+    modulation: str
+    code_rate: str
+    bits_per_symbol: int
+    req_sinr_db: float
+
+
+#: The eight mandatory/optional rates of a 10 MHz 802.11p channel.
+MCS_TABLE: dict[float, Mcs] = {
+    3.0:  Mcs(3.0,  "BPSK",   "1/2",  24,  5.0),
+    4.5:  Mcs(4.5,  "BPSK",   "3/4",  36,  8.0),
+    6.0:  Mcs(6.0,  "QPSK",   "1/2",  48, 10.0),
+    9.0:  Mcs(9.0,  "QPSK",   "3/4",  72, 13.0),
+    12.0: Mcs(12.0, "16-QAM", "1/2",  96, 16.0),
+    18.0: Mcs(18.0, "16-QAM", "3/4", 144, 19.0),
+    24.0: Mcs(24.0, "64-QAM", "2/3", 192, 22.0),
+    27.0: Mcs(27.0, "64-QAM", "3/4", 216, 25.0),
+}
+
+#: Operating rate of the V2I uplink. 6 Mbps (QPSK 1/2) is the 802.11p base rate
+#: used by ETSI ITS-G5 for CAM/DENM: it is the most robust rate that still
+#: clears a 300 B update inside half a millisecond. Change this one constant to
+#: retune the whole link -- threshold, airtime and sensitivity all follow.
+OPERATING_RATE_MBPS = 6.0
+
+
+def get_mcs(rate_mbps: float = OPERATING_RATE_MBPS) -> Mcs:
+    """Look up an MCS by its nominal rate; raises for an unsupported rate."""
+    try:
+        return MCS_TABLE[float(rate_mbps)]
+    except KeyError:
+        raise ValueError(
+            f"{rate_mbps} Mbps is not an IEEE 802.11p 10 MHz rate; "
+            f"choose one of {sorted(MCS_TABLE)}"
+        ) from None
+
+
+#: Decoding threshold gamma_th. Derived from the operating MCS rather than
+#: being an independent literal, so the threshold can never drift away from the
+#: rate the airtime model is charging for.
+SINR_TH_DB = get_mcs(OPERATING_RATE_MBPS).req_sinr_db
 
 
 def _db_to_lin(db: float) -> float:
@@ -182,29 +277,121 @@ def dbm_to_mw(dbm: float) -> float:
 def path_loss_db(distance_m: float) -> float:
     return _PL_REF_DB + 10.0 * PL_EXP * math.log10(max(distance_m, 1.0))
 
-def rx_power_mw(tx_dbm: float, distance_m: float) -> float:
-    return dbm_to_mw(tx_dbm - path_loss_db(distance_m))
+
+# --------------------------------------------------------------------------
+# Log-normal shadowing
+#
+# A dedicated, explicitly seeded RNG. It must NOT be the `random` module's
+# global stream: the environment consumes that stream for its own Bernoulli
+# success draws, so sharing it would make channel realizations depend on how
+# many vehicles happened to transmit earlier in the episode. A private
+# generator keeps run-to-run determinism under a fixed seed.
+# --------------------------------------------------------------------------
+_DEFAULT_CHANNEL_SEED = 42
+_shadow_rng = random.Random(_DEFAULT_CHANNEL_SEED)
+
+
+def seed_channel(seed: int) -> None:
+    """Reseed the shadowing generator. Call once per episode reset."""
+    _shadow_rng.seed(int(seed))
+
+
+def draw_shadowing_db(sigma_db: float = SHADOWING_SIGMA_DB) -> float:
+    """One zero-mean log-normal shadowing sample, in dB (0.0 when sigma <= 0)."""
+    if sigma_db <= 0.0:
+        return 0.0
+    return _shadow_rng.gauss(0.0, sigma_db)
+
+
+def draw_overlap(p_overlap: float) -> bool:
+    """True when a co-channel frame actually overlaps the tagged one in time.
+
+    A grant fixes roughly when a vehicle transmits, not the exact instant inside the
+    step, so two frames on the same subchannel collide only if their start times fall
+    within one frame duration of each other. The caller supplies that vulnerable-period
+    probability (2 * T_air / T_step); this draws from the same seeded stream as
+    shadowing so a run stays reproducible.
+    """
+    if p_overlap >= 1.0:
+        return True
+    if p_overlap <= 0.0:
+        return False
+    return _shadow_rng.random() < p_overlap
+
+
+def rx_power_dbm(tx_dbm: float, distance_m: float, shadow_db: float = 0.0) -> float:
+    """Received power: Ptx + G_tx + G_rx - PL(d) - shadowing."""
+    return tx_dbm + G_TX_DBI + G_RX_DBI - path_loss_db(distance_m) - shadow_db
+
+def rx_power_mw(tx_dbm: float, distance_m: float, shadow_db: float = 0.0) -> float:
+    return dbm_to_mw(rx_power_dbm(tx_dbm, distance_m, shadow_db))
+
+def noise_floor_dbm(bandwidth_hz: float = SUBCHANNEL_BW_HZ) -> float:
+    """kTB + NF. At 10 MHz with NF 9 dB this is -174 + 70 + 9 = -95.0 dBm."""
+    return -174.0 + 10.0 * math.log10(bandwidth_hz) + NOISE_FIGURE_DB
 
 def noise_floor_mw(num_subchannels: int = NUM_SUBCHANNELS) -> float:
-    bw = TOTAL_BW_HZ / max(num_subchannels, 1)
-    return dbm_to_mw(-174.0 + 10.0 * math.log10(bw) + NOISE_FIGURE_DB)
+    return dbm_to_mw(noise_floor_dbm(TOTAL_BW_HZ / max(num_subchannels, 1)))
 
+def sensitivity_dbm(rate_mbps: float = OPERATING_RATE_MBPS,
+                    bandwidth_hz: float = SUBCHANNEL_BW_HZ) -> float:
+    """Receiver sensitivity implied by the MCS threshold and the noise floor."""
+    return noise_floor_dbm(bandwidth_hz) + get_mcs(rate_mbps).req_sinr_db
+
+
+# --------------------------------------------------------------------------
+# Frame airtime
+# --------------------------------------------------------------------------
+def frame_symbols(payload_bytes: int = STATUS_UPDATE_BYTES,
+                  rate_mbps: float = OPERATING_RATE_MBPS) -> int:
+    """Number of OFDM DATA symbols for an L-byte PSDU (IEEE 802.11 17.3.5.3)."""
+    bits = SERVICE_BITS + 8 * int(payload_bytes) + TAIL_BITS
+    return int(math.ceil(bits / get_mcs(rate_mbps).bits_per_symbol))
+
+def frame_airtime_s(payload_bytes: int = STATUS_UPDATE_BYTES,
+                    rate_mbps: float = OPERATING_RATE_MBPS) -> float:
+    """Occupancy of the subchannel by one frame, in seconds.
+
+        airtime = 40 us (preamble + SIGNAL) + 8 us * N_sym
+    This is what couples the scheduler's update interval to channel load: a
+    grant does not merely 'happen', it holds its subchannel for this long.
+    """
+    return PREAMBLE_SIGNAL_TIME_S + OFDM_SYMBOL_TIME_S * frame_symbols(payload_bytes, rate_mbps)
+
+def phy_data_rate_bps(rate_mbps: float = OPERATING_RATE_MBPS) -> float:
+    """Nominal PHY rate in bits/s (6 Mbps -> 6e6)."""
+    return get_mcs(rate_mbps).rate_mbps * 1e6
+
+
+# --------------------------------------------------------------------------
+# Uplink judgement
+# --------------------------------------------------------------------------
 def rayleigh_success_prob(signal_mw: float, interferer_mws, noise_mw: float,
                           sinr_th_lin: float) -> float:
     """P(SINR >= th) under independent Rayleigh fading on all links."""
     if signal_mw <= 0.0:
         return 0.0
     p = math.exp(-sinr_th_lin * noise_mw / signal_mw)
-    for I in interferer_mws:
-        p *= 1.0 / (1.0 + sinr_th_lin * (I / signal_mw))
+    for i_mw in interferer_mws:
+        p *= 1.0 / (1.0 + sinr_th_lin * (i_mw / signal_mw))
     return p
 
-def judge_uplink(group, num_subchannels: int = NUM_SUBCHANNELS) -> dict:
+def judge_uplink(group, num_subchannels: int = NUM_SUBCHANNELS,
+                 shadowing_sigma_db: float = SHADOWING_SIGMA_DB,
+                 sinr_th_db: float = SINR_TH_DB) -> dict:
     """group: list of (id, tx_dbm, distance_m), ALL on the same subchannel.
-    Returns {id: success_probability} with mutual Rayleigh-SINR interference."""
+    Returns {id: success_probability} with mutual Rayleigh-SINR interference.
+
+    One shadowing sample is drawn per link and reused for that link's role as
+    both the desired signal and as interference at the RSU, because it is a
+    property of the propagation path, not of the receiver's viewpoint.
+    """
     n0 = noise_floor_mw(num_subchannels)
-    th = _db_to_lin(SINR_TH_DB)
-    powers = {gid: rx_power_mw(tx, d) for (gid, tx, d) in group}
+    th = _db_to_lin(sinr_th_db)
+    powers = {
+        gid: rx_power_mw(tx, d, draw_shadowing_db(shadowing_sigma_db))
+        for (gid, tx, d) in group
+    }
     out = {}
     for gid, tx, d in group:
         S = powers[gid]

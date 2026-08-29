@@ -17,7 +17,7 @@ from tests.contract_adapters import (
     StateVectorizer,
     ActionDecoder,
     RetrospectiveReplayBuffer,
-    BASELINE_REGISTRY,
+    DummyPolicy,
     run_hpo_study,
     DualModelHotSwapManager,
     calculate_metrics,
@@ -36,9 +36,9 @@ class TestTier3Integration:
         scenario_steps = [
             # (speed, tls_dict, expected_delta_range)
             (15.0, {"state": "g", "dist_to_stopline": 300.0, "time_to_switch": 20.0}, (1.0, 2.0)),   # Cruise
-            (10.0, {"state": "r", "dist_to_stopline": 20.0, "time_to_switch": 15.0}, (0.5, 0.5)),    # Urgent stop
-            (0.0,  {"state": "r", "dist_to_stopline": 5.0, "time_to_switch": 10.0}, (3.0, 10.0)),   # Backoff at red
-            (0.0,  {"state": "r", "dist_to_stopline": 5.0, "time_to_switch": 1.5}, (0.5, 0.5)),     # Urgent start
+            (10.0, {"state": "r", "dist_to_stopline": 20.0, "time_to_switch": 15.0}, (0.1, 1.0)),    # Urgent stop
+            (0.0,  {"state": "r", "dist_to_stopline": 5.0, "time_to_switch": 10.0}, (3.0, 45.0)),   # Backoff at red
+            (0.0,  {"state": "r", "dist_to_stopline": 5.0, "time_to_switch": 1.5}, (0.1, 1.0)),     # Urgent start
         ]
 
         for step_idx, (speed, tls_info, expected_range) in enumerate(scenario_steps):
@@ -54,14 +54,13 @@ class TestTier3Integration:
                 f"Step {step_idx}: expected delta in {expected_range}, got {delta}"
             )
             assert 0 <= ch < 4
-            assert 20.0 <= power <= 30.0
+            assert 10.0 <= power <= 23.0
 
     def test_02_vectorizer_decoder_baselines_buffer_loop(self, synthetic_vehicle_node, synthetic_rsu_node):
         """Verify complete RL feedback loop: State -> Vectorizer -> Actor -> Decoder -> Buffer -> Update."""
-        vectorizer = StateVectorizer(rsu_range=800.0)
+        vectorizer = StateVectorizer(rsu_range=300.0)
         buffer = RetrospectiveReplayBuffer(capacity=500)
-        model_cls = BASELINE_REGISTRY["HybridSAC"]
-        agent = model_cls(state_dim=16, num_channels=4, hidden_dim=32)
+        agent = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
 
         # Simulate 20 environment interaction steps
         cur_t = 0.0
@@ -77,7 +76,7 @@ class TestTier3Integration:
             cur_t += delta
             synthetic_vehicle_node.pos[0] += synthetic_vehicle_node.vel[0] * delta
             s_next = vectorizer.vectorize(synthetic_vehicle_node, synthetic_rsu_node, current_time=cur_t)
-            reward = -(delta * 0.5 + (p - 20.0) * 0.02)
+            reward = -(delta * 0.5 + (p - 10.0) * 0.02)
             done = step == 19
 
             # 4. Push to SMDP replay buffer
@@ -92,9 +91,8 @@ class TestTier3Integration:
 
     def test_03_concurrent_simulation_hot_swap(self):
         """Verify hot-swapping model parameters in the background while inference loop runs concurrently."""
-        model_cls = BASELINE_REGISTRY["HybridPPO"]
-        act_model = model_cls(state_dim=16, num_channels=4, hidden_dim=32)
-        rest_model = model_cls(state_dim=16, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
 
         inference_count = 0
@@ -103,7 +101,7 @@ class TestTier3Integration:
 
         def serving_worker():
             nonlocal inference_count
-            dummy_state = np.random.uniform(-1, 1, size=(16,)).astype(np.float32)
+            dummy_state = np.random.uniform(-1, 1, size=(18,)).astype(np.float32)
             while not stop_event.is_set():
                 try:
                     grant, raw, _ = act_model.select_action(dummy_state)
@@ -135,16 +133,16 @@ class TestTier3Integration:
     def test_04_optuna_to_evaluation_pipeline(self, temp_results_dir):
         """Verify end-to-end flow: Optuna searches params -> best model trained -> evaluated with 6 metrics."""
         # 1. Run quick HPO study
-        study = run_hpo_study("HybridTD3", n_trials=3)
+        study = run_hpo_study("DummyPolicy", model_cls=DummyPolicy, n_trials=3)
         best_params = study.best_params
 
         # 2. Instantiate model with best hyperparameters
-        best_model = BASELINE_REGISTRY["HybridTD3"](state_dim=16, num_channels=4, **best_params)
+        best_model = DummyPolicy(state_dim=18, num_channels=4, **best_params)
 
         # 3. Run evaluation benchmark loop
         sim_records = []
         for veh_id in range(10):
-            dummy_state = np.random.uniform(-0.5, 0.5, size=(16,)).astype(np.float32)
+            dummy_state = np.random.uniform(-0.5, 0.5, size=(18,)).astype(np.float32)
             grant, raw, _ = best_model.select_action(dummy_state, deterministic=True)
             delta, ch, p = grant
             sim_records.append({
@@ -161,4 +159,4 @@ class TestTier3Integration:
         assert metrics["mean_aoi"] > 0
         assert metrics["packet_loss_rate"] == 0.0
         assert metrics["mean_error"] >= 0.0
-        assert 20.0 <= metrics["avg_tx_power_dbm"] <= 30.0
+        assert 10.0 <= metrics["avg_tx_power_dbm"] <= 23.0

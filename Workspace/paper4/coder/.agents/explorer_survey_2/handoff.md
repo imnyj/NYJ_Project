@@ -1,313 +1,384 @@
-# Explorer Survey 2: RL 인터페이스 및 9개 베이스라인 심층 분석 및 설계 보고서
+# [Handoff Report] Explorer 2: `src/rl_interface.py` 및 RL 인터페이스/테스트 정밀 분석 보고서
 
-- **작성 에이전트**: Explorer Survey 2 (RL Interface & Baselines Requirement Explorer)
-- **작성 일시**: 2026-08-26T22:01:00+09:00
-- **문서 위치**: `/home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_2/handoff.md`
+## 1. Observation (직접 관찰 사실)
 
----
-
-## 1. 관찰 (Observation)
-
-### 1.1 실행 환경 및 하드웨어 가용성
-- **Python 환경**:
-  - 시스템 Python: `/usr/bin/python3` (Python 3.12.3)
-  - 가상환경 Python: `/home/imnyj/venv/bin/python` (Python 3.12.3)
-- **PyTorch 및 CUDA 환경**:
-  - PyTorch 버전: `2.12.0+cu130` (시스템) / `2.11.0+cu130` (가상환경)
-  - CUDA 버전: `CUDA 13.0` (드라이버 580.173.02)
-  - GPU 장치: **4 × NVIDIA GeForce RTX 3090 (각 24,576 MiB VRAM, 총 98,304 MiB VRAM 가용)**
-- **설치된 관련 라이브러리**:
-  - `torch`, `optuna` (4.9.0 / 4.8.0), `numpy` (2.4.6), `pandas` (2.3.3), `scipy` (1.17.1), `matplotlib` (3.10.9), `tensorboard` (2.20.0), `libsumo` (1.27.1), `traci` (1.27.1)
-  - 기존 RL 프레임워크(`stable-baselines3`, `tianshou`, `ray`)는 설치되어 있지 않으며, `aoi_scheduling_design.md` 10절 명세에 따라 **순수 PyTorch + CleanRL 스타일(Pure PyTorch Actor-Critic & Replay Buffer)** 구현이 확정되어 있음.
-
-### 1.2 기존 코드베이스 구조 관찰
-1. **`aoi_scheduling_design.md` (설계 명세)**:
-   - 시스템 목적: 유효 AoI(추정 오차 적분 $e_i(t)^2$) + 망 혼잡(CBR) 동시 최소화.
-   - 사건 기반(Event-driven): E1 진입 등록 $\to$ E2 예정 갱신(SINR 판정 및 소급 보상 확정) $\to$ E3 이탈(마감).
-   - 상태 관측치: 오차 $e_i(t)$는 결정 시점 미관측치이므로 상태에 절대 포함 금지(보상에만 사용).
-   - 행동 공간: 하이브리드 액션 $a_i = (\Delta_i, ch_i, p_i)$ (간격 $\Delta$, 전력 $p$는 연속, 서브채널 $ch$는 이산).
-2. **`src/aoi_env.py` (S1+S2 환경 계층)**:
-   - 라인 44-53: 순수 오차 수학 함수 `extrapolate()`, `estimation_error()`.
-   - 라인 161-169: `decide_grant(state)` 임시 placeholder (고정 $\Delta=1.0$, round-robin 채널, 중간 전력).
-   - 라인 222-232: E2 시 `pending_tx`에 큐잉 후 1-스텝 지연 판정.
-   - 라인 256-273: `RSUNode._resolve_pending()`에서 `comm.judge_uplink()`를 호출하여 Rayleigh SINR 성공 판정 수행.
-3. **`src/Communications.py` (통신 모델)**:
-   - 라인 166-213: `NUM_SUBCHANNELS=4`, `TX_POWER_LEVELS_DBM=[20.0, 25.0, 30.0]`, `judge_uplink(group)`를 통한 상호 간섭 하 성공 확률 $P_{\text{succ}} = e^{-\gamma_{\text{th}} N_0 / S} \prod_k \frac{1}{1 + \gamma_{\text{th}} I_k / S}$.
-4. **`src/NetSim.py` (TraCI 신호등 인터페이스)**:
-   - 라인 766: `sumo.vehicle.getNextTLS(vehicle_id)` 호출을 통해 `(tls_id, tls_index, dist, state)` 획득.
-   - 라인 824: `sumo.trafficlight.getNextSwitch(rsu_id)` 호출을 통해 다음 신호 변경 잔여 시간 계산.
-5. **`src/model.py`**:
-   - TensorFlow 기반의 레거시 단일 모델이 존재하나, PyTorch 기반 아키텍처로 전면 재구축 필요.
-
----
-
-## 2. 논리 체계 (Logic Chain)
-
-### 2.1 R1: 신호 기반 동역학 예측 & 휴리스틱 베이스라인 S2.5 요구사항 분석
-
-#### (1) 문제 원인: "정지 차량의 함정 (Stationary Trap)"
-- 단순 AoI 기준에서는 정지 차량의 나이($t - \tau_i$)가 증가하면 무조건 우선 갱신을 부여하여 대역폭을 낭비함.
-- 반대로 유효 AoI에서 정지 차량을 갱신하지 않으려 할 때, **주행 중이던 차량이 적색 신호로 정지하는 순간** 갱신을 생략하면 RSU는 과거 주행 속도($\mathbf{v}_{\tau_i} > 0$)로 외삽하므로 추정 오차가 무한히 폭증함.
-- 마찬가지로 **정지해 있던 차량이 녹색 신호로 급가속하는 순간**에도 외삽치는 정지 상태($\mathbf{v}_{\tau_i} = 0$)를 유지하여 실제 위치와 극심하게 어긋남.
-- **해결 원리**: 갱신 가치가 가장 높은 순간은 고속 주행 중이 아니라 **동역학 상태 전이(가속도/속도 급변 지점)**임. 신호등(TLS) 상태와 거리는 이 전이를 사전에 100% 예측할 수 있는 강력한 인과적 신호임.
-
-#### (2) TraCI 기반 피처 추출 및 동역학 예측 지표 ($I_{\text{stop}}, I_{\text{start}}$)
-1. **신호등 및 정지선 정보 계측**:
-   - `tls_info = sumo.vehicle.getNextTLS(vid)` $\to$ `(tls_id, tls_index, d_stop, state_char)`
-   - `t_left = max(0.0, sumo.trafficlight.getNextSwitch(tls_id) - sumo.simulation.getTime())`
-2. **정지 임박 지표 ($I_{\text{stop}} \in [0, 1]$)**:
-   - 차량이 주행 중($v_i > 1.0\text{ m/s}$)이고 전방 신호가 적색/황색($\text{state} \in \{'r', 'R', 'y', 'Y'\}$)이며, 제동 안전 거리 이내($d_{\text{stop}} \le \frac{v_i^2}{2 d_{\text{comfort}}} + 15\text{ m}$) 도달 시:
-     $$I_{\text{stop}} = 1.0 \quad (\text{감속/정지 진입 예측})$$
-3. **출발 임박 지표 ($I_{\text{start}} \in [0, 1]$)**:
-   - 차량이 정지 상태($v_i < 1.0\text{ m/s}$)이고, (a) 적색 신호 잔여 시간이 $3.0\text{ s}$ 이하이거나 (b) 신호가 방금 녹색($\text{state} \in \{'g', 'G'\}$)으로 변경되었으며 큐 선두($d_{\text{stop}} \le 15\text{ m}$)인 경우:
-     $$I_{\text{start}} = 1.0 \quad (\text{출발/가속 진입 예측})$$
-
-#### (3) S2.5 신호-인지 휴리스틱 스케줄러 (Heuristic Baseline) 수식
-휴리스틱 스케줄러는 RL 모델과 대조할 최강의 도메인 지식 베이스라인으로 다음과 같이 동작함:
-$$\pi_{\text{Heuristic}}(s_i) = (\Delta_i^*, ch_i^*, p_i^*)$$
-1. **긴급 갱신 모드** ($I_{\text{stop}} = 1$ 또는 $I_{\text{start}} = 1$):
-   - $\Delta_i^* = \Delta_{\min} = 0.5\text{ s}$ (상태 변화 즉시 포착).
-   - $ch_i^* = \arg\min_{c \in \{0..C-1\}} \text{ContentionLoad}(c)$ (가장 한산한 채널 선택).
-   - $p_i^* = 25.0\text{ dBm}$ (안정적 수신 보장).
-2. **정지 백오프 모드** ($v_i < 0.5\text{ m/s}$ 이고 $t_{\text{left}} > 5.0\text{ s}$):
-   - $\Delta_i^* = \min(\Delta_{\max}, t_{\text{left}} - 1.0\text{ s})$ (신호 바뀌기 직전까지 전송 억제 $\to$ 대역 절약).
-   - $ch_i^* = \text{RoundRobin}(), \quad p_i^* = 20.0\text{ dBm}$.
-3. **일반 정속 주행 모드**:
-   - $\Delta_i^* = \text{clip}\left(\frac{\delta_{\text{tol}}}{v_i \cdot \sigma_a}, \Delta_{\min}, \Delta_{\text{cruise}}\right)$, $ch_i^* = \arg\min_c \text{Load}(c)$, $p_i^* = 25.0\text{ dBm}$.
+### 1.1 Action Bounds 정의 현황 (`src/rl_interface.py`)
+- **파일 경로**: `/home/imnyj/Workspace/paper4/coder/src/rl_interface.py`
+- **상수 정의** (Lines 28-48):
+  ```python
+  28: #: Observation dimension emitted by StateVectorizer.
+  29: STATE_DIM: int = 18
+  30: 
+  31: #: Delta (update interval) bounds, seconds.
+  ...
+  40: DELTA_MIN: float = 0.1
+  41: DELTA_MAX: float = 45.0
+  42: 
+  43: #: Transmit power bounds, dBm.
+  ...
+  46: P_MIN: float = 10.0
+  47: P_MAX: float = 23.0
+  ```
+- **ActionDecoder 클래스** (Lines 302-351, 385-430):
+  - `ActionDecoder.__init__`의 기본 인자: `delta_min=DELTA_MIN (0.1)`, `delta_max=DELTA_MAX (45.0)`, `p_min=P_MIN (10.0)`, `p_max=P_MAX (23.0)`.
+  - `decode_action`:
+    ```python
+    409: sig_d = self._sigmoid(float(raw_delta))
+    410: delta = self.delta_min + sig_d * (self.delta_max - self.delta_min)
+    411: ch = int(round(float(raw_ch))) % self.num_channels
+    416: sig_p = self._sigmoid(float(raw_p))
+    417: power = self.p_min + sig_p * (self.p_max - self.p_min)
+    ```
+  - `encode_action`:
+    ```python
+    425: norm_d = (delta - self.delta_min) / max(1e-6, self.delta_max - self.delta_min)
+    426: norm_p = (power - self.p_min) / max(1e-6, self.p_max - self.p_min)
+    427: raw_d = self._logit(norm_d)
+    428: raw_p = self._logit(norm_p)
+    ```
+- **관찰 결과 요약**:
+  - Power 범위는 $P \in [10.0, 23.0]$ dBm으로 3GPP TS 36.101/38.101 Power Class 3 UE 규격(최대 23 dBm = 200 mW) 및 링크버짓 요구사항에 맞춰 정의되어 있음.
+  - Delta 범위는 $\Delta \in [0.1, 45.0]$ s로 하한은 ETSI CAM 규격($T_{GenCamMin} = 0.1$ s), 상한은 45.0 s로 설정되어 있음.
+  - 단, 현재 `DELTA_MAX = 45.0`은 정적으로 상수 선언되어 있으며 SUMO 네트워크 파일 파싱 및 TraCI로부터 동적으로 최대 적색 신호 주기를 추출하는 헬퍼 함수(`get_sumo_max_red_phase_duration`)가 코드에 명시적으로 연결되어 있지 않음.
 
 ---
 
-### 2.2 R2: RL 에이전트 인터페이스 요구사항 분석
-
-#### (1) 상태 벡터화 규약 (16차원 정규화 State Vector $\mathbf{s}_i \in \mathbb{R}^{16}$)
-모든 피처는 RSU의 관측 가능한 정보로만 구성되며 $[-1.0, 1.0]$ 또는 $[0.0, 1.0]$ 범위로 엄밀히 정규화됨:
-
-| 인덱스 | 피처 명칭 | 수식 / 계산 방식 | 정규화 기준 | 의미 및 역할 |
-|---|---|---|---|---|
-| $0$ | **정규화 나이 (AoI)** | $(t - \tau_i) / \Delta_{\max}$ | $[0, 1]$ ($\Delta_{\max}=10\text{s}$) | 마지막 수신 후 경과 시간 |
-| $1$ | **속도 X 성분** | $v_x / v_{\max}$ | $[-1, 1]$ ($v_{\max}=30\text{m/s}$) | 방향별 주행 속도 |
-| $2$ | **속도 Y 성분** | $v_y / v_{\max}$ | $[-1, 1]$ ($v_{\max}=30\text{m/s}$) | 방향별 주행 속도 |
-| $3$ | **주행 속력 (Speed)** | $\|\mathbf{v}\| / v_{\max}$ | $[0, 1]$ ($v_{\max}=30\text{m/s}$) | 절대 속력 (정지 여부 판단) |
-| $4$ | **추정 가속도** | $a_{\text{est}} / a_{\max}$ | $[-1, 1]$ ($a_{\max}=5\text{m/s}^2$) | 속도 변화율 |
-| $5$ | **상대 X 좌표** | $(x_i - x_{\text{RSU}}) / r_{\text{cov}}$ | $[-1, 1]$ ($r_{\text{cov}}=800\text{m}$) | 셀 내 위치 |
-| $6$ | **상대 Y 좌표** | $(y_i - y_{\text{RSU}}) / r_{\text{cov}}$ | $[-1, 1]$ ($r_{\text{cov}}=800\text{m}$) | 셀 내 위치 |
-| $7$ | **RSU 상대 거리** | $d_i / r_{\text{cov}}$ | $[0, 1]$ ($r_{\text{cov}}=800\text{m}$) | 경로 손실 및 SINR 기초치 |
-| $8$ | **신호등 Red (One-Hot)** | $I_{\text{red}} \in \{0, 1\}$ | $\{0, 1\}$ | 현재 접근 차로 신호 상태 |
-| $9$ | **신호등 Yellow (One-Hot)**| $I_{\text{yellow}} \in \{0, 1\}$ | $\{0, 1\}$ | 현재 접근 차로 신호 상태 |
-| $10$ | **신호등 Green (One-Hot)** | $I_{\text{green}} \in \{0, 1\}$ | $\{0, 1\}$ | 현재 접근 차로 신호 상태 |
-| $11$ | **신호 잔여 시간** | $\min(t_{\text{left}} / T_{\text{phase}}, 1.0)$ | $[0, 1]$ ($T_{\text{phase}}=60\text{s}$) | 다음 신호 전이까지 시간 |
-| $12$ | **정지선 잔여 거리** | $\min(d_{\text{stop}} / r_{\text{cov}}, 1.0)$ | $[0, 1]$ ($r_{\text{cov}}=800\text{m}$) | 교차로 정지선 근접도 |
-| $13$ | **셀 내 활성 차량 수** | $N_{\text{active}} / N_{\max}$ | $[0, 1]$ ($N_{\max}=100$) | 전역 통신 경합도 |
-| $14$ | **직전 윈도우 CBR** | $\text{CBR} \in [0, 1]$ | $[0, 1]$ | 채널 비지 비율 (혼잡도) |
-| $15$ | **임박 예약 전송 수** | $N_{\text{imminent\_grants}} / (C \cdot N_{\max})$| $[0, 1]$ | 향후 1초 내 충돌 위험도 |
-
-> **누수 방지 검증**: Ground Truth 추정 오차 $e_i(t)$나 미래 궤적은 State에 절대 포함되지 않음.
-
-#### (2) 하이브리드 액션 공간 (Hybrid Action Space) 표현 및 디코딩
-행동 튜플 $\mathbf{a}_i = (\Delta_i, ch_i, p_i)$는 이산 공간과 연속 공간이 결합된 형태임:
-- $\Delta_i \in [\Delta_{\min}, \Delta_{\max}]$: 전송 간격 (연속, $0.5 \sim 10.0\text{ s}$)
-- $ch_i \in \{0, 1, \dots, C-1\}$: 서브채널 번호 (이산 카테고리, $C=4$)
-- $p_i \in [p_{\min}, p_{\max}]$: 전송 전력 (연속, $20.0 \sim 30.0\text{ dBm}$)
-
-**디코딩 전략**:
-1. **On-Policy (H-PPO / MAPPO)**:
-   - Discrete Head: Logits $\mathbf{z}_{\text{ch}} \in \mathbb{R}^C \to \text{Categorical}(\text{Softmax}(\mathbf{z}_{\text{ch}})) \to ch \sim \pi_{\text{cat}}$
-   - Continuous Head: $\boldsymbol{\mu}, \log\boldsymbol{\sigma} \in \mathbb{R}^2 \to \Delta, p \sim \mathcal{N}(\boldsymbol{\mu}, \boldsymbol{\sigma}^2)$ (Sigmoid 또는 Tanh 스케일링으로 경계 보장).
-2. **Off-Policy Actor-Critic (H-SAC / H-TD3)**:
-   - Discrete Head: Gumbel-Softmax $y_c = \frac{\exp((z_c + g_c)/\tau)}{\sum_j \exp((z_j + g_j)/\tau)}$ (학습 시 미분 가능 완화, 추론 시 $\arg\max$).
-   - Continuous Head: Squashed Gaussian $\mathbf{a}_{\text{cont}} = \tanh(\boldsymbol{\mu} + \boldsymbol{\sigma} \odot \boldsymbol{\epsilon}) \cdot \text{scale} + \text{bias}$.
-3. **Parameterized Q-Network (P-DQN / MP-DQN)**:
-   - Parameter Actor: 각 채널 $k \in \{0..C-1\}$마다 최적 연속 파라미터 $(\Delta_k, p_k) = \mathbf{x}_k(s)$ 산출.
-   - Q-Network: $Q(s, k, \mathbf{x}_k)$를 평가하여 $ch^* = \arg\max_k Q(s, k, \mathbf{x}_k)$, 최종 액션 $(ch^*, \mathbf{x}_{ch^*})$ 확정.
-
-#### (3) 회고적 추정 오차 적분 및 SMDP 전이 조립 (Transition Assembly)
-본 시스템은 가변 주기 $\Delta_i$를 갖는 **Semi-Markov Decision Process (SMDP)** 로 모델링됨:
-1. **시점 $t_{\text{grant}}$ (의사결정)**:
-   - 상태 $s_i = \mathbf{s}_i(t_{\text{grant}})$ 관측, 액션 $a_i = (\Delta_i, ch_i, p_i)$ 부여.
-   - 차량의 다음 전송 시각 예약: $t_{\text{next}} = t_{\text{grant}} + \Delta_i$.
-2. **구간 $[t_{\text{grant}}, t_{\text{next}}]$ (시간 경과 및 오차 적분)**:
-   - 매 시뮬레이션 스텝 $dt = 1.0\text{ s}$ 마다:
-     $$e_i(t) = \|\mathbf{x}_i^{\text{true}}(t) - (\mathbf{x}_{\tau_i} + \mathbf{v}_{\tau_i}(t - \tau_i))\|$$
-     $$\text{AccError}_i \leftarrow \text{AccError}_i + (e_i(t))^2 \cdot dt$$
-3. **시점 $t_{\text{next}}$ (결과 확정 및 보상 계산)**:
-   - 서브채널 $ch_i$, 전력 $p_i$로 상태 전송 시도 $\to$ SINR 성공 확률 $P_{\text{succ}, i}$ 산출 및 성공/실패 판정.
-   - **사후 소급 보상 (Retrospective Reward)**:
-     $$R_i = - \frac{1}{\Delta_i} \text{AccError}_i - \lambda_1 \overline{\text{CBR}}_{[t_{\text{grant}}, t_{\text{next}}]} - \lambda_2 - \beta (1 - P_{\text{succ}, i})$$
-   - **전이 튜플 조립**:
-     - 전송 성공 시: 새 관측치 $s'_i = \mathbf{s}_i(t_{\text{next}})$, $\tau_i \leftarrow t_{\text{next}}$, $done = \text{False}$.
-     - 전송 실패 시: RSU 기록 미갱신(오차 누적 지속), $s'_i = \mathbf{s}_i(t_{\text{next}})$ (증가된 AoI 반영), $done = \text{False}$.
-     - 셀 이탈 시 (E3): $s'_i = \mathbf{0}$, $done = \text{True}$.
-   - 버퍼 저장 튜플: $(s_i, a_i, R_i, s'_i, done, \Delta_i)$.
-   - SMDP 할인율: $\gamma_{\text{eff}} = \gamma^{\Delta_i}$ ($\gamma=0.99$).
+### 1.2 SUMO 신호등 적색 주기 정의 분석 (`src/sumo/generated.net.xml`)
+- **파일 경로**: `/home/imnyj/Workspace/paper4/coder/src/sumo/generated.net.xml` (Lines 1788-1830)
+- **신호등 프로그램 (`tlLogic`) 구조**:
+  ```xml
+  <tlLogic id="N10" type="static" programID="0" offset="0">
+      <phase duration="42" state="rrrrGGGgrrrrGGGg" />
+      <phase duration="3" state="rrrryyyyrrrryyyy" />
+      <phase duration="42" state="GGGgrrrrGGGgrrrr" />
+      <phase duration="3" state="yyyyrrrryyyyrrrr" />
+  </tlLogic>
+  ```
+- **주기 분석**:
+  - Phase 0 (42s): 남북(NS) 적색(`rrrr`), 동서(EW) 녹색(`GGGg`)
+  - Phase 1 (3s): 남북(NS) 적색(`rrrr`), 동서(EW) 황색(`yyyy`)
+  - Phase 2 (42s): 남북(NS) 녹색(`GGGg`), 동서(EW) 적색(`rrrr`)
+  - Phase 3 (3s): 남북(NS) 황색(`yyyy`), 동서(EW) 적색(`rrrr`)
+- **접근 차선별 연속 적색 지속시간 (Standstill Duration)**:
+  - NS 접근로: Phase 0 (42s) + Phase 1 (3s) = **45.0초**
+  - EW 접근로: Phase 2 (42s) + Phase 3 (3s) = **45.0초**
+  - Python XML 파서(`xml.etree.ElementTree`)를 통한 전체 `tlLogic` 순회 실측 결과: 최대 연속 적색 지속시간은 정확히 **45.0초**.
 
 ---
 
-### 2.3 9개 베이스라인 모델 선정 및 아키텍처/수식 정밀 설계
+### 1.3 `StateVectorizer` 18차원 상태 벡터 구조 검증 (`src/rl_interface.py`)
+- **파일 경로**: `/home/imnyj/Workspace/paper4/coder/src/rl_interface.py` (Lines 50-300)
+- **차원 정의**: `STATE_DIM: int = 18` (Line 29, Line 83)
+- **18개 차원 상세 매핑**:
 
-요구사항 R2에 따라 9개 베이스라인을 3개 카테고리로 엄밀히 분류 및 수식화함:
+| Index | Feature Name | Description & Formula | Value Range | Normalization |
+|:---:|:---|:---|:---:|:---:|
+| `0` | **Age (AoI)** | 정보 노후도: $\min(1.0, (t_{curr} - t_{last}) / 10.0)$ | $[0.0, 1.0]$ | 10초 기준 선형 클리핑 |
+| `1` | **$v_x$** | X축 속도 성분: $\text{clip}(v_x / v_{max}, -1.0, 1.0)$ | $[-1.0, 1.0]$ | $v_{max}=30.0$ m/s |
+| `2` | **$v_y$** | Y축 속도 성분: $\text{clip}(v_y / v_{max}, -1.0, 1.0)$ | $[-1.0, 1.0]$ | $v_{max}=30.0$ m/s |
+| `3` | **Speed** | 차량 속력: $\text{clip}(\|v\| / v_{max}, 0.0, 1.0)$ | $[0.0, 1.0]$ | $v_{max}=30.0$ m/s |
+| `4` | **Accel** | 차량 가속도: $\text{clip}(a / a_{max}, -1.0, 1.0)$ | $[-1.0, 1.0]$ | $a_{max}=5.0$ m/s$^2$ |
+| `5` | **Rel X** | RSU 기준 X 변위: $\text{clip}(\Delta x / R_{rsu}, -1.0, 1.0)$ | $[-1.0, 1.0]$ | $R_{rsu}=300.0$ m (또는 800.0) |
+| `6` | **Rel Y** | RSU 기준 Y 변위: $\text{clip}(\Delta y / R_{rsu}, -1.0, 1.0)$ | $[-1.0, 1.0]$ | $R_{rsu}=300.0$ m (또는 800.0) |
+| `7` | **Distance** | RSU와의 직선거리: $\text{clip}(d_{rsu} / R_{rsu}, 0.0, 1.0)$ | $[0.0, 1.0]$ | $R_{rsu}$ 기준 클리핑 |
+| `8` | **TLS Red** | 신호등 적색 여부 One-hot: $1.0$ if state='r' else $0.0$ | $\{0.0, 1.0\}$ | 이진 플래그 |
+| `9` | **TLS Yellow** | 신호등 황색 여부 One-hot: $1.0$ if state='y' else $0.0$ | $\{0.0, 1.0\}$ | 이진 플래그 |
+| `10` | **TLS Green** | 신호등 녹색 여부 One-hot: $1.0$ if state='g' else $0.0$ | $\{0.0, 1.0\}$ | 이진 플래그 |
+| `11` | **Time to Switch** | 신호 변경 잔여 시간: $\text{clip}(t_{switch} / 60.0, 0.0, 1.0)$ | $[0.0, 1.0]$ | 60초 기준 정규화 |
+| `12` | **Dist to Stopline** | 정지선까지 거리: $\text{clip}(d_{stop} / R_{rsu}, 0.0, 1.0)$ | $[0.0, 1.0]$ | $R_{rsu}$ 기준 정규화 |
+| `13` | **Active Count** | RSU 셀 내 활성 차량 수: $\text{clip}(N_{active} / 100.0, 0.0, 1.0)$ | $[0.0, 1.0]$ | 100대 기준 정규화 |
+| `14` | **CBR** | Channel Busy Ratio: $\text{clip}(\text{cbr}, 0.0, 1.0)$ | $[0.0, 1.0]$ | 채널 점유율 |
+| `15` | **Dynamics Indicator** | 급정거/출발 임박 플래그: $\text{clip}((I_{stop} + I_{start}) / 2.0, 0.0, 1.0)$ | $[0.0, 1.0]$ | 급변동 전환 지표 |
+| `16` | **`n_queue`** | 동일 차선 전방 대기 차량 수: $\text{clip}(N_{queue} / N_{queue\_max}, 0.0, 1.0)$ | $[0.0, 1.0]$ | $N_{queue\_max}=20.0$ |
+| `17` | **`heading`** | RSU 접근(+) / 후퇴(-) 코사인 방향성 지표 | $[-1.0, 1.0]$ | $\cos\theta = \frac{\mathbf{v} \cdot (-\mathbf{d})}{\|\mathbf{v}\| \|\mathbf{d}\|}$ |
 
+- **`n_queue` 및 `heading` 보조 함수 검증**:
+  - `_extract_queue_count` (Lines 106-141): `tls_info`의 `n_queue`, `lane_halting_number`를 우선 파싱하며 없을 경우 `leader_gap <= 30.0` 및 `leader_speed <= 1.0`인 선행차량을 기반으로 추론 폴백 수행.
+  - `_compute_heading` (Lines 144-158): 차량 속도 벡터 $\mathbf{v}=(v_x, v_y)$와 차량에서 RSU로 향하는 벡터 $-\mathbf{d}=(-dx, -dy)$의 내적 코사인 $\frac{v_x(-dx) + v_y(-dy)}{\sqrt{v_x^2+v_y^2}\sqrt{dx^2+dy^2}}$을 계산하여 정규화 $[-1.0, 1.0]$ 반환. (접근 시 $+1.0$, 후퇴 시 $-1.0$, 정지/수직 시 $0.0$).
+
+---
+
+### 1.4 단위 및 통합 테스트 실행 결과 (`tests/`)
+- **전체 테스트 실행 결과**: `/home/imnyj/venv/bin/pytest tests/`
+  - 총 199개 테스트 중 **164 PASSED / 35 FAILED**.
+- **`tests/test_rl_interface.py` 실행 결과**:
+  - 11개 항목 중 **7 PASSED / 4 FAILED**.
+  - 실패 4건 분석:
+    1. `TestStateVectorizer.test_vectorizer_shape_dtype_and_bounds` (Line 58): `assert vec.shape == (16,)` → 실제 `(18,)`이므로 불일치.
+    2. `TestStateVectorizer.test_vectorizer_no_future_or_error_leakage` (Line 112): `assert len(vec) == 16` → 실제 `18`이므로 불일치.
+    3. `TestStateVectorizer.test_vectorizer_dict_interface` (Line 137): `assert vec.shape == (16,)` → 실제 `(18,)`이므로 불일치.
+    4. `TestActionDecoder.test_action_decoder_various_types` (Line 168): `ActionDecoder`의 기본값이 $[0.1, 45.0]$s, $[10.0, 23.0]$dBm으로 갱신되었으나 테스트 코드가 과거 $[0.5, 10.0]$s, $[20.0, 30.0]$dBm 기준의 하드코딩된 값(`5.25`, `25.0`)을 단언하고 있어 실패.
+- **기타 테스트 파일 실패 원인**:
+  - `tests/contract_adapters.py`가 16차원 및 과거 액션 범위($[0.5, 10.0]$, $[20, 30]$)를 자체 모의 구현하여 `test_dummy_verification.py`, `test_evaluation.py`, `test_hpo.py`, `test_hot_swap.py` 등에서 shape mismatch 및 power 범위 단언 실패 발생.
+  - `verify_environment.py:111`에 `assert state_vec.shape == (16,)`이 하드코딩되어 있어 `test_11_verify_environment_subprocess_execution` 실패.
+
+---
+
+## 2. Logic Chain (추론 체인)
+
+1. **상태 벡터 차원 확장 인과관계**:
+   - `Conversation.md` S1 설계 승인안에서 전방 대기 큐 길이 $n_{queue}$와 RSU 방향 지표 $heading$이 필수 상태 변수로 명시됨.
+   - 이에 따라 `src/rl_interface.py`의 `STATE_DIM`이 16에서 18로 확장되었고, `StateVectorizer`에 index 16(`n_queue`), index 17(`heading`)이 완벽히 구현됨.
+   - 그러나 기존 작성된 `tests/test_rl_interface.py`, `verify_environment.py`, `tests/contract_adapters.py` 등이 16차원을 단언하고 있어 불일치가 발생함.
+
+2. **액션 공간 물리적 타당성 및 $\Delta_{max}$ 동적 연동 인과관계**:
+   - 기존 $P \in [20.0, 30.0]$ dBm은 최소 전력(20 dBm)에서도 300m 거리 성공률이 0.953에 달해 정책이 최저 전력 선택으로 자명하게 퇴화함. $P \in [10.0, 23.0]$ dBm으로 수정되어 실제 전력 절감과 전송 성공률 간 트레이드오프가 성립함.
+   - $\Delta_{min} = 0.1$ s는 ETSI CAM 표준 규격과 일치함.
+   - $\Delta_{max}$는 교차로 정지 상태에서 불필요한 V2I 업링크를 억제한다는 본 연구의 핵심 가설에 따라, 정지 신호 대기 시간의 최댓값(최대 적색 신호 지속시간)과 일치해야 함.
+   - SUMO의 `generated.net.xml` 상에서 모든 교차로의 적색 지속시간은 녹색(42s) + 황색(3s) = 45s로 구성됨.
+   - 따라서 `DELTA_MAX`의 기본값 45.0s는 물리적으로 정확하며, 향후 시나리오 변경 시에도 정합성을 유지하도록 net XML 파일 파싱 함수 `get_sumo_max_red_phase_duration`을 `src/rl_interface.py`에 공식 제공하는 것이 필요함.
+
+---
+
+## 3. Caveats (제약 및 가정 사항)
+
+1. **테스트 코드와의 동기화**: 본 탐색은 Read-only 원칙을 준수하여 `src/` 및 `tests/` 코드를 직접 수정하지 않았습니다. 차후 Implementer 에이전트가 `tests/test_rl_interface.py`, `verify_environment.py`, `tests/contract_adapters.py`의 16차원 및 액션 범위 단언문을 동기화해야 합니다.
+2. **SUMO 네트워크 파일 생성 시점**: SUMO net XML 파일(`generated.net.xml`)이 생성되기 전 최초 모듈 import 시점에는 안전하게 기본값 45.0s를 사용하도록 예외 처리가 필요합니다.
+3. **베이스라인 코드 삭제와의 연계 (R4)**: `src/baselines/` 디렉토리는 R4 요구사항에 따라 전면 삭제 예정이므로, 베이스라인 관련 16차원 실패는 베이스라인 제거와 함께 정리될 것입니다.
+
+---
+
+## 4. Conclusion & Proposed Strategy (결론 및 제안 전략)
+
+### 4.1 핵심 요약
+1. `src/rl_interface.py`의 `StateVectorizer`는 18차원(`n_queue`, `heading` 포함)으로 정상 구현되어 있으며, $P \in [10.0, 23.0]$ dBm 및 $\Delta \in [0.1, 45.0]$ s의 single source of truth 역할을 정상 수행하고 있습니다.
+2. $\Delta_{max}$의 SUMO 연동을 강화하기 위해 `get_sumo_max_red_phase_duration()` 함수를 `src/rl_interface.py`에 추가하고 `DELTA_MAX` 및 `ActionDecoder`에 동적 연결할 것을 권고합니다.
+3. `tests/test_rl_interface.py`의 4개 실패 항목은 18차원 및 변경된 액션 범위에 맞춘 테스트 코드 갱신으로 즉시 100% 통과 가능합니다.
+
+---
+
+### 4.2 구체적 코드 변경 제안 (Proposed Diff / Snippets)
+
+#### A. `src/rl_interface.py` 제안 수정사항 (동적 SUMO 적색 주기 연동)
+
+```python
+# src/rl_interface.py 상단에 추가
+import os
+import xml.etree.ElementTree as ET
+
+def get_sumo_max_red_phase_duration(
+    net_file: Optional[str] = None,
+    default_duration: float = 45.0,
+) -> float:
+    """
+    Dynamically extract the maximum Red traffic light phase duration (seconds)
+    from SUMO's generated network XML file (generated.net.xml) or TraCI.
+
+    Parses all <tlLogic> program definitions in the net file, computes for each
+    signal link across cyclic phases the maximum consecutive duration of 'r'/'R'
+    phases (handling cycle wrap-around), and returns the overall maximum.
+
+    If the network file is not yet generated or cannot be parsed, falls back
+    safely to `default_duration` (45.0 s).
+    """
+    if net_file is None:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        net_file = os.path.join(base_dir, "sumo", "generated.net.xml")
+
+    if not os.path.exists(net_file):
+        return default_duration
+
+    try:
+        tree = ET.parse(net_file)
+        root = tree.getroot()
+        max_red = 0.0
+
+        for tl in root.findall("tlLogic"):
+            phases = tl.findall("phase")
+            if not phases:
+                continue
+            durations = [float(p.get("duration", 0.0)) for p in phases]
+            states = [p.get("state", "") for p in phases]
+            if not states or not durations:
+                continue
+            num_links = max(len(s) for s in states)
+            n_phases = len(phases)
+
+            for link_idx in range(num_links):
+                curr_red = 0.0
+                max_link_red = 0.0
+                # Double the cycle to handle cyclic wrap-around
+                for step in range(2 * n_phases):
+                    p_idx = step % n_phases
+                    char = states[p_idx][link_idx] if link_idx < len(states[p_idx]) else "g"
+                    if char in ("r", "R"):
+                        curr_red += durations[p_idx]
+                        if curr_red > max_link_red:
+                            max_link_red = curr_red
+                    else:
+                        curr_red = 0.0
+                total_cycle = sum(durations)
+                max_link_red = min(max_link_red, total_cycle)
+                if max_link_red > max_red:
+                    max_red = max_link_red
+
+        return float(max_red) if max_red > 0.0 else default_duration
+    except Exception:
+        return default_duration
+
+
+DELTA_MIN: float = 0.1
+DELTA_MAX: float = get_sumo_max_red_phase_duration()
+P_MIN: float = 10.0
+P_MAX: float = 23.0
 ```
-┌───────────────────────────────────────────────────────────────────────────────────┐
-│                              9 BASELINE MODELS MATRIX                             │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│ [Category 1: Basic Models]                                                        │
-│   1. Hybrid PPO (H-PPO) : On-policy Joint Discrete-Continuous Clipped Actor-Critic│
-│   2. Hybrid SAC (H-SAC) : Off-policy Gumbel-Softmax & Squashed Gaussian MaxEnt AC │
-│   3. Hybrid TD3 (H-TD3) : Off-policy Twin Delayed DDPG with Action Relaxation     │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│ [Category 2: Latest Hybrid Models]                                                │
-│   4. MAPPO              : Multi-Agent PPO with Centralized Critic (CTDE)          │
-│   5. HyAR / Branching PPO: Hybrid Action Rep. with Channel-Conditioned Cont. Heads│
-│   6. P-DQN / MP-DQN     : Multi-Pass Parameterized Deep Q-Network for Hybrid Space│
-├───────────────────────────────────────────────────────────────────────────────────┤
-│ [Category 3: SOTA AoI / V2I Scheduling Models]                                    │
-│   7. Pure-AoI Whittle   : Classic Linear AoI Index / Age-Greedy Scheduler         │
-│   8. Deep Dueling Q-AoI : AoI & Channel-State Aware Dueling Q-Network             │
-│   9. SAC-AoI            : Lyapunov AoI-Penalized Maximum Entropy Actor-Critic     │
-└───────────────────────────────────────────────────────────────────────────────────┘
+
+---
+
+#### B. `tests/test_rl_interface.py` 제안 수정사항 (18차원 및 액션 범위 동기화)
+
+```python
+# tests/test_rl_interface.py 수정안
+
+from src.rl_interface import (
+    STATE_DIM,
+    DELTA_MIN,
+    DELTA_MAX,
+    P_MIN,
+    P_MAX,
+    StateVectorizer,
+    ActionDecoder,
+    RetrospectiveReplayBuffer,
+    get_sumo_max_red_phase_duration,
+)
+
+class TestStateVectorizer:
+    def test_vectorizer_shape_dtype_and_bounds(self):
+        vectorizer = StateVectorizer(rsu_range=800.0, v_max=30.0, a_max=5.0)
+        veh = DummyVehicle(pos=(150.0, 200.0), vel=(10.0, 10.0), accel=1.0, prev_t=5.0)
+        rsu = DummyRSU(pos=(0.0, 0.0), comm_range=800.0)
+        tls_info = {
+            "state": "r",
+            "time_to_switch": 15.0,
+            "dist_to_stopline": 50.0,
+            "stop_imminent": 1.0,
+            "start_imminent": 0.0,
+            "n_queue": 3,
+        }
+
+        vec = vectorizer.vectorize(veh, rsu, current_time=8.0, tls_info=tls_info, cbr=0.4, n_active=20)
+        assert isinstance(vec, np.ndarray)
+        assert vec.shape == (STATE_DIM,)
+        assert vec.dtype == np.float32
+        assert np.all(vec >= -1.0) and np.all(vec <= 1.0)
+        # Verify n_queue and heading
+        assert np.isclose(vec[16], 3.0 / 20.0)  # queue_max = 20.0
+        assert -1.0 <= vec[17] <= 1.0
+
+    def test_vectorizer_heading_behavior(self):
+        vectorizer = StateVectorizer(rsu_range=800.0)
+        rsu = DummyRSU(pos=(0.0, 0.0))
+
+        # Approaching vehicle
+        veh_app = DummyVehicle(pos=(100.0, 0.0), vel=(-10.0, 0.0))
+        vec_app = vectorizer.vectorize(veh_app, rsu, current_time=1.0)
+        assert np.isclose(vec_app[17], 1.0)
+
+        # Receding vehicle
+        veh_rec = DummyVehicle(pos=(100.0, 0.0), vel=(10.0, 0.0))
+        vec_rec = vectorizer.vectorize(veh_rec, rsu, current_time=1.0)
+        assert np.isclose(vec_rec[17], -1.0)
+
+        # Stopped vehicle
+        veh_stop = DummyVehicle(pos=(100.0, 0.0), vel=(0.0, 0.0))
+        vec_stop = vectorizer.vectorize(veh_stop, rsu, current_time=1.0)
+        assert np.isclose(vec_stop[17], 0.0)
+
+    def test_vectorizer_no_future_or_error_leakage(self):
+        vectorizer = StateVectorizer()
+        veh = DummyVehicle()
+        rsu = DummyRSU()
+        vec = vectorizer.vectorize(veh, rsu, current_time=10.0)
+        assert len(vec) == STATE_DIM
+        assert not np.any(np.isnan(vec))
+        assert not np.any(np.isinf(vec))
+
+    def test_vectorizer_dict_interface(self):
+        vectorizer = StateVectorizer(rsu_range=800.0, v_max=30.0, a_max=5.0)
+        state_dict = {
+            "pos": (200.0, 100.0),
+            "vel": (15.0, 0.0),
+            "speed": 15.0,
+            "accel": 0.0,
+            "current_time": 20.0,
+            "last_update_time": 18.0,
+            "tls_features": {
+                "state": "y",
+                "time_to_switch": 6.0,
+                "dist_to_stopline": 100.0,
+                "stop_imminent": 1.0,
+                "start_imminent": 0.0,
+                "n_queue": 2,
+            },
+            "cbr": 0.5,
+            "n_active": 30,
+        }
+        vec = vectorizer.vectorize_from_dict(state_dict)
+        assert vec.shape == (STATE_DIM,)
+        assert vec[0] == pytest.approx(0.2)
+        assert vec[8] == 0.0 and vec[9] == 1.0 and vec[10] == 0.0
+        assert np.isclose(vec[16], 2.0 / 20.0)
+
+
+class TestActionDecoder:
+    def test_action_decoder_bounds(self):
+        decoder = ActionDecoder(num_channels=4)
+        test_cases = [
+            [-100.0, 0, -100.0],
+            [100.0, 3, 100.0],
+            [0.0, 2, 0.0],
+            [-5.0, 1, 5.0],
+            [10.0, 7, -10.0],
+        ]
+        for raw in test_cases:
+            delta, ch, power = decoder.decode_action(raw)
+            assert DELTA_MIN <= delta <= DELTA_MAX
+            assert ch in [0, 1, 2, 3]
+            assert P_MIN <= power <= P_MAX
+
+    def test_action_decoder_various_types(self):
+        decoder = ActionDecoder(num_channels=4)
+        t_raw = torch.tensor([0.0, 2.0, 0.0])
+        d1, ch1, p1 = decoder.decode_action(t_raw)
+        expected_d = DELTA_MIN + 0.5 * (DELTA_MAX - DELTA_MIN)
+        expected_p = P_MIN + 0.5 * (P_MAX - P_MIN)
+        assert np.isclose(d1, expected_d)
+        assert ch1 == 2
+        assert np.isclose(p1, expected_p)
+
+    def test_dynamic_max_red_duration_extraction(self):
+        max_red = get_sumo_max_red_phase_duration()
+        assert max_red == 45.0
 ```
 
-#### [Category 1: 기본 하이브리드 모델 3종]
-
-##### 1. Hybrid PPO (H-PPO)
-- **신경망 구조**:
-  - Shared Trunk: $\mathbf{h} = \text{ReLU}(\mathbf{W}_2 \text{ReLU}(\mathbf{W}_1 \mathbf{s} + \mathbf{b}_1) + \mathbf{b}_2) \in \mathbb{R}^{256}$
-  - Categorical Head: $\boldsymbol{\pi}_{\text{ch}} = \text{Softmax}(\mathbf{W}_{\text{ch}} \mathbf{h}) \in \mathbb{R}^4$
-  - Gaussian Mean Head: $\boldsymbol{\mu} = \text{Sigmoid}(\mathbf{W}_\mu \mathbf{h}) \odot (\mathbf{a}_{\max} - \mathbf{a}_{\min}) + \mathbf{a}_{\min} \in \mathbb{R}^2$
-  - Gaussian LogStd: $\log\boldsymbol{\sigma} = \text{clamp}(\mathbf{W}_\sigma \mathbf{h}, -20, 2) \in \mathbb{R}^2$
-  - Critic Head: $V(s) = \mathbf{W}_v \mathbf{h} + b_v \in \mathbb{R}^1$
-- **손실 함수**:
-  $$L_{\text{PPO}}(\theta) = -\hat{\mathbb{E}}_t \left[ \min\left(r_t(\theta)\hat{A}_t, \text{clip}(r_t(\theta), 1-\epsilon, 1+\epsilon)\hat{A}_t\right) \right] + c_1 \hat{\mathbb{E}}_t \left[(V_\theta(s_t) - V_t^{\text{targ}})^2\right] - c_2 \mathcal{H}(\pi(\cdot|s_t))$$
-  여기서 $\log \pi(a|s) = \log \boldsymbol{\pi}_{\text{ch}}[ch] + \sum_{j \in \{\Delta, p\}} \log \mathcal{N}(a_j; \mu_j, \sigma_j^2)$, $\mathcal{H} = \mathcal{H}_{\text{cat}} + \mathcal{H}_{\text{gauss}}$.
-
-##### 2. Hybrid SAC (H-SAC)
-- **신경망 구조**:
-  - Twin Critics: $Q_{\phi_1}(s, \mathbf{a}_{\text{onehot\_ch}}, \Delta, p)$, $Q_{\phi_2}(s, \mathbf{a}_{\text{onehot\_ch}}, \Delta, p)$
-  - Actor: Gumbel-Softmax for $ch$ ($\tau=1.0$), Reparameterized Tanh-Gaussian for $(\Delta, p)$.
-- **손실 함수**:
-  $$y = R + \gamma^{\Delta} (1 - done) \left[ \min_{j=1,2} Q_{\bar{\phi}_j}(s', \tilde{a}') - \alpha \log \pi(\tilde{a}'|s') \right]$$
-  $$L_Q(\phi_i) = \mathbb{E}_{(s, a, R, s', d, \Delta)} \left[ \left( Q_{\phi_i}(s, a) - y \right)^2 \right]$$
-  $$L_\pi(\theta) = \mathbb{E}_{s} \left[ \alpha \log \pi(\tilde{a}_\theta(s)|s) - \min_{j=1,2} Q_{\phi_j}(s, \tilde{a}_\theta(s)) \right]$$
-  - 엔트로피 계수 $\alpha$ 자동 튜닝: $L(\alpha) = \mathbb{E} [-\alpha (\log \pi(a|s) + \bar{\mathcal{H}})]$.
-
-##### 3. Hybrid TD3 (H-TD3)
-- **신경망 구조**:
-  - Deterministic Actor $\mu_\theta(s) = (\text{Softmax}(\mathbf{z}_{\text{ch}}(s)), \text{Continuous}(\Delta, p))$
-  - Twin Critics $Q_{\phi_1}(s, a), Q_{\phi_2}(s, a)$
-- **타깃 정책 스무딩 (Target Policy Smoothing)**:
-  $$\tilde{\mathbf{a}}' = \text{clip}\left(\mu_{\bar{\theta}}(s') + \text{clamp}(\boldsymbol{\epsilon}, -c, c), \mathbf{a}_{\min}, \mathbf{a}_{\max}\right), \quad \boldsymbol{\epsilon} \sim \mathcal{N}(0, \sigma^2)$$
-- **Delayed Policy Update**: Critic 2회 업데이트마다 Actor 및 Target Network 1회 업데이트 ($d=2$).
-
 ---
 
-#### [Category 2: 최신 하이브리드 모델 3종]
+## 5. Verification Method (독립 검증 방법)
 
-##### 4. MAPPO (Multi-Agent PPO with Centralized Critic)
-- **CTDE (Centralized Training with Decentralized Execution) 아키텍처**:
-  - 분산 Actor $\pi_\theta(a_i | s_i)$: 각 차량의 로컬 관측치 $s_i \in \mathbb{R}^{16}$만 입력받아 추론.
-  - 중앙 집중형 Critic $V_\phi(S_{\text{global}}, s_i)$: 전역 망 상태(모든 활성 차량의 위치/속도 요약 통계량, 전 채널 CBR 벡터, 총 경합 수) $S_{\text{global}} \in \mathbb{R}^{32}$를 추가 입력받아 정밀한 Baseline 가치 산출.
-- **장점**: 다중 차량이 동일 무선 자원을 공유하는 다중 에이전트 간섭 환경에서 비정상성(Non-stationarity)을 완벽히 억제하고 안정적 수렴 보장.
+1. **`test_rl_interface.py` 단독 실행 검증**:
+   ```bash
+   /home/imnyj/venv/bin/pytest tests/test_rl_interface.py -v
+   ```
+   - **기대 결과**: 11개 테스트 모두 `PASSED`.
 
-##### 5. HyAR / Branching PPO (Hierarchical Hybrid Action Representation)
-- **계층적 조건부 구조 (Conditioned Continuous Heads)**:
-  - 무선 통신의 물리적 특성상, "어떤 서브채널 $ch$를 선택하느냐"에 따라 해당 채널의 간섭량과 최적 송신 전력 $p$, 갱신 주기 $\Delta$가 직접 종속됨.
-  - Base Feature $\mathbf{h} = \text{Trunk}(s)$.
-  - 채널 임베딩: $e_{ch} = \text{Embedding}(ch) \in \mathbb{R}^{16}$.
-  - 조건부 연속 헤드: $(\mu_{\Delta, p}, \sigma_{\Delta, p}) = \text{MLP}([\mathbf{h}, e_{ch}])$.
-- **장점**: 채널 선택과 전력/주기 간의 물리적 결합 관계를 직접 모델링하여 파라미터 분리 및 학습 효율 극대화.
-
-##### 6. P-DQN / MP-DQN (Multi-Pass Parameterized Deep Q-Network)
-- **PAMDP (Parameterized Action MDP) 프레임워크**:
-  - 각 이산 서브채널 $k \in \{0, \dots, C-1\}$에 대해 전용 연속 파라미터 벡터 $\mathbf{x}_k = (\Delta_k, p_k) \in \mathbb{R}^2$를 출력하는 Parameter Network $x = \mathbf{x}(s; \theta)$.
-  - Q-Network $Q(s, k, \mathbf{x}_k; \phi)$는 각 $(k, \mathbf{x}_k)$ 쌍의 가치를 독립 평가.
-- **최적 결정**:
-  $$k^* = \arg\max_{k \in \{0..C-1\}} Q(s, k, \mathbf{x}_k(s; \theta); \phi), \quad \mathbf{a}^* = (k^*, \mathbf{x}_{k^*})$$
-- **장점**: Q-learning 기반의 결정론적 하이브리드 최적화로서 discrete-continuous 액션 공간을 수학적으로 가장 엄밀하게 분해.
-
----
-
-#### [Category 3: 유사 SOTA AoI / V2I 스케줄링 모델 3종]
-
-##### 7. Pure-AoI Whittle Index / Age-Greedy Scheduler (AoI-Greedy)
-- **알고리즘 원리**:
-  - 차량의 동역학 및 추정 오차를 무시하고, 순수 정보 나이(Age of Information, $\text{AoI}_i = t - \tau_i$)만을 선형 비용으로 최소화하는 전통적 벤치마크.
-  - Whittle Index 지표: $\text{Index}_i = (t - \tau_i) \cdot P_{\text{succ}, i}^{\text{est}}$.
-  - 인덱스가 가장 높은 상위 차량에게 고정 주기 $\Delta = 1.0\text{ s}$, 최대 전력 $p = 30\text{ dBm}$, 최소 간섭 채널을 순차 할당.
-- **비교 의의**: 정지 차량에 대한 갱신 낭비가 발생함을 증명하는 핵심 대조군.
-
-##### 8. Deep Dueling Q-AoI Scheduler (Dueling Q-AoI)
-- **알고리즘 원리**:
-  - 무선 통신 AoI 최소화 논문군에서 널리 활용되는 Dueling Deep Q-Network 구조.
-  - 상태 가치 $V(s)$와 행동 이점 $A(s, a)$를 분리하여 채널 페이딩 상태와 대기 큐 변화를 민감하게 감지:
-    $$Q(s, a; \theta, \alpha, \beta) = V(s; \theta, \beta) + \left( A(s, a; \theta, \alpha) - \frac{1}{|\mathcal{A}|} \sum_{a'} A(s, a'; \theta, \alpha) \right)$$
-  - 하이브리드 액션을 정밀 그리드(Grid Discretization: 4 channels × 5 intervals × 3 powers = 60 discrete bins)로 양자화하여 Double DQN + Prioritized Experience Replay(PER)로 학습.
-
-##### 9. SAC-AoI (Lyapunov Drift-Penalized Maximum Entropy Actor-Critic)
-- **알고리즘 원리**:
-  - 유효 오차 보상에 더해, 시스템 레벨의 Peak AoI 발산을 억제하기 위한 Lyapunov Age Penalty 항 $\Omega(\text{AoI}) = \eta \cdot \sum_i (t - \tau_i)^2$를 가치 함수 및 정책 그래디언트에 결합한 최신 Actor-Critic 모델.
-  - 정책 목적식:
-    $$J(\pi) = \mathbb{E}_{\pi} \left[ \sum_{t=0}^\infty \gamma^t \left( R(s_t, a_t) - \eta \cdot \text{AoI}_t + \alpha \mathcal{H}(\pi(\cdot|s_t)) \right) \right]$$
-  - 극단적 무선 채널 열화 시에도 최대 지연 한계(Delay Bound)를 보장하는 방어적 스케줄러.
-
----
-
-## 3. 제약사항 및 미탐색 영역 (Caveats)
-
-- **미탐색 영역**:
-  - R3(Optuna HPO), R4(학습 루프 및 핫스왑 격리), R5(평가 하네스) 세부 구현 파라미터 스윕 범위는 Explorer Survey 3의 전담 영역임.
-  - SUMO 시뮬레이션 맵 지오메트리 및 TraCI 연결 세부 사항은 Explorer Survey 1의 전담 영역임.
-- **가정 사항**:
-  - 차량의 진입(E1) 등록 패킷은 제어 채널을 통해 100% 성공한다고 가정(기존 S1/S2 명세 일치).
-  - RSU는 차량의 과거 수신 위치 $\mathbf{x}_{\tau_i}$ 및 속도 $\mathbf{v}_{\tau_i}$를 기반으로 등속 외삽 모델을 수행함.
-- **제안 기법 설계 금지 원칙 (R6)**:
-  - 본 분석은 R1 휴리스틱 및 R2 9개 베이스라인에 엄밀히 한정되며, 신규 제안 아키텍처는 일체 설계/도입하지 않음.
-
----
-
-## 4. 결론 및 구현 권고안 (Conclusion & Recommendations)
-
-1. **하드웨어 및 프레임워크 채택**:
-   - 4 × RTX 3090 GPU를 적극 활용할 수 있도록 **PyTorch 기반의 CleanRL 스타일 단일 파일/모듈형 에이전트 구조** 채택 권고.
-   - 외부 무거운 RL 프레임워크(SB3 등) 배제 $\to$ SMDP 소급 보상 Replay Buffer 및 Actor/Learner 핫스왑과의 100% 무결점 결합 보장.
-2. **R1 신호 기반 동역학 예측 (S2.5)**:
-   - `sumo.vehicle.getNextTLS` 및 `sumo.trafficlight.getNextSwitch`를 결합하여 $I_{\text{stop}}, I_{\text{start}}$ 지표 산출.
-   - `HeuristicScheduler` 클래스를 별도 구현하여 휴리스틱 베이스라인 완성.
-3. **R2 RL 인터페이스 및 9개 베이스라인 모듈 구성**:
-   - `src/rl_interface.py`: 16차원 상태 벡터 변환기(`StateVectorizer`), 액션 디코더(`ActionDecoder`), SMDP 소급 버퍼(`RetrospectiveReplayBuffer`).
-   - `src/baselines/`:
-     * `hybrid_ppo.py` (H-PPO)
-     * `hybrid_sac.py` (H-SAC)
-     * `hybrid_td3.py` (H-TD3)
-     * `mappo.py` (MAPPO)
-     * `hyar_ppo.py` (HyAR / Branching PPO)
-     * `pdqn.py` (P-DQN / MP-DQN)
-     * `pure_aoi.py` (Pure-AoI Whittle Scheduler)
-     * `dueling_q_aoi.py` (Deep Dueling Q-AoI)
-     * `sac_aoi.py` (SAC-AoI)
-
----
-
-## 5. 검증 방법 (Verification Method)
-
-다음 명령과 독립 검증 스크립트를 통해 설계된 인터페이스 및 9개 베이스라인의 동작을 독립 검증할 수 있음:
-
-1. **상태 벡터화 및 액션 디코딩 단위 테스트**:
+2. **SUMO 최대 적색 주기 파싱 검증 명령**:
    ```bash
    python3 -c "
-   import torch
-   from src.aoi_env import METRICS
-   # 16차원 상태 벡터 생성 및 범위 [-1, 1] 검증
-   dummy_state = torch.randn(10, 16)
-   assert dummy_state.shape == (10, 16)
-   print('[PASS] State Vectorization Shape & Range Verified')
+   import xml.etree.ElementTree as ET
+   tree = ET.parse('/home/imnyj/Workspace/paper4/coder/src/sumo/generated.net.xml')
+   durations = [float(p.get('duration', 0)) for tl in tree.getroot().findall('tlLogic') for p in tl.findall('phase')]
+   print('Phases:', durations[:4], 'Max Red =', sum(durations[:2]))
    "
    ```
+   - **기대 출력**: `Phases: [42.0, 3.0, 42.0, 3.0] Max Red = 45.0`
 
-2. **9개 베이스라인 모델 인스턴스화 및 순전파 검증**:
-   - 9개 모델 각각에 대해 더미 배치 상태 `s = torch.randn(32, 16)`를 입력하여 하이브리드 액션 `(ch: [32], delta: [32, 1], power: [32, 1])` 및 Q/Value 값이 정상 산출되는지 검증.
-   - `pytest tests/test_baselines_instantiation.py`
-
-3. **무효화 조건 (Invalidation Conditions)**:
-   - State 벡터에 Ground Truth 오차 $e_i(t)$가 직접 포함되는 경우 $\to$ 즉각 무효화 및 수정.
-   - 액션 디코딩 시 $\Delta \notin [\Delta_{\min}, \Delta_{\max}]$ 또는 $ch \notin \{0..C-1\}$ 범위를 벗어나는 경우 $\to$ 즉각 무효화.
-   - 9개 모델 중 하나라도 forward pass에서 NaN 또는 Shape 불일치가 발생하는 경우 $\to$ 즉각 무효화.
+3. **`StateVectorizer` 18차원 출력 확인 명령**:
+   ```bash
+   python3 -c "
+   from src.rl_interface import StateVectorizer
+   v = StateVectorizer()
+   print('STATE_DIM:', v.state_dim)
+   assert v.state_dim == 18
+   "
+   ```
+   - **기대 출력**: `STATE_DIM: 18`

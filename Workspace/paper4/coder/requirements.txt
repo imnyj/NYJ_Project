@@ -1,0 +1,24 @@
+# paper4 — AoI-aware V2I uplink scheduling. Pinned so the environment is reproducible
+# across agents and machines (see GEMINI.md rule on dependency management).
+# Install into the project venv: /home/imnyj/venv/bin/pip install -r requirements.txt
+
+# Deep learning / RL
+torch==2.11.0
+stable-baselines3==2.7.0     # basic baselines: PPO, SAC, TD3
+gymnasium==1.2.0             # required by SB3
+
+# Numerics / data
+numpy==2.4.4
+pandas
+scipy
+
+# Hyperparameter optimisation
+optuna
+
+# Logging / tooling
+tensorboard
+pytest
+ruff
+
+# SUMO python bindings (libsumo / traci) come from the SUMO installation itself,
+# not from PyPI. Verify with: python -c "import libsumo; print(libsumo.__file__)"

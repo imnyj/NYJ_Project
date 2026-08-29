@@ -1,0 +1,339 @@
+# src/rl_interface.py
+# ============================================================================
+# RL Agent Interface for AoI-aware V2I Uplink Scheduling Pipeline
+#
+# Implements:
+# 1. StateVectorizer: 16-dimensional normalized observation vector in [-1.0, 1.0]
+#    from the RSU perspective without future / ground-truth estimation error leakage.
+# 2. ActionDecoder: Decodes hybrid action space (logits & indices) into valid
+#    grant 3-tuple (Delta in [0.5, 10.0]s, ch in {0..3}, p in [20.0, 30.0]dBm).
+# 3. RetrospectiveReplayBuffer: SMDP retrospective transition buffer with
+#    variable-interval discount gamma^Delta support.
+# ============================================================================
+
+from __future__ import annotations
+import math
+from typing import Any, Dict, List, Optional, Tuple, Union
+import numpy as np
+import torch
+
+
+class StateVectorizer:
+    """
+    16-dimensional normalized State Vectorizer.
+    
+    Transforms raw vehicle kinematics, RSU spatial metrics, TraCI TLS signal states,
+    and channel congestion indicators into a normalized feature vector in [-1.0, 1.0].
+    
+    Features:
+    [0]  Normalized Age (AoI): min(1.0, age / 10.0) in [0.0, 1.0]
+    [1]  Normalized Vx: clip(vx / v_max, -1.0, 1.0)
+    [2]  Normalized Vy: clip(vy / v_max, -1.0, 1.0)
+    [3]  Normalized Speed: clip(speed / v_max, 0.0, 1.0)
+    [4]  Normalized Acceleration: clip(accel / a_max, -1.0, 1.0)
+    [5]  Relative X: clip(dx / rsu_range, -1.0, 1.0)
+    [6]  Relative Y: clip(dy / rsu_range, -1.0, 1.0)
+    [7]  Normalized Distance: clip(dist / rsu_range, 0.0, 1.0)
+    [8]  TLS Red one-hot: 1.0 if red else 0.0
+    [9]  TLS Yellow one-hot: 1.0 if yellow else 0.0
+    [10] TLS Green one-hot: 1.0 if green else 0.0
+    [11] Phase remaining time: clip(time_to_switch / 60.0, 0.0, 1.0)
+    [12] Distance to stopline: clip(dist_to_stopline / rsu_range, 0.0, 1.0)
+    [13] Active vehicles in cell: clip(n_active / 100.0, 0.0, 1.0)
+    [14] Channel Busy Ratio (CBR): clip(cbr, 0.0, 1.0)
+    [15] Dynamics transition indicator (imminent stop/start): clip((stop_imm + start_imm) / 2.0, 0.0, 1.0)
+    """
+
+    def __init__(self, rsu_range: float = 800.0, v_max: float = 30.0, a_max: float = 5.0) -> None:
+        self.rsu_range = float(rsu_range)
+        self.v_max = float(v_max)
+        self.a_max = float(a_max)
+
+    def vectorize(
+        self,
+        vehicle_node: Any,
+        rsu_node: Any,
+        current_time: float,
+        tls_info: Optional[Dict[str, Any]] = None,
+        cbr: float = 0.0,
+        n_active: int = 1,
+    ) -> np.ndarray:
+        """
+        Vectorize node objects into 16-dim normalized observation vector.
+        """
+        vec = np.zeros(16, dtype=np.float32)
+        if vehicle_node is None or rsu_node is None:
+            return vec
+
+        # [0] Normalized AoI
+        last_t = getattr(vehicle_node, "_prev_t", current_time)
+        if last_t is None:
+            last_t = current_time
+        age = max(0.0, float(current_time) - float(last_t))
+        vec[0] = np.clip(age / 10.0, 0.0, 1.0)
+
+        # [1-3] Velocities and speed
+        vel = getattr(vehicle_node, "vel", (0.0, 0.0))
+        if hasattr(vehicle_node, "speed"):
+            spd_val = vehicle_node.speed() if callable(vehicle_node.speed) else vehicle_node.speed
+        else:
+            spd_val = math.hypot(vel[0], vel[1])
+        
+        vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
+        vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
+        vec[3] = np.clip(float(spd_val) / self.v_max, 0.0, 1.0)
+
+        # [4] Acceleration
+        accel = getattr(vehicle_node, "accel", 0.0)
+        vec[4] = np.clip(float(accel) / self.a_max, -1.0, 1.0)
+
+        # [5-7] Relative coordinates and Distance to RSU
+        pos = getattr(vehicle_node, "pos", (0.0, 0.0))
+        rsu_pos = getattr(rsu_node, "pos", (0.0, 0.0))
+        dx = float(pos[0] - rsu_pos[0])
+        dy = float(pos[1] - rsu_pos[1])
+        dist = math.hypot(dx, dy)
+        vec[5] = np.clip(dx / self.rsu_range, -1.0, 1.0)
+        vec[6] = np.clip(dy / self.rsu_range, -1.0, 1.0)
+        vec[7] = np.clip(dist / self.rsu_range, 0.0, 1.0)
+
+        # [8-12] TLS features (TraCI)
+        tls = tls_info or {}
+        if not tls and hasattr(vehicle_node, "_state_dict"):
+            st = vehicle_node._state_dict()
+            tls = st.get("tls_features", {})
+
+        state = str(tls.get("state", "g")).lower()
+        vec[8] = 1.0 if state in ["r", "red"] else 0.0
+        vec[9] = 1.0 if state in ["y", "yellow"] else 0.0
+        vec[10] = 1.0 if state in ["g", "green"] else 0.0
+
+        t_switch = float(tls.get("time_to_switch", 30.0))
+        vec[11] = np.clip(t_switch / 60.0, 0.0, 1.0)
+
+        d_stop = float(tls.get("dist_to_stopline", self.rsu_range))
+        vec[12] = np.clip(d_stop / self.rsu_range, 0.0, 1.0)
+
+        # [13-15] Network contention, CBR, and dynamics indicator
+        vec[13] = np.clip(float(n_active) / 100.0, 0.0, 1.0)
+        vec[14] = np.clip(float(cbr), 0.0, 1.0)
+
+        stop_imm = float(tls.get("stop_imminent", 0.0))
+        start_imm = float(tls.get("start_imminent", 0.0))
+        vec[15] = np.clip((stop_imm + start_imm) / 2.0, 0.0, 1.0)
+
+        return vec
+
+    def vectorize_from_dict(self, state_dict: Dict[str, Any], rsu_pos: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+        """
+        Convenience method to vectorize directly from a state dictionary.
+        """
+        vec = np.zeros(16, dtype=np.float32)
+        pos = state_dict.get("pos", (0.0, 0.0))
+        vel = state_dict.get("vel", (0.0, 0.0))
+        speed = state_dict.get("speed", math.hypot(vel[0], vel[1]))
+        accel = state_dict.get("accel", 0.0)
+        cur_t = state_dict.get("current_time", 0.0) or 0.0
+        last_t = state_dict.get("last_update_time", cur_t) or cur_t
+
+        age = max(0.0, float(cur_t) - float(last_t))
+        vec[0] = np.clip(age / 10.0, 0.0, 1.0)
+        vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
+        vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
+        vec[3] = np.clip(float(speed) / self.v_max, 0.0, 1.0)
+        vec[4] = np.clip(float(accel) / self.a_max, -1.0, 1.0)
+
+        dx = float(pos[0] - rsu_pos[0])
+        dy = float(pos[1] - rsu_pos[1])
+        dist = state_dict.get("dist_to_rsu", math.hypot(dx, dy))
+        vec[5] = np.clip(dx / self.rsu_range, -1.0, 1.0)
+        vec[6] = np.clip(dy / self.rsu_range, -1.0, 1.0)
+        vec[7] = np.clip(float(dist) / self.rsu_range, 0.0, 1.0)
+
+        tls = state_dict.get("tls_features", state_dict)
+        state = str(tls.get("state", "g")).lower()
+        vec[8] = 1.0 if state in ["r", "red"] else 0.0
+        vec[9] = 1.0 if state in ["y", "yellow"] else 0.0
+        vec[10] = 1.0 if state in ["g", "green"] else 0.0
+        vec[11] = np.clip(float(tls.get("time_to_switch", 30.0)) / 60.0, 0.0, 1.0)
+        vec[12] = np.clip(float(tls.get("dist_to_stopline", self.rsu_range)) / self.rsu_range, 0.0, 1.0)
+
+        vec[13] = np.clip(float(state_dict.get("n_active", 1)) / 100.0, 0.0, 1.0)
+        vec[14] = np.clip(float(state_dict.get("cbr", 0.0)), 0.0, 1.0)
+
+        stop_imm = float(state_dict.get("stop_imminent", tls.get("stop_imminent", 0.0)))
+        start_imm = float(state_dict.get("start_imminent", tls.get("start_imminent", 0.0)))
+        vec[15] = np.clip((stop_imm + start_imm) / 2.0, 0.0, 1.0)
+
+        return vec
+
+
+class ActionDecoder:
+    """
+    Hybrid Action Space Decoder.
+    
+    Decodes raw model logits or tensor outputs into a concrete uplink grant 3-tuple:
+    (Delta in [0.5, 10.0]s, ch in {0, 1, 2, 3}, power in [20.0, 30.0]dBm).
+    """
+
+    def __init__(
+        self,
+        num_channels: int = 4,
+        delta_min: float = 0.5,
+        delta_max: float = 10.0,
+        p_min: float = 20.0,
+        p_max: float = 30.0,
+    ) -> None:
+        self.num_channels = int(num_channels)
+        self.delta_min = float(delta_min)
+        self.delta_max = float(delta_max)
+        self.p_min = float(p_min)
+        self.p_max = float(p_max)
+
+    @staticmethod
+    def _sigmoid(x: float) -> float:
+        if x < -50.0:
+            return 0.0
+        if x > 50.0:
+            return 1.0
+        return 1.0 / (1.0 + math.exp(-x))
+
+    @staticmethod
+    def _logit(p: float) -> float:
+        p_clamped = min(max(p, 1e-6), 1.0 - 1e-6)
+        return math.log(p_clamped / (1.0 - p_clamped))
+
+    def decode_action(self, raw_action: Any) -> Tuple[float, int, float]:
+        """
+        Decodes raw action into (delta_s, channel_idx, power_dbm).
+        """
+        if isinstance(raw_action, dict):
+            raw_delta = raw_action.get("delta", raw_action.get("delta_raw", 0.0))
+            raw_ch = raw_action.get("ch", raw_action.get("channel_idx", 0))
+            raw_p = raw_action.get("power", raw_action.get("tx_power_dbm", 0.0))
+        elif isinstance(raw_action, (list, tuple, np.ndarray, torch.Tensor)):
+            if isinstance(raw_action, torch.Tensor):
+                raw_action = raw_action.detach().cpu().numpy().flatten()
+            raw_list = list(raw_action)
+            if len(raw_list) >= 3:
+                raw_delta, raw_ch, raw_p = raw_list[0], raw_list[1], raw_list[2]
+            elif len(raw_list) == 2:
+                raw_delta, raw_ch, raw_p = raw_list[0], 0, raw_list[1]
+            elif len(raw_list) == 1:
+                raw_delta, raw_ch, raw_p = raw_list[0], 0, 0.0
+            else:
+                raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
+        else:
+            raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
+
+        # Continuous delta mapping [delta_min, delta_max]
+        sig_d = self._sigmoid(float(raw_delta))
+        delta = self.delta_min + sig_d * (self.delta_max - self.delta_min)
+
+        # Discrete channel mapping {0..num_channels-1}
+        ch = int(round(float(raw_ch))) % self.num_channels
+
+        # Continuous power mapping [p_min, p_max]
+        sig_p = self._sigmoid(float(raw_p))
+        power = self.p_min + sig_p * (self.p_max - self.p_min)
+
+        return (float(delta), int(ch), float(power))
+
+    def encode_action(self, delta: float, ch: int, power: float) -> np.ndarray:
+        """
+        Inverse logit encoding from (delta, ch, power) to raw action values.
+        """
+        norm_d = (delta - self.delta_min) / max(1e-6, self.delta_max - self.delta_min)
+        norm_p = (power - self.p_min) / max(1e-6, self.p_max - self.p_min)
+        raw_d = self._logit(norm_d)
+        raw_p = self._logit(norm_p)
+        return np.array([raw_d, float(ch), raw_p], dtype=np.float32)
+
+
+class RetrospectiveReplayBuffer:
+    """
+    SMDP Retrospective Replay Buffer with variable-interval discount gamma^Delta support.
+    """
+
+    def __init__(self, capacity: int = 10000, gamma: float = 0.99) -> None:
+        self.capacity = int(capacity)
+        self.gamma = float(gamma)
+        self.buffer: List[Dict[str, Any]] = []
+        self.position = 0
+
+    def push(
+        self,
+        state: Union[np.ndarray, torch.Tensor, List[float]],
+        action: Union[np.ndarray, torch.Tensor, List[float], Tuple[float, ...]],
+        reward: float,
+        next_state: Union[np.ndarray, torch.Tensor, List[float]],
+        done: bool,
+        delta_t: float,
+    ) -> None:
+        """
+        Push a transition tuple (s, a, r, s', done, delta_t) into buffer.
+        """
+        s_arr = np.array(state, dtype=np.float32) if not isinstance(state, np.ndarray) else state.astype(np.float32)
+        if isinstance(action, torch.Tensor):
+            a_arr = action.detach().cpu().numpy().astype(np.float32)
+        elif isinstance(action, (list, tuple)):
+            a_arr = np.array(action, dtype=np.float32)
+        else:
+            a_arr = np.array(action, dtype=np.float32)
+
+        ns_arr = np.array(next_state, dtype=np.float32) if not isinstance(next_state, np.ndarray) else next_state.astype(np.float32)
+
+        item = {
+            "state": s_arr,
+            "action": a_arr,
+            "reward": float(reward),
+            "next_state": ns_arr,
+            "done": float(done),
+            "delta_t": float(delta_t),
+        }
+
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(item)
+        else:
+            self.buffer[self.position] = item
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size: int) -> Dict[str, torch.Tensor]:
+        """
+        Sample a random batch of transitions as PyTorch Tensors.
+        Raises ValueError if buffer is empty.
+        """
+        if len(self.buffer) == 0:
+            raise ValueError("Cannot sample from an empty buffer.")
+
+        batch_size = min(batch_size, len(self.buffer))
+        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        batch = [self.buffer[i] for i in indices]
+
+        states = np.array([b["state"] for b in batch], dtype=np.float32)
+        actions = np.array([b["action"] for b in batch], dtype=np.float32)
+        rewards = np.array([[b["reward"]] for b in batch], dtype=np.float32)
+        next_states = np.array([b["next_state"] for b in batch], dtype=np.float32)
+        dones = np.array([[b["done"]] for b in batch], dtype=np.float32)
+        delta_ts = np.array([[b["delta_t"]] for b in batch], dtype=np.float32)
+        discounts = np.power(self.gamma, delta_ts).astype(np.float32)
+
+        return {
+            "state": torch.from_numpy(states),
+            "action": torch.from_numpy(actions),
+            "reward": torch.from_numpy(rewards),
+            "next_state": torch.from_numpy(next_states),
+            "done": torch.from_numpy(dones),
+            "delta_t": torch.from_numpy(delta_ts),
+            "discount": torch.from_numpy(discounts),
+        }
+
+    def is_ready(self, batch_size: int) -> bool:
+        return len(self.buffer) >= batch_size
+
+    def clear(self) -> None:
+        self.buffer.clear()
+        self.position = 0
+
+    def __len__(self) -> int:
+        return len(self.buffer)

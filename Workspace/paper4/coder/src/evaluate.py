@@ -38,46 +38,24 @@ import numpy as np
 import pandas as pd
 import torch
 
-from src.baselines import (
-    BASELINE_REGISTRY,
-    BaseRLModel,
-)
 import src.Communications as comm
 from src.heuristic_scheduler import HeuristicScheduler
 from src.hot_swap_trainer import AoiV2IEnv
-from src.rl_interface import StateVectorizer
+from src.rl_interface import STATE_DIM, StateVectorizer
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("EvaluateHarness")
 
-# Canonical 10 evaluated models
+# Canonical evaluated models
 CANONICAL_EVAL_MODELS = [
     "HeuristicScheduler",
-    "HybridPPO",
-    "HybridSAC",
-    "HybridTD3",
-    "MAPPO",
-    "HyARPPO",
-    "MPDQN",
-    "PureAoI",
-    "DuelingQAoI",
-    "SACAoI",
 ]
 
 MODEL_CATEGORIES = {
     "HeuristicScheduler": "Category 0 (Heuristic)",
     "Heuristic": "Category 0 (Heuristic)",
     "Heuristic-Dynamic": "Category 0 (Heuristic)",
-    "HybridPPO": "Category 1 (Basic)",
-    "HybridSAC": "Category 1 (Basic)",
-    "HybridTD3": "Category 1 (Basic)",
-    "MAPPO": "Category 2 (Latest)",
-    "HyARPPO": "Category 2 (Latest)",
-    "MPDQN": "Category 2 (Latest)",
-    "PureAoI": "Category 3 (SOTA AoI)",
-    "DuelingQAoI": "Category 3 (SOTA AoI)",
-    "SACAoI": "Category 3 (SOTA AoI)",
 }
 
 DEFAULT_DENSITIES = [15.0, 25.0, 35.0, 45.0, 55.0]
@@ -156,15 +134,25 @@ def load_optimal_hparams(csv_path: str) -> Dict[str, Dict[str, Any]]:
 
 
 def instantiate_model(
-    model_name: str,
+    model_name: Union[str, Any],
     hparams: Optional[Dict[str, Any]] = None,
-    state_dim: int = 16,
+    state_dim: int = STATE_DIM,
     num_channels: int = 4,
-) -> Union[BaseRLModel, HeuristicScheduler]:
+) -> Union[torch.nn.Module, HeuristicScheduler]:
     """
-    Instantiates an evaluated model (either HeuristicScheduler or one of the 9 Baseline RL models)
+    Instantiates an evaluated model (HeuristicScheduler or user-provided instantiated Module/callable)
     with specified or optimal hyperparameters.
     """
+    if isinstance(model_name, (torch.nn.Module, HeuristicScheduler)):
+        return model_name
+
+    if callable(model_name) and not isinstance(model_name, str):
+        params = dict(hparams) if hparams is not None else {}
+        return model_name(state_dim=state_dim, num_channels=num_channels, **params)
+
+    if not isinstance(model_name, str):
+        raise TypeError(f"Invalid model_name type: {type(model_name)}")
+
     canonical_name = normalize_model_name(model_name)
     params = dict(hparams) if hparams is not None else {}
 
@@ -174,19 +162,13 @@ def instantiate_model(
             delta_max=params.get("delta_max", 10.0),
             delta_cruise_steady=params.get("delta_cruise_steady", 3.5),
             delta_cruise_accel=params.get("delta_cruise_accel", 1.5),
-            p_high=params.get("p_high", 25.0),
-            p_mid=params.get("p_mid", 25.0),
-            p_low=params.get("p_low", 20.0),
+            p_high=params.get("p_high", 23.0),
+            p_mid=params.get("p_mid", 20.0),
+            p_low=params.get("p_low", 10.0),
             num_subchannels=num_channels,
         )
 
-    if canonical_name not in BASELINE_REGISTRY:
-        raise ValueError(
-            f"Unknown model name '{model_name}'. Available: {list(BASELINE_REGISTRY.keys())} + HeuristicScheduler"
-        )
-
-    model_cls = BASELINE_REGISTRY[canonical_name]
-    return model_cls(state_dim=state_dim, num_channels=num_channels, **params)
+    raise NotImplementedError("Baseline models scraped. New IEEE baselines to be provided.")
 
 
 def calculate_jains_fairness(values: List[float]) -> float:
@@ -206,13 +188,13 @@ def calculate_jains_fairness(values: List[float]) -> float:
 
 
 def evaluate_single_run(
-    model: Union[BaseRLModel, HeuristicScheduler],
+    model: Union[torch.nn.Module, HeuristicScheduler, Any],
     density: float,
     seed: int,
     n_steps: int = 100,
     dt: float = 1.0,
     rsu_pos: Tuple[float, float] = (0.0, 0.0),
-    rsu_range: float = 800.0,
+    rsu_range: float = 300.0,
 ) -> Dict[str, Any]:
     """
     Executes a single benchmark evaluation run on the genuine SUMO AoiV2IEnv.
@@ -225,7 +207,7 @@ def evaluate_single_run(
         seed=seed,
         max_steps=n_steps,
         rsu_range=rsu_range,
-        warmup_steps=35,
+        warmup_steps=350,
     )
     obs, info = env.reset()
 
@@ -233,13 +215,15 @@ def evaluate_single_run(
         action_dict = {}
         for vid, s_vec in obs.items():
             if isinstance(model, HeuristicScheduler):
+                veh_pos = env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))
+                veh_speed = float(getattr(env, "last_speeds", {}).get(vid, 0.0))
                 st_dict = {
                     "vid": vid,
-                    "pos": env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0)),
-                    "speed": 10.0,
+                    "pos": veh_pos,
+                    "speed": veh_speed,
                     "dist_to_rsu": math.hypot(
-                        env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))[0] - env.target_rsu_pos[0],
-                        env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))[1] - env.target_rsu_pos[1],
+                        veh_pos[0] - env.target_rsu_pos[0],
+                        veh_pos[1] - env.target_rsu_pos[1],
                     ),
                     "current_time": env.sim_time,
                 }

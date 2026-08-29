@@ -1,27 +1,31 @@
-## 2026-08-26T15:07:32Z
-Task:
-1. Read Explorer 1's analysis and handoff report.
-2. Refactor `src/aoi_env.py` to be a genuine, clean Gymnasium-style V2I AoI scheduling environment:
-   - Sets up SUMO using `make_sumo_set.py` (if sumo files do not exist or when initializing).
-   - In `reset()`, starts/resets `SumoNetSim` (`NetSim.py`).
-   - In `step(action_dict)`:
-     - Steps real SUMO (`net_sim.step()`).
-     - Extracts actual vehicle coordinates and telemetry via `sumo.vehicle.getPosition()` and `sumo.vehicle.getSpeed()`.
-     - Invokes `Communications.judge_uplink()` for all transmitting vehicles to calculate Rayleigh fading SINR and transmission success/failure.
-     - Computes normalized reward $R_t = - (w_1 \text{Norm}(e_i(t)^2) + w_2 \text{Norm}(P_{tx}) + w_3 \text{Norm}(C_{freq}) + w_4 \mathbb{I}_{redundant})$.
-     - Embeds the 4 hardcoded anti-mocking assertions:
-       - Assertion 1: Verify SUMO simulation time advanced (`sumo.simulation.getTime()`).
-       - Assertion 2: Verify vehicle coordinates are actual numeric floats and moving vehicles have displacement $\Delta x \ne 0$.
-       - Assertion 3: Verify `Communications.judge_uplink()` was executed for transmissions.
-       - Assertion 4: Verify reward matches the mathematical specification.
-3. Implement `verify_environment.py` in the project root:
-   - Standalone executable script.
-   - Automatically initializes `make_sumo_set.py` if needed.
-   - Creates `AoiV2IEnv`, resets it, and runs 20 real simulation steps with various hybrid actions.
-   - Asserts that vehicle coordinates change inside SUMO across steps.
-   - Asserts that communications and reward calculations execute without bypass.
-   - Tests intentional bypass/mocking detection to ensure assertions properly crash if bypassed.
-   - Prints clear verification logs and exits with code 0 on success.
-4. Add `tests/test_aoi_env_genuine.py` with comprehensive unit tests for `aoi_env.py` and `verify_environment.py`.
-5. Execute `python verify_environment.py` and `pytest tests/test_aoi_env_genuine.py` to verify all tests pass.
-6. Write your handoff report to `/home/imnyj/Workspace/paper4/coder/.agents/worker_m1/handoff.md` and report back via send_message. Use Korean for reports as per GEMINI.md.
+# DISPATCH — 2026-08-27T01:58:25Z
+
+## Tasks Assigned
+1. `src/aoi_env.py`:
+   - Import `P_MIN, P_MAX, DELTA_MIN, DELTA_MAX` from `src.rl_interface`.
+   - Align default `p_min, p_max` to `P_MIN (10.0), P_MAX (23.0)`.
+   - Align default `step_length` to 0.1, `rsu_range` to 300.0.
+   - Ensure 4-term reward formula $R_t = -(w_1 \cdot \text{Norm}(e^2) + w_2 \cdot \text{Norm}(P_{tx}) + w_3 \cdot \text{Norm}(C_{freq}) + w_4 \cdot \mathbb{I}_{redundant})$ with default weights $w_1=0.5, w_2=0.2, w_3=0.2, w_4=0.1$.
+   - Generalize power normalization to `(p - p_min) / (p_max - p_min)`.
+   - Anti-Mocking Assertion A4: strictly verify:
+     * $0.0 \le \text{Norm}(e^2) \le 1.0$
+     * $0.0 \le \text{Norm}(P_{tx}) \le 1.0$
+     * $0.0 \le \text{Norm}(C_{freq}) \le 1.0$
+     * $\mathbb{I}_{redundant} \in \{0.0, 1.0\}$
+     * $R_t == -(w_1 \cdot \dots)$ using `math.isclose`
+     * $R_t \le 0.0$
+2. `src/hot_swap_trainer.py`:
+   - Fix `save_checkpoint(filepath, best_reward=None)`: persist `"best_reward": best_reward` in the checkpoint dictionary.
+   - Fix `load_checkpoint(filepath)`: return loaded checkpoint dict.
+   - Fix `run_hot_swap_training(..., resume=False)`:
+     * When `resume=True`, load `best_reward` from `{model_name}_best.pt` or the checkpoint file if it exists, instead of resetting to `-inf`.
+     * Pass `best_reward` to `save_checkpoint` during periodic and best checkpoint saves.
+   - Ensure default `rsu_range=300.0`, `--step-length 0.1`.
+   - Ensure `step_tx_power` per vehicle and `_is_redundant_update` logic are correct.
+3. Verification:
+   - Run tests: `/home/imnyj/venv/bin/pytest tests/test_aoi_env_genuine.py -v`
+   - Test checkpoint saving and loading with `best_reward`.
+
+Exclusively owned files:
+- `src/hot_swap_trainer.py`
+- `src/aoi_env.py`

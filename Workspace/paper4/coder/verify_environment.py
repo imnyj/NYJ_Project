@@ -108,13 +108,13 @@ def verify_env_reset() -> Tuple[AoiV2IEnv, Dict[str, np.ndarray], Dict[str, Any]
     assert len(obs) == info["n_active"], f"FATAL: Observation count mismatch: {len(obs)} != {info['n_active']}"
 
     for vid, state_vec in obs.items():
-        assert state_vec.shape == (16,), f"FATAL: State vector for {vid} has shape {state_vec.shape}, expected (16,)"
+        assert state_vec.shape == (18,), f"FATAL: State vector for {vid} has shape {state_vec.shape}, expected (18,)"
         assert state_vec.dtype == np.float32, f"FATAL: State vector dtype must be float32, got {state_vec.dtype}"
         assert np.all(state_vec >= -1.0) and np.all(state_vec <= 1.0), (
             f"FATAL: State vector values out of [-1.0, 1.0] bounds for {vid}: {state_vec}"
         )
 
-    print("  [OK] All initial 16-dim state vectors are verified within [-1.0, 1.0].")
+    print("  [OK] All initial 18-dim state vectors are verified within [-1.0, 1.0].")
     return env, obs, info
 
 
@@ -133,7 +133,7 @@ def verify_20_step_rollout(env: AoiV2IEnv) -> bool:
         action_dict = {}
         for i, vid in enumerate(active_vids):
             ch_target = (i + step_idx) % 4
-            power_target = 20.0 + ((i + step_idx) % 3) * 5.0  # 20, 25, 30 dBm
+            power_target = 10.0 + ((i + step_idx) % 3) * 6.5  # 10.0, 16.5, 23.0 dBm
             delta_target = 1.0 + (i % 5) * 0.5               # 1.0, 1.5, 2.0, 2.5, 3.0 s
             action_dict[vid] = (delta_target, ch_target, power_target)
 
@@ -193,13 +193,13 @@ def verify_communications_layer() -> bool:
     print("=" * 70)
 
     # 1. Test solo transmission (low noise, close distance -> high probability)
-    solo_group = [("veh_solo", 25.0, 100.0)]
+    solo_group = [("veh_solo", 23.0, 100.0)]
     solo_prob = comm.judge_uplink(solo_group, num_subchannels=4)
-    print(f"  Solo transmitter (100m, 25dBm) success prob: {solo_prob['veh_solo']:.4f}")
+    print(f"  Solo transmitter (100m, 23dBm) success prob: {solo_prob['veh_solo']:.4f}")
     assert solo_prob["veh_solo"] > 0.90, f"Expected high solo success, got {solo_prob['veh_solo']}"
 
     # 2. Test multi-vehicle contention (interference increases, success decreases)
-    crowded_group = [(f"veh_{i}", 25.0, 200.0 + i * 20.0) for i in range(8)]
+    crowded_group = [(f"veh_{i}", 23.0, 200.0 + i * 20.0) for i in range(8)]
     crowded_probs = comm.judge_uplink(crowded_group, num_subchannels=4)
     avg_crowded = sum(crowded_probs.values()) / len(crowded_probs)
     print(f"  8-vehicle contention on same subchannel avg success prob: {avg_crowded:.4f}")

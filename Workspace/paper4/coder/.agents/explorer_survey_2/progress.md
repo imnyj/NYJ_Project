@@ -1,5 +1,12 @@
-# Progress Heartbeat - Explorer Survey 2
+# Progress Tracker - Explorer 2
 
-- **Last visited**: 2026-08-26T22:01:00+09:00
-- **Status**: Investigation in Progress -> Synthesizing Report
-- **Current Step**: Completed deep analysis of Python/PyTorch/GPU environment, R1 (TraCI TLS extraction & S2.5 heuristic), R2 (16-dim state vector, hybrid action space decoding, SMDP retrospective transitions), and 9 baseline models. Drafting final handoff report.
+Last visited: 2026-08-27T10:57:52+09:00
+
+## Tasks
+- [x] Read reference documents (`ORIGINAL_REQUEST.md`, `Conversation.md`, `scenario.md`)
+- [x] Inspect `src/rl_interface.py` (Action bounds, StateVectorizer dimensions, Delta and Power)
+- [x] Inspect SUMO traffic light definition files / configs to find Red phase max duration and dynamic linking mechanism
+- [x] Inspect `tests/` covering `rl_interface.py`, state vectorizer, action space
+- [x] Run pytest to verify current test status
+- [x] Write comprehensive 5-component handoff report (`handoff.md`)
+- [x] Send message to orchestrator

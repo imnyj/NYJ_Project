@@ -129,6 +129,94 @@ def predict_start_imminent(
 # ----------------------------------------------------------------------------
 # TraCI / libsumo Feature Extraction
 # ----------------------------------------------------------------------------
+
+# SUMO's own definition of a "halting" vehicle (see Lane::getLastStepHaltingNumber
+# and TraCI docs): speed below 0.1 m/s. Reused here so `n_queue` is consistent with
+# SUMO's built-in halting statistics.
+HALTING_SPEED_THRESHOLD: float = 0.1
+
+
+def extract_queue_features(sumo_conn: Any, vid: str) -> Dict[str, Any]:
+    """Measures the real queue ahead of `vid` on its current lane via TraCI / libsumo.
+
+    All values come from live simulation state -- nothing is estimated or synthesised.
+
+    Returns:
+        {
+            'lane_id': str,             # current lane, '' if unavailable
+            'lane_position': float,     # longitudinal position of ego on that lane (m)
+            'n_ahead': int,             # vehicles ahead of ego on the same lane
+            'n_queue': int,             # vehicles ahead of ego on the same lane that are
+                                        #   halting (speed < HALTING_SPEED_THRESHOLD)
+            'n_lane_halting': int,      # lane.getLastStepHaltingNumber(lane) -- whole lane
+            'lane_vehicle_count': int,  # lane.getLastStepVehicleNumber(lane)
+        }
+
+    `n_queue` is the $n_{queue}$ state variable of the approved design: the number of
+    vehicles queued *ahead of the ego vehicle in its own lane*, which is the direct
+    delay cause. `n_lane_halting` is kept alongside it as the lane-wide SUMO statistic.
+    """
+    driver = sumo_conn if sumo_conn is not None else sumo
+    res: Dict[str, Any] = {
+        "lane_id": "",
+        "lane_position": 0.0,
+        "n_ahead": 0,
+        "n_queue": 0,
+        "n_lane_halting": 0,
+        "lane_vehicle_count": 0,
+    }
+    if driver is None:
+        return res
+
+    try:
+        lane_id = str(driver.vehicle.getLaneID(vid))
+    except Exception:
+        return res
+    if not lane_id:
+        return res
+    res["lane_id"] = lane_id
+
+    try:
+        ego_pos = float(driver.vehicle.getLanePosition(vid))
+    except Exception:
+        return res
+    res["lane_position"] = ego_pos
+
+    try:
+        res["n_lane_halting"] = int(driver.lane.getLastStepHaltingNumber(lane_id))
+    except Exception:
+        pass
+
+    try:
+        lane_vids = list(driver.lane.getLastStepVehicleIDs(lane_id))
+    except Exception:
+        return res
+    res["lane_vehicle_count"] = len(lane_vids)
+
+    n_ahead = 0
+    n_queue = 0
+    for other in lane_vids:
+        if other == vid:
+            continue
+        try:
+            other_pos = float(driver.vehicle.getLanePosition(other))
+        except Exception:
+            continue
+        if other_pos <= ego_pos:
+            continue
+        n_ahead += 1
+        try:
+            other_speed = float(driver.vehicle.getSpeed(other))
+        except Exception:
+            continue
+        if other_speed < HALTING_SPEED_THRESHOLD:
+            n_queue += 1
+
+    res["n_ahead"] = n_ahead
+    res["n_queue"] = n_queue
+    return res
+
+
 def extract_tls_features(
     sumo_conn: Any,
     vid: str,
@@ -151,6 +239,12 @@ def extract_tls_features(
         'leader_gap': Optional[float],
         'leader_speed': Optional[float],
         'waiting_time': float,
+        'n_queue': int,           # halting vehicles ahead on the ego's own lane
+        'n_ahead': int,           # all vehicles ahead on the ego's own lane
+        'n_lane_halting': int,    # SUMO lane-wide halting count
+        'lane_id': str,
+        'lane_position': float,
+        'lane_vehicle_count': int,
     }
     """
     driver = sumo_conn if sumo_conn is not None else sumo
@@ -168,6 +262,12 @@ def extract_tls_features(
         "leader_gap": None,
         "leader_speed": None,
         "waiting_time": 0.0,
+        "lane_id": "",
+        "lane_position": 0.0,
+        "n_ahead": 0,
+        "n_queue": 0,
+        "n_lane_halting": 0,
+        "lane_vehicle_count": 0,
     }
 
     if driver is None:
@@ -211,6 +311,9 @@ def extract_tls_features(
                     leader_speed = None
         except Exception:
             pass
+
+        # 2b. Real queue ahead on the ego vehicle's own lane (n_queue state variable)
+        queue_feats = extract_queue_features(driver, vid)
 
         # 3. Next TLS info
         tls_id = ""
@@ -260,7 +363,7 @@ def extract_tls_features(
             waiting_time=waiting_time,
         )
 
-        return {
+        result: Dict[str, Any] = {
             "tls_id": tls_id,
             "tls_index": tls_index,
             "dist_to_stopline": dist_to_stopline,
@@ -275,6 +378,8 @@ def extract_tls_features(
             "leader_speed": leader_speed,
             "waiting_time": waiting_time,
         }
+        result.update(queue_feats)
+        return result
 
     except Exception:
         return default_res
@@ -289,6 +394,14 @@ class DynamicsPredictor:
 
     def get_features(self, vid: str, current_time: Optional[float] = None) -> Dict[str, Any]:
         return extract_tls_features(self.sumo_conn, vid, current_time=current_time)
+
+    def get_queue_features(self, vid: str) -> Dict[str, Any]:
+        """Real per-lane queue measurement only (cheaper than the full TLS extraction)."""
+        return extract_queue_features(self.sumo_conn, vid)
+
+    def get_n_queue(self, vid: str) -> int:
+        """Number of halting vehicles ahead of `vid` on its own lane (live SUMO data)."""
+        return int(extract_queue_features(self.sumo_conn, vid)["n_queue"])
 
     def is_transition_imminent(self, vid: str, current_time: Optional[float] = None) -> Tuple[bool, float, float]:
         feats = self.get_features(vid, current_time=current_time)

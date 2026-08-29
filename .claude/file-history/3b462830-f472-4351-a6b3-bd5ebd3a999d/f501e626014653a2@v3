@@ -1,0 +1,3 @@
+- [Antigravity/Gemini 절대 규칙 및 20개 스킬](antigravity-gemini-rules.md) — GEMINI.md 규칙 요지, 이미 전부 세팅 완료됨
+- [paper4 AoI RL 논문 프로젝트](paper4-aoi-rl-project.md) — 파이프라인 구축 완료, 200k-step 본훈련 승인 대기 중
+- [Claude-Antigravity 교대 협업 방식](claude-antigravity-handoff-workflow.md) — Claude는 antigravity를 의심하고 직접 검토/수정, md로 인계

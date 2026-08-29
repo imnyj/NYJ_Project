@@ -1,40 +1,50 @@
-# BRIEFING — 2026-08-26T22:02:00+09:00
+# BRIEFING — 2026-08-27T02:00:00Z
 
 ## Mission
-Investigate Optuna availability & HPO design (R3), Training Loop & Dual Model Hot-swap S4 (R4), and Evaluation Harness S5 (R5) for the AoI-aware V2I uplink RL scheduling pipeline.
+Investigate R3 (Environment Knobs & HPO) and R4 (Baseline Scraping & References) for the AoI-aware V2I uplink RL scheduling pipeline architectural fixes.
 
 ## 🔒 My Identity
 - Archetype: explorer
-- Roles: Optuna HPO, Hot-swap S4 & Evaluation S5 Infra Explorer
-- Working directory: /home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_3
-- Original parent: f92a0429-1190-4b31-8c7e-330da3ef61f8
-- Milestone: Survey & Architecture Design (R3, R4, R5) [COMPLETED]
+- Roles: investigator, analyzer, synthesizer
+- Working directory: /home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_3/
+- Original parent: 3d6a38f8-f0cb-48c4-98ea-b46062a1aceb
+- Milestone: Initial Survey & Investigation (R3 & R4)
 
 ## 🔒 Key Constraints
-- Read-only investigation — do NOT implement
-- Output reports and findings strictly to /home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_3/
-- Use Korean for documentation and reports
+- Read-only investigation — do NOT implement changes in source code
+- Strictly write files only inside `/home/imnyj/Workspace/paper4/coder/.agents/explorer_survey_3/`
+- Korean language for final report and messages
 
 ## Current Parent
-- Conversation ID: f92a0429-1190-4b31-8c7e-330da3ef61f8
-- Updated: 2026-08-26T22:02:00+09:00
+- Conversation ID: 3d6a38f8-f0cb-48c4-98ea-b46062a1aceb
+- Updated: not yet
 
 ## Investigation State
-- **Explored paths**: `src/aoi_env.py`, `src/Communications.py`, `src/NetSim.py`, `src/model.py`, `workflow.md`, `README_S1.md`, `README_S2.md`, Python/CUDA environment
+- **Explored paths**:
+  - `src/sumo/make_sumo_set.py`, `src/sumo/generated.sumocfg`, `src/sumo/.sumo_gen_signature.json`
+  - `src/NetSim.py`
+  - `src/aoi_env.py`
+  - `src/hot_swap_trainer.py`
+  - `src/rl_interface.py`
+  - `src/evaluate.py`
+  - `src/hpo.py`
+  - `src/baselines/` (all 11 files)
+  - `run_all.py`, `verify_environment.py`, `baselines_references.json`
+  - `tests/` (all test files and contract_adapters.py)
+  - `etc/scripts/`
 - **Key findings**:
-  - Environment: PyTorch 2.12.0+cu130, Optuna 4.9.0, 4 GPUs, 20 CPUs available. `stable_baselines3` not installed.
-  - S1+S2: Event-driven simulation with retrospective estimation error and probabilistic Rayleigh SINR.
-  - R3 HPO: Detailed search spaces for 9 baselines (Basic: PPO, SAC, TD3; Advanced: MAPPO, MADDPG, MASAC; SOTA: DDPG+PER, MP-DQN, AoI-PPO), multi-seed composite objective function, and CSV logging schema.
-  - R4 S4: Dual Model Act/Rest mode architecture, Multi-GPU hardware isolation (`cuda:0` Act inference vs `cuda:1` Rest training), zero-downtime double-buffering hot-swap synchronization.
-  - R5 S5: Benchmark matrix (5 densities x 5 seeds = 25 runs/model, 10 models = 250 runs), 6 IEEE TWC standard metrics formulations (Mean AoI, Peak AoI, Outage/Packet Loss, Estimation Error, Power/Energy, Jain's Fairness), 3-tier CSV output schemas.
-  - Critical caveats documented: `libsumo` single-instance-per-process, `make_sumo_set.py` grid expansion bug, environment variable requirements (`PATH`, `SUMO_HOME`).
-- **Unexplored areas**: None for survey phase. Ready for implementation.
+  - R3.1 RSU_RANGE: `make_sumo_set.py` has 300.0, but `NetSim.py:443` overwrites it to 800.0 in `pre_define()`; `hot_swap_trainer.py:441,719`, `aoi_env.py:304,402`, `evaluate.py:215`, `rl_interface.py:87`, `.sumo_gen_signature.json` and multiple test fixtures still default to 800.0.
+  - R3.2 step-length: `make_sumo_set.py` has 0.1s and `generated.sumocfg` has `<step-length value="0.1"/>`, but `hot_swap_trainer.py:824-825` and `NetSim.py:532` pass `"--step-length", "1.0"` to SUMO startup cmd; `aoi_env.py:399` defaults to 1.0.
+  - R3.3 evaluate.py speed: `evaluate.py:239` hardcodes `"speed": 10.0`. Live vehicle speed is available from `env.last_speeds[vid]` or `_get_vehicle_state_dict`.
+  - R3.4 hpo.py search space: `sample_reward_weights(trial)` samples `w1_raw..w4_raw` and normalizes to `w1..w4`, but `aoi_env.py` uses legacy key mapping and needs clean alignment.
+  - R4 Baseline Scraping: All 11 files in `src/baselines/` must be deleted. Imports/references in `hot_swap_trainer.py`, `evaluate.py`, `hpo.py`, `run_all.py`, `tests/`, and `etc/` must be systematically removed/cleaned.
+- **Unexplored areas**: None (all R3 & R4 items explored and verified).
 
 ## Key Decisions Made
-- Architecture finalized and documented in `handoff.md`.
+- Fully cataloged all file locations, line numbers, exact code diffs, and deletion/refactoring strategies for R3 & R4.
 
 ## Artifact Index
-- `.agents/explorer_survey_3/DISPATCH.md` — Initial dispatch log
-- `.agents/explorer_survey_3/progress.md` — Liveness and progress heartbeat
-- `.agents/explorer_survey_3/BRIEFING.md` — Persistent memory
-- `.agents/explorer_survey_3/handoff.md` — Final 5-component survey report (Completed)
+- DISPATCH.md — Dispatch logs
+- BRIEFING.md — Working memory index
+- progress.md — Liveness & progress tracker
+- handoff.md — Final investigation report

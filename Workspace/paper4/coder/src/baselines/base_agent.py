@@ -2,10 +2,26 @@
 # ============================================================================
 # Base RL Agent Interface Contract
 #
-# Unified class hierarchy for all 9 baseline algorithms:
-# - Category 1: HybridPPO, HybridSAC, HybridTD3
-# - Category 2: MAPPO, HyARPPO, MPDQN (PDQN)
-# - Category 3: PureAoI, DuelingQAoI, SACAoI
+# Unified class hierarchy for the 9 baselines selected in librarian/baselines_v2.json.
+# Every entry is a real published method, verified by DOI against Crossref:
+#
+# - Basic (via Stable-Baselines3, wrapped for our hybrid action space):
+#     PPO          Schulman et al. 2017
+#     SAC          Haarnoja et al., ICML 2018
+#     TD3          Fujimoto et al., ICML 2018
+# - Latest (2025-2026):
+#     RES-MAPDDPG  Li et al., IEEE TVT 75(7), 2026
+#     MA2HDQN      Hong et al., IEEE TVT 75(6), 2026
+#     I-HAMAPPO    Chen et al., IEEE TWC 25, 2026
+# - Similar:
+#     SPAM-D3QN    Bai et al., IEEE TVT 73(4), 2024
+#     CARLTON      Cohen et al., IEEE TWC 24(1), 2025
+#     MADDPG-MT    Parvini et al., IEEE TVT 72(8), 2023
+#
+# The action space every subclass must produce is hybrid: continuous Delta over
+# [0.1, 45] s (geometric mapping), continuous power over [10, 23] dBm, and a
+# discrete subchannel in {0..3}. ActionDecoder owns those bounds; never restate
+# them in a subclass.
 # ============================================================================
 
 from __future__ import annotations
@@ -14,7 +30,7 @@ from typing import Any, Dict, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
-from src.rl_interface import ActionDecoder
+from src.rl_interface import STATE_DIM, ActionDecoder
 
 
 class BaseRLModel(nn.Module):
@@ -25,7 +41,9 @@ class BaseRLModel(nn.Module):
     with hot_swap_trainer (Act/Rest mode) and the evaluation benchmark suite.
     """
 
-    def __init__(self, state_dim: int = 16, num_channels: int = 4, **hparams: Any) -> None:
+    # state_dim defaults to the StateVectorizer's canonical observation dimension
+    # (src.rl_interface.STATE_DIM). Never hardcode the literal here or in subclasses.
+    def __init__(self, state_dim: int = STATE_DIM, num_channels: int = 4, **hparams: Any) -> None:
         super().__init__()
         self.state_dim = int(state_dim)
         self.num_channels = int(num_channels)

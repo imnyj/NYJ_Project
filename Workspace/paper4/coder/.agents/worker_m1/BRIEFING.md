@@ -1,57 +1,53 @@
-# BRIEFING — 2026-08-27T00:16:40Z
+# BRIEFING — 2026-08-27T02:03:00Z
 
 ## Mission
-Refactor `src/aoi_env.py` to be a genuine, clean Gymnasium-style V2I AoI scheduling environment with real SUMO integration and channel model, create `verify_environment.py` with anti-mocking verification, and write unit tests in `tests/test_aoi_env_genuine.py`.
+Complete Milestone M1: Core fixes to `src/aoi_env.py` and `src/hot_swap_trainer.py` (4-term reward, A4 assertion, generalized power normalization, per-vehicle tx_power, checkpoint best_reward tracking, default parameter alignment).
 
 ## 🔒 My Identity
 - Archetype: worker
 - Roles: implementer, qa, specialist
 - Working directory: /home/imnyj/Workspace/paper4/coder/.agents/worker_m1/
-- Original parent: 6fbce8b3-d42e-4949-9e84-64e060f58416
-- Milestone: M1 - Genuine AoI Environment & Verification
+- Original parent: 3d6a38f8-f0cb-48c4-98ea-b46062a1aceb
+- Milestone: M1 (Trainer & Env Core Fixes)
 
 ## 🔒 Key Constraints
-- DO NOT CHEAT. All implementations must be genuine.
-- Real SUMO via `NetSim.py` and `make_sumo_set.py`.
-- Real Rayleigh fading SINR and transmission success/failure via `Communications.judge_uplink()`.
-- Embed 4 hardcoded anti-mocking assertions in `AoiV2IEnv`.
-- Output verification script `verify_environment.py` and test suite `tests/test_aoi_env_genuine.py`.
-- Follow Korean language convention for reports as per GEMINI.md.
+- Exclusively owned files: `src/hot_swap_trainer.py`, `src/aoi_env.py`
+- Mandatory Integrity: No mocking, no fake checks, real calculations
+- Concurrency & Safety: Use `/home/imnyj/Command/core/lock_manager.py` and `/home/imnyj/Command/core/audit_logger.py`
+- Language: Korean for all communications and markdown reports
 
 ## Current Parent
-- Conversation ID: 6fbce8b3-d42e-4949-9e84-64e060f58416
-- Updated: 2026-08-27T00:16:40Z
+- Conversation ID: 3d6a38f8-f0cb-48c4-98ea-b46062a1aceb
+- Updated: 2026-08-27T02:03:00Z
 
 ## Task Summary
-- **What to build**: Genuine `src/aoi_env.py`, standalone `verify_environment.py`, comprehensive `tests/test_aoi_env_genuine.py`.
-- **Success criteria**: All anti-mocking assertions pass, SUMO integration works, `verify_environment.py` exits 0, `pytest tests/test_aoi_env_genuine.py` passes 100%.
-- **Interface contracts**: /home/imnyj/Workspace/paper4/coder/PROJECT.md, /home/imnyj/Workspace/paper4/idea/scenario.md, /home/imnyj/Workspace/paper4/Conversation.md.
-- **Code layout**: /home/imnyj/Workspace/paper4/coder/src/
+- **What to build**:
+  1. `src/aoi_env.py`: 4-term reward with A4 assertion, generalized power normalization, import P_MIN/P_MAX/DELTA_MIN/DELTA_MAX from rl_interface, default step_length=0.1, rsu_range=300.0.
+  2. `src/hot_swap_trainer.py`: Checkpoint saving/loading `best_reward`, resume logic `best_reward` tracking, per-vehicle tx_power, redundant update check, default rsu_range=300.0, step-length=0.1.
+- **Success criteria**:
+  1. AoiV2IEnv and HotSwapTrainer parameter alignments verified.
+  2. Checkpoint resume test with `best_reward` passes.
+  3. A4 assertion strictly verifies all 4 terms in $[0,1]$, binary $I_{redundant}$, $R_t \le 0.0$, and $R_t == -(w_1 \cdot \dots)$.
+
+## Key Decisions Made
+- `src/aoi_env.py`: Standard constants `P_MIN (10.0), P_MAX (23.0), DELTA_MIN (0.1), DELTA_MAX (45.0)` imported from `src.rl_interface` as single source of truth.
+- `src/hot_swap_trainer.py`: `save_checkpoint` accepts `best_reward: Optional[float] = None` and persists it in the `.pt` dictionary. `load_checkpoint` returns the checkpoint dict. `run_hot_swap_training` recovers `best_reward` from candidate checkpoints / `_best.pt` on `resume=True`, preventing degradation of best weights.
+- `AoiV2IEnv` (both files) & `HotSwapRLScheduler`: Default `rsu_range` set to `300.0`, `--step-length` set to `0.1`.
 
 ## Change Tracker
 - **Files modified**:
-  - `src/aoi_env.py`: Refactored to genuine Gymnasium-style `AoiV2IEnv` with real SUMO TraCI/libsumo stepping, Rayleigh SINR channel calls, composite normalized penalty reward, and 4 strict anti-mocking assertions. Retained legacy `VehicleNode`, `RSUNode`, `Metrics`, and helper functions for backward compatibility.
-  - `verify_environment.py`: Implemented standalone executable verifying SUMO generation, environment reset, 20-step coordinate movement, channel calculations, and fault-injection trigger tests.
-  - `tests/test_aoi_env_genuine.py`: Comprehensive test suite with 11 test cases covering math, metrics, SUMO reset/step, reward bounds, 4 anti-mocking assertion fault triggers, and subprocess execution.
-- **Build status**: PASS (11/11 genuine unit tests passed, 123/123 integration tests passed, verify_environment.py passed 100%)
-- **Pending issues**: None
+  - `src/aoi_env.py`: Aligned bounds, step length, RSU range, 4-term reward, A4 assertion.
+  - `src/hot_swap_trainer.py`: Added `best_reward` persistence & resume restoration, aligned RSU range 300.0, step length 0.1, verified per-vehicle tx_power and redundancy check.
+- **Build status**: PASS
+- **Pending issues**: none
 
 ## Quality Status
-- **Build/test result**: All tests passed (100% pass rate)
-- **Lint status**: Clean (ruff check: All checks passed)
-- **Tests added/modified**: `tests/test_aoi_env_genuine.py` (11 tests)
-
-## Loaded Skills
-- **Source**: N/A
-- **Local copy**: N/A
-- **Core methodology**: N/A
-
-## Key Decisions Made
-- Used `libsumo` / `traci` with robust fallback and auto PATH export.
-- Embedded 4 hardcoded runtime assertions directly in `step()` ensuring zero bypass of SUMO, channel physics, or reward math.
-- Retained legacy compatibility functions to prevent breaking existing test suites.
+- **Build/test result**: All M1 unit and integration verification tests passed.
+- **Lint status**: clean
+- **Tests added/modified**: Verified with automated verification script covering checkpoint serialization, resume recovery, parameter alignment, and A4 assertion compliance.
 
 ## Artifact Index
-- /home/imnyj/Workspace/paper4/coder/src/aoi_env.py
-- /home/imnyj/Workspace/paper4/coder/verify_environment.py
-- /home/imnyj/Workspace/paper4/coder/tests/test_aoi_env_genuine.py
+- `/home/imnyj/Workspace/paper4/coder/.agents/worker_m1/DISPATCH.md` — Dispatch prompt
+- `/home/imnyj/Workspace/paper4/coder/.agents/worker_m1/BRIEFING.md` — Persistent briefing
+- `/home/imnyj/Workspace/paper4/coder/.agents/worker_m1/progress.md` — Progress tracker
+- `/home/imnyj/Workspace/paper4/coder/.agents/worker_m1/handoff.md` — Final handoff report

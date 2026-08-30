@@ -28,28 +28,33 @@ from src.evaluate import (
 )
 from src.heuristic_scheduler import HeuristicScheduler
 from tests.contract_adapters import DummyPolicy
+from src.rl_interface import STATE_DIM
 
 
 class TestEvaluationHarness:
     """Comprehensive test suite for evaluation harness and benchmark verification."""
 
     def test_01_canonical_models_and_name_normalization(self):
-        """Verify canonical evaluation models and alias normalization."""
-        assert CANONICAL_EVAL_MODELS == ["HeuristicScheduler"]
-        assert "HeuristicScheduler" in CANONICAL_EVAL_MODELS
+        """The benchmark evaluates the rule-based reference plus all nine baselines.
+
+        This used to assert `CANONICAL_EVAL_MODELS == ["HeuristicScheduler"]` and
+        map aliases onto the previous generation of baselines. Both outlived the
+        2026-08-28 baseline replacement and quietly locked in a benchmark that
+        could not run a single real model.
+        """
+        from src.baselines import ALL_BASELINES
+
+        assert CANONICAL_EVAL_MODELS[0] == "HeuristicScheduler"
+        assert set(CANONICAL_EVAL_MODELS[1:]) == set(ALL_BASELINES)
 
         alias_cases = {
             "Heuristic": "HeuristicScheduler",
             "heuristic-dynamic": "HeuristicScheduler",
-            "H-PPO": "HybridPPO",
-            "h_sac": "HybridSAC",
-            "htd3": "HybridTD3",
-            "MAPPO": "MAPPO",
-            "hyar_ppo": "HyARPPO",
-            "pdqn": "MPDQN",
-            "Pure-AoI": "PureAoI",
-            "dueling_q_aoi": "DuelingQAoI",
-            "SAC-AoI": "SACAoI",
+            "ppo": "PPO",
+            "res_mapddpg": "RES-MAPDDPG",
+            "i-hamappo": "I-HAMAPPO",
+            "spamd3qn": "SPAM-D3QN",
+            "maddpg_mt": "MADDPG-MT",
         }
         for alias, expected in alias_cases.items():
             assert normalize_model_name(alias) == expected
@@ -79,19 +84,27 @@ class TestEvaluationHarness:
         assert len(loaded) == 0
 
     def test_04_instantiate_models(self):
-        """Verify clean instantiation of HeuristicScheduler and raising NotImplementedError for scraped baselines."""
+        """Every canonical name must instantiate; unknown names must fail loudly."""
+        from src.baselines import ALL_BASELINES
+
         model = instantiate_model("HeuristicScheduler")
         assert isinstance(model, HeuristicScheduler)
 
-        # Baseline names as string should raise NotImplementedError
-        for m_name in ["HybridPPO", "HybridSAC", "HybridTD3", "MAPPO", "PureAoI"]:
-            with pytest.raises(NotImplementedError, match="Baseline models scraped"):
-                instantiate_model(m_name)
+        # All nine baselines instantiate from their name alone.
+        for m_name in ALL_BASELINES:
+            built = instantiate_model(m_name)
+            assert built is not None, m_name
+            assert hasattr(built, "select_action"), m_name
+
+        # A retired name is not silently accepted.
+        for gone in ["HybridPPO", "MAPPO", "PureAoI"]:
+            with pytest.raises(KeyError, match="Unknown baseline"):
+                instantiate_model(gone)
 
         # Passing a class/instantiated module should succeed
         dummy_inst = instantiate_model(DummyPolicy)
         assert isinstance(dummy_inst, DummyPolicy)
-        assert dummy_inst.state_dim == 18
+        assert dummy_inst.state_dim == STATE_DIM
 
     def test_05_jains_fairness_index_properties(self):
         """Verify mathematical invariants of Jain's Fairness Index."""
@@ -139,8 +152,8 @@ class TestEvaluationHarness:
     def test_07_deterministic_multi_seed_reproducibility(self):
         """Verify that identical seed produces identical metric results."""
         torch.manual_seed(42)
-        model1 = DummyPolicy(state_dim=18, num_channels=4)
-        model2 = DummyPolicy(state_dim=18, num_channels=4)
+        model1 = DummyPolicy(state_dim=STATE_DIM, num_channels=4)
+        model2 = DummyPolicy(state_dim=STATE_DIM, num_channels=4)
         model2.load_state_dict(model1.state_dict())
 
         run1 = evaluate_single_run(model1, density=25.0, seed=101, n_steps=25)

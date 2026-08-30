@@ -20,6 +20,7 @@ from tests.contract_adapters import (
     DualModelHotSwapManager,
     calculate_metrics,
 )
+from src.rl_interface import STATE_DIM
 
 
 class TestTier1FeatureCoverage:
@@ -78,14 +79,14 @@ class TestTier1FeatureCoverage:
         assert p_b == 10.0 or p_b == 20.0, "Expected low power level on backoff"
 
     def test_04_state_vectorizer_normalization_and_no_leakage(self, synthetic_vehicle_node, synthetic_rsu_node):
-        """Verify 18-dim state vectorizer produces bounded values and contains no ground truth leakage."""
+        """Verify STATE_DIM-wide state vectorizer produces bounded values and contains no ground truth leakage."""
         vectorizer = StateVectorizer(rsu_range=300.0, v_max=30.0, a_max=5.0)
         tls_info = {"state": "r", "dist_to_stopline": 120.0, "time_to_switch": 14.0, "stop_imminent": 1.0, "start_imminent": 0.0}
         
         vec = vectorizer.vectorize(synthetic_vehicle_node, synthetic_rsu_node, current_time=15.0,
                                    tls_info=tls_info, cbr=0.35, n_active=12)
         
-        assert vec.shape == (18,), f"Expected shape (18,), got {vec.shape}"
+        assert vec.shape == (STATE_DIM,), f"Expected shape (18,), got {vec.shape}"
         assert vec.dtype == np.float32
         assert np.all(vec >= -1.0) and np.all(vec <= 1.0), f"State vector values outside [-1, 1]: {vec}"
         
@@ -122,24 +123,24 @@ class TestTier1FeatureCoverage:
 
         # Push 10 transitions
         for i in range(10):
-            s = np.full(18, i * 0.1, dtype=np.float32)
+            s = np.full(STATE_DIM, i * 0.1, dtype=np.float32)
             a = np.array([1.0, 2.0, 20.0], dtype=np.float32)
             r = -float(i) * 0.5
-            s_prime = np.full(18, (i + 1) * 0.1, dtype=np.float32)
+            s_prime = np.full(STATE_DIM, (i + 1) * 0.1, dtype=np.float32)
             buffer.push(s, a, r, s_prime, done=False, delta_t=1.5)
 
         assert len(buffer) == 10
         batch = buffer.sample(batch_size=4)
-        assert batch["state"].shape == (4, 18)
+        assert batch["state"].shape == (4, STATE_DIM)
         assert batch["action"].shape == (4, 3)
         assert batch["reward"].shape == (4, 1)
-        assert batch["next_state"].shape == (4, 18)
+        assert batch["next_state"].shape == (4, STATE_DIM)
         assert batch["done"].shape == (4, 1)
         assert batch["delta_t"].shape == (4, 1)
 
     def test_07_policy_instantiation_and_forward(self, sample_state_vector, sample_batch):
         """Verify policy instantiates correctly, selects actions, and updates."""
-        model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
         # 1. Action selection
         grant, raw_action, info = model.select_action(sample_state_vector, deterministic=True)
@@ -164,8 +165,8 @@ class TestTier1FeatureCoverage:
 
     def test_09_hot_swap_synchronization(self):
         """Verify Dual-Model Hot-Swap copies parameters atomically."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
         # Make rest_model weights distinct
         with torch.no_grad():

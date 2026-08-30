@@ -36,6 +36,7 @@ if PROJECT_ROOT not in sys.path:
 import src.Communications as comm  # noqa: E402
 import src.sumo.make_sumo_set as ss  # noqa: E402
 from src.aoi_env import AoiV2IEnv  # noqa: E402
+from src.rl_interface import STATE_DIM  # noqa: E402
 
 
 def verify_sumo_generation() -> bool:
@@ -108,13 +109,15 @@ def verify_env_reset() -> Tuple[AoiV2IEnv, Dict[str, np.ndarray], Dict[str, Any]
     assert len(obs) == info["n_active"], f"FATAL: Observation count mismatch: {len(obs)} != {info['n_active']}"
 
     for vid, state_vec in obs.items():
-        assert state_vec.shape == (18,), f"FATAL: State vector for {vid} has shape {state_vec.shape}, expected (18,)"
+        assert state_vec.shape == (STATE_DIM,), (
+            f"FATAL: State vector for {vid} has shape {state_vec.shape}, expected ({STATE_DIM},)"
+        )
         assert state_vec.dtype == np.float32, f"FATAL: State vector dtype must be float32, got {state_vec.dtype}"
         assert np.all(state_vec >= -1.0) and np.all(state_vec <= 1.0), (
             f"FATAL: State vector values out of [-1.0, 1.0] bounds for {vid}: {state_vec}"
         )
 
-    print("  [OK] All initial 18-dim state vectors are verified within [-1.0, 1.0].")
+    print(f"  [OK] All initial {STATE_DIM}-dim state vectors are verified within [-1.0, 1.0].")
     return env, obs, info
 
 

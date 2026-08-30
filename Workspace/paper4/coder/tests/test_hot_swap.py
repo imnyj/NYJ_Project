@@ -32,6 +32,7 @@ from src.hot_swap_trainer import (
 )
 from src.rl_interface import RetrospectiveReplayBuffer
 from tests.contract_adapters import DummyPolicy
+from src.rl_interface import STATE_DIM
 
 
 class TestDualModelHotSwapManager:
@@ -39,8 +40,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_parameter_synchronization(self):
         """Verify weights from Rest model are copied to Act model accurately."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
         # Mutate Rest model weights to differ from Act model
         with torch.no_grad():
@@ -81,8 +82,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_nan_guard_rejects_and_preserves_act_model(self):
         """Verify NaN parameters in Rest model are rejected and do not corrupt Act model."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
         manager = DualModelHotSwapManager(act_model, rest_model)
         assert manager.hot_swap() is True
@@ -104,8 +105,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_inf_guard_rejects_and_preserves_act_model(self):
         """Verify Inf parameters in Rest model are rejected and do not corrupt Act model."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
         manager = DualModelHotSwapManager(act_model, rest_model)
         clean_act_weights = [p.clone() for p in act_model.parameters()]
@@ -121,8 +122,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_cross_device_transfer(self):
         """Verify weight synchronization between different devices (CPU and simulated device)."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=16)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=16)
 
         cpu_dev = torch.device("cpu")
         manager = DualModelHotSwapManager(act_model, rest_model, act_device=cpu_dev, rest_device=cpu_dev)
@@ -137,8 +138,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_concurrency_thread_safety(self):
         """Verify multi-threaded inference and simultaneous hot-swapping under mutex lock."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
 
         stop_threads = threading.Event()
@@ -146,7 +147,7 @@ class TestDualModelHotSwapManager:
         inference_count = [0]
 
         def inference_worker():
-            s = torch.randn(1, 18)
+            s = torch.randn(1, STATE_DIM)
             while not stop_threads.is_set():
                 try:
                     with manager.swap_lock:
@@ -180,8 +181,8 @@ class TestDualModelHotSwapManager:
 
     def test_hot_swap_stats_and_callbacks(self):
         """Verify hot-swap statistics tracking and execution of registered callbacks."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=16)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=16)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=16)
 
         callback_invoked = [0]
         def on_swap(count):
@@ -208,10 +209,10 @@ class TestTransitionStreamer:
 
         for i in range(10):
             streamer.push(
-                state=np.full(18, i, dtype=np.float32),
+                state=np.full(STATE_DIM, i, dtype=np.float32),
                 action=np.array([1.0, i % 4, 20.0], dtype=np.float32),
                 reward=-float(i),
-                next_state=np.full(18, i + 1, dtype=np.float32),
+                next_state=np.full(STATE_DIM, i + 1, dtype=np.float32),
                 done=(i == 9),
                 delta_t=1.5,
             )
@@ -237,10 +238,10 @@ class TestTransitionStreamer:
 
         for i in range(10):
             streamer.push(
-                state=np.zeros(18),
+                state=np.zeros(STATE_DIM),
                 action=np.zeros(3),
                 reward=float(i),
-                next_state=np.zeros(18),
+                next_state=np.zeros(STATE_DIM),
                 done=False,
                 delta_t=1.0,
             )
@@ -258,7 +259,7 @@ class TestTransitionStreamer:
         buffer = RetrospectiveReplayBuffer(capacity=100)
 
         for i in range(10):
-            streamer.push(np.zeros(18), np.zeros(3), float(i), np.zeros(18), False, 1.0)
+            streamer.push(np.zeros(STATE_DIM), np.zeros(3), float(i), np.zeros(STATE_DIM), False, 1.0)
 
         n_drained = streamer.push_to_buffer(buffer)
         assert n_drained == 10
@@ -271,14 +272,14 @@ class TestBackgroundTrainer:
 
     def test_background_trainer_lifecycle(self):
         """Verify background training loop performs updates and scheduled hot-swaps."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
         buffer = RetrospectiveReplayBuffer(capacity=1000)
         streamer = TransitionStreamer(maxsize=1000)
 
         # Seed replay buffer with initial random transitions
-        s = np.random.uniform(-1, 1, size=(18,)).astype(np.float32)
+        s = np.random.uniform(-1, 1, size=(STATE_DIM,)).astype(np.float32)
         a = np.array([0.0, 1.0, 20.0], dtype=np.float32)
         for _ in range(64):
             buffer.push(s, a, -0.5, s, False, 1.0)
@@ -317,10 +318,16 @@ class TestBackgroundTrainer:
 class TestHotSwapRLScheduler:
     """Test suite for fast serving scheduler and retrospective transition assembly."""
 
-    def test_scheduler_decide_grant_and_retrospective_assembly(self):
-        """Verify grant generation within valid ranges and retrospective transition creation."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+    def test_scheduler_decide_grant_takes_environment_observations(self):
+        """Grants come from the environment's own observation vector, not a re-vectorized dict.
+
+        The scheduler used to accept a partial state dict and build its own
+        vector; anything the dict omitted silently became a default, which is how
+        15 of 17 dimensions reached the policy as constants. It now takes the
+        vector the environment produced and rejects anything of the wrong width.
+        """
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
         streamer = TransitionStreamer(maxsize=100)
 
@@ -330,65 +337,63 @@ class TestHotSwapRLScheduler:
             streamer=streamer,
         )
 
-        # Step 1: Vehicle 1 entry and first grant
-        st1 = {
-            "vid": "veh_0",
-            "pos": (100.0, 20.0),
-            "vel": (15.0, 0.0),
-            "speed": 15.0,
-            "accel": 0.0,
-            "current_time": 1.0,
-            "tls_features": {"state": "g", "time_to_switch": 20.0, "dist_to_stopline": 200.0},
-        }
-        grant1 = scheduler.decide_grant("veh_0", st1)
-        delta, ch, power = grant1
+        s_vec = np.random.uniform(-1.0, 1.0, size=(STATE_DIM,)).astype(np.float32)
+        grant, raw_action = scheduler.decide_grant("veh_0", s_vec)
+        delta, ch, power = grant
 
         assert 0.1 <= delta <= 45.0
         assert 0 <= ch <= 3
         assert 10.0 <= power <= 23.0
-        assert streamer.is_empty()  # No previous step yet for veh_0
+        assert raw_action is not None
+        # Pure inference: deciding a grant must not queue a transition by itself.
+        assert streamer.is_empty()
 
-        # Step 2: Vehicle 1 second grant (retrospective transition should be created)
-        st2 = {
-            "vid": "veh_0",
-            "pos": (115.0, 20.0),
-            "vel": (15.0, 0.0),
-            "speed": 15.0,
-            "accel": 0.0,
-            "current_time": 1.0 + delta,
-            "estimation_error": 0.15,
-            "tls_features": {"state": "g", "time_to_switch": 18.0, "dist_to_stopline": 185.0},
-        }
-        grant2 = scheduler.decide_grant("veh_0", st2)
-        assert len(grant2) == 3
+        # A vector of the wrong width means someone re-vectorized upstream.
+        with pytest.raises(AssertionError):
+            scheduler.decide_grant("veh_0", np.zeros(STATE_DIM + 1, dtype=np.float32))
 
+    def test_scheduler_push_transition_uses_measured_interval(self):
+        """The environment prices the interval; the scheduler only forwards it."""
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        manager = DualModelHotSwapManager(act_model, rest_model)
+        streamer = TransitionStreamer(maxsize=100)
+        scheduler = HotSwapRLScheduler(
+            act_model=act_model, hot_swap_manager=manager, streamer=streamer
+        )
+
+        s = np.zeros(STATE_DIM, dtype=np.float32)
+        s2 = np.ones(STATE_DIM, dtype=np.float32)
+        # delta_t is the MEASURED interval: a retried uplink runs past the
+        # requested Delta, and gamma**delta_t must discount by what happened.
+        scheduler.push_transition(
+            state=s, raw_action=np.zeros(3, dtype=np.float32), reward=-0.42,
+            next_state=s2, done=False, delta_t=2.7,
+        )
         assert streamer.qsize() == 1
-        items = streamer.drain()
-        assert len(items) == 1
-        assert items[0]["reward"] < 0.0
-        assert items[0]["done"] is False
-        assert items[0]["delta_t"] == pytest.approx(delta, rel=1e-3)
+        item = streamer.drain()[0]
+        assert item["reward"] == pytest.approx(-0.42)
+        assert item["delta_t"] == pytest.approx(2.7)
+        assert item["done"] is False
 
-        # Step 3: Vehicle exit
-        scheduler.on_vehicle_exit("veh_0", exit_time=5.0, final_error=0.1)
-        assert streamer.qsize() == 1
-        terminal_item = streamer.drain()[0]
-        assert terminal_item["done"] is True
+        scheduler.push_transition(
+            state=s2, raw_action=np.zeros(3, dtype=np.float32), reward=-1.0,
+            next_state=np.zeros(STATE_DIM, dtype=np.float32), done=True, delta_t=0.5,
+        )
+        assert streamer.drain()[0]["done"] is True
 
     def test_scheduler_latency_benchmarking(self):
         """Verify scheduler tracks inference latency and achieves sub-10ms serving latency."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
         streamer = TransitionStreamer(maxsize=500)
 
         scheduler = HotSwapRLScheduler(act_model=act_model, hot_swap_manager=manager, streamer=streamer)
 
-        dummy_st = {
-            "vid": "v0", "pos": (0.0, 0.0), "vel": (10.0, 0.0), "speed": 10.0, "current_time": 0.0
-        }
+        s_vec = np.random.uniform(-1.0, 1.0, size=(STATE_DIM,)).astype(np.float32)
         for _ in range(50):
-            scheduler.decide_grant("v0", dummy_st)
+            scheduler.decide_grant("v0", s_vec)
 
         lat_stats = scheduler.get_latency_stats()
         assert lat_stats["mean_latency_ms"] < 10.0
@@ -402,7 +407,7 @@ class TestHotSwapTrainerAndLoop:
         """Verify HotSwapTrainer instantiates and runs with DummyPolicy."""
         trainer = HotSwapTrainer(
             model_cls=DummyPolicy,
-            state_dim=18,
+            state_dim=STATE_DIM,
             num_channels=4,
             buffer_capacity=500,
             batch_size=8,
@@ -415,7 +420,7 @@ class TestHotSwapTrainerAndLoop:
         assert trainer.hot_swap_manager.swap_count == 1  # Initial sync
 
         # Test feeding transitions and stepping
-        s = np.zeros(18, dtype=np.float32)
+        s = np.zeros(STATE_DIM, dtype=np.float32)
         a = np.array([0.0, 0.0, 20.0], dtype=np.float32)
         for _ in range(16):
             trainer.replay_buffer.push(s, a, -0.1, s, False, 1.0)

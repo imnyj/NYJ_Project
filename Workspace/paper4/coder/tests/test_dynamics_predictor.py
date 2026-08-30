@@ -15,7 +15,7 @@ from src.dynamics_predictor import (
     DynamicsPredictor,
 )
 from src.heuristic_scheduler import HeuristicScheduler
-import src.aoi_env as env
+from src.rl_interface import estimation_error
 import src.Communications as comm
 
 
@@ -26,7 +26,7 @@ def test_extrapolate_and_estimation_error_stationary():
     pos = (100.0, 200.0)
     vel = (0.0, 0.0)
     # Stopped vehicle: true pos stays constant
-    err = env.estimation_error(pos, pos, vel, age=10.0)
+    err = estimation_error(pos, pos, vel, age=10.0)
     assert pytest.approx(err, abs=1e-6) == 0.0
 
 
@@ -35,7 +35,7 @@ def test_extrapolate_and_estimation_error_constant_velocity():
     vel = (15.0, -5.0)
     age = 3.0
     true_pos = (pos[0] + vel[0] * age, pos[1] + vel[1] * age)
-    err = env.estimation_error(true_pos, pos, vel, age=age)
+    err = estimation_error(true_pos, pos, vel, age=age)
     assert pytest.approx(err, abs=1e-6) == 0.0
 
 
@@ -46,7 +46,7 @@ def test_extrapolate_and_estimation_error_accelerating():
     age = 4.0
     # s = v0*t + 0.5*a*t^2 -> error should be exactly 0.5*a*t^2 = 0.5*2*16 = 16.0
     true_pos = (vel[0] * age + 0.5 * a * (age ** 2), 0.0)
-    err = env.estimation_error(true_pos, pos, vel, age=age)
+    err = estimation_error(true_pos, pos, vel, age=age)
     expected_err = 0.5 * a * (age ** 2)
     assert pytest.approx(err, abs=1e-4) == expected_err
 
@@ -358,66 +358,3 @@ def test_heuristic_scheduler_channel_load_balancing():
     # Each of the 4 subchannels should have been allocated exactly 3 times
     for ch in range(4):
         assert channels_allocated.count(ch) == 3
-
-
-# ----------------------------------------------------------------------------
-# 6. Live SUMO Integration Test
-# ----------------------------------------------------------------------------
-def test_sumo_simulation_with_heuristic_scheduler():
-    """Drive a short live SUMO run through the heuristic scheduler.
-
-    This test overrides module-level geometry/demand globals in make_sumo_set and
-    NetSim, which are shared process-wide and also drive the cached SUMO XML in
-    src/sumo/. Without restoring them, the overrides leak into every later test in
-    the session and leave generated.net.xml built for a different RSU range than the
-    project's, so the next training run has to regenerate. Everything mutated here is
-    therefore saved up front and restored in a finally block.
-    """
-    os.environ["PATH"] = f"/home/imnyj/venv/bin:{os.environ.get('PATH', '')}"
-    os.environ.setdefault("SUMO_HOME", "/home/imnyj/venv/lib/python3.12/site-packages/sumo")
-
-    import src.NetSim as net
-    import src.sumo.make_sumo_set as ss
-
-    ss_names = ("RSU_RANGE", "AV_SPEED", "DENSITY", "MAX_STEPS", "SPEED", "P_GEN")
-    net_names = ("MAX_EPISODE", "b_step_log", "b_reroute")
-    saved_ss = {n: getattr(ss, n) for n in ss_names}
-    saved_net = {n: getattr(net, n) for n in net_names}
-    saved_warmup = getattr(env, "WARMUP_S", None)
-
-    try:
-        ss.RSU_RANGE = 800.0
-        ss.AV_SPEED = 40.0
-        ss.DENSITY = 25.0
-        ss.MAX_STEPS = 60.0
-        ss.SPEED = ss.AV_SPEED / 3.6
-        ss.P_GEN = (ss.DENSITY * ss.SPEED) / 3600.0
-        net.MAX_EPISODE = 1
-        net.b_step_log = False
-        net.b_reroute = False
-
-        scheduler = HeuristicScheduler()
-        env.WARMUP_S = 15.0
-        env.set_scheduler(scheduler)
-        env.reset_env()
-
-        sim = net.SumoNetSim(
-            VehicleClass=env.VehicleNode,
-            RSUClass=env.RSUNode,
-            start_message_fn=env.start_message,
-        )
-        sim.run()
-
-        summary = env.METRICS.summary()
-        assert summary["registrations_E1"] > 0
-        assert summary["tx_attempts"] > 0
-        assert summary["tx_attempts"] == summary["tx_success"] + summary["tx_fail"]
-        assert summary["tx_success_rate"] >= 0.0
-        assert summary["mean_interval_err_integral"] >= 0.0
-    finally:
-        for name, value in saved_ss.items():
-            setattr(ss, name, value)
-        for name, value in saved_net.items():
-            setattr(net, name, value)
-        if saved_warmup is not None:
-            env.WARMUP_S = saved_warmup

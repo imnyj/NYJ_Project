@@ -43,7 +43,11 @@ GRID_SIZE: float = NUM_BLOCKS * EDGE_LENGTH        # Network Size
 NUM_LANES: int = 2                                 # Lane Number
 SPEED: float = AV_SPEED / 3.6                      # average speed of vehicles
 DEL_SPEED: float = 0.2                             # delta speed variance
-MAX_SPEED: float = (120.0 / 3.6) * (1.0 + DEL_SPEED) # maximum speed of vehicles
+# NOTE: the per-edge speed limits are drawn as SPEED * (1 +/- DEL_SPEED) when the
+# network is written, so the effective ceiling is a property of the generated
+# net.xml (read back by rl_interface.get_sumo_max_edge_speed), not of a constant
+# here. A former MAX_SPEED literal sat at this spot, was recomputed on every
+# make_sumo_files() call, and was never read by anything.
 step: float = GRID_SIZE / NUM_BLOCKS
 BASE_PATH: str = os.path.dirname(os.path.abspath(__file__))
 
@@ -262,7 +266,7 @@ def _make_sumo_files_impl(force_regenerate: bool = False, num_blocks: Optional[i
     STEP_LENGTH forces regeneration, so callers that sweep those knobs actually get
     a network and demand matching what they asked for.
     """
-    global NUM_BLOCKS, GRID_SIZE, step, SPEED, MAX_SPEED, EDGE_LENGTH
+    global NUM_BLOCKS, GRID_SIZE, step, SPEED, EDGE_LENGTH
 
     # EDGE_LENGTH is fully derived from RSU_RANGE / OUTAGE_ZONE. Re-derive it here so
     # external callers that override those module globals (e.g. src/NetSim.py) get a
@@ -290,7 +294,6 @@ def _make_sumo_files_impl(force_regenerate: bool = False, num_blocks: Optional[i
     GRID_SIZE = NUM_BLOCKS * EDGE_LENGTH
     step = GRID_SIZE / NUM_BLOCKS
     SPEED = (AV_SPEED / 3.6) if AV_SPEED > 0 else (40.0 / 3.6)
-    MAX_SPEED = (120.0 / 3.6) * (1.0 + DEL_SPEED)
 
     def _make_axis_positions() -> Tuple[List[float], List[float]]:
         xs = [0.0] * (NUM_BLOCKS + 1)

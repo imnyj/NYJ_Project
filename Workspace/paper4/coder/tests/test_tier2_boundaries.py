@@ -20,6 +20,7 @@ from tests.contract_adapters import (
     DualModelHotSwapManager,
 )
 from tests.conftest import DummyNode
+from src.rl_interface import STATE_DIM
 
 
 class TestTier2BoundaryCornerCases:
@@ -105,21 +106,21 @@ class TestTier2BoundaryCornerCases:
 
         # 2. Push 3 items and sample 5 -> should gracefully sample min(len, batch_size) = 3
         for i in range(3):
-            s = np.zeros(18, dtype=np.float32)
+            s = np.zeros(STATE_DIM, dtype=np.float32)
             buffer.push(s, [0, 0, 0], 0.0, s, False, 1.0)
         batch = buffer.sample(batch_size=5)
         assert batch["state"].shape[0] == 3
 
         # 3. Push 4 more items to trigger ring buffer overwrite
         for i in range(4):
-            s = np.full(18, float(i + 10), dtype=np.float32)
+            s = np.full(STATE_DIM, float(i + 10), dtype=np.float32)
             buffer.push(s, [0, 0, 0], 0.0, s, False, 1.0)
         assert len(buffer) == 5, f"Buffer capacity exceeded: {len(buffer)}"
 
     def test_06_hot_swap_nan_inf_guard(self):
         """Verify Hot-Swap rejects contaminated models containing NaN or Inf values."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
 
         # 1. Clean swap works

@@ -210,12 +210,208 @@ $$R_k = -\Big( w_1 \sum_{t \in [t_k, t_{k+1})} \mathrm{Norm}(e^2(t))\cdot\frac{\
 
 ---
 
-## 9. 결정 후 작업 순서
+## 9. 구현 현황 (2026-08-30, Claude Code)
 
-1. D4·D5 확정 및 초안값(τ_fresh / ε / 재시도 상한) 승인 → 이 문서를 확정본으로 승격
-2. 정본 클래스에 Δ 게이팅·보상·상태 파이프라인 구현 (단일 경로, 원칙 P1/P2)
-3. **모델 추론 입력 기준** liveness 검사 스크립트 작성 (원칙 P3) — 18차원 전수
-4. Δ 반영 검증: 동일 시드에서 Δ=0.1 vs Δ=45가 tx_attempts부터 달라지는지 확인
-5. 보상 4항 기여도 실측 — 어느 항도 1% 미만으로 죽지 않았는지 확인
-6. 학습된 Δ 분포 확인 — 상한 45 s에 몰리면 D2의 시간 정규화 안을 재검토
-7. 그 다음에 20만 스텝 착수 (그 전까지 훈련 금지)
+`User_Response_v2.md`의 D3·D4·D6·D7 승인과 D5 재답변을 반영하여 **구현 완료**. 테스트 119/119 통과.
+
+### 확정된 수치
+
+| 기호 | 값 | 유도 근거 |
+|---|---|---|
+| `V_LIMIT` | 13.32 m/s (48.0 km/h) | `generated.net.xml`의 최대 차선 제한속도에서 **자동 추출** |
+| `E_REF` | 13.32 m | `V_LIMIT` × 1 s. 위치오차를 "몇 초분의 무지"로 환산 |
+| `REDUNDANT_ERR_EPS_M` (ε) | 3.2 m | SUMO 기본 차선폭. lane-level accuracy |
+| `LEDGER_FRESH_S` (τ_fresh) | 1.0 s | 그 사이 최대 이동 13.3 m < 차간거리 |
+| `MAX_TX_RETRIES` | 10 (= 1.0 s) | 연속 실패 상한 |
+| `STATE_DIM` | 17 | 18에서 stop_imminent 제거 |
+| `warmup_steps` 기본 | **350** (35 s) | 아래 참조 |
+
+> [!NOTE]
+> **D5 사용자 답변에 대한 보정.** "법적 최대 60 km/h"로 말씀하셨으나 이 시나리오의 실제 제한속도는
+> **40 km/h**다(`make_sumo_set.py:27` `AV_SPEED = 40.0`, net.xml 실측 8.89~13.32 m/s = 32~48 km/h).
+> 리터럴 16.667을 박는 대신 Δ 상한 45 s를 net.xml의 실제 적색 시간에서 유도한 것과 **같은 방식**으로
+> `get_sumo_max_edge_speed()`가 net.xml에서 읽는다. `AV_SPEED`를 60으로 올리면 `E_REF`도 자동으로 따라간다.
+> 정규화 형태는 포화 없는 `e²/(e² + E_REF²)`를 썼다(D5 제안 (다)).
+
+### 구현 내역
+
+| 항목 | 파일 | 내용 |
+|---|---|---|
+| Δ 게이팅 | `hot_swap_trainer.py::step` | `next_update_t` 도달 전까지 차량은 침묵. grant는 발급 스텝이 아니라 만료 시점에 발화 |
+| 구간 보상 | `_finalize_interval` | 오차항만 스텝별 누적, 나머지 3항은 갱신 1회 임펄스 |
+| I_redundant | `_is_redundant_update` | "예측이 맞았으면 중복"으로 재정의. 판정을 `simulationStep()` **이후**로 이동 |
+| n_queue | `_ledger_queue_count` | RSU 장부 기반 + 신선도 가드. SUMO 직접 조회 폐기 |
+| 재시도 | `step` 6절 | 실패 시 다음 스텝 재시도, 모델 재호출 없음. 상한 도달 시 구간 종료 |
+| Peak AoI | `get_metrics` | 전 차량·전 시간 최대값. `mean_peak_aoi` 병기 |
+| 이중 보상 제거 | `HotSwapRLScheduler` | 스케줄러의 자체 3항 보상 삭제. 순수 추론 + `push_transition`만 |
+| 이중 상태 제거 | 동상 | `decide_grant`가 환경이 만든 벡터를 받고, 폭이 다르면 assert |
+| 이벤트 구동 루프 | `run_hot_swap_training`, `evaluate.py`, `hpo.py` | 세 곳 전부 Δ 만료 차량만 결정 |
+
+### 검증 결과
+
+**Δ 반영 (동일 시드, Δ만 변경)** — 수정 전에는 두 열이 완전히 같았다.
+
+| | Δ = 0.1 s | Δ = 45.0 s |
+|---|---|---|
+| tx_attempts | 6197 | **2** |
+| mean_aoi | 0.191 s | **16.271 s** |
+| mean_error | 0.892 m | **17.631 m** |
+| 보상 내 오차항 비중 | 0.34% | **98.51%** |
+| I_redundant 발화 | 99.48% | **0.00%** |
+
+트레이드오프가 성립한다: 자주 갱신하면 중복 페널티(50%)와 전력(39%)이, 드물게 갱신하면 오차(98%)가 지배한다.
+
+**모델 입력 liveness (원칙 P3)** — `etc/scripts/verify_model_input_liveness.py`, **17/17 전부 live**.
+이전 검사(`verify_observation_liveness.py`)는 `env.step()` 반환값을 봤기 때문에 15/18이 죽은 것을 놓쳤다.
+새 스크립트는 `decide_grant`를 가로채 **모델이 실제로 받는 텐서**를 잰다.
+
+### 구현 중 추가로 발견한 결함
+
+**1. 피처 [0] age는 SMDP에서 구조적으로 상수 0이다.** 결정 시점이 항상 갱신 직후이므로 정의상 age = 0.
+원칙 P4("죽은 항은 설계에서 뺀다")를 적용해 **마지막 예측 오차** `norm_sq_error(e_last)`로 교체했다.
+RSU가 그 순간 공짜로 아는 값이면서, "이 차량이 얼마나 예측 가능한가"를 직접 알려주므로 Δ 결정에 정확히 필요한 정보다.
+
+**2. `warmup_steps=35`는 원래부터 빈 실행이었다.** 3.5초로는 차량이 RSU 반경 300 m에 도달하지 못한다.
+
+| warmup | 3.5 s | 15 s | 35 s | 70 s |
+|---|---|---|---|---|
+| 범위 내 차량 | **0** | 1 | 22 | 70 |
+
+이전에는 `mean_aoi`가 관측 없을 때 **1.0으로 폴백**해서 빈 실행이 "정상"으로 통과했다.
+폴백을 0.0으로 정직하게 바꾸고, `n_observations` / `n_vehicles_seen`을 지표에 추가해
+빈 실행이 숫자로 드러나게 했다. 기본 warmup은 350(35 s)으로 올렸다.
+
+**3. 테스트가 `18`을 리터럴로 박고 있었다.** 15개 파일에서 `STATE_DIM`을 읽도록 교체했다.
+상태 차원이 바뀔 때마다 테스트를 손으로 고쳐야 하는 구조는 그 자체가 결함이다.
+
+**4. `DummyPolicy`가 디바이스를 맞추지 않았다.** 실 baseline 9종은 `BaseAgent._to_tensor`로
+모델 디바이스를 따르는데 테스트 스텁만 CPU 고정이라, Act 모델이 GPU에 올라가면 forward가 죽었다.
+
+---
+
+## 10. 검증 실측 결과 (2026-08-30)
+
+### 학습된 정책의 Δ 분포 — 정상
+
+PPO 1,500스텝(구간 4,676건). **양극단 붕괴 없음.**
+
+| p10 | p25 | p50 | p75 | p90 | 평균 | 최대 |
+|---|---|---|---|---|---|---|
+| 0.200 s | 0.200 s | 0.200 s | 0.500 s | 3.500 s | 2.267 s | 45.200 s |
+
+하한(<0.2 s) 32.8%, 상한(>40 s) 2.0%. 버퍼 `delta_t` 고유값 **234개**로 $\gamma^\Delta$ 할인이 실제로 동작한다
+(수정 전에는 고유값 1개, 즉 상수 0.1이라 SMDP 할인이 무의미했다).
+D2에서 우려했던 "Δ를 무조건 늘리는 퇴화"는 관측되지 않았으므로 시간 정규화 안은 보류한다.
+
+### 보상 4항 기여도 — CBR만 1% 언저리
+
+| 항 | 정규화 평균 | 가중 기여 | 비중 |
+|---|---|---|---|
+| r_err | 0.84727 | 0.42364 | 74.98% |
+| i_redundant | 0.91916 | 0.09192 | 16.27% |
+| r_power | 0.22662 | 0.04532 | 8.02% |
+| **cbr** | 0.02064 | 0.00413 | **0.73%** |
+
+### CBR이 작은 것은 결함이 아니라 물리다 — 다만 논문 서사에 영향이 있다
+
+밀도를 벤치마크 전 구간에서 스윕한 결과, CBR은 밀도에 대해 **단조 증가**하지만 55 veh/km에서도 2%에 머문다.
+
+| density | 차량/스텝 | mean_cbr | max_cbr | tx | packet loss |
+|---|---|---|---|---|---|
+| 15 | 30.6 | 0.01081 | 0.02688 | 3862 | 0.085 |
+| 25 | 44.1 | 0.01569 | 0.04256 | 5602 | 0.097 |
+| 35 | 53.0 | 0.01901 | 0.05040 | 6788 | 0.106 |
+| 45 | 58.7 | 0.02099 | 0.05376 | 7498 | 0.102 |
+| **55** | 59.4 | **0.02129** | 0.05712 | 7602 | 0.108 |
+
+수치는 물리와 정확히 일치한다. 300 B 프레임의 에어타임은 448 µs이므로 100 ms 스텝의 **0.448%**를 점유한다.
+밀도 55에서 19.0 tx/step이 4개 서브채널에 분산되어 채널당 4.75회 → 4.75 × 0.448% = **0.0213**. 실측과 동일하다.
+
+**함의**: 이 구성에서 채널은 실질적으로 한산하다. ETSI ITS-G5의 DCC 개입 임계인 CBR ≈ 0.62에 도달하려면
+채널당 138회/스텝, 즉 지금의 **약 29배** 부하가 필요하다. 취약구간 겹침 확률도 0.896%에 불과하므로
+현재 관측되는 패킷 손실 ~10%는 **충돌이 아니라 거리·전력에 따른 잡음 제한**이다(수정 전 89%가 가짜 충돌이었던 것과 대조).
+
+즉 `scenario.md`가 적은 "너무 잦은 갱신은 전력만 낭비되며 congestion 및 충돌 증가" 중
+**전력 낭비와 중복 갱신은 보상에서 실제로 작동하지만(8.0% + 16.3%), 혼잡은 이 시나리오에서 거의 작동하지 않는다.**
+
+### D9 결정: (가) 한계로 명시하고 현행 유지 — **확정 (2026-08-30, 사용자)**
+
+시나리오·보상·액션 공간은 그대로 둔다. 대신 논문에 혼잡 항의 작동 범위를 실측 근거와 함께 명시한다.
+검토했으나 채택하지 않은 대안: 서브채널 4→1(`ch` 액션이 사라져 하이브리드 액션 전제가 깨짐),
+배경 트래픽 모델링(근거 문헌 필요 + 재훈련), 페이로드 CAM→CPM 확대(CBR 3.7배이나 시나리오 변경).
+
+논문에 쓸 문장은 아래 12절에 준비해 두었다.
+
+---
+
+## 11. 남은 작업
+
+1. ~~D4·D5 확정~~ / ~~구현~~ / ~~모델 입력 liveness 17/17~~ / ~~Δ 반영 검증~~ / ~~Δ 분포 확인~~ / ~~보상 기여도 실측~~ — **완료**
+2. ~~9종 baseline 계약 재검증~~ — 완료 (STATE_DIM 17에서 9/9 PASS)
+3. ~~D9 결정~~ — **(가) 한계 명시로 확정.** 논문용 문안은 12절
+4. `simulation_plan.md` 5-4절 사전 점검 재측정 (STATE_DIM 17·warmup 350 반영)
+5. 그 다음에 20만 스텝 착수 (사용자 승인 대기)
+6. **본훈련·HPO 후**: 12-1절의 보상 비중 잠정치를 최종치로 교체, ETSI DCC 임계 문헌 확보
+
+---
+
+## 12. 논문에 명시할 한계 (D9 확정 사항)
+
+### 12-1. Limitations 절에 넣을 문안 (초안)
+
+> **Channel load regime.** The congestion penalty $C_{freq}$ is measured as the true 802.11p airtime
+> occupancy of the RSU's subchannels: a 300-byte ETSI CAM at the 6 Mbps base rate occupies the channel
+> for 448 µs, i.e. 0.448 % of a 100 ms scheduling step. Across the evaluated density range
+> (15--55 veh/km) the measured Channel Busy Ratio grows monotonically from 0.0108 to 0.0213, so the
+> RSU cell studied here operates in a lightly loaded regime, well below the CBR $\approx$ 0.62 at which
+> ETSI ITS-G5 decentralized congestion control would intervene. Two consequences follow, and we state
+> them explicitly rather than tuning the scenario to avoid them. First, the packet losses we report
+> (8.5--10.8 %) are noise-limited -- set by distance and transmit power -- not collision-limited: the
+> vulnerable-period overlap probability between two co-channel frames is $2T_{air}/T_{step} = 0.90$ %.
+> Second, of the four reward terms, the congestion penalty is the smallest contributor
+> (0.73 % of the mean reward, against 74.98 % for estimation error, 16.27 % for redundant updates and
+> 8.02 % for transmit power). The update-interval trade-off this paper optimizes is therefore driven
+> by estimation error against power and redundancy, with congestion a secondary term that nonetheless
+> scales correctly with density. Regimes where congestion dominates -- denser cells, larger
+> cooperative-perception payloads (ETSI TS 103 324 CPMs exceed 1 kB), or a shared band carrying
+> background ITS traffic -- are left to future work.
+
+영문 문안은 초안이다. `writer/main.tex` 작성 시 문체를 맞춰 다듬을 것.
+
+> [!WARNING]
+> **투고 전 반드시 처리할 것 2건.**
+>
+> 1. **보상 비중 수치(0.73 / 74.98 / 16.27 / 8.02 %)는 잠정치다.** PPO를 1,500스텝만 돌린
+>    사실상 미훈련 정책에서 측정한 값이다. 학습이 진행되면 정책의 Δ 선택이 바뀌고 네 항의 균형도
+>    함께 바뀐다. 특히 Optuna가 $w_1{\sim}w_4$를 탐색하므로 최종 가중치 자체가 달라진다.
+>    **본훈련·HPO 완료 후 재측정한 값으로 교체할 것.** 재측정 스크립트는 `_finalize_interval`을
+>    가로채 항별 평균을 집계하는 방식이며, 이번 세션의 검증에 쓴 것과 동일하다.
+>
+> 2. **"CBR ≈ 0.62에서 ETSI DCC가 개입한다"는 문헌 검증이 아직 안 됐다.** ETSI TS 102 687의
+>    DCC 상태 전이 임계로 통용되는 값이지만, 이 프로젝트는 날조 방지를 위해 인용을 전수 대조해 왔다
+>    (`Conversation.md` 4절, `etc/scripts/verify_bibliography.py`). **원 규격을 확인해 정확한 조항과
+>    수치를 확보하거나, 확보되지 않으면 이 문장을 빼고 "well below the levels at which congestion
+>    control mechanisms engage" 같은 정성적 표현으로 바꿀 것.** 다른 수치는 전부 자체 실측이라
+>    이 한 건만 외부 근거가 필요하다.
+
+### 12-2. 이 주장을 뒷받침하는 수치 (전부 실측)
+
+| 값 | 수치 | 출처 |
+|---|---|---|
+| 프레임 에어타임 (300 B @ 6 Mbps) | 448 µs | `Communications.frame_airtime_s`, 40 µs + 8 µs × 51 심볼 |
+| 스텝당 1회 점유율 | 0.448 % | 448 µs / 100 ms |
+| 취약구간 겹침 확률 | 0.896 % | $2T_{air}/T_{step}$ |
+| CBR (15 → 55 veh/km) | 0.0108 → 0.0213 | 10절 스윕 표 |
+| ETSI DCC 개입 임계까지의 배수 | 약 29배 | 138 tx/채널·스텝 필요 vs 실측 4.75 |
+| 패킷 손실 | 0.085 → 0.108 | 동 스윕 표 |
+| 보상 내 혼잡 항 비중 | 0.73 % | PPO 1,500스텝, 구간 4,676건 |
+
+> [!IMPORTANT]
+> 이 표는 **심사 대응의 핵심 자산**이다. "왜 혼잡을 고려한다면서 CBR이 2 %냐"는 질문은 반드시 나온다.
+> 답은 "고려했고, 측정했고, 이 구성에서는 작다는 것까지 정량적으로 안다"이다.
+> 혼잡 항을 뺐다면 할 수 없는 답변이므로, 항 자체는 유지한다.
+
+### 12-3. 결과 표에 함께 실을 것
+
+밀도 스윕 표(10절)를 논문 결과 절에 **그대로 싣는다.** CBR이 밀도에 단조 증가한다는 사실이
+"혼잡 모델이 살아 있다"는 증거이고, 절대값이 작다는 사실이 위 한계 진술의 근거다. 둘은 같은 표에서 나온다.

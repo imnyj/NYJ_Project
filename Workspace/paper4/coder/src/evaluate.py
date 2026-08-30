@@ -38,54 +38,56 @@ import numpy as np
 import pandas as pd
 import torch
 
-import src.Communications as comm
+from src.baselines import ALL_BASELINES, BASELINE_CATEGORIES, get_baseline
 from src.heuristic_scheduler import HeuristicScheduler
 from src.hot_swap_trainer import AoiV2IEnv
-from src.rl_interface import STATE_DIM, StateVectorizer
+from src.rl_interface import RSU_RANGE, STATE_DIM
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("EvaluateHarness")
 
-# Canonical evaluated models
-CANONICAL_EVAL_MODELS = [
-    "HeuristicScheduler",
-]
+# Canonical evaluated models: the rule-based reference plus the nine baselines.
+# The list is derived from src/baselines/__init__.py rather than restated here.
+# It used to be restated, and when the baselines were replaced on 2026-08-28 this
+# file kept naming the discarded ones (HybridPPO, MAPPO, PureAoI, ...), so the
+# benchmark could not instantiate a single real model.
+CANONICAL_EVAL_MODELS = ["HeuristicScheduler"] + list(ALL_BASELINES)
 
+_CATEGORY_LABELS = {
+    "basic": "Category 1 (Basic)",
+    "latest": "Category 2 (Latest)",
+    "similar": "Category 3 (Similar)",
+}
 MODEL_CATEGORIES = {
     "HeuristicScheduler": "Category 0 (Heuristic)",
     "Heuristic": "Category 0 (Heuristic)",
     "Heuristic-Dynamic": "Category 0 (Heuristic)",
 }
+for _group, _names in BASELINE_CATEGORIES.items():
+    for _n in _names:
+        MODEL_CATEGORIES[_n] = _CATEGORY_LABELS.get(_group, _group)
 
 DEFAULT_DENSITIES = [15.0, 25.0, 35.0, 45.0, 55.0]
 DEFAULT_SEEDS = [42, 101, 2024, 777, 999]
 
 
-def normalize_model_name(name: str) -> str:
-    """Resolve aliases to canonical model name."""
+#: Canonical spelling for every baseline, keyed by its punctuation-free lowercase
+#: form, built from the registry so a new baseline needs no edit here.
+_CANONICAL_BY_CLEAN = {
+    n.replace("-", "").replace("_", "").lower(): n for n in ALL_BASELINES
+}
+
+
+def normalize_model_name(name: Any) -> str:
+    """Resolve an alias, or a model class, to its canonical registry name."""
+    if not isinstance(name, str):
+        # A class or instance was passed straight through; use its own name.
+        return getattr(name, "__name__", None) or type(name).__name__
     clean = name.replace("-", "").replace("_", "").lower()
     if clean in ["heuristicscheduler", "heuristic", "heuristicdynamic", "s25heuristic", "rulebased"]:
         return "HeuristicScheduler"
-    if clean in ["hybridppo", "hppo", "ppo"]:
-        return "HybridPPO"
-    if clean in ["hybridsac", "hsac", "sac"]:
-        return "HybridSAC"
-    if clean in ["hybridtd3", "htd3", "td3"]:
-        return "HybridTD3"
-    if clean in ["mappo"]:
-        return "MAPPO"
-    if clean in ["hyarppo", "hyar"]:
-        return "HyARPPO"
-    if clean in ["mpdqn", "pdqn"]:
-        return "MPDQN"
-    if clean in ["pureaoi", "whittle"]:
-        return "PureAoI"
-    if clean in ["duelingqaoi", "duelingq"]:
-        return "DuelingQAoI"
-    if clean in ["sacaoi"]:
-        return "SACAoI"
-    return name
+    return _CANONICAL_BY_CLEAN.get(clean, name)
 
 
 def load_optimal_hparams(csv_path: str) -> Dict[str, Dict[str, Any]]:
@@ -168,7 +170,9 @@ def instantiate_model(
             num_subchannels=num_channels,
         )
 
-    raise NotImplementedError("Baseline models scraped. New IEEE baselines to be provided.")
+    # Every other name is a baseline; the registry raises with a listing on a miss.
+    model_cls = get_baseline(canonical_name)
+    return model_cls(state_dim=state_dim, num_channels=num_channels, **params)
 
 
 def calculate_jains_fairness(values: List[float]) -> float:
@@ -194,7 +198,7 @@ def evaluate_single_run(
     n_steps: int = 100,
     dt: float = 1.0,
     rsu_pos: Tuple[float, float] = (0.0, 0.0),
-    rsu_range: float = 300.0,
+    rsu_range: float = RSU_RANGE,
 ) -> Dict[str, Any]:
     """
     Executes a single benchmark evaluation run on the genuine SUMO AoiV2IEnv.
@@ -211,33 +215,45 @@ def evaluate_single_run(
     )
     obs, info = env.reset()
 
-    for step in range(n_steps):
-        action_dict = {}
-        for vid, s_vec in obs.items():
-            if isinstance(model, HeuristicScheduler):
-                veh_pos = env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))
-                veh_speed = float(getattr(env, "last_speeds", {}).get(vid, 0.0))
-                st_dict = {
-                    "vid": vid,
-                    "pos": veh_pos,
-                    "speed": veh_speed,
-                    "dist_to_rsu": math.hypot(
-                        veh_pos[0] - env.target_rsu_pos[0],
-                        veh_pos[1] - env.target_rsu_pos[1],
-                    ),
-                    "current_time": env.sim_time,
-                }
-                grant = model.decide_grant(vid, st_dict)
-            else:
-                with torch.no_grad():
-                    grant, _, _ = model.select_action(s_vec, deterministic=True)
-            action_dict[vid] = grant
+    def _grant_for(vid: str, s_vec) -> Any:
+        """One grant, from whichever policy kind we were handed."""
+        if isinstance(model, HeuristicScheduler):
+            veh_pos = env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))
+            veh_speed = float(getattr(env, "last_speeds", {}).get(vid, 0.0))
+            st_dict = {
+                "vid": vid,
+                "pos": veh_pos,
+                "speed": veh_speed,
+                "dist_to_rsu": math.hypot(
+                    veh_pos[0] - env.target_rsu_pos[0],
+                    veh_pos[1] - env.target_rsu_pos[1],
+                ),
+                "current_time": env.sim_time,
+            }
+            return model.decide_grant(vid, st_dict)
+        with torch.no_grad():
+            grant, _, _ = model.select_action(s_vec, deterministic=True)
+        return grant
 
+    # Event-driven rollout, mirroring run_hot_swap_training. Granting every
+    # vehicle on every step -- which this loop used to do -- makes Delta inert
+    # and would benchmark all nine baselines on an identical transmit schedule.
+    action_dict = {vid: _grant_for(vid, s_vec) for vid, s_vec in obs.items()}
+
+    for step in range(n_steps):
         next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
+        action_dict = {
+            vid: _grant_for(vid, next_obs[vid])
+            for vid in step_info["needs_decision"]
+            if vid in next_obs
+        }
         obs = next_obs
 
     metrics = env.get_metrics()
     env.close()
+    del env
+    import gc
+    gc.collect()
 
     return {
         "density": float(density),

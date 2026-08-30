@@ -23,6 +23,7 @@ from tests.contract_adapters import (
     calculate_metrics,
 )
 from tests.conftest import DummyNode
+from src.rl_interface import STATE_DIM
 
 
 class TestE2EPipeline:
@@ -40,8 +41,8 @@ class TestE2EPipeline:
         buffer = RetrospectiveReplayBuffer(capacity=1000)
 
         # Step 2: Model setup (Act & Rest)
-        act_agent = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_agent = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_agent = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_agent = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         hot_swap_mgr = DualModelHotSwapManager(act_agent, rest_agent)
 
         # Step 3: Run interaction loop for 10 timesteps
@@ -58,7 +59,7 @@ class TestE2EPipeline:
                 }
                 # State Vectorization (18-dimensional)
                 s = vectorizer.vectorize(v_node, rsu_node, current_time=current_time, tls_info=tls_info)
-                assert len(s) == 18
+                assert len(s) == STATE_DIM
                 
                 # Act Agent Action Selection
                 grant, raw_action, info = act_agent.select_action(s, deterministic=False)

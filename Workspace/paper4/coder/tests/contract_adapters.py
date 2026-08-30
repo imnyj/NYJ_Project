@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import optuna
+from src.rl_interface import STATE_DIM
 
 # ----------------------------------------------------------------------------
 # 1. Signal Dynamics & Heuristic Scheduler (R1 / S2.5)
@@ -128,11 +129,11 @@ class HeuristicScheduler:
 
 
 # ----------------------------------------------------------------------------
-# 2. RL Agent Interface (R2 / S3) — 18D State & [10, 23] dBm, [0.1, 45] s
+# 2. RL Agent Interface (R2 / S3) — STATE_DIM State & [10, 23] dBm, [0.1, 45] s
 # ----------------------------------------------------------------------------
 
 class StateVectorizer:
-    """18-dimensional normalized State Vectorizer."""
+    """Normalized State Vectorizer (width = STATE_DIM)."""
     def __init__(
         self,
         rsu_range: float = 300.0,
@@ -144,7 +145,7 @@ class StateVectorizer:
         self.v_max = float(v_max)
         self.a_max = float(a_max)
         self.queue_max = float(queue_max)
-        self.state_dim = 18
+        self.state_dim = STATE_DIM
 
     def vectorize(
         self,
@@ -164,7 +165,7 @@ class StateVectorizer:
         except (ImportError, AttributeError):
             pass
 
-        vec = np.zeros(18, dtype=np.float32)
+        vec = np.zeros(STATE_DIM, dtype=np.float32)
         if vehicle_node is None or rsu_node is None:
             return vec
 
@@ -230,7 +231,7 @@ class StateVectorizer:
                 return real_v.vectorize_from_dict(state_dict)
         except (ImportError, AttributeError):
             pass
-        return np.zeros(18, dtype=np.float32)
+        return np.zeros(STATE_DIM, dtype=np.float32)
 
 
 class ActionDecoder:
@@ -355,10 +356,10 @@ class RetrospectiveReplayBuffer:
 # ----------------------------------------------------------------------------
 
 class DummyPolicy(nn.Module):
-    """Generic 18D test policy for hot-swap and RL pipeline verification."""
+    """Generic test policy for hot-swap and RL pipeline verification."""
     def __init__(
         self,
-        state_dim: int = 18,
+        state_dim: int = STATE_DIM,
         num_channels: int = 4,
         hidden_dim: int = 32,
         lr: float = 3e-4,
@@ -398,6 +399,11 @@ class DummyPolicy(nn.Module):
             state = torch.tensor(state, dtype=torch.float32)
         if state.dim() == 1:
             state = state.unsqueeze(0)
+        # Follow the model's own device, the way every real baseline does via
+        # BaseAgent._to_tensor. The hot-swap manager puts the Act model on the
+        # GPU when one is visible, so a CPU input crashes the forward pass.
+        device = next(self.parameters()).device if list(self.parameters()) else torch.device("cpu")
+        state = state.to(device)
         out = self.actor(state)
         ch_logits = out[:, :self.num_channels]
         cont = out[:, self.num_channels:]
@@ -452,7 +458,7 @@ def run_hpo_study(
     def objective(trial: optuna.Trial) -> float:
         hparams = sample_hparams(trial, "DummyPolicy")
         model = model_cls(**hparams)
-        dummy_state = np.random.uniform(-1, 1, size=(10, 18)).astype(np.float32)
+        dummy_state = np.random.uniform(-1, 1, size=(10, STATE_DIM)).astype(np.float32)
         total_obj = 0.0
         for s in dummy_state:
             grant, raw, _ = model.select_action(s)

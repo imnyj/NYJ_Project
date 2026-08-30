@@ -1,0 +1,65 @@
+# Split out of tests/test_dynamics_predictor.py on 2026-08-30.
+# Drove a live SUMO run through src/aoi_env.py + src/NetSim.py, both of which
+# were retired (design_spec_v2 D1). Kept for reference, not collected by pytest.
+
+# ----------------------------------------------------------------------------
+# 6. Live SUMO Integration Test
+# ----------------------------------------------------------------------------
+def test_sumo_simulation_with_heuristic_scheduler():
+    """Drive a short live SUMO run through the heuristic scheduler.
+
+    This test overrides module-level geometry/demand globals in make_sumo_set and
+    NetSim, which are shared process-wide and also drive the cached SUMO XML in
+    src/sumo/. Without restoring them, the overrides leak into every later test in
+    the session and leave generated.net.xml built for a different RSU range than the
+    project's, so the next training run has to regenerate. Everything mutated here is
+    therefore saved up front and restored in a finally block.
+    """
+    os.environ["PATH"] = f"/home/imnyj/venv/bin:{os.environ.get('PATH', '')}"
+    os.environ.setdefault("SUMO_HOME", "/home/imnyj/venv/lib/python3.12/site-packages/sumo")
+
+    import src.NetSim as net
+    import src.sumo.make_sumo_set as ss
+
+    ss_names = ("RSU_RANGE", "AV_SPEED", "DENSITY", "MAX_STEPS", "SPEED", "P_GEN")
+    net_names = ("MAX_EPISODE", "b_step_log", "b_reroute")
+    saved_ss = {n: getattr(ss, n) for n in ss_names}
+    saved_net = {n: getattr(net, n) for n in net_names}
+    saved_warmup = getattr(env, "WARMUP_S", None)
+
+    try:
+        ss.RSU_RANGE = 800.0
+        ss.AV_SPEED = 40.0
+        ss.DENSITY = 25.0
+        ss.MAX_STEPS = 60.0
+        ss.SPEED = ss.AV_SPEED / 3.6
+        ss.P_GEN = (ss.DENSITY * ss.SPEED) / 3600.0
+        net.MAX_EPISODE = 1
+        net.b_step_log = False
+        net.b_reroute = False
+
+        scheduler = HeuristicScheduler()
+        env.WARMUP_S = 15.0
+        env.set_scheduler(scheduler)
+        env.reset_env()
+
+        sim = net.SumoNetSim(
+            VehicleClass=env.VehicleNode,
+            RSUClass=env.RSUNode,
+            start_message_fn=env.start_message,
+        )
+        sim.run()
+
+        summary = env.METRICS.summary()
+        assert summary["registrations_E1"] > 0
+        assert summary["tx_attempts"] > 0
+        assert summary["tx_attempts"] == summary["tx_success"] + summary["tx_fail"]
+        assert summary["tx_success_rate"] >= 0.0
+        assert summary["mean_interval_err_integral"] >= 0.0
+    finally:
+        for name, value in saved_ss.items():
+            setattr(ss, name, value)
+        for name, value in saved_net.items():
+            setattr(net, name, value)
+        if saved_warmup is not None:
+            env.WARMUP_S = saved_warmup

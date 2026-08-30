@@ -4,7 +4,7 @@
 #
 # Implements domain-knowledge-driven scheduling rules:
 # 1. Imminent stop/start transition (I_stop or I_start >= 0.5):
-#    Force immediate update (Delta = 0.5s, high power, low-contention channel).
+#    Force immediate update (Delta = delta_min, high power, low-contention channel).
 # 2. Stopped vehicles at long red phase:
 #    Backoff (Delta = min(Delta_max, t_left - 1.0s), low power) to eliminate
 #    wasteful updates while zero-velocity extrapolation is accurate.
@@ -142,8 +142,8 @@ class HeuristicScheduler:
         # =====================================================================
         if i_stop >= 0.5 or i_start >= 0.5:
             # Non-linear velocity transition incoming: force immediate state refresh!
-            interval = self.delta_min  # 0.5s
-            power = self.p_high        # 25.0 dBm for high-reliability delivery
+            interval = self.delta_min
+            power = self.p_high        # upper bound, for high-reliability delivery
             channel = self._pick_least_loaded_channel()
             return (interval, channel, power)
 
@@ -156,7 +156,7 @@ class HeuristicScheduler:
             # Backoff: wake up just before the signal turns green (t_left - 1.0s)
             backoff_t = max(1.0, t_left - 1.0)
             interval = min(self.delta_max, backoff_t)
-            power = self.p_low          # 20.0 dBm saves energy and avoids interference
+            power = self.p_low          # lower bound, saves energy and avoids interference
             channel = self._pick_least_loaded_channel()
             return (interval, channel, power)
 

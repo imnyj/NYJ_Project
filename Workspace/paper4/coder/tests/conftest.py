@@ -10,6 +10,7 @@ import pytest
 import numpy as np
 import torch
 from tests.contract_adapters import DummyPolicy, StateVectorizer, ActionDecoder, RetrospectiveReplayBuffer
+from src.rl_interface import STATE_DIM
 
 
 class DummyNode:
@@ -41,18 +42,18 @@ def synthetic_rsu_node():
 
 @pytest.fixture
 def sample_state_vector():
-    # 18-dim normalized observation vector
-    return np.random.uniform(-0.5, 0.5, size=(18,)).astype(np.float32)
+    # Observation vector, width owned by src/rl_interface.py::STATE_DIM
+    return np.random.uniform(-0.5, 0.5, size=(STATE_DIM,)).astype(np.float32)
 
 
 @pytest.fixture
 def sample_batch():
     batch_size = 32
     return {
-        "state": torch.randn(batch_size, 18, dtype=torch.float32),
+        "state": torch.randn(batch_size, STATE_DIM, dtype=torch.float32),
         "action": torch.randn(batch_size, 3, dtype=torch.float32),
         "reward": torch.randn(batch_size, 1, dtype=torch.float32),
-        "next_state": torch.randn(batch_size, 18, dtype=torch.float32),
+        "next_state": torch.randn(batch_size, STATE_DIM, dtype=torch.float32),
         "done": torch.zeros(batch_size, 1, dtype=torch.float32),
         "delta_t": torch.ones(batch_size, 1, dtype=torch.float32) * 1.5,
     }

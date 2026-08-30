@@ -39,6 +39,7 @@ from src.evaluate import (
 )
 from src.heuristic_scheduler import HeuristicScheduler
 from tests.contract_adapters import DummyPolicy
+from src.rl_interface import STATE_DIM
 
 
 class TestShortDummyRunVerification:
@@ -56,7 +57,7 @@ class TestShortDummyRunVerification:
         for step in range(10):
             action_dict = {}
             for vid, s_vec in obs.items():
-                assert len(s_vec) == 18
+                assert len(s_vec) == STATE_DIM
                 assert np.all(s_vec >= -1.0) and np.all(s_vec <= 1.0)
                 # Hybrid action (delta=1.0s, ch=step%4, power=20.0dBm)
                 action_dict[vid] = (1.0, step % comm.NUM_SUBCHANNELS, 20.0)
@@ -79,11 +80,11 @@ class TestShortDummyRunVerification:
         assert metrics["peak_aoi"] >= metrics["mean_aoi"]
 
     def test_d2_model_instantiation_and_inference(self):
-        """D2: Verify generic model and heuristic scheduler accept 18-dim state and output valid hybrid actions."""
-        model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        """D2: Verify generic model and heuristic scheduler accept STATE_DIM-wide state and output valid hybrid actions."""
+        model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
-        # Mock normalized 18-dim state vector
-        s_vec = np.random.uniform(-0.8, 0.8, size=18).astype(np.float32)
+        # Mock normalized STATE_DIM-wide state vector
+        s_vec = np.random.uniform(-0.8, 0.8, size=STATE_DIM).astype(np.float32)
 
         # Model inference
         grant, raw_action, info = model.select_action(s_vec, deterministic=False)
@@ -108,8 +109,8 @@ class TestShortDummyRunVerification:
 
         # Ingest 8 dummy transitions
         for i in range(8):
-            s = np.random.uniform(-0.5, 0.5, size=18).astype(np.float32)
-            ns = np.random.uniform(-0.5, 0.5, size=18).astype(np.float32)
+            s = np.random.uniform(-0.5, 0.5, size=STATE_DIM).astype(np.float32)
+            ns = np.random.uniform(-0.5, 0.5, size=STATE_DIM).astype(np.float32)
             trainer.streamer.push(
                 state=s,
                 action=np.array([0.0, 1.0, 0.0], dtype=np.float32),
@@ -189,8 +190,8 @@ class TestShortDummyRunVerification:
         env.close()
 
         # Step 2: Policy inference
-        s_vec = np.zeros(18, dtype=np.float32)
-        m = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        s_vec = np.zeros(STATE_DIM, dtype=np.float32)
+        m = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         m.select_action(s_vec)
 
         # Step 3: Hot-swap step

@@ -1,0 +1,754 @@
+     1	# src/rl_interface.py
+     2	# ============================================================================
+     3	# RL Agent Interface for AoI-aware V2I Uplink Scheduling Pipeline
+     4	#
+     5	# Implements:
+     6	# 1. StateVectorizer: 17-dimensional normalized observation vector in [-1.0, 1.0]
+     7	#    from the RSU perspective without future / ground-truth estimation error leakage.
+     8	# 2. ActionDecoder: Decodes hybrid action space (logits & indices) into valid
+     9	#    grant 3-tuple (Delta in [DELTA_MIN, DELTA_MAX]s, ch in {0..3}, p in [P_MIN, P_MAX]dBm).
+    10	# 3. RetrospectiveReplayBuffer: SMDP retrospective transition buffer with
+    11	#    variable-interval discount gamma^Delta support.
+    12	#
+    13	# This module is the SINGLE SOURCE OF TRUTH for the observation dimension
+    14	# (STATE_DIM) and for the hybrid action bounds (DELTA_MIN/MAX, P_MIN/MAX).
+    15	# Downstream code (hot_swap_trainer, hpo, evaluate, baselines) must read those
+    16	# from here instead of duplicating literals.
+    17	# ============================================================================
+    18	
+    19	from __future__ import annotations
+    20	import math
+    21	import os
+    22	from typing import Any, Dict, List, Optional, Tuple, Union
+    23	import xml.etree.ElementTree as ET
+    24	import numpy as np
+    25	import torch
+    26	
+    27	# ----------------------------------------------------------------------------
+    28	# Canonical design constants (Conversation.md sections 1-2, user-approved).
+    29	# ----------------------------------------------------------------------------
+    30	#: Observation dimension emitted by StateVectorizer.
+    31	#: 18 -> 17 (2026-08-29, design_spec_v2 D4): the hand-synthesised
+    32	#: `stop/start_imminent` feature was removed. It was an arithmetic mean of two
+    33	#: quantities the vector already carries independently (time_to_switch and
+    34	#: dist_to_stopline), i.e. a derived feature that pre-computes for the network
+    35	#: what the network should learn for itself.
+    36	STATE_DIM: int = 17
+    37	
+    38	#: Transmit power bounds, dBm.
+    39	#: 23 dBm is the 3GPP TS 36.101 / 38.101 power-class-3 UE maximum transmit power;
+    40	#: 10 dBm is the design-approved lower bound for a usable V2I uplink.
+    41	P_MIN: float = 10.0
+    42	P_MAX: float = 23.0
+    43	
+    44	#: Delta (update interval) minimum, seconds (ETSI EN 302 637-2 CAM T_GenCamMin).
+    45	DELTA_MIN: float = 0.1
+    46	
+    47	
+    48	def get_sumo_max_red_phase_duration(
+    49	    net_file: Optional[str] = None,
+    50	    default_duration: float = 45.0,
+    51	) -> float:
+    52	    """
+    53	    Dynamically extract the maximum Red traffic light phase duration (seconds)
+    54	    from SUMO's generated network XML file (generated.net.xml) or TraCI.
+    55	
+    56	    Parses all <tlLogic> program definitions in the net file, computes for each
+    57	    signal link across cyclic phases the maximum consecutive duration of 'r'/'R'
+    58	    phases (handling cycle wrap-around), and returns the overall maximum.
+    59	
+    60	    If the network file is not yet generated or cannot be parsed, falls back
+    61	    safely to `default_duration` (45.0 s).
+    62	    """
+    63	    if net_file is None:
+    64	        base_dir = os.path.dirname(os.path.abspath(__file__))
+    65	        net_file = os.path.join(base_dir, "sumo", "generated.net.xml")
+    66	
+    67	    if not os.path.exists(net_file):
+    68	        return default_duration
+    69	
+    70	    try:
+    71	        tree = ET.parse(net_file)
+    72	        root = tree.getroot()
+    73	        max_red = 0.0
+    74	
+    75	        for tl in root.findall("tlLogic"):
+    76	            phases = tl.findall("phase")
+    77	            if not phases:
+    78	                continue
+    79	            durations = [float(p.get("duration", 0.0)) for p in phases]
+    80	            states = [p.get("state", "") for p in phases]
+    81	            if not states or not durations:
+    82	                continue
+    83	            num_links = max(len(s) for s in states)
+    84	            n_phases = len(phases)
+    85	
+    86	            for link_idx in range(num_links):
+    87	                curr_red = 0.0
+    88	                max_link_red = 0.0
+    89	                # Double the cycle to handle cyclic wrap-around
+    90	                for step in range(2 * n_phases):
+    91	                    p_idx = step % n_phases
+    92	                    char = states[p_idx][link_idx] if link_idx < len(states[p_idx]) else "g"
+    93	                    if char in ("r", "R"):
+    94	                        curr_red += durations[p_idx]
+    95	                        if curr_red > max_link_red:
+    96	                            max_link_red = curr_red
+    97	                    else:
+    98	                        curr_red = 0.0
+    99	                total_cycle = sum(durations)
+   100	                max_link_red = min(max_link_red, total_cycle)
+   101	                if max_link_red > max_red:
+   102	                    max_red = max_link_red
+   103	
+   104	        return float(max_red) if max_red > 0.0 else default_duration
+   105	    except Exception:
+   106	        return default_duration
+   107	
+   108	
+   109	#: Delta (update interval) maximum, dynamically extracted from SUMO net XML.
+   110	DELTA_MAX: float = get_sumo_max_red_phase_duration()
+   111	
+   112	
+   113	def get_sumo_max_edge_speed(
+   114	    net_file: Optional[str] = None,
+   115	    default_speed: float = 13.32,
+   116	) -> float:
+   117	    """
+   118	    Maximum lane speed limit (m/s) declared anywhere in the generated network.
+   119	
+   120	    Read from the net file for the same reason `DELTA_MAX` is: a normalisation
+   121	    constant that is silently inconsistent with the scenario it normalises is a
+   122	    defect waiting to happen. `make_sumo_set.py` randomises each edge's speed
+   123	    around `AV_SPEED` with +/- `DEL_SPEED`, so the effective limit is a property
+   124	    of the generated network, not a literal anyone can restate correctly.
+   125	
+   126	    Falls back to `default_speed` (the 40 km/h + 20 % case) when the network has
+   127	    not been generated yet.
+   128	    """
+   129	    if net_file is None:
+   130	        base_dir = os.path.dirname(os.path.abspath(__file__))
+   131	        net_file = os.path.join(base_dir, "sumo", "generated.net.xml")
+   132	
+   133	    if not os.path.exists(net_file):
+   134	        return default_speed
+   135	
+   136	    try:
+   137	        tree = ET.parse(net_file)
+   138	        root = tree.getroot()
+   139	        speeds = []
+   140	        for edge in root.findall("edge"):
+   141	            # Internal junction edges inherit their speed from the corner limit
+   142	            # and would drag the maximum down; they are not where vehicles cruise.
+   143	            if edge.get("function") == "internal":
+   144	                continue
+   145	            for lane in edge.findall("lane"):
+   146	                v = lane.get("speed")
+   147	                if v is not None:
+   148	                    speeds.append(float(v))
+   149	        return float(max(speeds)) if speeds else default_speed
+   150	    except Exception:
+   151	        return default_speed
+   152	
+   153	
+   154	#: Scenario speed limit (m/s), derived from the generated network.
+   155	V_LIMIT: float = get_sumo_max_edge_speed()
+   156	
+   157	#: RSU communication range (m). `src/sumo/make_sumo_set.py` owns this value --
+   158	#: it is what actually builds the network geometry (EDGE_LENGTH is derived from
+   159	#: it) -- so every consumer must read it from there instead of restating 300.0.
+   160	#: A literal here would go stale the moment anyone sweeps the range, and the
+   161	#: mismatch would be silent: observations would normalise distances against one
+   162	#: radius while the environment admitted vehicles using another.
+   163	try:
+   164	    from src.sumo.make_sumo_set import RSU_RANGE as _SS_RSU_RANGE
+   165	    RSU_RANGE: float = float(_SS_RSU_RANGE)
+   166	except Exception:  # pragma: no cover - only when the sumo package is unavailable
+   167	    RSU_RANGE = 300.0
+   168	
+   169	def refresh_scenario_constants() -> Dict[str, float]:
+   170	    """Re-read the scenario-derived constants from the generated network.
+   171	
+   172	    DELTA_MAX, V_LIMIT and E_REF describe the network on disk, not this module.
+   173	    They are computed once at import, which is wrong the moment `make_sumo_files()`
+   174	    writes a different network afterwards -- a changed signal plan moves DELTA_MAX,
+   175	    a changed AV_SPEED moves V_LIMIT and E_REF, and nothing would notice. The
+   176	    environment calls this right after generating its network, so the constants
+   177	    describe the scenario actually being simulated.
+   178	
+   179	    Consumers must read these through a live lookup rather than capturing them in
+   180	    a default argument, which binds at definition time. `ActionDecoder` and
+   181	    `StateVectorizer` take 0.0 to mean "resolve now"; `norm_sq_error` reads the
+   182	    module global on every call.
+   183	    """
+   184	    global DELTA_MAX, V_LIMIT, E_REF
+   185	    DELTA_MAX = get_sumo_max_red_phase_duration()
+   186	    V_LIMIT = get_sumo_max_edge_speed()
+   187	    E_REF = V_LIMIT * 1.0
+   188	    return {"DELTA_MAX": DELTA_MAX, "V_LIMIT": V_LIMIT, "E_REF": E_REF}
+   189	
+   190	
+   191	#: Estimation-error reference scale (metres), design_spec_v2 D5.
+   192	#:
+   193	#: One second of travel at the scenario speed limit. The point of dividing a
+   194	#: position error by a speed is that it converts metres into an *equivalent age*:
+   195	#: `e = E_REF` means the RSU's belief about this vehicle is as wrong as if it had
+   196	#: simply not heard from it for one second. That is the natural unit for an AoI
+   197	#: paper, and unlike a bare literal it follows the scenario automatically -- raise
+   198	#: `AV_SPEED` in make_sumo_set.py and this tracks it.
+   199	#:
+   200	#: NOT the RSU communication range: `e` is a positioning error, the range is a
+   201	#: link-budget quantity, and normalising one by the other pushes the error term
+   202	#: roughly two orders of magnitude below the power term. Since `hpo.py` normalises
+   203	#: w1..w4 to sum to 1, no weight Optuna can sample recovers from that.
+   204	E_REF: float = V_LIMIT * 1.0
+   205	
+   206	
+   207	def extrapolate(last_pos: Tuple[float, float],
+   208	                last_vel: Tuple[float, float],
+   209	                age: float) -> Tuple[float, float]:
+   210	    """The RSU's dead-reckoned belief: last reported position carried forward.
+   211	
+   212	        p_hat(t) = p_last + v_last * age
+   213	
+   214	    Constant-velocity extrapolation is deliberate, not a simplification to
+   215	    apologise for: it is what makes a stopped vehicle's stale record stay exact
+   216	    (v = 0 so the belief never drifts) while a manoeuvring one decays. That
+   217	    asymmetry is the whole premise of scheduling updates by need.
+   218	    """
+   219	    return (float(last_pos[0]) + float(last_vel[0]) * float(age),
+   220	            float(last_pos[1]) + float(last_vel[1]) * float(age))
+   221	
+   222	
+   223	def estimation_error(true_pos: Tuple[float, float],
+   224	                     last_pos: Tuple[float, float],
+   225	                     last_vel: Tuple[float, float],
+   226	                     age: float) -> float:
+   227	    """Euclidean distance between ground truth and the RSU's extrapolation.
+   228	
+   229	    This is `e` in the reward: the quantity `norm_sq_error` squashes and the
+   230	    quantity `I_redundant` thresholds. One definition, one function, so the
+   231	    paper's symbol and the code cannot drift apart.
+   232	    """
+   233	    ex, ey = extrapolate(last_pos, last_vel, age)
+   234	    return math.hypot(float(true_pos[0]) - ex, float(true_pos[1]) - ey)
+   235	
+   236	
+   237	def norm_sq_error(err_m: float, e_ref: float = 0.0) -> float:
+   238	    """Normalise a squared position error into [0, 1) -- design_spec_v2 D5.
+   239	
+   240	        Norm(e^2) = e^2 / (e^2 + e_ref^2)
+   241	
+   242	    Chosen over `min(1, e^2 / e_max^2)` because the clipped form has zero
+   243	    gradient everywhere past `e_max`. With Delta reaching 45 s a moving vehicle
+   244	    leaves that region within about a second, so the clipped form would stop
+   245	    distinguishing "slightly stale" from "hopelessly stale" exactly where the
+   246	    scheduling decision matters. This form is strictly monotone in `e`, equals
+   247	    0.5 at `e = e_ref`, and never saturates.
+   248	    """
+   249	    ref = float(e_ref) if e_ref and e_ref > 0.0 else E_REF
+   250	    e2 = float(err_m) ** 2
+   251	    return float(e2 / (e2 + ref * ref)) if (e2 + ref * ref) > 0.0 else 0.0
+   252	
+   253	
+   254	class StateVectorizer:
+   255	    """
+   256	    Normalized State Vectorizer; the width is STATE_DIM, never a literal.
+   257	
+   258	    Transforms raw vehicle kinematics, RSU spatial metrics, TraCI TLS signal states,
+   259	    and channel congestion indicators into a normalized feature vector in [-1.0, 1.0].
+   260	
+   261	    Features:
+   262	    [0]  Last prediction error, normalized: norm_sq_error(e_last) in [0.0, 1.0).
+   263	         How wrong the RSU's dead reckoning was at this vehicle's most recent
+   264	         update. Replaces the former normalized-age slot, which is identically
+   265	         zero at every SMDP decision epoch and therefore carried no signal.
+   266	    [1]  Normalized Vx: clip(vx / v_max, -1.0, 1.0)
+   267	    [2]  Normalized Vy: clip(vy / v_max, -1.0, 1.0)
+   268	    [3]  Normalized Speed: clip(speed / v_max, 0.0, 1.0)
+   269	    [4]  Normalized Acceleration: clip(accel / a_max, -1.0, 1.0)
+   270	    [5]  Relative X: clip(dx / rsu_range, -1.0, 1.0)
+   271	    [6]  Relative Y: clip(dy / rsu_range, -1.0, 1.0)
+   272	    [7]  Normalized Distance: clip(dist / rsu_range, 0.0, 1.0)
+   273	    [8]  TLS Red one-hot: 1.0 if red else 0.0
+   274	    [9]  TLS Yellow one-hot: 1.0 if yellow else 0.0
+   275	    [10] TLS Green one-hot: 1.0 if green else 0.0
+   276	    [11] Phase remaining time: clip(time_to_switch / 60.0, 0.0, 1.0)
+   277	    [12] Distance to stopline: clip(dist_to_stopline / rsu_range, 0.0, 1.0)
+   278	    [13] Active vehicles in cell: clip(n_active / 100.0, 0.0, 1.0)
+   279	    [14] Channel Busy Ratio (CBR): clip(cbr, 0.0, 1.0)
+   280	    [15] n_queue (Conversation.md S1): normalized number of vehicles queued ahead in the
+   281	         same lane -- clip(n_queue / queue_max, 0.0, 1.0)
+   282	    [16] heading (Conversation.md S1): signed approach/recede indicator w.r.t. the RSU --
+   283	         cos(angle between velocity vector and the vehicle->RSU vector) in [-1.0, 1.0].
+   284	         +1.0 = driving straight at the RSU, -1.0 = driving straight away, 0.0 = stopped
+   285	         or moving tangentially.
+   286	    """
+   287	
+   288	    #: Canonical observation dimension (module-level single source of truth).
+   289	    STATE_DIM: int = STATE_DIM
+   290	
+   291	    def __init__(
+   292	        self,
+   293	        rsu_range: float = 0.0,
+   294	        v_max: float = 0.0,
+   295	        a_max: float = 5.0,
+   296	        queue_max: float = 20.0,
+   297	    ) -> None:
+   298	        # 0 means "derive from the scenario", same convention as v_max below.
+   299	        self.rsu_range = float(rsu_range) if rsu_range and rsu_range > 0.0 else RSU_RANGE
+   300	        # 0 means "derive from the scenario". The former literal 30.0 m/s was
+   301	        # 2.3x the fastest lane in the generated network, so the speed features
+   302	        # only ever used the bottom 44 % of their range.
+   303	        self.v_max = float(v_max) if v_max and v_max > 0.0 else V_LIMIT
+   304	        self.a_max = float(a_max)
+   305	        self.queue_max = max(1.0, float(queue_max))
+   306	
+   307	    @property
+   308	    def state_dim(self) -> int:
+   309	        """Dimension of the emitted observation vector. Read this instead of hardcoding."""
+   310	        return STATE_DIM
+   311	
+   312	    # ------------------------------------------------------------------
+   313	    # Feature helpers for the two design-mandated features (n_queue, heading)
+   314	    # ------------------------------------------------------------------
+   315	    @staticmethod
+   316	    def _extract_queue_count(*sources: Optional[Dict[str, Any]]) -> float:
+   317	        """
+   318	        Recover the number of vehicles queued ahead in the same lane from whatever
+   319	        telemetry the dynamics/TLS feature dicts expose.
+   320	
+   321	        Preferred keys are a real halting count published by the SUMO layer
+   322	        (TraCI lane.getLastStepHaltingNumber). If none is present, fall back to the
+   323	        leader-vehicle signal already produced by dynamics_predictor.extract_tls_features:
+   324	        a stopped/crawling leader within a plausible queue gap implies at least one
+   325	        vehicle queued ahead.
+   326	        """
+   327	        for src in sources:
+   328	            if not src:
+   329	                continue
+   330	            for key in ("n_queue", "queue_length", "lane_halting_number", "halting_number"):
+   331	                val = src.get(key)
+   332	                if val is not None:
+   333	                    try:
+   334	                        return max(0.0, float(val))
+   335	                    except (TypeError, ValueError):
+   336	                        continue
+   337	        for src in sources:
+   338	            if not src:
+   339	                continue
+   340	            gap = src.get("leader_gap")
+   341	            lspd = src.get("leader_speed")
+   342	            if gap is None or lspd is None:
+   343	                continue
+   344	            try:
+   345	                gap_f, lspd_f = float(gap), float(lspd)
+   346	            except (TypeError, ValueError):
+   347	                continue
+   348	            if math.isfinite(gap_f) and gap_f <= 30.0 and lspd_f <= 1.0:
+   349	                return 1.0
+   350	            return 0.0
+   351	        return 0.0
+   352	
+   353	    @staticmethod
+   354	    def _compute_heading(vx: float, vy: float, dx: float, dy: float) -> float:
+   355	        """
+   356	        Signed approach/recede indicator in [-1.0, 1.0].
+   357	
+   358	        dx, dy are the RSU-relative coordinates of the vehicle (vehicle - RSU), so the
+   359	        vehicle->RSU direction is (-dx, -dy). Returns the normalized dot product of the
+   360	        velocity vector with that direction: +1 approaching head-on, -1 receding,
+   361	        0 when stopped or exactly at the RSU.
+   362	        """
+   363	        speed = math.hypot(vx, vy)
+   364	        dist = math.hypot(dx, dy)
+   365	        if speed < 1e-6 or dist < 1e-6:
+   366	            return 0.0
+   367	        cos_theta = (vx * (-dx) + vy * (-dy)) / (speed * dist)
+   368	        return float(np.clip(cos_theta, -1.0, 1.0))
+   369	
+   370	    def vectorize(
+   371	        self,
+   372	        vehicle_node: Any,
+   373	        rsu_node: Any,
+   374	        current_time: float,
+   375	        tls_info: Optional[Dict[str, Any]] = None,
+   376	        cbr: float = 0.0,
+   377	        n_active: int = 1,
+   378	        n_queue: Optional[float] = None,
+   379	    ) -> np.ndarray:
+   380	        """
+   381	        Vectorize node objects into a 17-dim normalized observation vector.
+   382	
+   383	        n_queue: explicit count of vehicles queued ahead in the same lane. When None
+   384	        it is recovered from the TLS/dynamics feature dict (see _extract_queue_count).
+   385	        """
+   386	        vec = np.zeros(STATE_DIM, dtype=np.float32)
+   387	        if vehicle_node is None or rsu_node is None:
+   388	            return vec
+   389	
+   390	        # [0] Quality of the RSU's last prediction (see vectorize_from_dict).
+   391	        vec[0] = norm_sq_error(float(getattr(vehicle_node, "last_pred_err", 0.0)))
+   392	
+   393	        # [1-3] Velocities and speed
+   394	        vel = getattr(vehicle_node, "vel", (0.0, 0.0))
+   395	        if hasattr(vehicle_node, "speed"):
+   396	            spd_val = vehicle_node.speed() if callable(vehicle_node.speed) else vehicle_node.speed
+   397	        else:
+   398	            spd_val = math.hypot(vel[0], vel[1])
+   399	        
+   400	        vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
+   401	        vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
+   402	        vec[3] = np.clip(float(spd_val) / self.v_max, 0.0, 1.0)
+   403	
+   404	        # [4] Acceleration
+   405	        accel = getattr(vehicle_node, "accel", 0.0)
+   406	        vec[4] = np.clip(float(accel) / self.a_max, -1.0, 1.0)
+   407	
+   408	        # [5-7] Relative coordinates and Distance to RSU
+   409	        pos = getattr(vehicle_node, "pos", (0.0, 0.0))
+   410	        rsu_pos = getattr(rsu_node, "pos", (0.0, 0.0))
+   411	        dx = float(pos[0] - rsu_pos[0])
+   412	        dy = float(pos[1] - rsu_pos[1])
+   413	        dist = math.hypot(dx, dy)
+   414	        vec[5] = np.clip(dx / self.rsu_range, -1.0, 1.0)
+   415	        vec[6] = np.clip(dy / self.rsu_range, -1.0, 1.0)
+   416	        vec[7] = np.clip(dist / self.rsu_range, 0.0, 1.0)
+   417	
+   418	        # [8-12] TLS features (TraCI)
+   419	        tls = tls_info or {}
+   420	        if not tls and hasattr(vehicle_node, "_state_dict"):
+   421	            st = vehicle_node._state_dict()
+   422	            tls = st.get("tls_features", {})
+   423	
+   424	        state = str(tls.get("state", "g")).lower()
+   425	        vec[8] = 1.0 if state in ["r", "red"] else 0.0
+   426	        vec[9] = 1.0 if state in ["y", "yellow"] else 0.0
+   427	        vec[10] = 1.0 if state in ["g", "green"] else 0.0
+   428	
+   429	        t_switch = float(tls.get("time_to_switch", 30.0))
+   430	        vec[11] = np.clip(t_switch / 60.0, 0.0, 1.0)
+   431	
+   432	        d_stop = float(tls.get("dist_to_stopline", self.rsu_range))
+   433	        vec[12] = np.clip(d_stop / self.rsu_range, 0.0, 1.0)
+   434	
+   435	        # [13-14] Network contention and measured channel occupancy
+   436	        vec[13] = np.clip(float(n_active) / 100.0, 0.0, 1.0)
+   437	        vec[14] = np.clip(float(cbr), 0.0, 1.0)
+   438	
+   439	        # [15] n_queue: vehicles queued ahead in the same lane (design S1)
+   440	        if n_queue is None:
+   441	            q_cnt = self._extract_queue_count(tls, getattr(vehicle_node, "__dict__", None))
+   442	        else:
+   443	            q_cnt = max(0.0, float(n_queue))
+   444	        vec[15] = np.clip(q_cnt / self.queue_max, 0.0, 1.0)
+   445	
+   446	        # [16] heading: signed approach (+) / recede (-) indicator w.r.t. the RSU (design S1)
+   447	        vec[16] = self._compute_heading(float(vel[0]), float(vel[1]), dx, dy)
+   448	
+   449	        return vec
+   450	
+   451	    def vectorize_from_dict(self, state_dict: Dict[str, Any], rsu_pos: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+   452	        """
+   453	        Convenience method to vectorize directly from a state dictionary.
+   454	        """
+   455	        vec = np.zeros(STATE_DIM, dtype=np.float32)
+   456	        pos = state_dict.get("pos", (0.0, 0.0))
+   457	        vel = state_dict.get("vel", (0.0, 0.0))
+   458	        speed = state_dict.get("speed", math.hypot(vel[0], vel[1]))
+   459	        accel = state_dict.get("accel", 0.0)
+   460	        # [0] Quality of the RSU's last prediction for this vehicle.
+   461	        #
+   462	        # This slot used to hold normalized age. Under the SMDP formulation age
+   463	        # is structurally zero at every decision epoch -- the RSU decides right
+   464	        # after an update lands -- so the feature reached the policy as a
+   465	        # constant and carried nothing. Measured: 1 unique value over a full run.
+   466	        #
+   467	        # What the RSU does know at that instant, for free, is how wrong its
+   468	        # dead-reckoned belief turned out to be just before the report arrived.
+   469	        # That is a direct read on how far this particular vehicle can be trusted
+   470	        # to stay predictable, which is exactly what choosing Delta needs.
+   471	        vec[0] = norm_sq_error(float(state_dict.get("last_pred_err", 0.0)))
+   472	        vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
+   473	        vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
+   474	        vec[3] = np.clip(float(speed) / self.v_max, 0.0, 1.0)
+   475	        vec[4] = np.clip(float(accel) / self.a_max, -1.0, 1.0)
+   476	
+   477	        dx = float(pos[0] - rsu_pos[0])
+   478	        dy = float(pos[1] - rsu_pos[1])
+   479	        dist = state_dict.get("dist_to_rsu", math.hypot(dx, dy))
+   480	        vec[5] = np.clip(dx / self.rsu_range, -1.0, 1.0)
+   481	        vec[6] = np.clip(dy / self.rsu_range, -1.0, 1.0)
+   482	        vec[7] = np.clip(float(dist) / self.rsu_range, 0.0, 1.0)
+   483	
+   484	        tls = state_dict.get("tls_features", state_dict)
+   485	        state = str(tls.get("state", "g")).lower()
+   486	        vec[8] = 1.0 if state in ["r", "red"] else 0.0
+   487	        vec[9] = 1.0 if state in ["y", "yellow"] else 0.0
+   488	        vec[10] = 1.0 if state in ["g", "green"] else 0.0
+   489	        vec[11] = np.clip(float(tls.get("time_to_switch", 30.0)) / 60.0, 0.0, 1.0)
+   490	        vec[12] = np.clip(float(tls.get("dist_to_stopline", self.rsu_range)) / self.rsu_range, 0.0, 1.0)
+   491	
+   492	        vec[13] = np.clip(float(state_dict.get("n_active", 1)) / 100.0, 0.0, 1.0)
+   493	        vec[14] = np.clip(float(state_dict.get("cbr", 0.0)), 0.0, 1.0)
+   494	
+   495	        # [15] n_queue: vehicles queued ahead in the same lane (design S1).
+   496	        # Prefer an explicit count on the state dict, then the TLS/dynamics feature
+   497	        # dict, then the leader-vehicle fallback.
+   498	        q_cnt = self._extract_queue_count(state_dict, tls)
+   499	        vec[15] = np.clip(q_cnt / self.queue_max, 0.0, 1.0)
+   500	
+   501	        # [16] heading: signed approach (+) / recede (-) indicator w.r.t. the RSU (design S1)
+   502	        vec[16] = self._compute_heading(float(vel[0]), float(vel[1]), dx, dy)
+   503	
+   504	        return vec
+   505	
+   506	
+   507	class ActionDecoder:
+   508	    """
+   509	    Hybrid Action Space Decoder.
+   510	    
+   511	    Decodes raw model logits or tensor outputs into a concrete uplink grant 3-tuple:
+   512	    (Delta in [0.1, 45.0]s, ch in {0, 1, 2, 3}, power in [10.0, 23.0]dBm).
+   513	
+   514	    These bounds are the user-approved design (Conversation.md S2) and are the SINGLE
+   515	    SOURCE OF TRUTH for the action space. Rationale for the record:
+   516	      * p_max = 23 dBm -- 3GPP TS 36.101/38.101 power-class-3 UE maximum transmit power.
+   517	      * delta_min = 0.1 s -- ETSI EN 302 637-2 CAM minimum generation interval
+   518	        (T_GenCamMin); generating faster than this is not standards-compliant.
+   519	      * delta_max = 45.0 s -- worst-case standstill duration in the actual SUMO
+   520	        scenario (generated.net.xml tlLogic: green 42 s + yellow 3 s => 45 s red per
+   521	        approach), i.e. the longest interval over which a stopped vehicle's mobility
+   522	        state provably need not be refreshed.
+   523	
+   524	    Delta mapping is GEOMETRIC, not linear. The Delta range spans a factor of 450, so a
+   525	    linear interpolation of sigmoid(logit) would need u ~= 0.0089 just to emit 0.5 s and
+   526	    would destroy all resolution in the short-interval regime. Instead:
+   527	
+   528	        u     = sigmoid(raw_delta)                              in [0, 1]
+   529	        delta = delta_min * (delta_max / delta_min) ** u        (inverse: u = log(d/d_min)/log(d_max/d_min))
+   530	
+   531	    which gives uniform *relative* resolution across u. Power stays linear: dBm is
+   532	    already a logarithmic unit.
+   533	
+   534	    Downstream code must read delta_min/delta_max/p_min/p_max off the decoder
+   535	    instance rather than duplicating the literals.
+   536	    """
+   537	
+   538	    def __init__(
+   539	        self,
+   540	        num_channels: int = 4,
+   541	        delta_min: float = DELTA_MIN,
+   542	        delta_max: float = 0.0,
+   543	        p_min: float = P_MIN,
+   544	        p_max: float = P_MAX,
+   545	    ) -> None:
+   546	        self.num_channels = int(num_channels)
+   547	        self.delta_min = float(delta_min)
+   548	        # 0.0 means "resolve from the scenario now". A `= DELTA_MAX` default
+   549	        # would bind the value at import time and ignore any later network.
+   550	        self.delta_max = float(delta_max) if delta_max and delta_max > 0.0 else DELTA_MAX
+   551	        self.p_min = float(p_min)
+   552	        self.p_max = float(p_max)
+   553	        # log(delta_max / delta_min): the geometric span used by the Delta mapping.
+   554	        # Guarded so a degenerate delta_min == delta_max decoder still works.
+   555	        if self.delta_min > 0.0 and self.delta_max > self.delta_min:
+   556	            self._log_delta_ratio = math.log(self.delta_max / self.delta_min)
+   557	        else:
+   558	            self._log_delta_ratio = 0.0
+   559	
+   560	    def delta_from_unit(self, u: float) -> float:
+   561	        """Geometric map u in [0, 1] -> Delta in [delta_min, delta_max]."""
+   562	        u = min(max(float(u), 0.0), 1.0)
+   563	        if self._log_delta_ratio <= 0.0:
+   564	            # Degenerate range: fall back to linear interpolation.
+   565	            return self.delta_min + u * (self.delta_max - self.delta_min)
+   566	        if u <= 0.0:
+   567	            return self.delta_min
+   568	        if u >= 1.0:
+   569	            return self.delta_max
+   570	        return self.delta_min * math.exp(u * self._log_delta_ratio)
+   571	
+   572	    def unit_from_delta(self, delta: float) -> float:
+   573	        """Inverse geometric map Delta -> u in [0, 1]."""
+   574	        d = min(max(float(delta), self.delta_min), self.delta_max)
+   575	        if self._log_delta_ratio <= 0.0:
+   576	            return (d - self.delta_min) / max(1e-6, self.delta_max - self.delta_min)
+   577	        return math.log(d / self.delta_min) / self._log_delta_ratio
+   578	
+   579	    @staticmethod
+   580	    def _sigmoid(x: float) -> float:
+   581	        if x < -50.0:
+   582	            return 0.0
+   583	        if x > 50.0:
+   584	            return 1.0
+   585	        return 1.0 / (1.0 + math.exp(-x))
+   586	
+   587	    @staticmethod
+   588	    def _logit(p: float) -> float:
+   589	        p_clamped = min(max(p, 1e-6), 1.0 - 1e-6)
+   590	        return math.log(p_clamped / (1.0 - p_clamped))
+   591	
+   592	    def decode_action(self, raw_action: Any) -> Tuple[float, int, float]:
+   593	        """
+   594	        Decodes raw action into (delta_s, channel_idx, power_dbm).
+   595	        """
+   596	        if isinstance(raw_action, dict):
+   597	            raw_delta = raw_action.get("delta", raw_action.get("delta_raw", 0.0))
+   598	            raw_ch = raw_action.get("ch", raw_action.get("channel_idx", 0))
+   599	            raw_p = raw_action.get("power", raw_action.get("tx_power_dbm", 0.0))
+   600	        elif isinstance(raw_action, (list, tuple, np.ndarray, torch.Tensor)):
+   601	            if isinstance(raw_action, torch.Tensor):
+   602	                raw_action = raw_action.detach().cpu().numpy().flatten()
+   603	            raw_list = list(raw_action)
+   604	            if len(raw_list) >= 3:
+   605	                raw_delta, raw_ch, raw_p = raw_list[0], raw_list[1], raw_list[2]
+   606	            elif len(raw_list) == 2:
+   607	                raw_delta, raw_ch, raw_p = raw_list[0], 0, raw_list[1]
+   608	            elif len(raw_list) == 1:
+   609	                raw_delta, raw_ch, raw_p = raw_list[0], 0, 0.0
+   610	            else:
+   611	                raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
+   612	        else:
+   613	            raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
+   614	
+   615	        # Continuous delta mapping, GEOMETRIC over [delta_min, delta_max].
+   616	        # This used to be a linear interpolation of the sigmoid, which contradicted
+   617	        # this class's own docstring and `delta_from_unit`. The two disagree by an
+   618	        # order of magnitude in the region the scheduler lives in: at logit 0 the
+   619	        # linear form emits 22.55 s where the geometric one emits 2.12 s. Every
+   620	        # baseline calls `delta_from_unit` directly, so the linear form never
+   621	        # reached a run -- but it was one fallback away from silently halving the
+   622	        # resolution of the short-interval regime the paper is about.
+   623	        sig_d = self._sigmoid(float(raw_delta))
+   624	        delta = self.delta_from_unit(sig_d)
+   625	
+   626	        # Discrete channel mapping {0..num_channels-1}
+   627	        ch = int(round(float(raw_ch))) % self.num_channels
+   628	
+   629	        # Continuous power mapping [p_min, p_max]
+   630	        sig_p = self._sigmoid(float(raw_p))
+   631	        power = self.p_min + sig_p * (self.p_max - self.p_min)
+   632	
+   633	        return (float(delta), int(ch), float(power))
+   634	
+   635	    def encode_action(self, delta: float, ch: int, power: float) -> np.ndarray:
+   636	        """Inverse of `decode_action`: (delta, ch, power) back to raw logits.
+   637	
+   638	        Delta inverts through `unit_from_delta` so the pair stays geometric on
+   639	        both sides. Power stays linear because dBm is already a log unit.
+   640	        """
+   641	        norm_d = self.unit_from_delta(delta)
+   642	        norm_p = (power - self.p_min) / max(1e-6, self.p_max - self.p_min)
+   643	        raw_d = self._logit(norm_d)
+   644	        raw_p = self._logit(norm_p)
+   645	        return np.array([raw_d, float(ch), raw_p], dtype=np.float32)
+   646	
+   647	
+   648	class RetrospectiveReplayBuffer:
+   649	    """
+   650	    SMDP Retrospective Replay Buffer with variable-interval discount gamma^Delta support.
+   651	    """
+   652	
+   653	    def __init__(self, capacity: int = 10000, gamma: float = 0.99) -> None:
+   654	        self.capacity = int(capacity)
+   655	        self.gamma = float(gamma)
+   656	        self.buffer: List[Dict[str, Any]] = []
+   657	        self.position = 0
+   658	
+   659	    def push(
+   660	        self,
+   661	        state: Union[np.ndarray, torch.Tensor, List[float]],
+   662	        action: Union[np.ndarray, torch.Tensor, List[float], Tuple[float, ...]],
+   663	        reward: float,
+   664	        next_state: Union[np.ndarray, torch.Tensor, List[float]],
+   665	        done: bool,
+   666	        delta_t: float,
+   667	        action_idx: Optional[int] = None,
+   668	    ) -> None:
+   669	        """
+   670	        Push a transition tuple (s, a, r, s', done, delta_t) into buffer.
+   671	
+   672	        action_idx (optional): the combined *discrete* action index that a
+   673	        discrete-action agent (e.g. DuelingQAoI, whose grid is
+   674	        interval_idx * num_channels + channel_idx) actually selected. It is
+   675	        stored verbatim so that credit assignment in update() targets the true
+   676	        action instead of a lossy reconstruction from the decoded continuous
+   677	        action. Agents with purely continuous / factorized action heads simply
+   678	        leave it as None; sample() then omits the "action_idx" key entirely,
+   679	        so batch contents are unchanged for every other baseline.
+   680	        """
+   681	        s_arr = np.array(state, dtype=np.float32) if not isinstance(state, np.ndarray) else state.astype(np.float32)
+   682	        if isinstance(action, torch.Tensor):
+   683	            a_arr = action.detach().cpu().numpy().astype(np.float32)
+   684	        elif isinstance(action, (list, tuple)):
+   685	            a_arr = np.array(action, dtype=np.float32)
+   686	        else:
+   687	            a_arr = np.array(action, dtype=np.float32)
+   688	
+   689	        ns_arr = np.array(next_state, dtype=np.float32) if not isinstance(next_state, np.ndarray) else next_state.astype(np.float32)
+   690	
+   691	        item = {
+   692	            "state": s_arr,
+   693	            "action": a_arr,
+   694	            "reward": float(reward),
+   695	            "next_state": ns_arr,
+   696	            "done": float(done),
+   697	            "delta_t": float(delta_t),
+   698	            "action_idx": None if action_idx is None else int(action_idx),
+   699	        }
+   700	
+   701	        if len(self.buffer) < self.capacity:
+   702	            self.buffer.append(item)
+   703	        else:
+   704	            self.buffer[self.position] = item
+   705	        self.position = (self.position + 1) % self.capacity
+   706	
+   707	    def sample(self, batch_size: int) -> Dict[str, torch.Tensor]:
+   708	        """
+   709	        Sample a random batch of transitions as PyTorch Tensors.
+   710	        Raises ValueError if buffer is empty.
+   711	        """
+   712	        if len(self.buffer) == 0:
+   713	            raise ValueError("Cannot sample from an empty buffer.")
+   714	
+   715	        batch_size = min(batch_size, len(self.buffer))
+   716	        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+   717	        batch = [self.buffer[i] for i in indices]
+   718	
+   719	        states = np.array([b["state"] for b in batch], dtype=np.float32)
+   720	        actions = np.array([b["action"] for b in batch], dtype=np.float32)
+   721	        rewards = np.array([[b["reward"]] for b in batch], dtype=np.float32)
+   722	        next_states = np.array([b["next_state"] for b in batch], dtype=np.float32)
+   723	        dones = np.array([[b["done"]] for b in batch], dtype=np.float32)
+   724	        delta_ts = np.array([[b["delta_t"]] for b in batch], dtype=np.float32)
+   725	        discounts = np.power(self.gamma, delta_ts).astype(np.float32)
+   726	
+   727	        out = {
+   728	            "state": torch.from_numpy(states),
+   729	            "action": torch.from_numpy(actions),
+   730	            "reward": torch.from_numpy(rewards),
+   731	            "next_state": torch.from_numpy(next_states),
+   732	            "done": torch.from_numpy(dones),
+   733	            "delta_t": torch.from_numpy(delta_ts),
+   734	            "discount": torch.from_numpy(discounts),
+   735	        }
+   736	
+   737	        # Optional discrete action indices. Emitted only when EVERY sampled
+   738	        # transition carries one, so batches for continuous-action baselines
+   739	        # keep exactly the legacy key set / tensor shapes.
+   740	        idx_list = [b.get("action_idx") for b in batch]
+   741	        if len(idx_list) > 0 and all(i is not None for i in idx_list):
+   742	            out["action_idx"] = torch.from_numpy(np.array(idx_list, dtype=np.int64))
+   743	
+   744	        return out
+   745	
+   746	    def is_ready(self, batch_size: int) -> bool:
+   747	        return len(self.buffer) >= batch_size
+   748	
+   749	    def clear(self) -> None:
+   750	        self.buffer.clear()
+   751	        self.position = 0
+   752	
+   753	    def __len__(self) -> int:
+   754	        return len(self.buffer)

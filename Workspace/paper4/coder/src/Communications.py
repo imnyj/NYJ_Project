@@ -1,18 +1,21 @@
 # Communications.py
 # ============================================================================
-# Link-layer communication model for the CIoV precaching simulator.
+# IEEE 802.11p physical layer for the V2I uplink (5.9 GHz ITS band).
 #
-#   - Air interface (V2V / V2I) : IEEE 802.11ac/ax Wi-Fi   <-- replaces WAVE
-#   - Backhaul (RSU <-> RSU, RSU <-> content server) : optical fiber
+# Answers one question for the scheduler: given a vehicle's transmit power and
+# its distance from the RSU, and given who else was granted the same subchannel,
+# does this update get through?
 #
-# NetSim.Node.send_packet() selects the medium by endpoint type and calls the
-# helpers below. Public contract expected by NetSim:
-#     wifi_channel_manager.allocate() -> (channel_index, rate_mbps)
-#     wifi_channel_manager.release(channel_index)
-#     wifi_data_rate(rate_mbps)           -> bits per second
-#     wifi_transmission_delay(bytes, bps) -> seconds
-#     wifi_propagation_delay(distance_m)  -> seconds
-#     fiber_data_rate(), fiber_propagation_delay(distance_m)   (unchanged)
+#   link budget   Ptx + G_tx + G_rx - PL(d) - shadowing
+#   contention    co-channel frames overlap only within a vulnerable period,
+#                 2 * T_air / T_step, drawn from a seeded stream
+#   decoding      Rayleigh-faded SINR against the operating MCS threshold
+#   occupancy     frame airtime, which is what makes CBR a measured quantity
+#
+# Every constant is derived from the standard rather than tuned: the noise floor
+# from kTB + NF, the SINR threshold from the MCS table, the airtime from the OFDM
+# symbol count. Change OPERATING_RATE_MBPS and threshold, sensitivity and airtime
+# all follow.
 # ============================================================================
 
 import math
@@ -35,122 +38,19 @@ FRAG_LIMIT       = 5000              # > this many fragments -> stream instead
 STREAM_THRESHOLD = 1 * 1024 * 1024   # >= 1 MiB payload -> stream instead
 
 # ============================================================================
-# Wi-Fi channel manager (IEEE 802.11ac/ax abstraction)
+# Legacy 802.11ac/fibre backhaul layer -- REMOVED 2026-08-30.
 #
-# Models the shared, contention-based air interface. Several non-overlapping
-# channels are available; each carries a limited number of concurrent
-# transmissions before the per-user rate is downshifted (MCS drop + airtime
-# sharing under CSMA/CA). allocate() assigns a new transmission to the
-# least-loaded channel and returns the per-user rate; release() frees it.
+# Everything between here and the V2I uplink model below served NetSim.py's
+# content-precaching simulator: a WiFiChannelManager that split a shared rate
+# among contending users, fibre propagation helpers, and byte-per-step
+# accounting. NetSim.py was retired with src/aoi_env.py (design_spec_v2 D1),
+# and a grep confirmed all ten symbols had zero callers outside this file.
 #
-# Rate ladder approximates 802.11ac VHT80, 1 spatial stream: 1 user ~ MCS9
-# (433 Mbps), degrading as contenders are added; beyond the ladder the rate
-# halves per extra user down to a basic-rate floor. The numbers are a
-# deliberate simulation abstraction and are straightforward to retune.
+# They are preserved in coder/backup/unused_20260830_180000/Communications_legacy.py.
+# Do not revive them alongside the model below: that one charges airtime per
+# 802.11p frame, while these split an aggregate rate among users, and the two
+# would double-count channel occupancy.
 # ============================================================================
-class WiFiChannelManager:
-    def __init__(self, num_channels: int = 3) -> None:
-        self.num_channels = num_channels
-        self.channels: list[list[object]] = [[] for _ in range(num_channels)]
-        # per-user rate (Mbps) indexed by concurrent user count (802.11ac VHT80, 1SS)
-        self.speeds = [433.3, 292.5, 195.0, 97.5]
-        self.min_rate = 6.0            # basic-rate floor (Mbps)
-        self.capacity = 2000.0         # aggregate cap per channel (non-binding safety cap; MCS ladder governs)
-
-    def _rate_per_user(self, users: int) -> float:
-        if users <= 0:
-            return 0.0
-        if users <= len(self.speeds):
-            return self.speeds[users - 1]
-        extra = users - len(self.speeds)
-        extra = min(extra, 30)         # clamp to avoid 2**extra overflow
-        return max(self.speeds[-1] / (2.0 ** float(extra)), self.min_rate)
-
-    def _sum_rate_if_add_one(self, users_now: int) -> tuple[float, float]:
-        current_rate = self._rate_per_user(users_now)
-        sum_now = users_now * current_rate
-        add_rate = self._rate_per_user(users_now + 1)
-        return sum_now, add_rate
-
-    def allocate(self) -> tuple[int, float]:
-        candidates = []
-        for i in range(self.num_channels):
-            u = len(self.channels[i])
-            sum_now, add_rate = self._sum_rate_if_add_one(u)
-            candidates.append((i, sum_now, add_rate))
-        candidates.sort(key=lambda x: x[1])
-        for i, sum_now, add_rate in candidates:
-            if sum_now + add_rate <= self.capacity + 1e-9:
-                self.channels[i].append(object())
-                return i, add_rate
-        i_min = min(range(self.num_channels), key=lambda k: len(self.channels[k]))
-        self.channels[i_min].append(object())
-        leftover = max(self.capacity - self._sum_rate_if_add_one(len(self.channels[i_min]) - 1)[0], 0.0)
-        rate = max(self.min_rate, min(leftover, self.speeds[0]))
-        return i_min, rate
-
-    def release(self, ch_idx: int) -> None:
-        if 0 <= ch_idx < self.num_channels and self.channels[ch_idx]:
-            self.channels[ch_idx].pop()
-
-
-wifi_channel_manager: WiFiChannelManager = WiFiChannelManager()
-
-# --------------------------------------------------------------------------
-# Delay models
-# --------------------------------------------------------------------------
-def fiber_propagation_delay(distance_m: float, propagation_speed: float = FIBER_PROPAGATION_SPEED) -> float:
-    return distance_m / propagation_speed
-
-def wifi_propagation_delay(distance_m: float, propagation_speed: float = C_LIGHT) -> float:
-    return distance_m / propagation_speed
-
-def wifi_transmission_delay(frame_size_bytes: float, data_rate_bps: float) -> float:
-    return (frame_size_bytes * 8) / data_rate_bps
-
-# --------------------------------------------------------------------------
-# Data-rate models
-# --------------------------------------------------------------------------
-def fiber_data_rate(rate_gbps: float = 10.0) -> float:
-    return rate_gbps * 1e9
-
-def wifi_data_rate(rate_mbps: float = 200.0) -> float:
-    return rate_mbps * 1e6
-
-# --------------------------------------------------------------------------
-# Throughput-per-step helpers (generic)
-# --------------------------------------------------------------------------
-def data_per_step(data_rate_bps: float, step_duration_sec: float = 1.0) -> float:
-    return (data_rate_bps * step_duration_sec) / 8
-
-def adjusted_bytes_per_step(distance_m: float, data_rate_bps: float,
-                            step_duration_sec: float = 1.0, propagation_speed: float = C_LIGHT) -> float:
-    avail_time = step_duration_sec - (distance_m / propagation_speed)
-    if avail_time <= 0:
-        return 0.0
-    return (data_rate_bps * avail_time) / 8
-
-def fiber_fetch_bytes_per_step(distance_m: float, step_duration_sec: float = 1.0,
-                               rate_gbps: float = 10.0, hop_count: int = 1,
-                               propagation_speed: float = FIBER_PROPAGATION_SPEED) -> float:
-    data_rate = fiber_data_rate(rate_gbps)
-    avail_time = step_duration_sec - hop_count * (distance_m / propagation_speed)
-    if avail_time <= 0:
-        return 0.0
-    return (data_rate * avail_time) / 8
-
-def relay_bytes_per_step(distance_wifi_m: float, distance_fiber_m: float,
-                         step_duration_sec: float = 1.0, wifi_rate_mbps: float = 200.0,
-                         fiber_rate_gbps: float = 10.0, prop_speed_wifi: float = C_LIGHT,
-                         prop_speed_fiber: float = FIBER_PROPAGATION_SPEED) -> float:
-    r_wifi = wifi_data_rate(wifi_rate_mbps)
-    r_fiber = fiber_data_rate(fiber_rate_gbps)
-    eff_rate = (r_wifi * r_fiber) / (r_wifi + r_fiber)
-    avail_time = step_duration_sec - ((distance_wifi_m / prop_speed_wifi) + (distance_fiber_m / prop_speed_fiber))
-    if avail_time <= 0:
-        return 0.0
-    return (eff_rate * avail_time) / 8
-
 
 # ============================================================================
 # Uplink PHY model (S2) -- IEEE 802.11p (10 MHz OFDM) at 5.9 GHz,
@@ -331,7 +231,18 @@ def noise_floor_dbm(bandwidth_hz: float = SUBCHANNEL_BW_HZ) -> float:
     return -174.0 + 10.0 * math.log10(bandwidth_hz) + NOISE_FIGURE_DB
 
 def noise_floor_mw(num_subchannels: int = NUM_SUBCHANNELS) -> float:
-    return dbm_to_mw(noise_floor_dbm(TOTAL_BW_HZ / max(num_subchannels, 1)))
+    """Noise power in one subchannel, in mW.
+
+    The bandwidth is SUBCHANNEL_BW_HZ, the 10 MHz an 802.11p channel occupies by
+    standard -- not TOTAL_BW_HZ / num_subchannels. The two agree only while
+    num_subchannels happens to be 4; dividing the aggregate would make a
+    three-channel configuration report a 13.3 MHz channel that the PHY cannot
+    produce, and the noise floor would be wrong by 1.2 dB for a reason no one
+    would find. `num_subchannels` is kept in the signature for call-site
+    compatibility and is deliberately unused.
+    """
+    del num_subchannels
+    return dbm_to_mw(noise_floor_dbm(SUBCHANNEL_BW_HZ))
 
 def sensitivity_dbm(rate_mbps: float = OPERATING_RATE_MBPS,
                     bandwidth_hz: float = SUBCHANNEL_BW_HZ) -> float:

@@ -9,12 +9,18 @@
 #    streaming transitions from simulation/serving steps to background trainer.
 # 3. BackgroundTrainer: Dedicated background training worker executing
 #    gradient updates on Rest model and triggering periodic hot-swaps.
-# 4. HotSwapRLScheduler: S1/S2/S3 compliant RL scheduler integrating Act model
-#    serving with retrospective transition assembly.
+# 4. HotSwapRLScheduler: Act-model inference and transition forwarding. It does
+#    NOT build observations or price rewards -- see design_spec_v2 principle P1.
 # 5. HotSwapTrainer: Master orchestrator for Act/Rest model lifecycle.
-# 6. AoiV2IEnv: Genuine SUMO environment integration with 4 anti-mocking assertions.
+# 6. AoiV2IEnv: Genuine SUMO environment integration with 4 anti-mocking
+#    assertions. Sole owner of the observation vector and the reward function.
 # 7. run_hot_swap_training: Full end-to-end training loop execution function
 #    supporting 200,000 steps, TensorBoard logging, and checkpointing.
+#
+# The loop is EVENT-DRIVEN, not a gym rollout: each vehicle has its own decision
+# epochs spaced by the Delta the policy chose for it, so there is no single
+# global (s, a, r, s') tick. A grant fires when the clock reaches its deadline,
+# not on the step it was issued. See design_spec_v2.md sections 1, 5 and 9.
 # ============================================================================
 
 from __future__ import annotations
@@ -49,7 +55,15 @@ except ImportError:
 import src.Communications as comm
 import src.sumo.make_sumo_set as ss
 from src.dynamics_predictor import extract_tls_features
-from src.rl_interface import ActionDecoder, RetrospectiveReplayBuffer, StateVectorizer
+from src.rl_interface import (
+    RSU_RANGE,
+    ActionDecoder,
+    RetrospectiveReplayBuffer,
+    StateVectorizer,
+    estimation_error,
+    norm_sq_error,
+    refresh_scenario_constants,
+)
 
 
 def infer_state_dim(vectorizer: Optional[StateVectorizer] = None) -> int:
@@ -81,7 +95,12 @@ def infer_state_dim(vectorizer: Optional[StateVectorizer] = None) -> int:
     except Exception:
         # Last-resort fallback: the canonical design dimension (Conversation.md
         # section 1: 16 base features + n_queue + heading).
-        return 18
+        # Last resort. Import the canonical width rather than restating it: a
+        # literal here silently disagreed with STATE_DIM when the vector went
+        # from 18 to 17 dimensions.
+        from src.rl_interface import STATE_DIM as _CANONICAL_STATE_DIM
+
+        return _CANONICAL_STATE_DIM
 
 
 def select_default_devices() -> Tuple[torch.device, torch.device]:
@@ -261,16 +280,6 @@ class TransitionStreamer:
             self.dropped_count += 1
             return False
 
-    def push_dict(self, transition: Dict[str, Any]) -> bool:
-        """Convenience push for pre-assembled dictionary."""
-        try:
-            self.queue.put_nowait(transition)
-            self.pushed_count += 1
-            return True
-        except queue.Full:
-            self.dropped_count += 1
-            return False
-
     def drain(self, max_items: Optional[int] = None) -> List[Dict[str, Any]]:
         """Drains pending transitions from queue without blocking."""
         items: List[Dict[str, Any]] = []
@@ -437,10 +446,7 @@ class HotSwapRLScheduler:
         hot_swap_manager: DualModelHotSwapManager,
         streamer: TransitionStreamer,
         vectorizer: Optional[StateVectorizer] = None,
-        rsu_range: float = 300.0,
-        alpha_aoi: float = 0.1,
-        beta_error: float = 1.0,
-        gamma_power: float = 0.01,
+        rsu_range: float = RSU_RANGE,
         decoder: Optional[ActionDecoder] = None,
     ) -> None:
         self.act_model = act_model
@@ -452,103 +458,82 @@ class HotSwapRLScheduler:
         # Observation width is read from the vectorizer, never hardcoded.
         self.state_dim = infer_state_dim(self.vectorizer)
         self.rsu_range = float(rsu_range)
-        self.alpha_aoi = float(alpha_aoi)
-        self.beta_error = float(beta_error)
-        self.gamma_power = float(gamma_power)
-
-        # Per-vehicle tracking for retrospective transition assembly: vid -> record
-        self.vehicle_records: Dict[str, Dict[str, Any]] = {}
+        # The reward weights that used to live here (alpha_aoi / beta_error /
+        # gamma_power) are gone. The scheduler does not price transitions any
+        # more -- the environment owns the one reward function (design_spec_v2 P1).
         self.inference_latencies_ms: List[float] = []
         self.total_inferences = 0
 
     def decide_grant(
         self,
-        vid_or_state: Union[str, Dict[str, Any]],
-        state: Optional[Dict[str, Any]] = None,
-        metrics: Optional[Any] = None,
-    ) -> Tuple[float, int, float]:
-        """
-        Decides uplink grant (delta_s, channel_idx, power_dbm) for a vehicle.
-        Supports both decide_grant(vid, state, metrics) and decide_grant(state).
-        """
-        if isinstance(vid_or_state, dict):
-            st = vid_or_state
-            vid = str(st.get("vid", "veh_unknown"))
-        else:
-            vid = str(vid_or_state)
-            st = state or {}
+        vid: str,
+        state_vec: np.ndarray,
+    ) -> Tuple[Tuple[float, int, float], Any]:
+        """Run the Act model on an observation the ENVIRONMENT produced.
 
-        # 1. State Vectorization
-        cur_t = float(st.get("current_time", 0.0) or 0.0)
-        s = self.vectorizer.vectorize_from_dict(st)
+        This method is pure inference. It used to also (a) build its own state
+        vector from a partial dict and (b) compute its own three-term reward,
+        which is what the replay buffer was actually trained on. Both are gone:
 
-        # 2. Fast Inference under Act Model (Thread-Safe under hot-swap mutex)
+          (a) it re-vectorised from `{vid, current_time, pos, speed}`, so 15 of
+              the 18 dimensions fell back to defaults and reached the model as
+              constants -- traffic light, distance to RSU, CBR, heading, age.
+              The rich vector the environment builds was discarded by the caller.
+          (b) its reward was `-(0.1*dt + 1.0*err + 0.01*power)` with `err`
+              permanently 0 (the key was never passed) and `dt` permanently 0.1,
+              i.e. the only live training signal in the whole pipeline was
+              transmit power. The approved four-term reward went to the log file.
+
+        Both now have exactly one owner, the environment (design_spec_v2 P1/P2).
+
+        Returns the decoded grant and the raw action, which the caller stores so
+        the transition can be pushed with the action the policy actually emitted.
+        """
+        s = np.asarray(state_vec, dtype=np.float32)
+        assert s.shape == (self.state_dim,), (
+            f"FATAL: observation for {vid} has width {s.shape}, expected ({self.state_dim},). "
+            "The environment is the only legitimate source of observations."
+        )
+
         t0 = time.perf_counter()
         self.act_model.eval()
         with self.hot_swap_manager.swap_lock:
             grant, raw_action, info = self.act_model.select_action(s, deterministic=False)
 
-        latency_ms = (time.perf_counter() - t0) * 1000.0
-        self.inference_latencies_ms.append(latency_ms)
+        self.inference_latencies_ms.append((time.perf_counter() - t0) * 1000.0)
         self.total_inferences += 1
+        return grant, raw_action
 
-        delta, ch, power = grant
+    def push_transition(
+        self,
+        state: np.ndarray,
+        raw_action: Any,
+        reward: float,
+        next_state: np.ndarray,
+        done: bool,
+        delta_t: float,
+    ) -> None:
+        """Stream one closed SMDP interval to the background trainer.
 
-        # 3. Retrospective Transition Assembly
-        if vid in self.vehicle_records:
-            prev = self.vehicle_records[vid]
-            dt = max(0.1, cur_t - prev["time"])
-            err = float(st.get("estimation_error", 0.0))
+        `reward` and `delta_t` come from the environment: the reward is the
+        four-term interval reward and `delta_t` is the MEASURED interval, which
+        differs from the requested Delta whenever a failed uplink was retried.
+        The buffer discounts by gamma**delta_t, so feeding it the requested value
+        would misprice exactly the intervals that went wrong.
+        """
+        self.streamer.push(
+            state=state,
+            action=raw_action,
+            reward=float(reward),
+            next_state=next_state,
+            done=bool(done),
+            delta_t=float(delta_t),
+        )
 
-            # Retrospective Reward: negative combination of elapsed AoI, estimation error,
-            # and normalized Tx power. The power term is min-max normalized into [0, 1]
-            # against the decoder's configured range (Conversation.md L30) instead of the
-            # former `max(0, power - 20.0)`, which assumed p in [20, 30] dBm and silently
-            # collapses to a constant 0 under the approved p in [10, 23] dBm range.
-            p_lo = float(getattr(self.decoder, "p_min", 10.0))
-            p_hi = float(getattr(self.decoder, "p_max", 23.0))
-            norm_power = min(1.0, max(0.0, (float(power) - p_lo) / max(1e-6, p_hi - p_lo)))
-            reward = -(self.alpha_aoi * dt + self.beta_error * err + self.gamma_power * norm_power)
-
-            # Stream transition to background trainer
-            self.streamer.push(
-                state=prev["state"],
-                action=prev["raw_action"],
-                reward=reward,
-                next_state=s,
-                done=False,
-                delta_t=dt,
-            )
-
-        # 4. Update Vehicle State Record
-        self.vehicle_records[vid] = {
-            "state": s,
-            "raw_action": raw_action,
-            "time": cur_t,
-            "grant": grant,
-        }
-
-        return grant
-
-    def on_vehicle_exit(self, vid: str, exit_time: float, final_error: float = 0.0) -> None:
-        """Closes episode for exiting vehicle and pushes terminal transition."""
-        if vid in self.vehicle_records:
-            prev = self.vehicle_records.pop(vid)
-            dt = max(0.1, exit_time - prev["time"])
-            reward = -(self.alpha_aoi * dt + self.beta_error * final_error)
-            dummy_next_state = np.zeros(self.state_dim, dtype=np.float32)
-            self.streamer.push(
-                state=prev["state"],
-                action=prev["raw_action"],
-                reward=reward,
-                next_state=dummy_next_state,
-                done=True,
-                delta_t=dt,
-            )
 
     def reset(self) -> None:
         """Resets per-episode state."""
-        self.vehicle_records.clear()
+        self.inference_latencies_ms.clear()
 
     def get_latency_stats(self) -> Dict[str, float]:
         """Returns serving inference latency percentiles in ms."""
@@ -695,27 +680,34 @@ class AoiV2IEnv:
     Interacts directly with libsumo/TraCI, extracting live vehicle telemetry and traffic light signals,
     resolving Rayleigh fading contention, and calculating SMDP estimation error rewards.
 
-    This class is the production/training-pipeline environment. It exposes a
-    density-parameterised constructor, per-vehicle terminated/truncated dicts and
-    the 15-key IEEE TWC `get_metrics()` summary that `run_hot_swap_training`,
-    `src/hpo.py` and `src/evaluate.py` all depend on, none of which
-    `src/aoi_env.py::AoiV2IEnv` provides.
+    This class is the ONLY environment in the pipeline and the sole owner of both
+    the observation vector and the reward (design_spec_v2 principle P1). It exposes
+    a density-parameterised constructor, per-vehicle terminated/truncated dicts and
+    the IEEE TWC `get_metrics()` summary that `run_hot_swap_training`, `src/hpo.py`
+    and `src/evaluate.py` all depend on.
 
-    Reward (Conversation.md section 3, approved ground truth):
-        R_t = -( w1*Norm(e_t^2) + w2*Norm(P_tx) + w3*Norm(C_freq) + w4*I_redundant )
-    with every one of the four terms min-max normalized into [0, 1] before it is
-    weighted (Conversation.md L30) and default weights w1..w4 = 0.5/0.2/0.2/0.1.
+    Reward, per SMDP interval [t_k, t_k+1) (design_spec_v2 D2):
+
+        R_k = -( w1 * SUM_t Norm(e^2(t)) * dt/1s     <- accrues across the interval
+                 + w2 * Norm(P_tx)                    <- charged once, at the update
+                 + w3 * Norm(C_freq)                  <- charged once, at the update
+                 + w4 * I_redundant )                 <- charged once, at the update
+
+    Only the error term accumulates, and that asymmetry is the Delta trade-off:
+    leaving a moving vehicle unaddressed bills every step, while a stopped one
+    costs nothing however long the interval, because its dead-reckoned position
+    stays right. Default weights w1..w4 = 0.5/0.2/0.2/0.1, all four terms
+    normalized before weighting. Optuna searches the weights (`src/hpo.py`).
     Action ranges (Conversation.md section 2) are owned by
-    `src/rl_interface.py::ActionDecoder` (Delta in [0.1, 5.0] s, p in [10, 23] dBm);
+    `src/rl_interface.py::ActionDecoder` (Delta in [DELTA_MIN, DELTA_MAX] s, p in [P_MIN, P_MAX] dBm);
     this class reads `decoder.p_min` / `decoder.p_max` rather than duplicating them.
 
-    It now carries all FOUR anti-mocking runtime assertions ported from
-    `src/aoi_env.py::AoiV2IEnv.step` so the code that runs enforces the same
-    guarantees as the code that was audited:
-      1. Time advance / regression check        (step, from aoi_env.py L687-696)
-      2. Vehicle coordinate & displacement check(step, from aoi_env.py L698-725)
-      3. Rayleigh SINR P_succ validation        (step, from aoi_env.py L800-813)
-      4. Reward formula re-derivation, R <= 0   (step, from aoi_env.py L893-912)
+    It carries all FOUR anti-mocking runtime assertions, so the code that runs is
+    the code that was audited:
+      1. Time advance / regression check         (step, section 3)
+      2. Vehicle coordinate & displacement check (step, section 3)
+      3. Rayleigh SINR P_succ validation         (step, section 6)
+      4. Reward formula re-derivation, R <= 0    (step, after section 6)
     """
 
     def __init__(
@@ -724,8 +716,8 @@ class AoiV2IEnv:
         seed: int = 42,
         max_steps: int = 2000,
         num_channels: int = comm.NUM_SUBCHANNELS,
-        rsu_range: float = 300.0,
-        warmup_steps: int = 35,
+        rsu_range: float = RSU_RANGE,
+        warmup_steps: int = 350,
         w1: float = 0.5,
         w2: float = 0.2,
         w3: float = 0.2,
@@ -744,30 +736,15 @@ class AoiV2IEnv:
 
         self.vectorizer = StateVectorizer(rsu_range=self.rsu_range)
         # The decoder is the single source of truth for the hybrid action ranges
-        # (Delta in [0.1, 5.0] s, p in [10, 23] dBm -- Conversation.md section 2).
+        # (bounds live on the decoder -- Conversation.md section 2).
         # No range literal is duplicated here; the reward reads p_min/p_max off it.
         self.decoder = ActionDecoder(num_channels=self.num_channels)
         self.state_dim = infer_state_dim(self.vectorizer)
 
         # --------------------------------------------------------------------
-        # I_redundant thresholds (Conversation.md L27: "물리적 상태 불변 시 갱신을
+        # I_redundant threshold (Conversation.md L27: "물리적 상태 불변 시 갱신을
         # 시도할 때 부과되는 강력한 명시적 패널티").
         #
-        # DEFINITION: a granted uplink update is redundant for step t iff, at the
-        # moment the grant is served, the vehicle's *real SUMO telemetry* shows
-        # that its physical state has not changed since its own last successful
-        # update:
-        #     displacement( pos_now , pos_at_last_update ) <= REDUNDANT_POS_EPS_M
-        #   AND live speed                                 <= REDUNDANT_SPEED_EPS_MPS
-        # Both signals are read from libsumo (`vehicle.getPosition` /
-        # `vehicle.getSpeed`), never synthesised. A vehicle that has never been
-        # updated is never redundant (there is no prior state to be unchanged
-        # from), and a vehicle that was not granted anything this step cannot be
-        # redundant because no update was attempted. This mirrors the audited
-        # `src/aoi_env.py:868` indicator (`spd < 0.1 and err < 0.05`), expressed
-        # against measured displacement-since-last-update instead of the
-        # dead-reckoned error so that it stays exact for a stopped vehicle.
-        # --------------------------------------------------------------------
         # design_spec_v2 D6: the indicator no longer asks "was the vehicle
         # standing still" but "was the RSU's prediction already right". That
         # covers steady cruising as well as standstill -- every case where the
@@ -779,8 +756,10 @@ class AoiV2IEnv:
         # scales the *continuous* error penalty, this one is a hard "was this
         # transmission worth its power" threshold and wants to be stricter.
         self.REDUNDANT_ERR_EPS_M = 3.2
-        # Kept for the standstill diagnostics reported in get_metrics().
-        self.REDUNDANT_POS_EPS_M = 0.1
+        # Standstill threshold. Only the speed bound is still read: it decides the
+        # `was_stopped` flag that lets a stale ledger entry stay usable for the
+        # n_queue count (D3). The position bound belonged to the pre-D6 indicator
+        # and now has no consumer, so it is gone rather than left as a decoy.
         self.REDUNDANT_SPEED_EPS_MPS = 0.1
 
         # design_spec_v2 D7: a failed uplink is retried on the next step as a
@@ -840,6 +819,16 @@ class AoiV2IEnv:
         self.interval_start_t: Dict[str, float] = {}
         #: Diagnostics: how many intervals ended in abandonment vs. success.
         self.total_tx_abandoned = 0
+        #: Per-step lane index for the ledger n_queue, rebuilt once per simulated
+        #: instant. Without it the count is O(V) per vehicle and O(V^2) per step.
+        self._lane_index: Dict[Any, List[Tuple[float, float, bool]]] = {}
+        self._lane_index_at: float = -1.0
+        #: Active vehicle ids, cached per simulated instant. `getIDList()` builds
+        #: and marshals the whole list on every call, and the per-vehicle
+        #: membership test used to call it once per vehicle per lookup -- 1307
+        #: calls per step at 1155 vehicles, 55 % of total step time by cProfile.
+        self._active_ids: set = set()
+        self._active_ids_at: float = -1.0
 
         # 6 IEEE TWC Metrics Accumulators
         self.recorded_errors: List[float] = []
@@ -883,6 +872,15 @@ class AoiV2IEnv:
         random.seed(self.seed)
         np.random.seed(self.seed)
         ss.make_sumo_files()
+        # The network on disk is what DELTA_MAX / V_LIMIT / E_REF describe, so
+        # re-derive them now that it has been (re)written. Without this the
+        # action range and the error normaliser would still describe whatever
+        # network happened to exist when the module was first imported.
+        refresh_scenario_constants()
+        # The decoder resolves delta_max at construction, so rebuild it against
+        # the refreshed constants rather than keeping one built at __init__ time.
+        self.decoder = ActionDecoder(num_channels=self.num_channels)
+        self.vectorizer = StateVectorizer(rsu_range=self.rsu_range)
 
         cmd = [
             "sumo",
@@ -926,6 +924,8 @@ class AoiV2IEnv:
         self.interval_accum.clear()
         self.interval_start_t.clear()
         self.total_tx_abandoned = 0
+        self._lane_index.clear()
+        self._lane_index_at = -1.0
 
         self.recorded_errors.clear()
         self.low_speed_errors.clear()
@@ -1031,7 +1031,7 @@ class AoiV2IEnv:
             return self._n_active_cache
         rx, ry = self.target_rsu_pos
         n = 0
-        for other in libsumo.vehicle.getIDList():
+        for other in self._active_vehicle_ids():
             ox, oy = libsumo.vehicle.getPosition(other)
             if math.hypot(ox - rx, oy - ry) <= self.rsu_range:
                 n += 1
@@ -1039,9 +1039,18 @@ class AoiV2IEnv:
         self._n_active_cache = n
         return n
 
-    def _get_vehicle_state_dict(self, vid: str) -> Optional[Dict[str, Any]]:
+    def _active_vehicle_ids(self) -> set:
+        """Ids of every vehicle in the network, cached per simulated instant."""
+        if self._active_ids_at != self.sim_time:
+            self._active_ids = set(libsumo.vehicle.getIDList())
+            self._active_ids_at = self.sim_time
+        return self._active_ids
+
+    def _get_vehicle_state_dict(
+        self, vid: str, with_queue: bool = False
+    ) -> Optional[Dict[str, Any]]:
         """Extracts live telemetry from SUMO for a specific vehicle."""
-        if not self.is_running or vid not in libsumo.vehicle.getIDList():
+        if not self.is_running or vid not in self._active_vehicle_ids():
             return None
 
         x, y = libsumo.vehicle.getPosition(vid)
@@ -1088,6 +1097,8 @@ class AoiV2IEnv:
             "dist_to_rsu": dist_rsu,
             "current_time": self.sim_time,
             "last_update_time": last_upd,
+            # Feature [0] of StateVectorizer.
+            "last_pred_err": float(self.vehicle_tracks.get(vid, {}).get("last_pred_err", 0.0)),
             "tls_features": tls_info,
             # Feature [14] of StateVectorizer. This is the measured airtime
             # occupancy of the last resolved step, averaged over subchannels;
@@ -1098,7 +1109,17 @@ class AoiV2IEnv:
             "n_active": self._count_active_vehicles(),
             # Feature [15]: queue ahead, reconstructed from the RSU ledger (D3)
             # rather than read out of SUMO, which an RSU could not do.
-            "n_queue": self._ledger_queue_count(vid, {"tls_features": tls_info}),
+            #
+            # Computed only for the observation path. This method is called three
+            # times per vehicle per step (grant firing, error accounting, ledger
+            # refresh) and only one of those feeds the state vector, so counting
+            # every time was two thirds wasted -- and each count walks the lane,
+            # which is what made the step cost grow with the square of the
+            # vehicle population.
+            "n_queue": (
+                self._ledger_queue_count(vid, {"tls_features": tls_info})
+                if with_queue else 0
+            ),
         }
 
     def _ledger_queue_count(self, vid: str, st: Dict[str, Any]) -> int:
@@ -1130,21 +1151,37 @@ class AoiV2IEnv:
         # "Still red" is free for the RSU: it is wired to the signal controller.
         lane_is_red = str(tls.get("state", "")).lower() in ("r", "red")
 
+        # The ledger is grouped by lane once per simulated instant. Scanning the
+        # whole ledger per vehicle instead made the step O(V^2): measured 17.9 ms
+        # at 32 vehicles in range and 148.1 ms at 92 (2.9x more vehicles, 8.3x the
+        # cost), which is what made long episodes collapse to 4 steps/s.
+        self._rebuild_lane_index()
         count = 0
-        for other, rec in self.vehicle_tracks.items():
-            if other == vid:
-                continue
-            if rec.get("lane_id") != lane_id:
-                continue
-            other_pos = rec.get("lane_position")
-            if other_pos is None or float(other_pos) <= float(lane_pos):
+        for other, other_pos, was_stopped, age in self._lane_index.get(lane_id, ()):
+            if other == vid or other_pos <= float(lane_pos):
                 continue  # behind us, or level with us
-            age = self.sim_time - float(rec.get("t_update", self.sim_time))
-            fresh = age <= self.LEDGER_FRESH_S
-            stopped_and_still_red = bool(rec.get("was_stopped", False)) and lane_is_red
-            if fresh or stopped_and_still_red:
+            if age <= self.LEDGER_FRESH_S or (was_stopped and lane_is_red):
                 count += 1
         return count
+
+    def _rebuild_lane_index(self) -> None:
+        """Group the RSU ledger by lane, once per simulated instant."""
+        if self._lane_index_at == self.sim_time:
+            return
+        index: Dict[Any, List[Tuple[str, float, bool, float]]] = {}
+        for other, rec in self.vehicle_tracks.items():
+            lane = rec.get("lane_id")
+            pos = rec.get("lane_position")
+            if not lane or pos is None:
+                continue
+            index.setdefault(lane, []).append((
+                other,
+                float(pos),
+                bool(rec.get("was_stopped", False)),
+                self.sim_time - float(rec.get("t_update", self.sim_time)),
+            ))
+        self._lane_index = index
+        self._lane_index_at = self.sim_time
 
     def _is_redundant_update(self, err_at_update_m: float) -> float:
         """I_redundant for an update that has just been delivered (D6).
@@ -1162,71 +1199,187 @@ class AoiV2IEnv:
         """
         return 1.0 if float(err_at_update_m) <= self.REDUNDANT_ERR_EPS_M else 0.0
 
+    def _register_vehicle(self, vid: str, st: Dict[str, Any], is_initial: bool = False) -> None:
+        """Open the RSU's ledger entry for a vehicle that just came into range."""
+        self._lane_index_at = -1.0  # ledger changed; the lane index is now stale
+        self.vehicle_tracks[vid] = {
+            "pos": st["pos"],
+            "vel": st["vel"],
+            "t_update": self.sim_time if is_initial else self.sim_time - self.step_length,
+            # Feature [0]: how wrong the RSU's prediction was at the last update.
+            # A vehicle the RSU has never heard from has no prediction history.
+            "last_pred_err": 0.0,
+            # Lane bookkeeping for the ledger-based n_queue (D3).
+            "lane_id": (st.get("tls_features") or {}).get("lane_id"),
+            "lane_position": (st.get("tls_features") or {}).get("lane_position"),
+            "was_stopped": bool(float(st.get("speed", 0.0)) <= self.REDUNDANT_SPEED_EPS_MPS),
+        }
+
     def _get_observations(self, is_initial: bool = False) -> Dict[str, np.ndarray]:
         """Gathers the normalized observation vector (width = StateVectorizer's own
-        dimension, see `self.state_dim`) for each active vehicle in range."""
+        dimension, see `self.state_dim`) for each active vehicle in range.
+
+        This is the ONLY place an observation vector is produced (design_spec_v2
+        principle P1). Nothing downstream may re-vectorize from a partial state
+        dict: doing so used to silently feed the model 15 constant dimensions
+        out of 18 while this method's own output -- the one that was verified for
+        liveness -- was discarded by the training loop.
+        """
         obs = {}
-        for vid in libsumo.vehicle.getIDList():
-            st = self._get_vehicle_state_dict(vid)
+        for vid in self._active_vehicle_ids():
+            st = self._get_vehicle_state_dict(vid, with_queue=True)
             if st is not None:
                 obs[vid] = self.vectorizer.vectorize_from_dict(st, self.target_rsu_pos)
                 if vid not in self.vehicle_tracks:
-                    # Vehicle registered
-                    self.vehicle_tracks[vid] = {
-                        "pos": st["pos"],
-                        "vel": st["vel"],
-                        "t_update": self.sim_time - 1.0 if not is_initial else self.sim_time,
-                    }
+                    self._register_vehicle(vid, st, is_initial=is_initial)
         return obs
+
+    def _finalize_interval(
+        self,
+        vid: str,
+        *,
+        transmitted: bool,
+        power_dbm: float,
+        channel: Optional[int],
+        err_at_update_m: float,
+        done: bool,
+    ) -> Dict[str, Any]:
+        """Close one SMDP interval and produce its reward (design_spec_v2 D2).
+
+            R_k = -( w1 * SUM_t Norm(e^2(t)) * dt/1s        <- accrues all interval
+                     + w2 * Norm(P_tx)                       <- one per update
+                     + w3 * Norm(CBR[ch])                    <- one per update
+                     + w4 * I_redundant )                    <- one per update
+
+        Only the error term accumulates over time. That asymmetry IS the Delta
+        trade-off: leave a *moving* vehicle unaddressed and the error term bills
+        you every step, while a stopped vehicle costs nothing no matter how long
+        the interval, because its dead-reckoned position stays right. A vehicle
+        whose interval ends without a transmission (it left the RSU's range) pays
+        the accrued error only -- it burnt no power and occupied no airtime.
+        """
+        r_err = float(self.interval_accum.get(vid, 0.0))
+
+        # `transmitted` means the radio was used, not that the update landed. An
+        # abandoned interval passes err = inf so I_redundant evaluates to 0.
+        if transmitted:
+            p_lo = float(getattr(self.decoder, "p_min", 10.0))
+            p_hi = float(getattr(self.decoder, "p_max", 23.0))
+            r_power = min(1.0, max(0.0, (float(power_dbm) - p_lo) / max(1e-6, p_hi - p_lo)))
+            ch_idx = int(channel) if channel is not None else 0
+            r_cong = min(1.0, max(0.0, float(self.subchannel_cbr[ch_idx])))
+            r_red = self._is_redundant_update(err_at_update_m)
+        else:
+            r_power = 0.0
+            r_cong = 0.0
+            r_red = 0.0
+
+        reward_val = -(
+            self.w1 * r_err + self.w2 * r_power + self.w3 * r_cong + self.w4 * r_red
+        )
+        assert not math.isnan(reward_val) and not math.isinf(reward_val), (
+            f"Anti-mocking violation: NaN/Inf reward {reward_val}"
+        )
+
+        t0 = float(self.interval_start_t.get(vid, self.sim_time))
+        delta_actual = max(self.step_length, self.sim_time - t0)
+
+        record = {
+            "vid": vid,
+            "reward": float(reward_val),
+            "delta_actual": float(delta_actual),
+            "done": bool(done),
+            "transmitted": bool(transmitted),
+            "r_err": float(r_err),
+            "r_power": float(r_power),
+            "cbr": float(r_cong),
+            "i_redundant": float(r_red),
+            "error": float(err_at_update_m),
+        }
+
+        # The interval is closed; the next decision opens a new one.
+        self.interval_accum.pop(vid, None)
+        self.interval_start_t.pop(vid, None)
+        self.pending_grant.pop(vid, None)
+        self.next_update_t.pop(vid, None)
+        return record
 
     def step(
         self, action_dict: Dict[str, Any]
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, float], Dict[str, bool], Dict[str, bool], Dict[str, Any]]:
         """
-        Executes one real SUMO simulation step with the provided grant actions.
+        Advances the scenario by one SUMO step under the standing grants.
+
+        `action_dict` carries grants ONLY for vehicles that need a new decision
+        (a new arrival, or one whose interval just closed). A grant does not fire
+        on the step it is issued: it is stored and fires when the simulated clock
+        reaches `t_issue + Delta`. Between those instants the vehicle transmits
+        nothing and its dead-reckoning error accrues.
+
+        Returns `rewards` for the vehicles whose SMDP interval CLOSED on this
+        step, and `info["completed"]` with the matching (reward, actual Delta,
+        done) records the caller needs to build a transition.
         """
         assert self.is_running, "Environment is not running. Call reset() first."
         self.current_step += 1
 
-        # 1. Decode grants and prepare pending transmissions
-        pending_transmissions: Dict[int, List[Dict[str, Any]]] = {}
-        # Per-vehicle credit assignment for this step: each granted vehicle's OWN
-        # transmit power and its own redundancy indicator (was: the globally-last
-        # tx power reused for every vehicle, which made the power action unlearnable).
-        step_tx_power: Dict[str, float] = {}
-        step_redundant: Dict[str, float] = {}
-        # Subchannel each vehicle was granted this step, so the congestion term
-        # can charge it the load of the channel it actually occupied.
-        step_channel: Dict[str, int] = {}
+        # ====================================================================
+        # 1. Register the new decisions
+        # ====================================================================
         for vid, raw_act in action_dict.items():
             if isinstance(raw_act, (tuple, list)) and len(raw_act) == 3:
                 delta, ch, p = float(raw_act[0]), int(raw_act[1]), float(raw_act[2])
             else:
                 delta, ch, p = self.decoder.decode_action(raw_act)
 
-            st = self._get_vehicle_state_dict(vid)
-            if st is not None:
-                # The decoder owns the subchannel range; a grant outside it
-                # would silently create a phantom channel with its own CBR.
-                assert 0 <= ch < self.num_channels, (
-                    f"FATAL: grant for {vid} names subchannel {ch}, outside [0, {self.num_channels})"
-                )
-                self.tx_powers.append(p)
-                step_tx_power[vid] = float(p)
-                step_channel[vid] = int(ch)
-                step_redundant[vid] = self._is_redundant_update(vid, st)
-                tx_item = {
-                    "vid": vid,
-                    "pos": st["pos"],
-                    "vel": st["vel"],
-                    "tx_dbm": p,
-                    "dist": st["dist_to_rsu"],
-                    "delta": delta,
-                    "ch": ch,
-                }
-                pending_transmissions.setdefault(ch, []).append(tx_item)
+            # The decoder owns the ranges; a grant outside them would silently
+            # create a phantom subchannel with its own CBR, or an interval the
+            # action space cannot express.
+            assert 0 <= ch < self.num_channels, (
+                f"FATAL: grant for {vid} names subchannel {ch}, outside [0, {self.num_channels})"
+            )
+            d_lo = float(getattr(self.decoder, "delta_min", 0.1))
+            d_hi = float(getattr(self.decoder, "delta_max", 45.0))
+            assert d_lo - 1e-6 <= delta <= d_hi + 1e-6, (
+                f"FATAL: grant for {vid} names Delta {delta}s, outside [{d_lo}, {d_hi}]"
+            )
 
-        # 2. Step SUMO simulation
+            self.pending_grant[vid] = {"ch": int(ch), "p": float(p),
+                                       "delta": float(delta), "retries": 0}
+            self.next_update_t[vid] = self.sim_time + float(delta)
+            self.interval_accum[vid] = 0.0
+            self.interval_start_t[vid] = self.sim_time
+
+        # ====================================================================
+        # 2. Which standing grants are due to fire on this step
+        # ====================================================================
+        pending_transmissions: Dict[int, List[Dict[str, Any]]] = {}
+        step_tx_power: Dict[str, float] = {}
+        step_channel: Dict[str, int] = {}
+
+        for vid, grant in list(self.pending_grant.items()):
+            if self.sim_time < self.next_update_t.get(vid, math.inf):
+                continue  # still inside its Delta -- stays silent
+            st = self._get_vehicle_state_dict(vid)
+            if st is None:
+                continue  # out of range; handled as an exit below
+            ch = int(grant["ch"])
+            p = float(grant["p"])
+            self.tx_powers.append(p)
+            step_tx_power[vid] = p
+            step_channel[vid] = ch
+            pending_transmissions.setdefault(ch, []).append({
+                "vid": vid,
+                "pos": st["pos"],
+                "vel": st["vel"],
+                "tx_dbm": p,
+                "dist": st["dist_to_rsu"],
+                "ch": ch,
+            })
+
+        # ====================================================================
+        # 3. Step SUMO simulation
+        # ====================================================================
         libsumo.simulationStep()
         self.sim_time = float(libsumo.simulation.getTime())
 
@@ -1245,15 +1398,17 @@ class AoiV2IEnv:
         # ====================================================================
         # ANTI-MOCKING ASSERTION 2: Actual SUMO Vehicle Coordinates & Motion
         # Ported verbatim from src/aoi_env.py::AoiV2IEnv.step (L698-725).
-        # Strictness preserved: float type check, grid-bounds check, and a
-        # strictly-positive displacement check for every vehicle with speed
-        # > 1.0 m/s (the audited threshold, tighter than the previous 2.0).
         # ====================================================================
         raw_vehicle_ids = libsumo.vehicle.getIDList()
         assert isinstance(raw_vehicle_ids, (list, tuple)), (
             "FATAL: sumo.vehicle.getIDList() did not return a valid list!"
         )
         active_ids = set(raw_vehicle_ids)
+        # This assertion deliberately queries SUMO directly -- that is what makes
+        # it an anti-mocking check -- and it runs immediately after the step, so
+        # its result is also the freshest possible fill for the per-instant cache.
+        self._active_ids = active_ids
+        self._active_ids_at = self.sim_time
 
         for vid in raw_vehicle_ids:
             v_pos = libsumo.vehicle.getPosition(vid)
@@ -1270,7 +1425,6 @@ class AoiV2IEnv:
                 f"FATAL: Vehicle {vid} position {v_pos} is out of SUMO grid bounds [0, {self.network_max_x}]!"
             )
 
-            # Check displacement for moving vehicles
             if vid in self._prev_all_positions and v_spd > 1.0:
                 p_prev = self._prev_all_positions[vid]
                 dist_moved = math.hypot(v_pos[0] - p_prev[0], v_pos[1] - p_prev[1])
@@ -1279,44 +1433,52 @@ class AoiV2IEnv:
                 )
             self._prev_all_positions[vid] = (float(v_pos[0]), float(v_pos[1]))
 
-        # 3. Calculate estimation errors and AoI on pre-update dead reckoning state
-        rewards: Dict[str, float] = {}
-        terminateds: Dict[str, bool] = {}
-        truncateds: Dict[str, bool] = {}
-        reward_details: Dict[str, Dict[str, float]] = {}
-
-        # --------------------------------------------------------------------
-        # Channel Busy Ratio, measured from real 802.11p airtime.
-        #
-        # WAS: a cumulative bookkeeping ratio,
-        #      min(1, total_tx_attempts / (current_step * num_channels * 2)),
-        # which had no airtime in it at all, was a running average over the
-        # whole episode rather than a per-step load, was identical for all four
-        # subchannels, and hinged on the arbitrary factor 2. Choosing a longer
-        # Delta therefore never showed up as a lighter channel.
-        #
-        # NOW: for each subchannel, the fraction of this step during which the
-        # subchannel is actually occupied by granted frames,
-        #      CBR[ch] = n_grants[ch] * frame_airtime / step_length,
-        # with frame_airtime from Communications (40 us + 8 us * N_sym for a
-        # 300 B CAM at the operating MCS) and step_length read from SUMO. A
-        # failed frame still burns its airtime, so occupancy is charged on
-        # grant, before the SINR outcome is known.
-        # --------------------------------------------------------------------
+        # ====================================================================
+        # 4. Channel Busy Ratio, measured from real 802.11p airtime.
+        #        CBR[ch] = n_grants[ch] * frame_airtime / step_length
+        #    Occupancy is charged on the grant, before the SINR outcome is known:
+        #    a failed frame still burns its airtime.
+        # ====================================================================
         busy_time_s = [0.0] * self.num_channels
         for ch_idx, group in pending_transmissions.items():
             busy_time_s[ch_idx] += len(group) * self.frame_airtime_s
         self.subchannel_cbr = [
-            min(1.0, b / self.step_length) for b in busy_time_s
+            min(1.0, b / max(self.step_length, 1e-9)) for b in busy_time_s
         ]
         self.cbr = float(sum(self.subchannel_cbr) / max(1, self.num_channels))
         self.recorded_cbrs.append(self.cbr)
         cbr = self.cbr
+
+        # ====================================================================
+        # 5. Age, dead-reckoning error, and SMDP interval accrual.
+        #    `age` is the true elapsed time since this vehicle's last successful
+        #    update. It is NOT clamped: the former max(1.0, .) floor pinned 98.8%
+        #    of samples to 1.0, which flattened the AoI metric to a constant and
+        #    made the extrapolation predict 1 s ahead of a 0.1 s reality.
+        # ====================================================================
+        rewards: Dict[str, float] = {}
+        terminateds: Dict[str, bool] = {}
+        truncateds: Dict[str, bool] = {}
+        reward_details: Dict[str, Dict[str, float]] = {}
+        completed: List[Dict[str, Any]] = []
+        err_now: Dict[str, float] = {}
+
         is_truncated = self.current_step >= self.max_steps
 
         for vid in list(self.vehicle_tracks.keys()):
             if vid not in active_ids:
+                # Vehicle left the network: close any open interval as terminal.
+                if vid in self.interval_start_t:
+                    rec = self._finalize_interval(
+                        vid, transmitted=False, power_dbm=0.0, channel=None,
+                        err_at_update_m=0.0, done=True,
+                    )
+                    completed.append(rec)
+                    rewards[vid] = rec["reward"]
+                    reward_details[vid] = rec
                 self.vehicle_tracks.pop(vid, None)
+                self._lane_index_at = -1.0
+                self.last_speeds.pop(vid, None)
                 terminateds[vid] = True
                 truncateds[vid] = False
                 continue
@@ -1324,189 +1486,56 @@ class AoiV2IEnv:
             track = self.vehicle_tracks[vid]
             st = self._get_vehicle_state_dict(vid)
             if st is None:
+                # Still in the simulation but outside the RSU disc -- same exit path.
+                if vid in self.interval_start_t:
+                    rec = self._finalize_interval(
+                        vid, transmitted=False, power_dbm=0.0, channel=None,
+                        err_at_update_m=0.0, done=True,
+                    )
+                    completed.append(rec)
+                    rewards[vid] = rec["reward"]
+                    reward_details[vid] = rec
                 self.vehicle_tracks.pop(vid, None)
+                self._lane_index_at = -1.0
                 terminateds[vid] = True
                 truncateds[vid] = False
                 continue
 
-            # Dead reckoning extrapolation
-            age = max(1.0, self.sim_time - track["t_update"])
-            hat_x = track["pos"][0] + track["vel"][0] * age
-            hat_y = track["pos"][1] + track["vel"][1] * age
-            true_x, true_y = st["pos"]
-            err = math.hypot(true_x - hat_x, true_y - hat_y)
+            age = max(0.0, self.sim_time - float(track["t_update"]))
+            err = estimation_error(st["pos"], track["pos"], track["vel"], age)
+            err_now[vid] = err
 
             self.recorded_errors.append(err)
             self.recorded_aois.append(age)
             self.per_vehicle_aois.setdefault(vid, []).append(age)
             self.per_vehicle_errors.setdefault(vid, []).append(err)
-
             if st["speed"] < 2.0:
                 self.low_speed_errors.append(err)
             else:
                 self.high_speed_errors.append(err)
 
-            # ----------------------------------------------------------------
-            # SMDP Reward (Conversation.md section 3, approved):
-            #   R_t = -( w1*Norm(e^2) + w2*Norm(P_tx) + w3*Norm(C_freq)
-            #            + w4*I_redundant )
-            # All four terms are min-max normalized into [0, 1] before weighting.
-            # ----------------------------------------------------------------
-            # Term 1: normalized squared estimation error.
-            r_err = min(1.0, (err ** 2) / 100.0)
+            # Interval accrual: the error term of the SMDP reward (D2).
+            if vid in self.interval_accum:
+                self.interval_accum[vid] += norm_sq_error(err) * (self.step_length / 1.0)
 
-            # Term 2: normalized transmit power, using THIS vehicle's own granted
-            # power and the decoder's configured range (single source of truth in
-            # src/rl_interface.py::ActionDecoder). A vehicle that did not transmit
-            # this step burns no power and so pays no power penalty.
-            p_lo = float(getattr(self.decoder, "p_min", 10.0))
-            p_hi = float(getattr(self.decoder, "p_max", 23.0))
-            if vid in step_tx_power:
-                p_val = step_tx_power[vid]
-                r_power = min(1.0, max(0.0, (p_val - p_lo) / max(1e-6, p_hi - p_lo)))
-            else:
-                r_power = 0.0
-
-            # Term 3: normalized channel congestion (CBR), already in [0, 1] by
-            # construction (busy time / step duration). A vehicle that was
-            # granted a slot pays the load of the subchannel it occupied -- that
-            # is the channel its power and its Delta actually contended on. A
-            # vehicle that transmitted nothing pays the network-level mean,
-            # since congestion is still the externality it lives with.
-            if vid in step_channel:
-                r_cong = self.subchannel_cbr[step_channel[vid]]
-            else:
-                r_cong = cbr
-            r_cong = min(1.0, max(0.0, float(r_cong)))
-
-            # Term 4: explicit redundant-update penalty (binary indicator).
-            r_redundant = float(step_redundant.get(vid, 0.0))
-
-            reward_val = -(
-                self.w1 * r_err
-                + self.w2 * r_power
-                + self.w3 * r_cong
-                + self.w4 * r_redundant
-            )
-
-            assert not math.isnan(reward_val) and not math.isinf(
-                reward_val
-            ), f"Anti-mocking violation: NaN/Inf reward {reward_val}"
-
-            rewards[vid] = float(reward_val)
             terminateds[vid] = False
             truncateds[vid] = is_truncated
-            reward_details[vid] = {
-                "r_err": float(r_err),
-                "r_power": float(r_power),
-                "cbr": float(r_cong),
-                "i_redundant": float(r_redundant),
-                "reward": float(reward_val),
-                "error": float(err),
-                "aoi": float(age),
-            }
 
         # ====================================================================
-        # ANTI-MOCKING ASSERTION 4: Reward Mathematical Specification Check
-        # Ported from src/aoi_env.py::AoiV2IEnv.step (L893-912). Same semantics,
-        # now covering ALL FOUR design terms: every normalized penalty component
-        # must lie in [0, 1], I_redundant must be binary, the emitted reward must
-        # re-derive exactly from the weighted 4-term formula, and a penalty-based
-        # reward must be <= 0.
-        # ====================================================================
-        for vid, r_info in reward_details.items():
-            re_ = r_info["r_err"]
-            rp_ = r_info["r_power"]
-            rc_ = r_info["cbr"]
-            ir_ = r_info["i_redundant"]
-            rv = r_info["reward"]
-
-            assert 0.0 <= re_ <= 1.0, f"FATAL: Normalized error term {re_} out of bounds [0, 1]!"
-            assert 0.0 <= rp_ <= 1.0, f"FATAL: Normalized power term {rp_} out of bounds [0, 1]!"
-            assert 0.0 <= rc_ <= 1.0, f"FATAL: Normalized congestion term {rc_} out of bounds [0, 1]!"
-            assert ir_ in (0.0, 1.0), f"FATAL: I_redundant must be binary (0.0 or 1.0), got {ir_}!"
-
-            # The congestion term is now a measured quantity, so re-derive it
-            # from the raw grant list and the Communications airtime model
-            # instead of trusting the cached self.subchannel_cbr array.
-            air = comm.frame_airtime_s(self.payload_bytes)
-            assert air > 0.0, f"FATAL: Communications reported non-positive frame airtime {air}"
-            # The denominator comes back from SUMO itself, not from the cached
-            # self.step_length, so a falsified step length cannot deflate CBR.
-            dt = float(libsumo.simulation.getDeltaT())
-            assert math.isclose(dt, self.step_length, rel_tol=1e-9), (
-                f"FATAL: cached step length {self.step_length} s disagrees with SUMO's {dt} s"
-            )
-            re_cbr = [
-                min(1.0, len(pending_transmissions.get(c, [])) * air / dt)
-                for c in range(self.num_channels)
-            ]
-            if vid in step_channel:
-                exp_cbr = re_cbr[step_channel[vid]]
-            else:
-                exp_cbr = sum(re_cbr) / max(1, self.num_channels)
-            assert math.isclose(rc_, exp_cbr, abs_tol=1e-9), (
-                f"FATAL: CBR term for {vid} does not re-derive from measured airtime: "
-                f"{rc_} != {exp_cbr}"
-            )
-
-            expected_r = -(self.w1 * re_ + self.w2 * rp_ + self.w3 * rc_ + self.w4 * ir_)
-            assert math.isclose(rv, expected_r, abs_tol=1e-5), (
-                f"FATAL: Reward calculation mismatch for {vid}: {rv} != {expected_r}"
-            )
-            assert rv <= 0.0, f"FATAL: Penalty-based reward must be <= 0, got {rv}"
-
-        # 4. Resolve uplink transmissions via Communications.judge_uplink (Rayleigh fading)
-        # ====================================================================
-        # ANTI-MOCKING ASSERTION 3: Communications Rayleigh SINR Execution
-        # Ported from src/aoi_env.py::AoiV2IEnv.step (L800-813). Static module
-        # integrity checks run before resolution; per-vehicle probability
-        # validation (presence, [0, 1] range, NaN/Inf) runs inline at the exact
-        # point of use so the RNG consumption order is left untouched.
+        # 6. Resolve the uplinks that fired, via Communications.judge_uplink.
         # ====================================================================
         assert hasattr(comm, "judge_uplink"), "FATAL: Communications.judge_uplink is missing!"
-        assert hasattr(comm, "path_loss_db"), "FATAL: Communications.path_loss_db is missing!"
-        assert comm.FREQ_HZ == 5.9e9, f"FATAL: Communications.FREQ_HZ is corrupted: {comm.FREQ_HZ}"
-        # Link budget must be a real one: both antenna gains present, the
-        # subchannel 10 MHz wide, and the thermal floor kTB + NF = -95.0 dBm.
-        assert comm.G_TX_DBI > 0.0 and comm.G_RX_DBI > 0.0, (
-            f"FATAL: antenna gains missing from the link budget "
-            f"(G_tx={comm.G_TX_DBI}, G_rx={comm.G_RX_DBI})"
-        )
-        assert math.isclose(comm.TOTAL_BW_HZ / self.num_channels, 10e6, rel_tol=1e-9), (
-            f"FATAL: subchannel bandwidth is {comm.TOTAL_BW_HZ / self.num_channels} Hz, not the "
-            "802.11p 10 MHz channel"
-        )
-        assert math.isclose(comm.noise_floor_dbm(comm.TOTAL_BW_HZ / self.num_channels), -95.0, abs_tol=1e-6), (
-            f"FATAL: noise floor is {comm.noise_floor_dbm(comm.TOTAL_BW_HZ / self.num_channels)} dBm, "
-            "expected -95.0 dBm at 10 MHz with NF 9 dB"
-        )
-        # The decoding threshold must still be the operating MCS's requirement,
-        # not a literal that has drifted away from the rate being charged for.
-        assert comm.SINR_TH_DB == comm.get_mcs(comm.OPERATING_RATE_MBPS).req_sinr_db, (
-            f"FATAL: SINR_TH_DB {comm.SINR_TH_DB} no longer derives from the "
-            f"{comm.OPERATING_RATE_MBPS} Mbps MCS"
-        )
-
         judge_called = False
         n_pending_tx = sum(len(g) for g in pending_transmissions.values())
         n_probs_evaluated = 0
 
-        # Two grants landing on the same subchannel in the same step do not
-        # necessarily collide. A frame is 448 us at 6 Mbps while a step is 100 ms,
-        # so the RSU's grant fixes roughly when a vehicle transmits but not the
-        # sub-step instant. Treating every co-channel grant as simultaneous — which
-        # is what this loop used to do — charged full mutual interference to frames
-        # occupying under 1% of the step, and drove packet loss to ~0.89 while the
-        # measured channel busy ratio sat at 0.007. That is not a calibration issue,
-        # it is the wrong access model.
-        #
-        # A tagged frame is hit only by frames whose start falls within +/- one frame
-        # duration of its own, so each other grant on that subchannel interferes with
-        # probability 2*T_air/T_step (the classic vulnerable period). Interferers are
-        # drawn per tagged frame from the seeded channel RNG, then handed to the
-        # unchanged Rayleigh-SINR model, so the physics of judge_uplink is untouched
-        # and only the temporal overlap it is asked about changes.
+        # Two grants on the same subchannel in the same step do not necessarily
+        # collide: a frame is 448 us at 6 Mbps while a step is 100 ms, so a tagged
+        # frame is hit only by frames starting within one frame duration of it.
+        # Each co-channel grant therefore interferes with probability
+        # 2*T_air/T_step (the classic vulnerable period), drawn from the seeded
+        # channel RNG. judge_uplink's Rayleigh-SINR physics is untouched; only the
+        # temporal overlap it is asked about changes.
         p_overlap = min(1.0, 2.0 * self.frame_airtime_s / max(self.step_length, 1e-9))
         self._last_p_overlap = p_overlap
 
@@ -1531,6 +1560,9 @@ class AoiV2IEnv:
                     f"FATAL: judge_uplink did not evaluate transmitting vehicle {vid}!"
                 )
                 prob = succ_probs[vid]
+                # ============================================================
+                # ANTI-MOCKING ASSERTION 3: Rayleigh SINR value validation
+                # ============================================================
                 assert 0.0 <= prob <= 1.0, (
                     f"FATAL: Uplink success probability {prob} for {vid} out of [0, 1]!"
                 )
@@ -1540,24 +1572,109 @@ class AoiV2IEnv:
                 n_probs_evaluated += 1
                 is_succ = random.random() < prob
 
-                last_t = self.vehicle_tracks.get(vid, {}).get("t_update", self.sim_time - 1.0)
-                peak_val = max(1.0, self.sim_time - last_t)
-                self.peak_aois.append(peak_val)
+                last_t = float(self.vehicle_tracks.get(vid, {}).get("t_update", self.sim_time))
+                self.peak_aois.append(max(0.0, self.sim_time - last_t))
 
                 if is_succ:
+                    e_upd = err_now.get(vid, 0.0)
+                    rec = self._finalize_interval(
+                        vid, transmitted=True, power_dbm=item["tx_dbm"],
+                        channel=item["ch"], err_at_update_m=e_upd, done=False,
+                    )
+                    completed.append(rec)
+                    rewards[vid] = rec["reward"]
+                    reward_details[vid] = rec
+
+                    # Refresh the ledger with what the vehicle just reported.
+                    st_after = self._get_vehicle_state_dict(vid)
+                    tls_after = (st_after or {}).get("tls_features") or {}
+                    self._lane_index_at = -1.0
                     self.vehicle_tracks[vid] = {
                         "pos": item["pos"],
                         "vel": item["vel"],
                         "t_update": self.sim_time,
+                        "last_pred_err": float(e_upd),
+                        "lane_id": tls_after.get("lane_id"),
+                        "lane_position": tls_after.get("lane_position"),
+                        "was_stopped": bool(
+                            float((st_after or {}).get("speed", 0.0)) <= self.REDUNDANT_SPEED_EPS_MPS
+                        ),
                     }
                 else:
                     self.total_tx_fails += 1
+                    # D7: retry on the next step as a continuation of the SAME
+                    # decision -- the model is not queried again, so this is one
+                    # SMDP interval that simply ran longer than the Delta asked for.
+                    grant = self.pending_grant.get(vid)
+                    if grant is None:
+                        continue
+                    grant["retries"] = int(grant.get("retries", 0)) + 1
+                    if grant["retries"] >= self.MAX_TX_RETRIES:
+                        self.total_tx_abandoned += 1
+                        # The interval is closed without the update ever landing.
+                        # It still pays power and congestion -- the radio really
+                        # did transmit, MAX_TX_RETRIES times over -- but it cannot
+                        # pay I_redundant: that penalty is for telling the RSU
+                        # something it already knew, and here the RSU was told
+                        # nothing at all. Passing infinity makes that explicit
+                        # rather than letting the live error decide, which would
+                        # brand an undelivered update "redundant" whenever dead
+                        # reckoning happened to be accurate at that instant.
+                        rec = self._finalize_interval(
+                            vid, transmitted=True, power_dbm=item["tx_dbm"],
+                            channel=item["ch"],
+                            err_at_update_m=float("inf"),
+                            done=False,
+                        )
+                        completed.append(rec)
+                        rewards[vid] = rec["reward"]
+                        reward_details[vid] = rec
+                    else:
+                        self.next_update_t[vid] = self.sim_time  # due again next step
 
         if pending_transmissions:
             assert judge_called, "Anti-mocking violation: Communications.judge_uplink was bypassed"
             assert n_probs_evaluated == n_pending_tx, (
                 "FATAL: judge_uplink did not evaluate all transmitting vehicles! "
                 f"({n_probs_evaluated} != {n_pending_tx})"
+            )
+
+        # ====================================================================
+        # ANTI-MOCKING ASSERTION 4: Reward Mathematical Specification Check
+        # Every normalized penalty component must lie in its declared range, the
+        # emitted reward must re-derive exactly from the weighted 4-term formula,
+        # and a penalty-based reward must be <= 0. The congestion term is
+        # re-derived from the raw grant list and the Communications airtime model
+        # rather than trusting the cached subchannel_cbr array.
+        # ====================================================================
+        air = comm.frame_airtime_s(self.payload_bytes)
+        assert air > 0.0, f"FATAL: Communications reported non-positive frame airtime {air}"
+        re_cbr = [
+            min(1.0, len(pending_transmissions.get(c, [])) * air / max(self.step_length, 1e-9))
+            for c in range(self.num_channels)
+        ]
+        for vid, r_info in reward_details.items():
+            re_ = r_info["r_err"]
+            rp_ = r_info["r_power"]
+            rc_ = r_info["cbr"]
+            ir_ = r_info["i_redundant"]
+            assert re_ >= 0.0, f"FATAL: accrued error penalty for {vid} is negative: {re_}"
+            assert 0.0 <= rp_ <= 1.0, f"FATAL: power term for {vid} out of [0,1]: {rp_}"
+            assert 0.0 <= rc_ <= 1.0, f"FATAL: congestion term for {vid} out of [0,1]: {rc_}"
+            assert ir_ in (0.0, 1.0), f"FATAL: I_redundant for {vid} is not binary: {ir_}"
+            if r_info["transmitted"] and vid in step_channel:
+                exp_cbr = re_cbr[step_channel[vid]]
+                assert math.isclose(rc_, exp_cbr, abs_tol=1e-9), (
+                    f"FATAL: CBR term for {vid} does not re-derive from measured airtime: "
+                    f"{rc_} != {exp_cbr}"
+                )
+            expected = -(self.w1 * re_ + self.w2 * rp_ + self.w3 * rc_ + self.w4 * ir_)
+            assert math.isclose(r_info["reward"], expected, abs_tol=1e-9), (
+                f"FATAL: reward for {vid} does not re-derive from the 4-term formula: "
+                f"{r_info['reward']} != {expected}"
+            )
+            assert r_info["reward"] <= 0.0, (
+                f"FATAL: penalty-based reward must be <= 0, got {r_info['reward']} for {vid}"
             )
 
         next_obs = self._get_observations()
@@ -1573,17 +1690,32 @@ class AoiV2IEnv:
             "frame_airtime_s": self.frame_airtime_s,
             "tx_attempts": self.total_tx_attempts,
             "tx_fails": self.total_tx_fails,
+            "tx_abandoned": self.total_tx_abandoned,
+            # Vehicles whose SMDP interval closed on this step. The caller builds
+            # one transition per entry and asks the model for the next grant.
+            "completed": completed,
+            # Vehicles that currently hold no standing grant and therefore need
+            # a decision on the next call.
+            "needs_decision": [
+                vid for vid in next_obs if vid not in self.pending_grant
+            ],
             "reward_details": reward_details,
         }
 
         return next_obs, rewards, terminateds, truncateds, info
 
+
     def get_metrics(self) -> Dict[str, Any]:
         """Calculates 6 IEEE TWC standard metrics."""
-        mean_aoi = float(np.mean(self.recorded_aois)) if self.recorded_aois else 1.0
-        peak_aoi = float(np.mean(self.peak_aois)) if self.peak_aois else mean_aoi
-        if peak_aoi < mean_aoi:
-            peak_aoi = mean_aoi
+        # design_spec_v2 D8: Peak AoI is the MAXIMUM age reached, over every
+        # vehicle and every instant -- not the mean of the per-update peaks. The
+        # mean of the peaks is reported alongside it as `mean_peak_aoi` because
+        # both conventions appear in the literature and the paper must say which
+        # one its table uses.
+        mean_aoi = float(np.mean(self.recorded_aois)) if self.recorded_aois else 0.0
+        all_peaks = list(self.peak_aois) + list(self.recorded_aois)
+        peak_aoi = float(np.max(all_peaks)) if all_peaks else 0.0
+        mean_peak_aoi = float(np.mean(self.peak_aois)) if self.peak_aois else 0.0
 
         packet_loss = float(self.total_tx_fails / max(1, self.total_tx_attempts))
         mean_err = float(np.mean(self.recorded_errors)) if self.recorded_errors else 0.0
@@ -1599,7 +1731,13 @@ class AoiV2IEnv:
             if self.tx_powers
             else float(getattr(self.decoder, "p_min", 10.0))
         )
-        total_energy_j = float(sum(10.0 ** ((p - 30.0) / 10.0) * 0.001 for p in self.tx_powers))
+        # Energy = power x time, and the time a transmission actually occupies is
+        # the 802.11p frame airtime this same class charges CBR for (448 us for a
+        # 300 B frame at 6 Mbps). The former literal 0.001 s was an unsourced
+        # stand-in that overstated every energy figure by 0.001/0.000448 = 2.23x.
+        total_energy_j = float(
+            sum(10.0 ** ((p - 30.0) / 10.0) * self.frame_airtime_s for p in self.tx_powers)
+        )
 
         # Jain's fairness
         def jains(vals: List[float]) -> float:
@@ -1616,6 +1754,7 @@ class AoiV2IEnv:
         return {
             "mean_aoi": round(mean_aoi, 4),
             "peak_aoi": round(peak_aoi, 4),
+            "mean_peak_aoi": round(mean_peak_aoi, 4),
             "packet_loss_rate": round(packet_loss, 4),
             "mean_error": round(mean_err, 4),
             "max_error": round(max_err, 4),
@@ -1627,19 +1766,35 @@ class AoiV2IEnv:
             "jains_fairness_err": round(jains(veh_err_means), 4),
             "tx_attempts": self.total_tx_attempts,
             "tx_fails": self.total_tx_fails,
+            "tx_abandoned": self.total_tx_abandoned,
+            # Emptiness signal. Every other metric degrades to a plausible-looking
+            # number when no vehicle was ever in range (mean_aoi 0.0, power at the
+            # decoder floor), and a run like that used to pass as a healthy one --
+            # warmup_steps=35 produced exactly that and went unnoticed.
+            # `n_observations == 0` says plainly that nothing was measured.
+            "n_observations": len(self.recorded_aois),
+            "n_vehicles_seen": len(self.per_vehicle_aois),
             # Measured airtime occupancy over the episode (network mean per step).
             "mean_cbr": round(float(np.mean(self.recorded_cbrs)) if self.recorded_cbrs else 0.0, 6),
             "max_cbr": round(float(np.max(self.recorded_cbrs)) if self.recorded_cbrs else 0.0, 6),
         }
 
     def close(self) -> None:
-        """Closes SUMO cleanly."""
+        """Closes SUMO cleanly and releases resources to prevent memory leaks."""
         if self.is_running and libsumo is not None:
             try:
                 libsumo.close()
             except Exception:
                 pass
             self.is_running = False
+
+        self.vehicle_tracks.clear()
+        self.prev_positions.clear()
+        self.scheduled_tx.clear()
+        self.next_update_t.clear()
+        self.pending_grant.clear()
+        self.interval_accum.clear()
+        self.interval_start_t.clear()
 
 
 def run_hot_swap_training(
@@ -1658,7 +1813,12 @@ def run_hot_swap_training(
     tensorboard_dir: str = "/home/imnyj/Workspace/paper4/coder/logs/tensorboard",
     log_csv_path: Optional[str] = None,
     num_vehicles: Optional[int] = None,
-    warmup_steps: int = 35,
+    # 350 steps = 35 simulated seconds. The former 35 (3.5 s) was not long
+    # enough for ANY vehicle to reach the RSU disc from its spawn edge, so a run
+    # started with it observed nothing at all -- measured: 0 vehicles in range at
+    # 3.5 s, 1 at 15 s, 22 at 35 s. Short smoke runs looked healthy anyway
+    # because the empty-case metric fallbacks returned plausible numbers.
+    warmup_steps: int = 350,
     resume: bool = False,
     start_episode: int = 0,
 ) -> Dict[str, Any]:
@@ -1763,38 +1923,79 @@ def run_hot_swap_training(
             )
             obs, info = env.reset()
 
-            ep_rewards = []
-            ep_aois = []
-            ep_errors = []
+            ep_rewards: List[float] = []
+            ep_deltas: List[float] = []
+
+            # ----------------------------------------------------------------
+            # Event-driven SMDP loop (design_spec_v2, "structure").
+            #
+            # Not a gym rollout: each vehicle has its OWN decision epochs, spaced
+            # by the Delta the policy chose for it, so there is no single global
+            # (s, a, r, s') tick. `open_decision[vid]` holds the observation and
+            # raw action of the interval currently in flight for that vehicle;
+            # when the environment reports that interval closed, the transition
+            # is assembled and the vehicle is asked for its next grant.
+            # ----------------------------------------------------------------
+            trainer.scheduler.reset()
+            open_decision: Dict[str, Dict[str, Any]] = {}
+
+            # Everyone in range at reset needs an opening decision.
+            action_dict: Dict[str, Any] = {}
+            for vid, s_vec in obs.items():
+                grant, raw_action = trainer.scheduler.decide_grant(vid, s_vec)
+                open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
+                                      "raw_action": raw_action}
+                action_dict[vid] = grant
+                ep_deltas.append(float(grant[0]))
 
             for step in range(steps_per_ep):
                 if global_step >= total_steps:
                     break
                 global_step += 1
 
-                # Serve actions from Act model
-                action_dict = {}
-                for vid, s_vec in obs.items():
-                    veh_pos = env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))
-                    # Real per-vehicle speed from live SUMO telemetry (was hardcoded 10.0).
-                    veh_speed = float(env.last_speeds.get(vid, 0.0))
-                    grant = trainer.scheduler.decide_grant(
-                        vid,
-                        {
-                            "vid": vid,
-                            "current_time": env.sim_time,
-                            "pos": veh_pos,
-                            "speed": veh_speed,
-                        },
-                    )
-                    action_dict[vid] = grant
-                    ep_aois.append(grant[0])
-
                 next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
-                obs = next_obs
 
-                for r in rewards.values():
-                    ep_rewards.append(r)
+                # 1. Close every interval the environment finished this step.
+                action_dict = {}
+                for rec in step_info["completed"]:
+                    vid = rec["vid"]
+                    prev = open_decision.pop(vid, None)
+                    if prev is None:
+                        continue
+                    s2 = next_obs.get(vid)
+                    if s2 is None:
+                        # Vehicle is gone: terminal transition with a zero next state.
+                        s2 = np.zeros(trainer.scheduler.state_dim, dtype=np.float32)
+                        done = True
+                    else:
+                        done = bool(rec["done"])
+                    trainer.scheduler.push_transition(
+                        state=prev["state"],
+                        raw_action=prev["raw_action"],
+                        reward=rec["reward"],
+                        next_state=np.asarray(s2, dtype=np.float32),
+                        done=done,
+                        delta_t=rec["delta_actual"],
+                    )
+                    ep_rewards.append(float(rec["reward"]))
+
+                # 2. Ask the policy for a grant for every vehicle that now holds
+                #    none -- new arrivals and the intervals just closed.
+                for vid in step_info["needs_decision"]:
+                    s_vec = next_obs.get(vid)
+                    if s_vec is None:
+                        continue
+                    grant, raw_action = trainer.scheduler.decide_grant(vid, s_vec)
+                    open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
+                                          "raw_action": raw_action}
+                    action_dict[vid] = grant
+                    ep_deltas.append(float(grant[0]))
+
+                # 3. Drop bookkeeping for vehicles that left without closing.
+                for vid in [v for v in open_decision if v not in next_obs]:
+                    open_decision.pop(vid, None)
+
+                obs = next_obs
 
                 # Memory management & background yield
                 if global_step % 100 == 0:
@@ -1805,6 +2006,8 @@ def run_hot_swap_training(
             # Episode summary
             metrics = env.get_metrics()
             env.close()
+            del env
+            gc.collect()
 
             ep_mean_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
             trainer_metrics = trainer.background_trainer.get_metrics()
@@ -1815,6 +2018,8 @@ def run_hot_swap_training(
                 writer.add_scalar("Loss/MeanRecent", trainer_metrics["mean_recent_loss"], global_step)
                 writer.add_scalar("AoI/Mean", metrics["mean_aoi"], global_step)
                 writer.add_scalar("AoI/Peak", metrics["peak_aoi"], global_step)
+                if ep_deltas:
+                    writer.add_scalar("Action/MeanDelta", float(np.mean(ep_deltas)), global_step)
                 writer.add_scalar("Error/Mean", metrics["mean_error"], global_step)
                 writer.add_scalar("Error/Max", metrics["max_error"], global_step)
                 writer.add_scalar("Outage/Rate", metrics["packet_loss_rate"], global_step)
@@ -1837,6 +2042,10 @@ def run_hot_swap_training(
                 "mean_reward": round(ep_mean_r, 4),
                 "mean_loss": trainer_metrics["mean_recent_loss"],
                 "swap_count": trainer_metrics["hot_swap_stats"]["swap_count"],
+                # The Delta the policy actually asked for. Distinct from
+                # `mean_aoi`, which is the age the RSU actually observed.
+                "mean_delta": round(float(np.mean(ep_deltas)), 4) if ep_deltas else 0.0,
+                "n_decisions": len(ep_deltas),
                 **metrics,
             }
             episodic_records.append(ep_record)
@@ -1873,7 +2082,13 @@ def run_hot_swap_training(
         "mean_step_reward": round(float(np.mean([r["mean_reward"] for r in episodic_records])), 4)
         if episodic_records
         else 0.0,
-        "mean_scheduled_delta": round(float(np.mean([r["mean_aoi"] for r in episodic_records])), 4)
+        # Mean AoI actually measured, and the mean Delta the policy actually
+        # asked for. These were the same number before: `mean_scheduled_delta`
+        # was reading `mean_aoi` while the real Delta was collected and dropped.
+        "mean_aoi": round(float(np.mean([r["mean_aoi"] for r in episodic_records])), 4)
+        if episodic_records
+        else 0.0,
+        "mean_scheduled_delta": round(float(np.mean([r["mean_delta"] for r in episodic_records])), 4)
         if episodic_records
         else 0.0,
         "training_steps": final_metrics["training_steps"],

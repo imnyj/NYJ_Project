@@ -2,7 +2,7 @@
   "AV_SPEED": 40.0,
   "DEL_SPEED": 0.2,
   "DENSITY": 25.0,
-  "MAX_STEPS": 1935.0,
+  "MAX_STEPS": 950.0,
   "NUM_BLOCKS": 6.0,
   "NUM_LANES": 2.0,
   "OUTAGE_ZONE": 300.0,

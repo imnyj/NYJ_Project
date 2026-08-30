@@ -22,6 +22,7 @@ from src.hpo import (
     save_study_results,
 )
 from tests.contract_adapters import DummyPolicy
+from src.rl_interface import STATE_DIM
 
 
 class TestHyperparameterOptimization:
@@ -69,16 +70,23 @@ class TestHyperparameterOptimization:
             assert "aoi_thresh" in params
 
     def test_02_model_name_normalization_and_aliases(self):
-        """Verify alias resolution maps to canonical model names."""
-        assert normalize_model_name("H-PPO") == "HybridPPO"
-        assert normalize_model_name("H-SAC") == "HybridSAC"
-        assert normalize_model_name("H-TD3") == "HybridTD3"
-        assert normalize_model_name("HyAR-PPO") == "HyARPPO"
-        assert normalize_model_name("MP-DQN") == "MPDQN"
-        assert normalize_model_name("PDQN") == "MPDQN"
-        assert normalize_model_name("Pure-AoI") == "PureAoI"
-        assert normalize_model_name("Dueling-Q-AoI") == "DuelingQAoI"
-        assert normalize_model_name("SAC-AoI") == "SACAoI"
+        """Alias resolution maps to the canonical names in the baseline registry."""
+        from src.baselines import ALL_BASELINES, get_baseline
+
+        # Punctuation and case are the only things an alias may differ by.
+        assert normalize_model_name("ppo") == "PPO"
+        assert normalize_model_name("res_mapddpg") == "RES-MAPDDPG"
+        assert normalize_model_name("RESMAPDDPG") == "RES-MAPDDPG"
+        assert normalize_model_name("i-hamappo") == "I-HAMAPPO"
+        assert normalize_model_name("spamd3qn") == "SPAM-D3QN"
+        assert normalize_model_name("maddpg_mt") == "MADDPG-MT"
+
+        # Every registered baseline resolves to itself.
+        for name in ALL_BASELINES:
+            assert normalize_model_name(name) == name
+
+        # A class, not a string, resolves through its own __name__.
+        assert normalize_model_name(get_baseline("PPO")) == "PPO"
 
     def test_03_composite_objective_monotonicity_and_bounds(self):
         """Verify composite objective penalty increases monotonically with error, AoI, outage, and power."""
@@ -108,7 +116,7 @@ class TestHyperparameterOptimization:
 
     def test_04_env_evaluation_single_seed(self):
         """Verify environment evaluation produces valid IEEE TWC metrics."""
-        model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         
         metrics = evaluate_model_in_env(
             model=model,
@@ -203,11 +211,76 @@ class TestHyperparameterOptimization:
         total_w = sum(weights.values())
         assert math.isclose(total_w, 1.0, abs_tol=1e-5)
 
-    def test_09_scraped_baseline_raises_error(self):
-        """Verify attempting to run HPO for string model without model_cls raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="Baseline models scraped"):
-            run_hpo_study(model_name="HybridPPO", n_trials=1)
+    def test_09_string_model_name_resolves_through_the_registry(self):
+        """A bare model name must be enough; model_cls is optional.
+
+        This test used to assert the opposite -- that a string raised
+        NotImplementedError("Baseline models scraped") -- which locked in a
+        regression: evaluate.py and hpo.py had kept the discarded model names
+        after the baselines were replaced, so neither could construct any of the
+        nine real models. An unknown name must still fail, and loudly.
+        """
+        from src.hpo import CANONICAL_MODEL_NAMES
+
+        assert "PPO" in CANONICAL_MODEL_NAMES
+        study = run_hpo_study(model_name="PPO", n_trials=1, seeds=[42], n_steps=8)
+        assert study.best_trial is not None
+
+        with pytest.raises(KeyError, match="Unknown baseline"):
+            run_hpo_study(model_name="HybridPPO", n_trials=1, seeds=[42], n_steps=8)
 
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestHparamsActuallyReachModels:
+    """Optuna's search space must land on real constructor arguments.
+
+    All nine baselines end their __init__ with **hparams, so a key that does not
+    match a named parameter is swallowed without error and the trial trains at
+    library defaults while reporting a tuned value. That is exactly what happened
+    between 2026-08-28 and 2026-08-30: sample_hparams was still keyed on the
+    discarded model names, so every branch missed and only `gamma` took effect.
+    """
+
+    def test_every_sampled_key_is_a_real_constructor_argument(self):
+        from src.hpo import CANONICAL_MODEL_NAMES, assert_hparams_reach_model
+
+        unreachable = {
+            name: missing
+            for name in CANONICAL_MODEL_NAMES
+            if (missing := assert_hparams_reach_model(name))
+        }
+        assert not unreachable, (
+            f"These sampled hyperparameters would vanish into **hparams: {unreachable}"
+        )
+
+    def test_search_space_is_not_the_generic_fallback(self):
+        """Each baseline needs its own space, not the three-key default."""
+        from src.hpo import CANONICAL_MODEL_NAMES, _search_space_keys
+
+        generic = {"lr", "hidden_dim", "gamma"}
+        for name in CANONICAL_MODEL_NAMES:
+            keys = set(_search_space_keys(name))
+            assert keys != generic, f"{name} is falling through to the generic fallback"
+            assert len(keys) >= 4, f"{name} samples only {sorted(keys)}"
+
+    def test_sampled_values_take_effect_at_runtime(self):
+        """Name matching is necessary but not sufficient -- check the value lands."""
+        from src.baselines import get_baseline
+
+        ppo = get_baseline("PPO")(
+            state_dim=STATE_DIM, num_channels=4,
+            learning_rate=9.9e-4, clip_range=0.29, ent_coef=0.049,
+        )
+        sb3 = ppo._sb3
+        assert sb3.policy.optimizer.param_groups[0]["lr"] == pytest.approx(9.9e-4)
+        assert sb3.clip_range(1.0) == pytest.approx(0.29)
+        assert sb3.ent_coef == pytest.approx(0.049)
+
+        carlton = get_baseline("CARLTON")(
+            state_dim=STATE_DIM, num_channels=4, lr=7e-4, omega=0.77,
+        )
+        assert carlton.optimizer.param_groups[0]["lr"] == pytest.approx(7e-4)
+        assert carlton.omega == pytest.approx(0.77)

@@ -6,7 +6,7 @@
 # 1. StateVectorizer: 17-dimensional normalized observation vector in [-1.0, 1.0]
 #    from the RSU perspective without future / ground-truth estimation error leakage.
 # 2. ActionDecoder: Decodes hybrid action space (logits & indices) into valid
-#    grant 3-tuple (Delta in [0.1, 5.0]s, ch in {0..3}, p in [10.0, 23.0]dBm).
+#    grant 3-tuple (Delta in [DELTA_MIN, DELTA_MAX]s, ch in {0..3}, p in [P_MIN, P_MAX]dBm).
 # 3. RetrospectiveReplayBuffer: SMDP retrospective transition buffer with
 #    variable-interval discount gamma^Delta support.
 #
@@ -154,6 +154,40 @@ def get_sumo_max_edge_speed(
 #: Scenario speed limit (m/s), derived from the generated network.
 V_LIMIT: float = get_sumo_max_edge_speed()
 
+#: RSU communication range (m). `src/sumo/make_sumo_set.py` owns this value --
+#: it is what actually builds the network geometry (EDGE_LENGTH is derived from
+#: it) -- so every consumer must read it from there instead of restating 300.0.
+#: A literal here would go stale the moment anyone sweeps the range, and the
+#: mismatch would be silent: observations would normalise distances against one
+#: radius while the environment admitted vehicles using another.
+try:
+    from src.sumo.make_sumo_set import RSU_RANGE as _SS_RSU_RANGE
+    RSU_RANGE: float = float(_SS_RSU_RANGE)
+except Exception:  # pragma: no cover - only when the sumo package is unavailable
+    RSU_RANGE = 300.0
+
+def refresh_scenario_constants() -> Dict[str, float]:
+    """Re-read the scenario-derived constants from the generated network.
+
+    DELTA_MAX, V_LIMIT and E_REF describe the network on disk, not this module.
+    They are computed once at import, which is wrong the moment `make_sumo_files()`
+    writes a different network afterwards -- a changed signal plan moves DELTA_MAX,
+    a changed AV_SPEED moves V_LIMIT and E_REF, and nothing would notice. The
+    environment calls this right after generating its network, so the constants
+    describe the scenario actually being simulated.
+
+    Consumers must read these through a live lookup rather than capturing them in
+    a default argument, which binds at definition time. `ActionDecoder` and
+    `StateVectorizer` take 0.0 to mean "resolve now"; `norm_sq_error` reads the
+    module global on every call.
+    """
+    global DELTA_MAX, V_LIMIT, E_REF
+    DELTA_MAX = get_sumo_max_red_phase_duration()
+    V_LIMIT = get_sumo_max_edge_speed()
+    E_REF = V_LIMIT * 1.0
+    return {"DELTA_MAX": DELTA_MAX, "V_LIMIT": V_LIMIT, "E_REF": E_REF}
+
+
 #: Estimation-error reference scale (metres), design_spec_v2 D5.
 #:
 #: One second of travel at the scenario speed limit. The point of dividing a
@@ -168,6 +202,36 @@ V_LIMIT: float = get_sumo_max_edge_speed()
 #: roughly two orders of magnitude below the power term. Since `hpo.py` normalises
 #: w1..w4 to sum to 1, no weight Optuna can sample recovers from that.
 E_REF: float = V_LIMIT * 1.0
+
+
+def extrapolate(last_pos: Tuple[float, float],
+                last_vel: Tuple[float, float],
+                age: float) -> Tuple[float, float]:
+    """The RSU's dead-reckoned belief: last reported position carried forward.
+
+        p_hat(t) = p_last + v_last * age
+
+    Constant-velocity extrapolation is deliberate, not a simplification to
+    apologise for: it is what makes a stopped vehicle's stale record stay exact
+    (v = 0 so the belief never drifts) while a manoeuvring one decays. That
+    asymmetry is the whole premise of scheduling updates by need.
+    """
+    return (float(last_pos[0]) + float(last_vel[0]) * float(age),
+            float(last_pos[1]) + float(last_vel[1]) * float(age))
+
+
+def estimation_error(true_pos: Tuple[float, float],
+                     last_pos: Tuple[float, float],
+                     last_vel: Tuple[float, float],
+                     age: float) -> float:
+    """Euclidean distance between ground truth and the RSU's extrapolation.
+
+    This is `e` in the reward: the quantity `norm_sq_error` squashes and the
+    quantity `I_redundant` thresholds. One definition, one function, so the
+    paper's symbol and the code cannot drift apart.
+    """
+    ex, ey = extrapolate(last_pos, last_vel, age)
+    return math.hypot(float(true_pos[0]) - ex, float(true_pos[1]) - ey)
 
 
 def norm_sq_error(err_m: float, e_ref: float = 0.0) -> float:
@@ -189,15 +253,16 @@ def norm_sq_error(err_m: float, e_ref: float = 0.0) -> float:
 
 class StateVectorizer:
     """
-    18-dimensional normalized State Vectorizer.
+    Normalized State Vectorizer; the width is STATE_DIM, never a literal.
 
     Transforms raw vehicle kinematics, RSU spatial metrics, TraCI TLS signal states,
     and channel congestion indicators into a normalized feature vector in [-1.0, 1.0].
 
     Features:
-    [0]  Normalized Age (AoI): clip(age / DELTA_MAX, 0.0, 1.0). Scaled by the
-         Delta upper bound (45 s) rather than a 10 s literal, so the feature does
-         not saturate over the interval range the scheduler can actually choose.
+    [0]  Last prediction error, normalized: norm_sq_error(e_last) in [0.0, 1.0).
+         How wrong the RSU's dead reckoning was at this vehicle's most recent
+         update. Replaces the former normalized-age slot, which is identically
+         zero at every SMDP decision epoch and therefore carried no signal.
     [1]  Normalized Vx: clip(vx / v_max, -1.0, 1.0)
     [2]  Normalized Vy: clip(vy / v_max, -1.0, 1.0)
     [3]  Normalized Speed: clip(speed / v_max, 0.0, 1.0)
@@ -225,12 +290,13 @@ class StateVectorizer:
 
     def __init__(
         self,
-        rsu_range: float = 300.0,
+        rsu_range: float = 0.0,
         v_max: float = 0.0,
         a_max: float = 5.0,
         queue_max: float = 20.0,
     ) -> None:
-        self.rsu_range = float(rsu_range)
+        # 0 means "derive from the scenario", same convention as v_max below.
+        self.rsu_range = float(rsu_range) if rsu_range and rsu_range > 0.0 else RSU_RANGE
         # 0 means "derive from the scenario". The former literal 30.0 m/s was
         # 2.3x the fastest lane in the generated network, so the speed features
         # only ever used the bottom 44 % of their range.
@@ -321,12 +387,8 @@ class StateVectorizer:
         if vehicle_node is None or rsu_node is None:
             return vec
 
-        # [0] Normalized AoI
-        last_t = getattr(vehicle_node, "_prev_t", current_time)
-        if last_t is None:
-            last_t = current_time
-        age = max(0.0, float(current_time) - float(last_t))
-        vec[0] = np.clip(age / DELTA_MAX, 0.0, 1.0)
+        # [0] Quality of the RSU's last prediction (see vectorize_from_dict).
+        vec[0] = norm_sq_error(float(getattr(vehicle_node, "last_pred_err", 0.0)))
 
         # [1-3] Velocities and speed
         vel = getattr(vehicle_node, "vel", (0.0, 0.0))
@@ -395,11 +457,18 @@ class StateVectorizer:
         vel = state_dict.get("vel", (0.0, 0.0))
         speed = state_dict.get("speed", math.hypot(vel[0], vel[1]))
         accel = state_dict.get("accel", 0.0)
-        cur_t = state_dict.get("current_time", 0.0) or 0.0
-        last_t = state_dict.get("last_update_time", cur_t) or cur_t
-
-        age = max(0.0, float(cur_t) - float(last_t))
-        vec[0] = np.clip(age / DELTA_MAX, 0.0, 1.0)
+        # [0] Quality of the RSU's last prediction for this vehicle.
+        #
+        # This slot used to hold normalized age. Under the SMDP formulation age
+        # is structurally zero at every decision epoch -- the RSU decides right
+        # after an update lands -- so the feature reached the policy as a
+        # constant and carried nothing. Measured: 1 unique value over a full run.
+        #
+        # What the RSU does know at that instant, for free, is how wrong its
+        # dead-reckoned belief turned out to be just before the report arrived.
+        # That is a direct read on how far this particular vehicle can be trusted
+        # to stay predictable, which is exactly what choosing Delta needs.
+        vec[0] = norm_sq_error(float(state_dict.get("last_pred_err", 0.0)))
         vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
         vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
         vec[3] = np.clip(float(speed) / self.v_max, 0.0, 1.0)
@@ -470,13 +539,15 @@ class ActionDecoder:
         self,
         num_channels: int = 4,
         delta_min: float = DELTA_MIN,
-        delta_max: float = DELTA_MAX,
+        delta_max: float = 0.0,
         p_min: float = P_MIN,
         p_max: float = P_MAX,
     ) -> None:
         self.num_channels = int(num_channels)
         self.delta_min = float(delta_min)
-        self.delta_max = float(delta_max)
+        # 0.0 means "resolve from the scenario now". A `= DELTA_MAX` default
+        # would bind the value at import time and ignore any later network.
+        self.delta_max = float(delta_max) if delta_max and delta_max > 0.0 else DELTA_MAX
         self.p_min = float(p_min)
         self.p_max = float(p_max)
         # log(delta_max / delta_min): the geometric span used by the Delta mapping.
@@ -541,9 +612,16 @@ class ActionDecoder:
         else:
             raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
 
-        # Continuous delta mapping [delta_min, delta_max]
+        # Continuous delta mapping, GEOMETRIC over [delta_min, delta_max].
+        # This used to be a linear interpolation of the sigmoid, which contradicted
+        # this class's own docstring and `delta_from_unit`. The two disagree by an
+        # order of magnitude in the region the scheduler lives in: at logit 0 the
+        # linear form emits 22.55 s where the geometric one emits 2.12 s. Every
+        # baseline calls `delta_from_unit` directly, so the linear form never
+        # reached a run -- but it was one fallback away from silently halving the
+        # resolution of the short-interval regime the paper is about.
         sig_d = self._sigmoid(float(raw_delta))
-        delta = self.delta_min + sig_d * (self.delta_max - self.delta_min)
+        delta = self.delta_from_unit(sig_d)
 
         # Discrete channel mapping {0..num_channels-1}
         ch = int(round(float(raw_ch))) % self.num_channels
@@ -555,10 +633,12 @@ class ActionDecoder:
         return (float(delta), int(ch), float(power))
 
     def encode_action(self, delta: float, ch: int, power: float) -> np.ndarray:
+        """Inverse of `decode_action`: (delta, ch, power) back to raw logits.
+
+        Delta inverts through `unit_from_delta` so the pair stays geometric on
+        both sides. Power stays linear because dBm is already a log unit.
         """
-        Inverse logit encoding from (delta, ch, power) to raw action values.
-        """
-        norm_d = (delta - self.delta_min) / max(1e-6, self.delta_max - self.delta_min)
+        norm_d = self.unit_from_delta(delta)
         norm_p = (power - self.p_min) / max(1e-6, self.p_max - self.p_min)
         raw_d = self._logit(norm_d)
         raw_p = self._logit(norm_p)

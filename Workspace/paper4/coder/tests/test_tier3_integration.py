@@ -23,6 +23,7 @@ from tests.contract_adapters import (
     calculate_metrics,
 )
 from tests.conftest import DummyNode
+from src.rl_interface import STATE_DIM
 
 
 class TestTier3Integration:
@@ -60,7 +61,7 @@ class TestTier3Integration:
         """Verify complete RL feedback loop: State -> Vectorizer -> Actor -> Decoder -> Buffer -> Update."""
         vectorizer = StateVectorizer(rsu_range=300.0)
         buffer = RetrospectiveReplayBuffer(capacity=500)
-        agent = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        agent = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
 
         # Simulate 20 environment interaction steps
         cur_t = 0.0
@@ -91,8 +92,8 @@ class TestTier3Integration:
 
     def test_03_concurrent_simulation_hot_swap(self):
         """Verify hot-swapping model parameters in the background while inference loop runs concurrently."""
-        act_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
-        rest_model = DummyPolicy(state_dim=18, num_channels=4, hidden_dim=32)
+        act_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        rest_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         manager = DualModelHotSwapManager(act_model, rest_model)
 
         inference_count = 0
@@ -101,7 +102,7 @@ class TestTier3Integration:
 
         def serving_worker():
             nonlocal inference_count
-            dummy_state = np.random.uniform(-1, 1, size=(18,)).astype(np.float32)
+            dummy_state = np.random.uniform(-1, 1, size=(STATE_DIM,)).astype(np.float32)
             while not stop_event.is_set():
                 try:
                     grant, raw, _ = act_model.select_action(dummy_state)
@@ -137,12 +138,12 @@ class TestTier3Integration:
         best_params = study.best_params
 
         # 2. Instantiate model with best hyperparameters
-        best_model = DummyPolicy(state_dim=18, num_channels=4, **best_params)
+        best_model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, **best_params)
 
         # 3. Run evaluation benchmark loop
         sim_records = []
         for veh_id in range(10):
-            dummy_state = np.random.uniform(-0.5, 0.5, size=(18,)).astype(np.float32)
+            dummy_state = np.random.uniform(-0.5, 0.5, size=(STATE_DIM,)).astype(np.float32)
             grant, raw, _ = best_model.select_action(dummy_state, deterministic=True)
             delta, ch, p = grant
             sim_records.append({

@@ -32,6 +32,7 @@ from src.aoi_env import (  # noqa: E402
     estimation_error,
     extrapolate,
 )
+from src.rl_interface import STATE_DIM  # noqa: E402
 
 
 class TestAoiEnvGenuine:
@@ -108,7 +109,7 @@ class TestAoiEnvGenuine:
         assert AoIEnv is AoiV2IEnv
 
     def test_04_env_reset_real_sumo(self):
-        """Verify env.reset() spins up real SUMO, selects target RSU, and returns 18-dim states."""
+        """Verify env.reset() spins up real SUMO, selects target RSU, and returns STATE_DIM-wide states."""
         env = AoiV2IEnv(config={"warmup_steps": 60, "max_steps": 100, "step_length": 1.0})
         obs, info = env.reset(seed=42)
 
@@ -120,7 +121,7 @@ class TestAoiEnvGenuine:
         assert len(obs) == info["n_active"]
 
         for vid, s_vec in obs.items():
-            assert s_vec.shape == (18,)
+            assert s_vec.shape == (STATE_DIM,)
             assert s_vec.dtype == np.float32
             assert np.all(s_vec >= -1.0) and np.all(s_vec <= 1.0)
 

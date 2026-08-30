@@ -1,5 +1,13 @@
 # Claude Code 독립 검증 보고 (2026-08-28 22시)
 
+> [!NOTE]
+> **2026-08-30 갱신: 아래 결함 6건은 전부 수정되었다.** 수정 내역·검증 결과·구현 중 추가 발견한
+> 결함 4건은 `idea/design_spec_v2.md` 9절에 있다. 이 문서는 무엇이 잘못됐었는지의 기록으로 남긴다.
+> 요약: Δ 게이팅 이식, age 클램프 제거, I_redundant 재정의·판정시점 교정, 스케줄러 이중 보상/이중
+> 상태 제거, 이벤트 구동 루프 전환. 테스트 119/119 통과, 모델 입력 liveness 17/17.
+
+---
+
 검증 대상: `coder/src/hot_swap_trainer.py`의 실사용 환경 클래스 `AoiV2IEnv`, `coder/src/Communications.py`,
 그리고 `simulation_plan.md` rev.2가 "훈련 시작 가능"이라 판정한 근거.
 

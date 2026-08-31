@@ -429,8 +429,11 @@ class TestHotSwapTrainerAndLoop:
         assert loss_dict is not None
         assert "loss" in loss_dict
 
-    def test_run_hot_swap_training_end_to_end(self):
+    def test_run_hot_swap_training_end_to_end(self, tmp_path):
         """Verify full run_hot_swap_training executes, triggers hot swaps, and returns summary metrics."""
+        # Checkpoints and TensorBoard events go to a throwaway tree. Writing into
+        # the real checkpoints/ would leave an 80-step DummyPolicy checkpoint for
+        # the next `run_all.py --resume` to find.
         summary = run_hot_swap_training(
             model_name="DummyPolicy",
             model_cls=DummyPolicy,
@@ -440,6 +443,8 @@ class TestHotSwapTrainerAndLoop:
             hparams={"hidden_dim": 16, "lr": 1e-3},
             num_vehicles=4,
             seed=42,
+            checkpoint_dir=str(tmp_path / "checkpoints"),
+            tensorboard_dir=str(tmp_path / "tensorboard"),
         )
 
         assert summary["model_name"] == "DummyPolicy"

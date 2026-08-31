@@ -1,52 +1,23 @@
-# Sentinel Handoff Report — Genuine SUMO V2I AoI RL Pipeline
+# Sentinel Handoff Report
 
-**작성자**: Project Sentinel  
-**일시**: 2026-08-27  
-**작업 디렉터리**: `/home/imnyj/Workspace/paper4/coder/.agents/sentinel/`  
-**감사 판정**: `VERDICT: VICTORY CONFIRMED` (by `victory_auditor_2`)  
+## 1. Observation
+- 사용자 요청: `run_all.py`에 `--hparams-csv` 옵션을 추가하여 HPO CSV 파일(`results/hpo/optuna_best_params.csv`)로부터 최적 하이퍼파라미터를 로드하고, 9개 베이스라인 모델 훈련 루프(`run_hot_swap_training`)에 주입하며, 파일 부재 또는 미등록 모델에 대해 경고 출력 및 기본값 graceful fallback 처리.
+- 라우팅 결정: 단일 변경 건 및 집중 팀 요청에 따라 SWE Light (`teamwork_preview_swe`) 경로로 디스패치.
+- 실행 내역: `implementer_1` 구현 -> 3단계 적대적 검토(`reviewer_1`, `reviewer_2`, `reviewer_3`) -> 독립 Victory Auditor(`06f41073-d4fd-4ff5-94a3-898399f7519e`) 검증 수행.
 
----
+## 2. Logic Chain
+- SWE Light 팀은 `load_hparams_from_csv` 및 `get_hparams_for_model` 함수를 구현하여 JSON 파싱, 파라미터 타입 캐스팅, NaN/Inf 정제, 최적 행 선별, graceful fallback 처리를 완성함.
+- 3회의 리뷰 라운드를 통해 ALL 키워드 확장, 콤마 구분자 처리, 공백/디렉토리 경로 방어, 양수 정수 가드 등 모든 엣지 케이스를 보완함.
+- 독립 Victory Auditor가 타임라인 일치, 치팅/모의 테스트 부재, 135/135 pytest 통과 및 실제 CLI 훈련 실행(exit code 0)을 실증하여 `VICTORY CONFIRMED` 판정을 내림.
 
-## 1. Observation (관찰 결과)
-- 실제 SUMO 시뮬레이터(`make_sumo_set.py`, `NetSim.py`, `Communications.py`)가 `src/aoi_env.py` 내에 매 스텝마다 실시간 호출되도록 연동 완료됨.
-- 레거시 합성 모의 객체(`SyntheticVehicle`)가 활성 소스코드에서 전면 제거되었으며, `src/aoi_env.py`에 4대 Anti-Mocking 런타임 단언문이 탑재됨.
-- `verify_environment.py`가 SUMO 20스텝 롤아웃을 통해 실제 차량 물리 좌표 이동($\Delta x > 0$)과 5.9GHz Rayleigh 페이딩 무선 채널 판정을 자동 검증함 (종료 코드 `0`).
-- 9종 하이브리드 액션 공간 베이스라인 모델(`HybridPPO`, `HybridSAC`, `HybridTD3`, `MAPPO`, `HyARPPO`, `MPDQN`, `PureAoI`, `DuelingQAoI`, `SACAoI`) 및 Optuna HPO, Act/Rest 핫스왑 트레이너가 200,000 스텝 사양으로 완비됨.
-- `tests/test_dummy_verification.py`(14개 테스트) 및 전체 테스트 스위트 199/199 전원 통과 (Pass Rate 100%, 41.79s).
-- 200,000 스텝 대규모 훈련 루프는 시작되지 않고 안전하게 중단(Halted)되어 사용자 코드 리뷰를 대기 중임.
+## 3. Caveats
+- 훈련 파라미터 변경 시 기존 체크포인트와 신경망 차원이 다르면 `--no-resume` 옵션을 병행 사용해야 형상 불일치 에러를 방지할 수 있음 (자동 가이드 및 테스트 완료됨).
 
----
+## 4. Conclusion
+- 모든 요구사항(R1, R2) 및 수용 기준(Acceptance Criteria)이 충족되었으며, 독립 감사 결과 `VICTORY CONFIRMED`로 검증이 완료됨.
 
-## 2. Logic Chain (논리 체계)
-1. 사용자의 요청(R1~R4)에 따라 Mock을 완전히 배제하고 진성 SUMO 시뮬레이터 환경을 구축함.
-2. 우회 방지를 위해 런타임 단언문 4종을 탑재하고 결함 주입 시 즉각 크래시함을 검증하여 무결성을 확립함.
-3. 9개 베이스라인과 200k 스텝 훈련 루프, HPO 및 평가 파이프라인을 구축하고 10스텝 단기 더미 테스트로 검증함.
-4. R4 요구사항에 따라 200k 스텝 대규모 실행 전 실행을 중단하고 사용자 리뷰를 요청함.
-5. 독립 Victory Auditor의 3단계 포렌식 및 테스트 감사를 통해 `VICTORY CONFIRMED` 판정을 획득함.
-
----
-
-## 3. Caveats (주의 사항)
-- 200,000 스텝(2,000 steps * 100 episodes) 본 훈련 및 250회 정규 벤치마크 평가는 상당한 컴퓨팅 자원과 시간이 소요되므로, 본 코드베이스 리뷰 후 사용자의 최종 승인 하에 실행되어야 합니다.
-
----
-
-## 4. Conclusion (결론)
-- 요구사항 R1~R4 및 모든 Acceptance Criteria가 100% 충족되었으며, 독립 Victory Audit을 통해 무결성이 최종 확증되었습니다.
-
----
-
-## 5. Verification Method (검증 방법)
-```bash
-# 1. 진성 환경 독립 검증
-/home/imnyj/venv/bin/python /home/imnyj/Workspace/paper4/coder/verify_environment.py
-
-# 2. 14개 Short Dummy 검증 테스트
-/home/imnyj/venv/bin/pytest /home/imnyj/Workspace/paper4/coder/tests/test_dummy_verification.py -v
-
-# 3. 전체 통합 테스트 스위트
-/home/imnyj/venv/bin/pytest /home/imnyj/Workspace/paper4/coder/tests/ -v
-
-# 4. 코드 린트 검사
-/home/imnyj/venv/bin/ruff check /home/imnyj/Workspace/paper4/coder/src/ /home/imnyj/Workspace/paper4/coder/verify_environment.py /home/imnyj/Workspace/paper4/coder/tests/
-```
+## 5. Verification Method
+- 단위/통합 테스트: `/home/imnyj/venv/bin/pytest tests/test_run_all.py -v` (25/25 passed)
+- 전체 회귀 테스트: `/home/imnyj/venv/bin/pytest -v` (135/135 passed)
+- 단일/다중 모델 CLI 실행: `python run_all.py --episodes 1 --steps-per-episode 10 --models PPO`
+- CSV 누락 환경 fallback 검증: `python run_all.py --episodes 1 --steps-per-episode 10 --models PPO --hparams-csv /tmp/missing.csv`

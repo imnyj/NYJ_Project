@@ -40,7 +40,7 @@ import torch
 
 from src.baselines import ALL_BASELINES, BASELINE_CATEGORIES, get_baseline
 from src.heuristic_scheduler import HeuristicScheduler
-from src.hot_swap_trainer import AoiV2IEnv
+from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, AoiV2IEnv
 from src.rl_interface import RSU_RANGE, STATE_DIM
 
 # Setup logging
@@ -206,12 +206,16 @@ def evaluate_single_run(
     torch.manual_seed(seed)
     np.random.seed(seed)
 
+    # The benchmark reward, identical to the one every model was trained under
+    # (`hot_swap_trainer.DEFAULT_REWARD_WEIGHTS`). Scoring a model against a
+    # reward other than the one it optimised would invalidate the comparison.
     env = AoiV2IEnv(
         density=density,
         seed=seed,
         max_steps=n_steps,
         rsu_range=rsu_range,
         warmup_steps=350,
+        **{k: float(v) for k, v in DEFAULT_REWARD_WEIGHTS.items()},
     )
     obs, info = env.reset()
 

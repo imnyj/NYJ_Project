@@ -1,35 +1,34 @@
-# BRIEFING — 2026-08-27T10:53:03+09:00
+# BRIEFING — 2026-08-31T00:36:00+09:00
 
 ## Mission
-Sentinel monitoring and lifecycle orchestration for architectural fixes (R1: Trainer & Env 4-term reward / power norm / tx_powers / A4 / resume best_reward; R2: Action bounds Pmax=23 / Delta_max red-light sync / StateVectorizer 18-dim; R3: RSU_RANGE=300, step-length=0.1, evaluate speed fix, HPO w1-w4; R4: delete old baselines) and halt before new baseline phase.
+Sentinel monitoring and dispatch for updating run_all.py to load and apply optimal hyperparameters from HPO CSV.
 
 ## 🔒 My Identity
 - Archetype: sentinel
 - Working directory: /home/imnyj/Workspace/paper4/coder/.agents/sentinel
-- Orchestrator: 3d6a38f8-f0cb-48c4-98ea-b46062a1aceb
-- Victory Auditor: to be spawned on victory claim
+- Orchestrator: ef90cb98-72bd-4067-9f92-1080e0c7aaf0
+- Victory Auditor: 06f41073-d4fd-4ff5-94a3-898399f7519e
 
 ## 🔒 Key Constraints
 - No technical decisions — relay only
 - Victory Audit is MANDATORY before reporting completion
-- Route: General (teamwork_preview_orchestrator)
-- Halt after implementation & verification before next baseline phase
+- Route to SWE Light (teamwork_preview_swe) per user request for small focused team on a single self-contained fix
 
 ## User Context
-- **Last user request**: Architectural fixes for Trainer/Env (4-term reward, power norm, tx_power, A4, resume), RL interface bounds (Power [10, 23], dynamic Delta_max, 18-dim state), Knobs & HPO (RSU_RANGE=300, step=0.1, speed fix, w1-w4 HPO), and Baselines deletion.
+- **Last user request**: Update run_all.py to load and apply optimal hyperparameters from an HPO CSV file (--hparams-csv), with graceful fallback to default parameters.
 - **Pending clarifications**: none
-- **Delivered results**: Previous milestone (genuine SUMO pipeline setup) completed and audited. Starting architectural fixes & baseline scraping milestone.
+- **Delivered results**: Fully implemented, tested, adversarial reviewed across 3 rounds, and verified via independent Victory Auditor (VICTORY CONFIRMED).
 
 ## Project Status
-- **Phase**: in progress
+- **Phase**: complete
 
 ## Victory Audit Status
-- **Triggered**: no
-- **Verdict**: pending
+- **Triggered**: yes
+- **Verdict**: VICTORY CONFIRMED
 - **Retry count**: 0
 
 ## Artifact Index
-- /home/imnyj/Workspace/paper4/coder/.agents/ORIGINAL_REQUEST.md — Original User Request
-- /home/imnyj/Workspace/paper4/coder/ORIGINAL_REQUEST.md — Original User Request
-- /home/imnyj/Workspace/paper4/Conversation.md — Design & Architecture reference
-- /home/imnyj/Workspace/paper4/idea/scenario.md — Scenario reference
+- /home/imnyj/Workspace/paper4/coder/.agents/ORIGINAL_REQUEST.md — Authoritative record of user request
+- /home/imnyj/Workspace/paper4/coder/.agents/swe/handoff.md — SWE Orchestrator handoff report
+- /home/imnyj/Workspace/paper4/coder/.agents/sentinel_victory_auditor_1/handoff.md — Victory Auditor report
+- /home/imnyj/Workspace/paper4/coder/.agents/sentinel/handoff.md — Sentinel final handoff report

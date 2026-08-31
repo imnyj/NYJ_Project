@@ -1,0 +1,663 @@
+     1	# src/hpo.py
+     2	# ============================================================================
+     3	# Hyperparameter Optimization (Optuna HPO) Pipeline for AoI-aware V2I Uplink
+     4	#
+     5	# Implements Milestone 3 (R3):
+     6	# 1. Tailored Optuna search spaces for all 9 baseline algorithms:
+     7	#    - Category 1 (Basic 3종): HybridPPO, HybridSAC, HybridTD3
+     8	#    - Category 2 (Latest 3종): MAPPO, HyARPPO, MPDQN
+     9	#    - Category 3 (SOTA AoI 3종): PureAoI, DuelingQAoI, SACAoI
+    10	# 2. Composite objective function balancing:
+    11	#    - Position tracking / estimation error integral: mean_error
+    12	#    - Average Age of Information: mean_aoi
+    13	#    - Uplink outage / packet loss rate: outage_rate
+    14	#    - Transmission power consumption: avg_power_norm
+    15	# 3. Multi-seed evaluation in the genuine SUMO AoiV2IEnv with Rayleigh-fading SINR contention.
+    16	# 4. CSV export of optimal parameters (`optuna_best_params.csv`) and per-model
+    17	#    trial history (`optuna_trials_<model_name>.csv`).
+    18	# ============================================================================
+    19	
+    20	from __future__ import annotations
+    21	import argparse
+    22	import json
+    23	import logging
+    24	import os
+    25	from typing import Any, Dict, List, Optional, Tuple, Union
+    26	
+    27	import numpy as np
+    28	import optuna
+    29	import pandas as pd
+    30	import src.Communications as comm
+    31	from src.baselines import ALL_BASELINES, BASELINE_CATEGORIES, get_baseline
+    32	from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, REWARD_WEIGHT_KEYS, AoiV2IEnv
+    33	from src.rl_interface import P_MAX, P_MIN, STATE_DIM, RetrospectiveReplayBuffer
+    34	import src.sumo.make_sumo_set as ss
+    35	
+    36	# Communication range of the RSU, sourced from the SUMO scenario generator so HPO
+    37	# never drifts from the network that is actually built (300 m urban 5.9 GHz value).
+    38	DEFAULT_RSU_RANGE: float = float(getattr(ss, "RSU_RANGE", 300.0))
+    39	
+    40	# Setup logging
+    41	logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+    42	logger = logging.getLogger("HPO")
+    43	
+    44	# The nine baselines, taken from src/baselines/__init__.py rather than restated.
+    45	# This list used to be a literal copy and went stale when the baselines were
+    46	# replaced on 2026-08-28: HPO could not construct a single real model afterwards.
+    47	CANONICAL_MODEL_NAMES = list(ALL_BASELINES)
+    48	
+    49	_CATEGORY_LABELS = {
+    50	    "basic": "Category 1 (Basic)",
+    51	    "latest": "Category 2 (Latest)",
+    52	    "similar": "Category 3 (Similar)",
+    53	}
+    54	MODEL_CATEGORIES = {
+    55	    n: _CATEGORY_LABELS.get(g, g)
+    56	    for g, names in BASELINE_CATEGORIES.items()
+    57	    for n in names
+    58	}
+    59	
+    60	
+    61	_CANONICAL_BY_CLEAN = {
+    62	    n.replace("-", "").replace("_", "").lower(): n for n in ALL_BASELINES
+    63	}
+    64	
+    65	
+    66	def normalize_model_name(name: Any) -> str:
+    67	    """Resolve an alias, or a model class, to its canonical registry name."""
+    68	    if not isinstance(name, str):
+    69	        return getattr(name, "__name__", None) or type(name).__name__
+    70	    clean = name.replace("-", "").replace("_", "").lower()
+    71	    return _CANONICAL_BY_CLEAN.get(clean, name)
+    72	
+    73	
+    74	# ----------------------------------------------------------------------------
+    75	# Reward-weight search space (Conversation.md section 3, line 31)
+    76	#
+    77	#   R_t = -( w1*Norm(e_t^2) + w2*Norm(P_tx) + w3*Norm(C_freq) + w4*I_redundant )
+    78	#
+    79	# The design mandates that w1..w4 are NOT fixed heuristically but are part of the
+    80	# Optuna search space so the agent finds its own reward balance. Every term is
+    81	# already Min-Max normalised to [0, 1] by the environment, so only the RELATIVE
+    82	# balance is meaningful; the sampled raw weights are therefore normalised to sum
+    83	# to 1.0 before being handed to the environment. That keeps the reward magnitude
+    84	# comparable across trials (so lr / entropy_coef stay on a comparable scale) and
+    85	# removes any degenerate incentive to shrink all four weights at once.
+    86	# The design defaults 0.5 / 0.2 / 0.2 / 0.1 lie inside these ranges.
+    87	# ----------------------------------------------------------------------------
+    88	# REWARD_WEIGHT_KEYS is owned by `src/hot_swap_trainer.py` and imported above so
+    89	# that the search space, the training env and the evaluation env cannot drift.
+    90	
+    91	REWARD_WEIGHT_RANGES: Dict[str, Tuple[float, float]] = {
+    92	    "w1": (0.10, 1.00),   # estimation-error penalty  Norm(e_t^2)
+    93	    "w2": (0.02, 0.60),   # transmit-power penalty    Norm(P_tx)
+    94	    "w3": (0.02, 0.60),   # channel-congestion penalty Norm(C_freq)
+    95	    "w4": (0.02, 0.60),   # redundant-update penalty  I_redundant
+    96	}
+    97	
+    98	
+    99	def sample_reward_weights(trial: optuna.Trial) -> Dict[str, float]:
+   100	    """Samples the four reward weights w1..w4 and normalises them to sum to 1.0.
+   101	
+   102	    The raw samples are registered as Optuna parameters `w1_raw`..`w4_raw`; the
+   103	    normalised values that the environment actually trains under are recorded as
+   104	    trial user attributes `w1`..`w4` so they are exported to CSV.
+   105	    """
+   106	    raw: Dict[str, float] = {}
+   107	    for key in REWARD_WEIGHT_KEYS:
+   108	        lo, hi = REWARD_WEIGHT_RANGES[key]
+   109	        raw[key] = trial.suggest_float(f"{key}_raw", lo, hi, log=True)
+   110	
+   111	    total = sum(raw.values())
+   112	    if total <= 0.0:
+   113	        total = 1.0
+   114	    weights = {k: round(float(v / total), 6) for k, v in raw.items()}
+   115	
+   116	    for k, v in weights.items():
+   117	        trial.set_user_attr(k, v)
+   118	    return weights
+   119	
+   120	
+   121	def sample_hparams(trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
+   122	    """Per-model search space, keyed to each constructor's REAL parameter names.
+   123	
+   124	    Every key below is a named argument of that model's `__init__`. This matters
+   125	    more than it looks: all nine constructors end with `**hparams`, so a key that
+   126	    does not match a real parameter is silently absorbed and the trial runs with
+   127	    library defaults. The previous version of this function was keyed on the
+   128	    discarded baseline names (HybridPPO, MAPPO, ...), so no branch ever matched
+   129	    the current models -- Optuna would report an "optimal" learning rate while
+   130	    the model trained at 3e-4 throughout. `assert_hparams_reach_model` below is
+   131	    the regression guard; `tests/test_hpo.py` runs it for all nine.
+   132	    """
+   133	    canonical_name = normalize_model_name(model_name)
+   134	    params: Dict[str, Any] = {}
+   135	
+   136	    # --- Basic three: Stable-Baselines3, so SB3's own argument names ---------
+   137	    if canonical_name == "PPO":
+   138	        params = {
+   139	            "learning_rate": trial.suggest_float("learning_rate", 1e-4, 3e-3, log=True),
+   140	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   141	            "clip_range": trial.suggest_float("clip_range", 0.1, 0.3),
+   142	            "ent_coef": trial.suggest_float("ent_coef", 1e-4, 0.05, log=True),
+   143	            "vf_coef": trial.suggest_float("vf_coef", 0.2, 0.8),
+   144	            "n_epochs": trial.suggest_categorical("n_epochs", [4, 10, 20]),
+   145	        }
+   146	    elif canonical_name == "SAC":
+   147	        params = {
+   148	            "learning_rate": trial.suggest_float("learning_rate", 1e-4, 3e-3, log=True),
+   149	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   150	            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+   151	            "target_update_interval": trial.suggest_categorical("target_update_interval", [1, 2, 4]),
+   152	        }
+   153	    elif canonical_name == "TD3":
+   154	        params = {
+   155	            "learning_rate": trial.suggest_float("learning_rate", 1e-4, 3e-3, log=True),
+   156	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   157	            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+   158	            "policy_delay": trial.suggest_categorical("policy_delay", [2, 3, 4]),
+   159	            "target_policy_noise": trial.suggest_float("target_policy_noise", 0.1, 0.3),
+   160	            "target_noise_clip": trial.suggest_float("target_noise_clip", 0.2, 0.5),
+   161	        }
+   162	
+   163	    # --- Latest three -------------------------------------------------------
+   164	    elif canonical_name == "RES-MAPDDPG":
+   165	        params = {
+   166	            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
+   167	            "lr_actor": trial.suggest_float("lr_actor", 1e-4, 3e-3, log=True),
+   168	            "lr_critic": trial.suggest_float("lr_critic", 1e-4, 3e-3, log=True),
+   169	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   170	            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+   171	            "num_res_blocks": trial.suggest_categorical("num_res_blocks", [1, 2, 3]),
+   172	            "epsilon_decay": trial.suggest_float("epsilon_decay", 0.990, 0.9995),
+   173	        }
+   174	    elif canonical_name == "MA2HDQN":
+   175	        params = {
+   176	            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
+   177	            "lr_q": trial.suggest_float("lr_q", 1e-4, 3e-3, log=True),
+   178	            "lr_actor": trial.suggest_float("lr_actor", 1e-4, 3e-3, log=True),
+   179	            "lr_critic": trial.suggest_float("lr_critic", 1e-4, 3e-3, log=True),
+   180	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   181	            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+   182	            "n_step": trial.suggest_categorical("n_step", [1, 3, 5]),
+   183	            "epsilon_decay": trial.suggest_float("epsilon_decay", 0.990, 0.9995),
+   184	        }
+   185	    elif canonical_name == "I-HAMAPPO":
+   186	        params = {
+   187	            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
+   188	            "lr_actor": trial.suggest_float("lr_actor", 1e-4, 3e-3, log=True),
+   189	            "lr_critic": trial.suggest_float("lr_critic", 1e-4, 3e-3, log=True),
+   190	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   191	            "clip_ratio": trial.suggest_float("clip_ratio", 0.1, 0.3),
+   192	            "entropy_coef": trial.suggest_float("entropy_coef", 1e-4, 0.05, log=True),
+   193	            "value_coef": trial.suggest_float("value_coef", 0.2, 0.8),
+   194	        }
+   195	
+   196	    # --- Similar three ------------------------------------------------------
+   197	    elif canonical_name == "SPAM-D3QN":
+   198	        params = {
+   199	            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
+   200	            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+   201	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   202	            "target_update_freq": trial.suggest_categorical("target_update_freq", [200, 500, 1000]),
+   203	            "epsilon_decay": trial.suggest_float("epsilon_decay", 0.990, 0.9995),
+   204	            "per_alpha": trial.suggest_float("per_alpha", 0.4, 0.8),
+   205	        }
+   206	    elif canonical_name == "CARLTON":
+   207	        params = {
+   208	            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
+   209	            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+   210	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   211	            "omega": trial.suggest_float("omega", 0.1, 0.9),
+   212	            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+   213	        }
+   214	    elif canonical_name == "MADDPG-MT":
+   215	        params = {
+   216	            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
+   217	            "actor_lr": trial.suggest_float("actor_lr", 1e-4, 3e-3, log=True),
+   218	            "critic_lr": trial.suggest_float("critic_lr", 1e-4, 3e-3, log=True),
+   219	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   220	            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+   221	            "global_critic_weight": trial.suggest_float("global_critic_weight", 0.1, 0.9),
+   222	            "gumbel_tau": trial.suggest_float("gumbel_tau", 0.5, 2.0),
+   223	        }
+   224	    else:
+   225	        params = {
+   226	            "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
+   227	            "hidden_dim": trial.suggest_categorical("hidden_dim", [32, 64, 128]),
+   228	            "gamma": trial.suggest_float("gamma", 0.95, 0.999),
+   229	        }
+   230	
+   231	    return params
+   232	
+   233	
+   234	def assert_hparams_reach_model(model_name: str) -> List[str]:
+   235	    """Names this model's search space samples that its constructor cannot accept.
+   236	
+   237	    An empty list means every sampled key is a real named argument. A non-empty
+   238	    one means those keys would vanish into `**hparams` and the trial would report
+   239	    a tuning result it never actually applied.
+   240	    """
+   241	    import inspect
+   242	
+   243	    canonical_name = normalize_model_name(model_name)
+   244	    sampled = set(_search_space_keys(canonical_name))
+   245	    accepted = set(inspect.signature(get_baseline(canonical_name).__init__).parameters)
+   246	    return sorted(sampled - accepted)
+   247	
+   248	
+   249	def _search_space_keys(canonical_name: str) -> List[str]:
+   250	    """The keys `sample_hparams` would sample, without needing a live trial."""
+   251	    class _KeyRecorder:
+   252	        def __init__(self) -> None:
+   253	            self.keys: List[str] = []
+   254	
+   255	        def suggest_float(self, name, *a, **k):
+   256	            self.keys.append(name)
+   257	            return 0.0
+   258	
+   259	        def suggest_categorical(self, name, choices, *a, **k):
+   260	            self.keys.append(name)
+   261	            return choices[0]
+   262	
+   263	        def suggest_int(self, name, *a, **k):
+   264	            self.keys.append(name)
+   265	            return 0
+   266	
+   267	    rec = _KeyRecorder()
+   268	    sample_hparams(rec, canonical_name)  # type: ignore[arg-type]
+   269	    return rec.keys
+   270	
+   271	
+   272	def compute_composite_objective(
+   273	    metrics: Dict[str, float],
+   274	    w_error: float = 1.0,
+   275	    w_aoi: float = 0.5,
+   276	    w_outage: float = 2.0,
+   277	    w_power: float = 0.2,
+   278	) -> float:
+   279	    """
+   280	    Formulates the composite objective function balancing:
+   281	    1. Tracking estimation error (m)
+   282	    2. Age of Information (s)
+   283	    3. Outage rate (packet loss ratio in [0, 1])
+   284	    4. Normalized transmission power (in [0, 1] mapped from [P_MIN, P_MAX] dBm)
+   285	    """
+   286	    mean_err = metrics.get("mean_error", 0.0)
+   287	    mean_aoi = metrics.get("mean_aoi", 0.0)
+   288	    outage_rate = metrics.get("outage_rate", metrics.get("packet_loss_rate", 0.0))
+   289	    power_norm = metrics.get("avg_power_norm", 0.5)
+   290	
+   291	    objective_val = (
+   292	        w_error * mean_err
+   293	        + w_aoi * mean_aoi
+   294	        + w_outage * outage_rate
+   295	        + w_power * power_norm
+   296	    )
+   297	    return float(objective_val)
+   298	
+   299	
+   300	def evaluate_model_in_env(
+   301	    model: Any,
+   302	    seed: int = 42,
+   303	    n_steps: int = 35,
+   304	    density: float = 25.0,
+   305	    n_vehicles: Optional[int] = None,
+   306	    rsu_pos: Tuple[float, float] = (0.0, 0.0),
+   307	    rsu_range: float = DEFAULT_RSU_RANGE,
+   308	    train_steps_during_rollout: int = 0,
+   309	    reward_weights: Optional[Dict[str, float]] = None,
+   310	) -> Dict[str, float]:
+   311	    """
+   312	    Evaluates a baseline model in the genuine SUMO AoiV2IEnv for a specific seed.
+   313	    Runs real vehicle kinematics, TraCI TLS phase transitions, hybrid action scheduling,
+   314	    Rayleigh-SINR co-channel contention, retrospective position estimation error, and AoI.
+   315	
+   316	    `reward_weights` are the sampled w1..w4 of the design reward; when given they are
+   317	    passed to the environment constructor so the trial actually trains under them.
+   318	    """
+   319	    effective_weights = reward_weights if reward_weights else DEFAULT_REWARD_WEIGHTS
+   320	    env_kwargs: Dict[str, Any] = {
+   321	        key: float(effective_weights[key])
+   322	        for key in REWARD_WEIGHT_KEYS
+   323	        if key in effective_weights
+   324	    }
+   325	
+   326	    env = AoiV2IEnv(
+   327	        density=density,
+   328	        seed=seed,
+   329	        max_steps=n_steps,
+   330	        rsu_range=rsu_range,
+   331	        warmup_steps=350,
+   332	        **env_kwargs,
+   333	    )
+   334	    obs, info = env.reset()
+   335	    buffer = RetrospectiveReplayBuffer(capacity=1000) if train_steps_during_rollout > 0 else None
+   336	
+   337	    # Event-driven SMDP rollout, matching run_hot_swap_training. Granting every
+   338	    # vehicle on every step -- what this loop used to do -- makes Delta inert, so
+   339	    # every trial would have measured the same fixed transmit schedule and Optuna
+   340	    # would have optimised hyperparameters against a constant.
+   341	    open_decision: Dict[str, Dict[str, Any]] = {}
+   342	    action_dict: Dict[str, Any] = {}
+   343	    for vid, s_vec in obs.items():
+   344	        grant, raw_action, _ = model.select_action(s_vec, deterministic=False)
+   345	        open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
+   346	        action_dict[vid] = grant
+   347	
+   348	    for step in range(n_steps):
+   349	        next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
+   350	
+   351	        # Close the intervals that finished, then re-decide for whoever needs it.
+   352	        if buffer is not None:
+   353	            for rec in step_info["completed"]:
+   354	                vid = rec["vid"]
+   355	                prev = open_decision.get(vid)
+   356	                if prev is None:
+   357	                    continue
+   358	                s2 = next_obs.get(vid)
+   359	                done = rec["done"] if s2 is not None else True
+   360	                if s2 is None:
+   361	                    s2 = np.zeros(STATE_DIM, dtype=np.float32)
+   362	                buffer.push(prev["state"], prev["raw_action"], rec["reward"],
+   363	                            np.asarray(s2, dtype=np.float32), bool(done), rec["delta_actual"])
+   364	
+   365	            if len(buffer) >= 16 and train_steps_during_rollout > 0:
+   366	                for _ in range(train_steps_during_rollout):
+   367	                    batch = buffer.sample(batch_size=16)
+   368	                    try:
+   369	                        model.update(batch)
+   370	                    except Exception:
+   371	                        pass
+   372	
+   373	        for rec in step_info["completed"]:
+   374	            open_decision.pop(rec["vid"], None)
+   375	
+   376	        action_dict = {}
+   377	        for vid in step_info["needs_decision"]:
+   378	            s_vec = next_obs.get(vid)
+   379	            if s_vec is None:
+   380	                continue
+   381	            grant, raw_action, _ = model.select_action(s_vec, deterministic=False)
+   382	            open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
+   383	            action_dict[vid] = grant
+   384	
+   385	        for vid in [v for v in open_decision if v not in next_obs]:
+   386	            open_decision.pop(vid, None)
+   387	
+   388	        obs = next_obs
+   389	
+   390	    metrics = env.get_metrics()
+   391	    env.close()
+   392	    del env
+   393	    import gc
+   394	    gc.collect()
+   395	
+   396	    # Normalise against the ACTUAL decoder power bounds (design range [10, 23] dBm),
+   397	    # not a hardcoded [20, 30] window, so the objective stays correct if the bounds move.
+   398	    avg_p = metrics.get("avg_tx_power_dbm", 0.5 * (P_MIN + P_MAX))
+   399	    avg_p_norm = float(np.clip((avg_p - P_MIN) / max(1e-6, P_MAX - P_MIN), 0.0, 1.0))
+   400	    metrics["avg_power_dbm"] = avg_p
+   401	    metrics["avg_power_norm"] = round(avg_p_norm, 4)
+   402	    metrics["outage_rate"] = metrics.get("packet_loss_rate", 0.0)
+   403	
+   404	    return metrics
+   405	
+   406	
+   407	def evaluate_trial_multiseed(
+   408	    model_cls: Any,
+   409	    hparams: Dict[str, Any],
+   410	    seeds: List[int],
+   411	    n_steps: int = 35,
+   412	    density: float = 25.0,
+   413	    n_vehicles: Optional[int] = None,
+   414	    rsu_range: float = DEFAULT_RSU_RANGE,
+   415	    reward_weights: Optional[Dict[str, float]] = None,
+   416	) -> Tuple[float, Dict[str, float]]:
+   417	    """
+   418	    Evaluates a set of hyperparameters across multiple seeds and returns the mean composite score.
+   419	    """
+   420	    scores = []
+   421	    seed_metrics: List[Dict[str, float]] = []
+   422	
+   423	    for seed in seeds:
+   424	        try:
+   425	            # Instantiate model
+   426	            model = model_cls(state_dim=STATE_DIM, num_channels=comm.NUM_SUBCHANNELS, **hparams)
+   427	            metrics = evaluate_model_in_env(
+   428	                model=model,
+   429	                seed=seed,
+   430	                n_steps=n_steps,
+   431	                density=density,
+   432	                rsu_range=rsu_range,
+   433	                train_steps_during_rollout=2,
+   434	                reward_weights=reward_weights,
+   435	            )
+   436	            score = compute_composite_objective(metrics)
+   437	            scores.append(score)
+   438	            seed_metrics.append(metrics)
+   439	        except Exception as e:
+   440	            logger.warning(f"Error during rollout for seed {seed}: {e}")
+   441	            scores.append(100.0)
+   442	
+   443	    mean_score = float(np.mean(scores)) if scores else 100.0
+   444	
+   445	    # Average individual metrics across seeds
+   446	    avg_metrics: Dict[str, float] = {}
+   447	    if seed_metrics:
+   448	        for k in ["mean_error", "mean_aoi", "outage_rate", "packet_loss_rate", "avg_tx_power_dbm", "avg_power_norm"]:
+   449	            if k in seed_metrics[0]:
+   450	                avg_metrics[k] = round(float(np.mean([m.get(k, 0.0) for m in seed_metrics])), 4)
+   451	
+   452	    return mean_score, avg_metrics
+   453	
+   454	
+   455	def run_hpo_study(
+   456	    model_name: Union[str, type, Any],
+   457	    model_cls: Optional[Any] = None,
+   458	    n_trials: int = 15,
+   459	    seeds: Optional[List[int]] = None,
+   460	    storage: Optional[str] = None,
+   461	    study_name: Optional[str] = None,
+   462	    n_steps: int = 350,
+   463	    sampler: Optional[optuna.samplers.BaseSampler] = None,
+   464	    pruner: Optional[optuna.pruners.BasePruner] = None,
+   465	    tune_reward_weights: bool = False,
+   466	) -> optuna.Study:
+   467	    """
+   468	    Runs an Optuna study to optimize hyperparameters for a given model.
+   469	
+   470	    `tune_reward_weights` is off by default: w1..w4 stay pinned to
+   471	    `DEFAULT_REWARD_WEIGHTS` so all nine baselines are searched against one
+   472	    identical reward. Turn it on only for a reward-shaping ablation, never for
+   473	    the numbers that go into the cross-model comparison table.
+   474	    """
+   475	    if model_cls is None:
+   476	        if callable(model_name) and not isinstance(model_name, str):
+   477	            model_cls = model_name
+   478	            canonical_name = getattr(model_cls, "__name__", "CustomModel")
+   479	        else:
+   480	            # Resolve through the baseline registry; it raises with a listing on a miss.
+   481	            canonical_name = normalize_model_name(model_name)
+   482	            model_cls = get_baseline(canonical_name)
+   483	    else:
+   484	        canonical_name = normalize_model_name(model_name) if isinstance(model_name, str) else getattr(model_cls, "__name__", "CustomModel")
+   485	    eval_seeds = seeds if seeds is not None else [42, 101, 2024]
+   486	
+   487	    if sampler is None:
+   488	        sampler = optuna.samplers.TPESampler(seed=42)
+   489	    if pruner is None:
+   490	        pruner = optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=1)
+   491	
+   492	    optuna.logging.set_verbosity(optuna.logging.WARNING)
+   493	
+   494	    study = optuna.create_study(
+   495	        study_name=study_name or f"hpo_{canonical_name}",
+   496	        direction="minimize",
+   497	        storage=storage,
+   498	        sampler=sampler,
+   499	        pruner=pruner,
+   500	        load_if_exists=True,
+   501	    )
+   502	
+   503	    def objective(trial: optuna.Trial) -> float:
+   504	        hparams = sample_hparams(trial, canonical_name)
+   505	        # Reward weights are a property of the benchmark, so by default every
+   506	        # trial of every model runs under the same fixed reward and only the
+   507	        # model hyperparameters are searched. Tuning them per model would give
+   508	        # each baseline its own objective and break the cross-model comparison.
+   509	        if tune_reward_weights:
+   510	            reward_weights = sample_reward_weights(trial)
+   511	        else:
+   512	            reward_weights = dict(DEFAULT_REWARD_WEIGHTS)
+   513	            for k, v in reward_weights.items():
+   514	                trial.set_user_attr(k, v)
+   515	        score, avg_metrics = evaluate_trial_multiseed(
+   516	            model_cls=model_cls,
+   517	            hparams=hparams,
+   518	            seeds=eval_seeds,
+   519	            n_steps=n_steps,
+   520	            reward_weights=reward_weights,
+   521	        )
+   522	        for k, v in avg_metrics.items():
+   523	            trial.set_user_attr(k, v)
+   524	        trial.set_user_attr("composite_score", score)
+   525	        return score
+   526	
+   527	    study.optimize(objective, n_trials=n_trials, n_jobs=1)
+   528	    logger.info(
+   529	        f"[{canonical_name}] HPO Complete! Best Trial #{study.best_trial.number}: "
+   530	        f"Value={study.best_value:.4f}, Params={study.best_params}"
+   531	    )
+   532	    return study
+   533	
+   534	
+   535	def save_study_results(
+   536	    study: optuna.Study,
+   537	    model_name: str,
+   538	    output_dir: str = "/home/imnyj/Workspace/paper4/coder/results/hpo",
+   539	) -> Tuple[str, Dict[str, Any]]:
+   540	    """
+   541	    Saves Optuna study trial history to CSV.
+   542	    """
+   543	    os.makedirs(output_dir, exist_ok=True)
+   544	    canonical_name = normalize_model_name(model_name)
+   545	
+   546	    trials_csv_path = os.path.join(output_dir, f"optuna_trials_{canonical_name}.csv")
+   547	    df_trials = study.trials_dataframe()
+   548	
+   549	    # Guarantee the four *normalised* reward weights appear as plain w1..w4 columns.
+   550	    # `trials_dataframe()` only carries the raw suggestions (params_w1_raw ...) and
+   551	    # `user_attrs_w1 ...`; the audit found the effective weights were absent entirely.
+   552	    attr_by_number = {t.number: t.user_attrs for t in study.trials}
+   553	    if "number" in df_trials.columns:
+   554	        for key in REWARD_WEIGHT_KEYS:
+   555	            df_trials[key] = [
+   556	                attr_by_number.get(int(n), {}).get(key) for n in df_trials["number"]
+   557	            ]
+   558	    df_trials.to_csv(trials_csv_path, index=False)
+   559	
+   560	    best_params = dict(study.best_params)
+   561	    best_weights = {
+   562	        k: study.best_trial.user_attrs[k]
+   563	        for k in REWARD_WEIGHT_KEYS
+   564	        if k in study.best_trial.user_attrs
+   565	    }
+   566	    # Deliberately NOT merged into best_params: `hparams_json` is consumed by
+   567	    # run_all.py and forwarded to a model constructor, and w1..w4 are AoiV2IEnv
+   568	    # arguments. They stay in their own `w1`..`w4` / `reward_weights_json`
+   569	    # columns, which is where the environment reads them from.
+   570	
+   571	    best_record = {
+   572	        "model_name": canonical_name,
+   573	        "category": MODEL_CATEGORIES.get(canonical_name, "Baseline"),
+   574	        "best_value": round(float(study.best_value), 4),
+   575	        "best_trial_number": int(study.best_trial.number),
+   576	        "best_params": best_params,
+   577	        "best_reward_weights": best_weights,
+   578	    }
+   579	    return trials_csv_path, best_record
+   580	
+   581	
+   582	def run_all_baselines_hpo(
+   583	    n_trials: int = 15,
+   584	    output_dir: str = "/home/imnyj/Workspace/paper4/coder/results/hpo",
+   585	    models: Optional[List[str]] = None,
+   586	    seeds: Optional[List[int]] = None,
+   587	    n_steps: int = 350,
+   588	    tune_reward_weights: bool = False,
+   589	) -> Tuple[str, pd.DataFrame]:
+   590	    """
+   591	    Runs hyperparameter optimization across all baseline models, generates per-model trial CSVs,
+   592	    and consolidates the optimal hyperparameters into optuna_best_params.csv.
+   593	    """
+   594	    os.makedirs(output_dir, exist_ok=True)
+   595	    target_models = [normalize_model_name(m) for m in (models or CANONICAL_MODEL_NAMES)]
+   596	    eval_seeds = seeds or [42, 101, 2024]
+   597	
+   598	    best_records: List[Dict[str, Any]] = []
+   599	
+   600	    for model_name in target_models:
+   601	        logger.info(f"===> Starting Optuna HPO for baseline: {model_name} (trials={n_trials})")
+   602	        study = run_hpo_study(
+   603	            model_name=model_name,
+   604	            n_trials=n_trials,
+   605	            seeds=eval_seeds,
+   606	            n_steps=n_steps,
+   607	            tune_reward_weights=tune_reward_weights,
+   608	        )
+   609	        _, record = save_study_results(study, model_name=model_name, output_dir=output_dir)
+   610	
+   611	        # Flatten record for master CSV
+   612	        flat_row: Dict[str, Any] = {
+   613	            "model_name": record["model_name"],
+   614	            "category": record["category"],
+   615	            "best_value": record["best_value"],
+   616	            "best_trial_number": record["best_trial_number"],
+   617	        }
+   618	        for k, v in record["best_params"].items():
+   619	            flat_row[k] = v
+   620	        # Explicit reward-weight columns (Conversation.md line 31 requires w1..w4 to be
+   621	        # searched; the audit found them missing from results/hpo/*.csv).
+   622	        for k in REWARD_WEIGHT_KEYS:
+   623	            flat_row[k] = record.get("best_reward_weights", {}).get(k)
+   624	        flat_row["reward_weights_json"] = json.dumps(record.get("best_reward_weights", {}))
+   625	        flat_row["hparams_json"] = json.dumps(record["best_params"])
+   626	        best_records.append(flat_row)
+   627	
+   628	    df_best = pd.DataFrame(best_records)
+   629	    best_csv_path = os.path.join(output_dir, "optuna_best_params.csv")
+   630	    df_best.to_csv(best_csv_path, index=False)
+   631	    logger.info(f"All baselines HPO complete! Master parameters saved to {best_csv_path}")
+   632	
+   633	    return best_csv_path, df_best
+   634	
+   635	
+   636	def main() -> None:
+   637	    parser = argparse.ArgumentParser(description="Optuna HPO Pipeline for AoI Baseline Models")
+   638	    parser.add_argument("--n-trials", type=int, default=15, help="Number of trials per model")
+   639	    parser.add_argument("--output-dir", type=str, default="/home/imnyj/Workspace/paper4/coder/results/hpo")
+   640	    parser.add_argument("--models", nargs="+", default=CANONICAL_MODEL_NAMES, help="List of models to optimize")
+   641	    parser.add_argument("--seeds", nargs="+", type=int, default=[42, 101, 2024], help="Evaluation seeds")
+   642	    # 35 steps is 3.5 simulated seconds of measurement. A vehicle needs ~35 s from
+   643	    # its spawn edge to reach the RSU disc, so a 35-step window scores almost no
+   644	    # traffic and the search optimises noise. 350 matches the training warmup.
+   645	    parser.add_argument("--n-steps", type=int, default=350, help="Simulation steps per seed")
+   646	    parser.add_argument("--tune-reward-weights", action="store_true",
+   647	                        help="search w1..w4 per model instead of pinning them to the "
+   648	                             "benchmark defaults (ablation only -- makes cross-model "
+   649	                             "comparison invalid)")
+   650	    args = parser.parse_args()
+   651	
+   652	    run_all_baselines_hpo(
+   653	        n_trials=args.n_trials,
+   654	        output_dir=args.output_dir,
+   655	        models=args.models,
+   656	        seeds=args.seeds,
+   657	        n_steps=args.n_steps,
+   658	        tune_reward_weights=args.tune_reward_weights,
+   659	    )
+   660	
+   661	
+   662	if __name__ == "__main__":
+   663	    main()

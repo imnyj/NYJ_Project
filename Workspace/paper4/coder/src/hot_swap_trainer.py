@@ -26,6 +26,7 @@
 from __future__ import annotations
 import gc
 import glob
+import logging
 import math
 import os
 import queue
@@ -64,6 +65,53 @@ from src.rl_interface import (
     norm_sq_error,
     refresh_scenario_constants,
 )
+
+
+# ----------------------------------------------------------------------------
+# Reward weights are a property of the BENCHMARK, not of any single model.
+# Training (`run_hot_swap_training`), evaluation (`src/evaluate.py`) and the
+# hyper-parameter search (`src/hpo.py`) all read these same four numbers, so
+# every baseline is optimised and scored against one identical reward. Tuning
+# them per model would give each baseline a different objective and make the
+# cross-model comparison in the paper meaningless.
+#
+# They are also the reason `HotSwapTrainer` filters them out of `hparams`:
+# w1..w4 are `AoiV2IEnv.__init__` arguments, and every baseline constructor
+# ends in `**hparams`, so a stray `w1` would be silently swallowed by the model
+# and never reach the reward at all.
+# ----------------------------------------------------------------------------
+REWARD_WEIGHT_KEYS: Tuple[str, ...] = ("w1", "w2", "w3", "w4")
+
+DEFAULT_REWARD_WEIGHTS: Dict[str, float] = {
+    "w1": 0.5,   # normalised squared estimation error
+    "w2": 0.2,   # transmit power
+    "w3": 0.2,   # channel congestion
+    "w4": 0.1,   # redundant-update indicator
+}
+
+# Raw (un-normalised) Optuna samples for the weights above. They are recorded in
+# the HPO CSV for provenance and must never be forwarded to a model either.
+RAW_REWARD_WEIGHT_KEYS: Tuple[str, ...] = tuple(f"{k}_raw" for k in REWARD_WEIGHT_KEYS)
+
+# Every key here belongs to the environment or the benchmark, never to a model
+# constructor. `HotSwapTrainer` strips them from `hparams` and warns.
+ENV_ONLY_HPARAM_KEYS: frozenset = frozenset(REWARD_WEIGHT_KEYS + RAW_REWARD_WEIGHT_KEYS)
+
+
+def split_env_hparams(hparams: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Split a flat hparams dict into (model kwargs, environment-only kwargs).
+
+    Returns two dicts: the first is safe to hand to a baseline constructor, the
+    second holds the `ENV_ONLY_HPARAM_KEYS` that were pulled out.
+    """
+    model_hparams: Dict[str, Any] = {}
+    env_hparams: Dict[str, Any] = {}
+    for key, value in (hparams or {}).items():
+        if key in ENV_ONLY_HPARAM_KEYS:
+            env_hparams[key] = value
+        else:
+            model_hparams[key] = value
+    return model_hparams, env_hparams
 
 
 def infer_state_dim(vectorizer: Optional[StateVectorizer] = None) -> int:
@@ -586,7 +634,18 @@ class HotSwapTrainer:
         self.buffer_capacity = int(buffer_capacity)
         self.batch_size = int(batch_size)
         self.swap_interval = int(swap_interval)
-        self.hparams = hparams or {}
+
+        # w1..w4 are AoiV2IEnv arguments, not model arguments. Every baseline
+        # constructor ends in `**hparams`, so leaving them in here would have
+        # them absorbed by the model and silently dropped from the reward --
+        # exactly the failure this split exists to prevent.
+        self.hparams, self.env_hparams = split_env_hparams(hparams)
+        if self.env_hparams:
+            logging.warning(
+                "%s: dropped environment-only key(s) %s from model hyperparameters; "
+                "reward weights come from DEFAULT_REWARD_WEIGHTS and are not tuned per model.",
+                self.model_name, sorted(self.env_hparams),
+            )
 
         # Device Placement
         default_act_dev, default_rest_dev = select_default_devices()
@@ -718,10 +777,10 @@ class AoiV2IEnv:
         num_channels: int = comm.NUM_SUBCHANNELS,
         rsu_range: float = RSU_RANGE,
         warmup_steps: int = 350,
-        w1: float = 0.5,
-        w2: float = 0.2,
-        w3: float = 0.2,
-        w4: float = 0.1,
+        w1: float = DEFAULT_REWARD_WEIGHTS["w1"],
+        w2: float = DEFAULT_REWARD_WEIGHTS["w2"],
+        w3: float = DEFAULT_REWARD_WEIGHTS["w3"],
+        w4: float = DEFAULT_REWARD_WEIGHTS["w4"],
     ) -> None:
         self.density = float(density)
         self.seed = int(seed)
@@ -1909,6 +1968,12 @@ def run_hot_swap_training(
     global_step = min(int(start_ep) * steps_per_ep, total_steps)
     episodic_records: List[Dict[str, Any]] = []
 
+    # One reward for every baseline. Passed explicitly rather than relying on the
+    # AoiV2IEnv defaults so that a reader of this loop can see which reward the
+    # 200k-step runs were trained against, and so it stays pinned to the same
+    # constant `src/evaluate.py` and `src/hpo.py` read.
+    env_reward_weights = {k: float(v) for k, v in DEFAULT_REWARD_WEIGHTS.items()}
+
     try:
         for ep in range(start_ep, episodes):
             if global_step >= total_steps:
@@ -1920,6 +1985,7 @@ def run_hot_swap_training(
                 seed=seed + ep,
                 max_steps=steps_per_ep,
                 warmup_steps=warmup_steps,
+                **env_reward_weights,
             )
             obs, info = env.reset()
 

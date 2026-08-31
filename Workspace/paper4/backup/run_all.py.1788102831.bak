@@ -1,0 +1,206 @@
+"""Train all nine comparison baselines on the genuine SUMO AoI environment.
+
+Each model runs 100 episodes x 2,000 steps = 200,000 real env.step() calls.
+
+Two things here are easy to get wrong and have been got wrong before:
+
+  * `run_hot_swap_training` treats `total_steps` as the TOTAL across all episodes and
+    derives steps_per_ep = total_steps // episodes. Passing the per-episode figure
+    silently caps every model at 2,000 steps, i.e. 1% of the requirement.
+  * Models are injected as CLASSES, not name strings. The registry in
+    src/baselines/__init__.py maps the paper's table names to those classes.
+
+Run detached so an SSH drop cannot kill it:
+    setsid nohup /home/imnyj/venv/bin/python run_all.py > training_full.log 2>&1 < /dev/null &
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import sys
+from typing import Any, Dict, Optional
+
+import pandas as pd
+
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+from src.baselines import ALL_BASELINES, get_baseline  # noqa: E402
+from src.hot_swap_trainer import run_hot_swap_training  # noqa: E402
+
+EPISODES = 100
+STEPS_PER_EPISODE = 2000
+TOTAL_STEPS = EPISODES * STEPS_PER_EPISODE  # 200,000
+
+
+def normalize_model_name(name: Any) -> str:
+    """Resolve an alias, or a model class, to its canonical registry name."""
+    if not isinstance(name, str):
+        return getattr(name, "__name__", None) or type(name).__name__
+    clean = name.replace("-", "").replace("_", "").lower()
+    canonical_by_clean = {n.replace("-", "").replace("_", "").lower(): n for n in ALL_BASELINES}
+    return canonical_by_clean.get(clean, name)
+
+
+def load_hparams_from_csv(csv_path: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """Load hyperparameters for each model from the HPO best-params CSV.
+
+    Parses the `hparams_json` column for each model entry. If the CSV file does
+    not exist or cannot be parsed, logs a warning and returns an empty dictionary,
+    allowing callers to fall back gracefully to default hyperparameters.
+    """
+    if not csv_path:
+        logging.warning("No HPO params CSV path provided; falling back to default hyperparameters.")
+        return {}
+
+    resolved_path = csv_path
+    if not os.path.exists(resolved_path) and not os.path.isabs(resolved_path):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate = os.path.join(base_dir, resolved_path)
+        if os.path.exists(candidate):
+            resolved_path = candidate
+
+    if not os.path.exists(resolved_path):
+        logging.warning("HPO params CSV '%s' not found; falling back to default hyperparameters.", csv_path)
+        return {}
+
+    try:
+        df = pd.read_csv(resolved_path)
+    except Exception as exc:
+        logging.warning("Failed to read HPO params CSV '%s': %s; falling back to default hyperparameters.", resolved_path, exc)
+        return {}
+
+    hparams_by_model: Dict[str, Dict[str, Any]] = {}
+    for _, row in df.iterrows():
+        raw_name = str(row.get("model_name", "")).strip()
+        if not raw_name or raw_name.lower() == "nan":
+            continue
+
+        hparams: Dict[str, Any] = {}
+        if "hparams_json" in row and pd.notna(row["hparams_json"]):
+            val = row["hparams_json"]
+            if isinstance(val, dict):
+                hparams = dict(val)
+            elif isinstance(val, str):
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, dict):
+                        hparams = parsed
+                except Exception as exc:
+                    logging.warning("Failed to parse hparams_json for model '%s': %s", raw_name, exc)
+                    hparams = {}
+
+        # Fallback / merge with individual parameter columns if present
+        for col in df.columns:
+            if col in ["model_name", "category", "best_value", "best_trial_number", "hparams_json", "reward_weights_json"]:
+                continue
+            val = row.get(col)
+            if pd.notna(val) and col not in hparams:
+                hparams[col] = val
+
+        # Ensure integer hyperparameter fields are cast properly
+        int_keys = (
+            "hidden_dim", "embed_dim", "policy_freq", "n_epochs",
+            "policy_delay", "target_update_freq", "target_update_interval",
+            "num_res_blocks", "n_step"
+        )
+        for k in int_keys:
+            if k in hparams and hparams[k] is not None:
+                try:
+                    hparams[k] = int(float(hparams[k]))
+                except (ValueError, TypeError):
+                    pass
+
+        canonical_name = normalize_model_name(raw_name)
+        hparams_by_model[canonical_name] = hparams
+        if raw_name != canonical_name:
+            hparams_by_model[raw_name] = hparams
+
+    logging.info("Successfully loaded HPO hyperparameters for %d model entry(ies) from '%s'", len(hparams_by_model), resolved_path)
+    return hparams_by_model
+
+
+def get_hparams_for_model(hparams_by_model: Dict[str, Dict[str, Any]], model_name: str) -> Optional[Dict[str, Any]]:
+    """Look up hyperparameters for a model name with canonical and alias fallback."""
+    if not hparams_by_model:
+        return None
+    if model_name in hparams_by_model:
+        return hparams_by_model[model_name]
+    canonical_name = normalize_model_name(model_name)
+    if canonical_name in hparams_by_model:
+        return hparams_by_model[canonical_name]
+    clean = model_name.replace("-", "").replace("_", "").lower()
+    for k, v in hparams_by_model.items():
+        if k.replace("-", "").replace("_", "").lower() == clean:
+            return v
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--models", nargs="*", default=list(ALL_BASELINES),
+                    help="subset of baselines to train (default: all nine)")
+    ap.add_argument("--episodes", type=int, default=EPISODES)
+    ap.add_argument("--steps-per-episode", type=int, default=STEPS_PER_EPISODE)
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--no-resume", action="store_true",
+                    help="start every model from scratch instead of the latest checkpoint")
+    ap.add_argument("--hparams-csv", type=str, default="results/hpo/optuna_best_params.csv",
+                    help="path to HPO best parameters CSV (default: results/hpo/optuna_best_params.csv)")
+    args = ap.parse_args()
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+
+    total_steps = args.episodes * args.steps_per_episode
+    logging.info("Training %d model(s): %s", len(args.models), ", ".join(args.models))
+    logging.info("Per model: %d episodes x %d steps = %d total env steps",
+                 args.episodes, args.steps_per_episode, total_steps)
+
+    # Load HPO best hyperparameters
+    hparams_by_model = load_hparams_from_csv(args.hparams_csv)
+
+    failures = []
+    for name in args.models:
+        try:
+            model_cls = get_baseline(name)
+        except KeyError as exc:
+            logging.error("%s", exc)
+            failures.append((name, str(exc)))
+            continue
+
+        model_hparams = get_hparams_for_model(hparams_by_model, name)
+        if model_hparams is not None:
+            logging.info("Applying HPO hyperparameters for %s: %s", name, model_hparams)
+        else:
+            logging.warning("No HPO parameters found for %s in '%s'; falling back to default hyperparameters.", name, args.hparams_csv)
+
+        logging.info("=" * 70)
+        logging.info("Starting training for %s (%s)", name, model_cls.__name__)
+        try:
+            summary = run_hot_swap_training(
+                model_name=model_cls,
+                total_steps=total_steps,
+                episodes=args.episodes,
+                hparams=model_hparams,
+                seed=args.seed,
+                resume=not args.no_resume,
+            )
+            logging.info("Finished %s | %s", name, summary)
+        except Exception as exc:  # noqa: BLE001
+            logging.error("Failed training %s: %s", name, exc, exc_info=True)
+            failures.append((name, repr(exc)))
+
+    logging.info("=" * 70)
+    if failures:
+        logging.error("%d/%d model(s) failed:", len(failures), len(args.models))
+        for name, err in failures:
+            logging.error("  %s: %s", name, err)
+        return 1
+    logging.info("All %d model(s) trained successfully.", len(args.models))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

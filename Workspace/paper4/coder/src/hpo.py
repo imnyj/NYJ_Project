@@ -29,7 +29,7 @@ import optuna
 import pandas as pd
 import src.Communications as comm
 from src.baselines import ALL_BASELINES, BASELINE_CATEGORIES, get_baseline
-from src.hot_swap_trainer import AoiV2IEnv
+from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, REWARD_WEIGHT_KEYS, AoiV2IEnv
 from src.rl_interface import P_MAX, P_MIN, STATE_DIM, RetrospectiveReplayBuffer
 import src.sumo.make_sumo_set as ss
 
@@ -85,7 +85,8 @@ def normalize_model_name(name: Any) -> str:
 # removes any degenerate incentive to shrink all four weights at once.
 # The design defaults 0.5 / 0.2 / 0.2 / 0.1 lie inside these ranges.
 # ----------------------------------------------------------------------------
-REWARD_WEIGHT_KEYS: Tuple[str, ...] = ("w1", "w2", "w3", "w4")
+# REWARD_WEIGHT_KEYS is owned by `src/hot_swap_trainer.py` and imported above so
+# that the search space, the training env and the evaluation env cannot drift.
 
 REWARD_WEIGHT_RANGES: Dict[str, Tuple[float, float]] = {
     "w1": (0.10, 1.00),   # estimation-error penalty  Norm(e_t^2)
@@ -315,11 +316,12 @@ def evaluate_model_in_env(
     `reward_weights` are the sampled w1..w4 of the design reward; when given they are
     passed to the environment constructor so the trial actually trains under them.
     """
-    env_kwargs: Dict[str, Any] = {}
-    if reward_weights:
-        for key in REWARD_WEIGHT_KEYS:
-            if key in reward_weights:
-                env_kwargs[key] = float(reward_weights[key])
+    effective_weights = reward_weights if reward_weights else DEFAULT_REWARD_WEIGHTS
+    env_kwargs: Dict[str, Any] = {
+        key: float(effective_weights[key])
+        for key in REWARD_WEIGHT_KEYS
+        if key in effective_weights
+    }
 
     env = AoiV2IEnv(
         density=density,
@@ -457,12 +459,18 @@ def run_hpo_study(
     seeds: Optional[List[int]] = None,
     storage: Optional[str] = None,
     study_name: Optional[str] = None,
-    n_steps: int = 35,
+    n_steps: int = 350,
     sampler: Optional[optuna.samplers.BaseSampler] = None,
     pruner: Optional[optuna.pruners.BasePruner] = None,
+    tune_reward_weights: bool = False,
 ) -> optuna.Study:
     """
     Runs an Optuna study to optimize hyperparameters for a given model.
+
+    `tune_reward_weights` is off by default: w1..w4 stay pinned to
+    `DEFAULT_REWARD_WEIGHTS` so all nine baselines are searched against one
+    identical reward. Turn it on only for a reward-shaping ablation, never for
+    the numbers that go into the cross-model comparison table.
     """
     if model_cls is None:
         if callable(model_name) and not isinstance(model_name, str):
@@ -494,7 +502,16 @@ def run_hpo_study(
 
     def objective(trial: optuna.Trial) -> float:
         hparams = sample_hparams(trial, canonical_name)
-        reward_weights = sample_reward_weights(trial)
+        # Reward weights are a property of the benchmark, so by default every
+        # trial of every model runs under the same fixed reward and only the
+        # model hyperparameters are searched. Tuning them per model would give
+        # each baseline its own objective and break the cross-model comparison.
+        if tune_reward_weights:
+            reward_weights = sample_reward_weights(trial)
+        else:
+            reward_weights = dict(DEFAULT_REWARD_WEIGHTS)
+            for k, v in reward_weights.items():
+                trial.set_user_attr(k, v)
         score, avg_metrics = evaluate_trial_multiseed(
             model_cls=model_cls,
             hparams=hparams,
@@ -546,7 +563,10 @@ def save_study_results(
         for k in REWARD_WEIGHT_KEYS
         if k in study.best_trial.user_attrs
     }
-    best_params.update(best_weights)
+    # Deliberately NOT merged into best_params: `hparams_json` is consumed by
+    # run_all.py and forwarded to a model constructor, and w1..w4 are AoiV2IEnv
+    # arguments. They stay in their own `w1`..`w4` / `reward_weights_json`
+    # columns, which is where the environment reads them from.
 
     best_record = {
         "model_name": canonical_name,
@@ -564,7 +584,8 @@ def run_all_baselines_hpo(
     output_dir: str = "/home/imnyj/Workspace/paper4/coder/results/hpo",
     models: Optional[List[str]] = None,
     seeds: Optional[List[int]] = None,
-    n_steps: int = 35,
+    n_steps: int = 350,
+    tune_reward_weights: bool = False,
 ) -> Tuple[str, pd.DataFrame]:
     """
     Runs hyperparameter optimization across all baseline models, generates per-model trial CSVs,
@@ -583,6 +604,7 @@ def run_all_baselines_hpo(
             n_trials=n_trials,
             seeds=eval_seeds,
             n_steps=n_steps,
+            tune_reward_weights=tune_reward_weights,
         )
         _, record = save_study_results(study, model_name=model_name, output_dir=output_dir)
 
@@ -617,7 +639,14 @@ def main() -> None:
     parser.add_argument("--output-dir", type=str, default="/home/imnyj/Workspace/paper4/coder/results/hpo")
     parser.add_argument("--models", nargs="+", default=CANONICAL_MODEL_NAMES, help="List of models to optimize")
     parser.add_argument("--seeds", nargs="+", type=int, default=[42, 101, 2024], help="Evaluation seeds")
-    parser.add_argument("--n-steps", type=int, default=35, help="Simulation steps per seed")
+    # 35 steps is 3.5 simulated seconds of measurement. A vehicle needs ~35 s from
+    # its spawn edge to reach the RSU disc, so a 35-step window scores almost no
+    # traffic and the search optimises noise. 350 matches the training warmup.
+    parser.add_argument("--n-steps", type=int, default=350, help="Simulation steps per seed")
+    parser.add_argument("--tune-reward-weights", action="store_true",
+                        help="search w1..w4 per model instead of pinning them to the "
+                             "benchmark defaults (ablation only -- makes cross-model "
+                             "comparison invalid)")
     args = parser.parse_args()
 
     run_all_baselines_hpo(
@@ -626,6 +655,7 @@ def main() -> None:
         models=args.models,
         seeds=args.seeds,
         n_steps=args.n_steps,
+        tune_reward_weights=args.tune_reward_weights,
     )
 
 

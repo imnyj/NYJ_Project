@@ -1,0 +1,323 @@
+"""Train all nine comparison baselines on the genuine SUMO AoI environment.
+
+Each model runs 100 episodes x 2,000 steps = 200,000 real env.step() calls.
+
+Two things here are easy to get wrong and have been got wrong before:
+
+  * `run_hot_swap_training` treats `total_steps` as the TOTAL across all episodes and
+    derives steps_per_ep = total_steps // episodes. Passing the per-episode figure
+    silently caps every model at 2,000 steps, i.e. 1% of the requirement.
+  * Models are injected as CLASSES, not name strings. The registry in
+    src/baselines/__init__.py maps the paper's table names to those classes.
+
+Run detached so an SSH drop cannot kill it:
+    setsid nohup /home/imnyj/venv/bin/python run_all.py > training_full.log 2>&1 < /dev/null &
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import math
+import os
+import sys
+from typing import Any, Dict, Optional
+
+import pandas as pd
+
+sys.path.append(os.path.abspath(os.path.dirname(__file__)))
+
+from src.baselines import ALL_BASELINES, get_baseline  # noqa: E402
+from src.hot_swap_trainer import run_hot_swap_training  # noqa: E402
+
+EPISODES = 100
+STEPS_PER_EPISODE = 2000
+TOTAL_STEPS = EPISODES * STEPS_PER_EPISODE  # 200,000
+
+
+INT_HPARAM_KEYS = frozenset({
+    "hidden_dim", "embed_dim", "policy_freq", "n_epochs",
+    "policy_delay", "target_update_freq", "target_update_interval",
+    "target_sync_interval", "policy_sync_interval",
+    "num_res_blocks", "n_step", "num_delta_levels", "num_power_levels",
+    "ctx_dim", "max_agents", "num_tasks", "rollout_n_steps", "n_steps",
+    "batch_size", "buffer_capacity",
+})
+
+BOOL_HPARAM_KEYS = frozenset({
+    "use_target_network", "normalize_advantage", "deterministic",
+})
+
+
+def _is_valid_hparam_value(val: Any) -> bool:
+    """Check if a hyperparameter value is valid (non-null, non-NaN, non-infinite)."""
+    if val is None or pd.isna(val):
+        return False
+    if isinstance(val, (float, int)):
+        try:
+            val_f = float(val)
+            return not (math.isnan(val_f) or math.isinf(val_f))
+        except (ValueError, TypeError):
+            return False
+    if isinstance(val, str):
+        cleaned = val.strip().lower()
+        if cleaned in ("nan", "none", "null", "inf", "-inf", ""):
+            return False
+    return True
+
+
+def _cast_hparam_value(key: str, val: Any) -> Any:
+    """Cast hyperparameter value to its expected type based on key heuristics."""
+    if key in INT_HPARAM_KEYS:
+        try:
+            val_f = float(val)
+            if not (math.isnan(val_f) or math.isinf(val_f)):
+                return int(round(val_f))
+        except (ValueError, TypeError):
+            pass
+    elif key in BOOL_HPARAM_KEYS:
+        if isinstance(val, str):
+            return val.strip().lower() in ("true", "1", "yes", "t")
+        try:
+            return bool(val)
+        except Exception:
+            pass
+    return val
+
+
+def normalize_model_name(name: Any) -> str:
+    """Resolve an alias, or a model class, to its canonical registry name."""
+    if not isinstance(name, str):
+        name = getattr(name, "__name__", None) or type(name).__name__
+    clean = str(name).strip().replace("-", "").replace("_", "").lower()
+    canonical_by_clean = {n.replace("-", "").replace("_", "").lower(): n for n in ALL_BASELINES}
+    legacy_map = {
+        "hybridppo": "PPO",
+        "hybridsac": "SAC",
+        "hybridtd3": "TD3",
+    }
+    if clean in legacy_map:
+        return legacy_map[clean]
+    return canonical_by_clean.get(clean, str(name).strip())
+
+
+def load_hparams_from_csv(csv_path: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    """Load hyperparameters for each model from the HPO best-params CSV.
+
+    Parses the `hparams_json` column and/or individual hyperparameter columns
+    for each model entry. Gracefully handles missing files, malformed JSON, NaN/Inf
+    values, and duplicate model entries by selecting the highest-performing trial.
+    """
+    if not csv_path:
+        logging.warning("No HPO params CSV path provided; falling back to default hyperparameters.")
+        return {}
+
+    resolved_path = os.path.expanduser(str(csv_path).strip())
+    if not os.path.exists(resolved_path) and not os.path.isabs(resolved_path):
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        candidate = os.path.join(base_dir, resolved_path)
+        if os.path.exists(candidate):
+            resolved_path = candidate
+
+    if not os.path.exists(resolved_path):
+        logging.warning("HPO params CSV '%s' not found; falling back to default hyperparameters.", csv_path)
+        return {}
+
+    try:
+        df = pd.read_csv(resolved_path)
+    except Exception as exc:
+        logging.warning("Failed to read HPO params CSV '%s': %s; falling back to default hyperparameters.", resolved_path, exc)
+        return {}
+
+    if df.empty:
+        logging.warning("HPO params CSV '%s' is empty; falling back to default hyperparameters.", resolved_path)
+        return {}
+
+    hparams_by_model: Dict[str, Dict[str, Any]] = {}
+    best_score_by_model: Dict[str, float] = {}
+
+    ignored_cols = frozenset({
+        "model_name", "model", "name", "baseline", "category",
+        "best_value", "value", "score", "reward", "best_trial_number", "number",
+        "hparams_json", "reward_weights_json", "datetime_start", "datetime_complete",
+        "duration", "state",
+    })
+
+    for _, row in df.iterrows():
+        raw_name = ""
+        for col_cand in ("model_name", "model", "name", "baseline"):
+            if col_cand in row and pd.notna(row[col_cand]):
+                cand_val = str(row[col_cand]).strip()
+                if cand_val and cand_val.lower() != "nan":
+                    raw_name = cand_val
+                    break
+
+        if not raw_name:
+            continue
+
+        canonical_name = normalize_model_name(raw_name)
+
+        # Track score if available for multi-trial CSV deduplication (higher is better)
+        score = None
+        for score_col in ("best_value", "value", "score", "reward"):
+            if score_col in row and pd.notna(row[score_col]):
+                try:
+                    score = float(row[score_col])
+                    break
+                except (ValueError, TypeError):
+                    pass
+
+        if canonical_name in hparams_by_model and score is not None:
+            prev_score = best_score_by_model.get(canonical_name)
+            if prev_score is not None and score <= prev_score:
+                continue
+
+        raw_hparams: Dict[str, Any] = {}
+
+        # 1. Parse hparams_json
+        if "hparams_json" in row and pd.notna(row["hparams_json"]):
+            val = row["hparams_json"]
+            if isinstance(val, dict):
+                raw_hparams.update(val)
+            elif isinstance(val, str):
+                try:
+                    parsed = json.loads(val)
+                    if isinstance(parsed, dict):
+                        raw_hparams.update(parsed)
+                    else:
+                        logging.warning("hparams_json for model '%s' is not a JSON object: %s", raw_name, type(parsed).__name__)
+                except Exception as exc:
+                    logging.warning("Failed to parse hparams_json for model '%s': %s", raw_name, exc)
+
+        # 2. Parse reward_weights_json if present
+        if "reward_weights_json" in row and pd.notna(row["reward_weights_json"]):
+            rw_val = row["reward_weights_json"]
+            if isinstance(rw_val, dict):
+                for k, v in rw_val.items():
+                    if k not in raw_hparams and _is_valid_hparam_value(v):
+                        raw_hparams[k] = v
+            elif isinstance(rw_val, str):
+                try:
+                    parsed_rw = json.loads(rw_val)
+                    if isinstance(parsed_rw, dict):
+                        for k, v in parsed_rw.items():
+                            if k not in raw_hparams and _is_valid_hparam_value(v):
+                                raw_hparams[k] = v
+                except Exception:
+                    pass
+
+        # 3. Fallback / merge with individual parameter columns
+        for col in df.columns:
+            if col in ignored_cols:
+                continue
+            val = row.get(col)
+            if not _is_valid_hparam_value(val):
+                continue
+            col_name = str(col)
+            if col_name.startswith("params_"):
+                col_name = col_name[7:]
+            if col_name not in raw_hparams:
+                raw_hparams[col_name] = val
+
+        # 4. Filter invalid values and apply type casting
+        clean_hparams: Dict[str, Any] = {}
+        for k, v in raw_hparams.items():
+            if _is_valid_hparam_value(v):
+                clean_hparams[k] = _cast_hparam_value(k, v)
+
+        hparams_by_model[canonical_name] = clean_hparams
+        if raw_name != canonical_name:
+            hparams_by_model[raw_name] = clean_hparams
+        if score is not None:
+            best_score_by_model[canonical_name] = score
+
+    logging.info("Successfully loaded HPO hyperparameters for %d model entry(ies) from '%s'", len(hparams_by_model), resolved_path)
+    return hparams_by_model
+
+
+def get_hparams_for_model(hparams_by_model: Dict[str, Dict[str, Any]], model_name: Any) -> Optional[Dict[str, Any]]:
+    """Look up hyperparameters for a model name with canonical and alias fallback."""
+    if not hparams_by_model:
+        return None
+    name_str = getattr(model_name, "__name__", None) or str(model_name)
+    name_str = name_str.strip()
+    if name_str in hparams_by_model:
+        return hparams_by_model[name_str]
+    canonical_name = normalize_model_name(name_str)
+    if canonical_name in hparams_by_model:
+        return hparams_by_model[canonical_name]
+    clean = name_str.replace("-", "").replace("_", "").lower()
+    for k, v in hparams_by_model.items():
+        if k.replace("-", "").replace("_", "").lower() == clean:
+            return v
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--models", nargs="*", default=list(ALL_BASELINES),
+                    help="subset of baselines to train (default: all nine)")
+    ap.add_argument("--episodes", type=int, default=EPISODES)
+    ap.add_argument("--steps-per-episode", type=int, default=STEPS_PER_EPISODE)
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--no-resume", action="store_true",
+                    help="start every model from scratch instead of the latest checkpoint")
+    ap.add_argument("--hparams-csv", type=str, default="results/hpo/optuna_best_params.csv",
+                    help="path to HPO best parameters CSV (default: results/hpo/optuna_best_params.csv)")
+    args = ap.parse_args()
+
+    logging.basicConfig(level=logging.INFO,
+                        format="%(asctime)s [%(levelname)s] %(message)s")
+
+    total_steps = args.episodes * args.steps_per_episode
+    logging.info("Training %d model(s): %s", len(args.models), ", ".join(args.models))
+    logging.info("Per model: %d episodes x %d steps = %d total env steps",
+                 args.episodes, args.steps_per_episode, total_steps)
+
+    # Load HPO best hyperparameters
+    hparams_by_model = load_hparams_from_csv(args.hparams_csv)
+
+    failures = []
+    for raw_name in args.models:
+        canonical_name = normalize_model_name(raw_name)
+        try:
+            model_cls = get_baseline(canonical_name)
+        except KeyError as exc:
+            logging.error("Unknown baseline '%s' (from '%s'): %s", canonical_name, raw_name, exc)
+            failures.append((raw_name, str(exc)))
+            continue
+
+        model_hparams = get_hparams_for_model(hparams_by_model, canonical_name)
+        if model_hparams is not None:
+            logging.info("Applying HPO hyperparameters for %s: %s", canonical_name, model_hparams)
+        else:
+            logging.warning("No HPO parameters found for %s in '%s'; falling back to default hyperparameters.", canonical_name, args.hparams_csv)
+
+        logging.info("=" * 70)
+        logging.info("Starting training for %s (%s)", canonical_name, model_cls.__name__)
+        try:
+            summary = run_hot_swap_training(
+                model_name=model_cls,
+                total_steps=total_steps,
+                episodes=args.episodes,
+                hparams=model_hparams,
+                seed=args.seed,
+                resume=not args.no_resume,
+            )
+            logging.info("Finished %s | %s", canonical_name, summary)
+        except Exception as exc:  # noqa: BLE001
+            logging.error("Failed training %s: %s", canonical_name, exc, exc_info=True)
+            failures.append((canonical_name, repr(exc)))
+
+    logging.info("=" * 70)
+    if failures:
+        logging.error("%d/%d model(s) failed:", len(failures), len(args.models))
+        for name, err in failures:
+            logging.error("  %s: %s", name, err)
+        return 1
+    logging.info("All %d model(s) trained successfully.", len(args.models))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

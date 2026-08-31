@@ -1,0 +1,2 @@
+episode,global_step,mean_reward,mean_loss,swap_count,mean_delta,n_decisions,mean_aoi,peak_aoi,mean_peak_aoi,packet_loss_rate,mean_error,max_error,low_speed_error,high_speed_error,avg_tx_power_dbm,total_energy_joules,jains_fairness_aoi,jains_fairness_err,tx_attempts,tx_fails,tx_abandoned,n_observations,n_vehicles_seen,mean_cbr,max_cbr
+1,5,-0.1898,0.0,1,11.1823,25,0.2855,0.5,0.2667,0.0,0.0997,1.2637,0.0997,0.0997,15.7778,7e-05,0.9832,0.1782,3,0,0,110,22,0.000672,0.00224

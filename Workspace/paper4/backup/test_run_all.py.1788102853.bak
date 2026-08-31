@@ -1,0 +1,182 @@
+# tests/test_run_all.py
+# ============================================================================
+# Unit and Integration Tests for run_all.py HPO Parameter Loading and Training
+# ============================================================================
+
+import json
+import logging
+import os
+import subprocess
+import sys
+import pandas as pd
+import pytest
+
+from run_all import (
+    get_hparams_for_model,
+    load_hparams_from_csv,
+    normalize_model_name,
+)
+from src.baselines import ALL_BASELINES
+
+
+class TestRunAllHparamsLoading:
+    """Unit test suite verifying HPO CSV parsing and model matching."""
+
+    def test_01_load_hparams_from_valid_csv(self, tmp_path):
+        csv_file = tmp_path / "test_hparams.csv"
+        df = pd.DataFrame([
+            {
+                "model_name": "PPO",
+                "category": "basic",
+                "hparams_json": json.dumps({"learning_rate": 0.0005, "gamma": 0.98, "clip_range": 0.25}),
+            },
+            {
+                "model_name": "RES-MAPDDPG",
+                "category": "latest",
+                "hparams_json": json.dumps({"lr_actor": 0.0001, "hidden_dim": 128.0, "num_res_blocks": 2.0}),
+            },
+        ])
+        df.to_csv(csv_file, index=False)
+
+        hparams_map = load_hparams_from_csv(str(csv_file))
+        assert "PPO" in hparams_map
+        assert hparams_map["PPO"]["learning_rate"] == 0.0005
+        assert hparams_map["PPO"]["gamma"] == 0.98
+
+        assert "RES-MAPDDPG" in hparams_map
+        assert hparams_map["RES-MAPDDPG"]["hidden_dim"] == 128
+        assert isinstance(hparams_map["RES-MAPDDPG"]["hidden_dim"], int)
+        assert hparams_map["RES-MAPDDPG"]["num_res_blocks"] == 2
+        assert isinstance(hparams_map["RES-MAPDDPG"]["num_res_blocks"], int)
+
+    def test_02_load_hparams_missing_csv_file(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            hparams_map = load_hparams_from_csv("/path/to/non_existent_file.csv")
+        assert hparams_map == {}
+        assert any("not found" in rec.message for rec in caplog.records)
+
+    def test_03_load_hparams_none_or_empty_path(self, caplog):
+        with caplog.at_level(logging.WARNING):
+            hparams_map = load_hparams_from_csv(None)
+        assert hparams_map == {}
+
+        with caplog.at_level(logging.WARNING):
+            hparams_map_empty = load_hparams_from_csv("")
+        assert hparams_map_empty == {}
+
+    def test_04_load_hparams_malformed_json_fallback(self, tmp_path, caplog):
+        csv_file = tmp_path / "malformed.csv"
+        df = pd.DataFrame([
+            {
+                "model_name": "SAC",
+                "learning_rate": 0.001,
+                "gamma": 0.97,
+                "hparams_json": "INVALID_JSON_STRING",
+            }
+        ])
+        df.to_csv(csv_file, index=False)
+
+        with caplog.at_level(logging.WARNING):
+            hparams_map = load_hparams_from_csv(str(csv_file))
+        assert "SAC" in hparams_map
+        # Fallback to column values when hparams_json fails
+        assert hparams_map["SAC"]["learning_rate"] == 0.001
+        assert hparams_map["SAC"]["gamma"] == 0.97
+
+    def test_05_get_hparams_for_model_matching(self):
+        hparams_map = {
+            "PPO": {"learning_rate": 0.0003},
+            "RES-MAPDDPG": {"lr_actor": 0.0001},
+        }
+
+        # Exact match
+        assert get_hparams_for_model(hparams_map, "PPO") == {"learning_rate": 0.0003}
+        # Canonical/alias match
+        assert get_hparams_for_model(hparams_map, "RESMAPDDPG") == {"lr_actor": 0.0001}
+        assert get_hparams_for_model(hparams_map, "res-mapddpg") == {"lr_actor": 0.0001}
+        # Not found
+        assert get_hparams_for_model(hparams_map, "TD3") is None
+        assert get_hparams_for_model({}, "PPO") is None
+
+    def test_06_cli_argument_parsing(self):
+        import argparse
+
+        test_args = ["--hparams-csv", "custom/hparams.csv", "--episodes", "2", "--steps-per-episode", "50", "--models", "PPO", "SAC"]
+        orig_argv = sys.argv
+        try:
+            sys.argv = ["run_all.py"] + test_args
+            ap = argparse.ArgumentParser()
+            ap.add_argument("--models", nargs="*", default=list(ALL_BASELINES))
+            ap.add_argument("--episodes", type=int, default=100)
+            ap.add_argument("--steps-per-episode", type=int, default=2000)
+            ap.add_argument("--seed", type=int, default=42)
+            ap.add_argument("--no-resume", action="store_true")
+            ap.add_argument("--hparams-csv", type=str, default="results/hpo/optuna_best_params.csv")
+            args = ap.parse_args(test_args)
+            assert args.hparams_csv == "custom/hparams.csv"
+            assert args.episodes == 2
+            assert args.steps_per_episode == 50
+            assert args.models == ["PPO", "SAC"]
+        finally:
+            sys.argv = orig_argv
+
+
+class TestRunAllExecutionIntegration:
+    """End-to-end integration tests running run_all.py as a subprocess."""
+
+    def test_07_run_all_with_custom_hparams_csv(self, tmp_path):
+        custom_csv = tmp_path / "custom_optuna_best.csv"
+        df = pd.DataFrame([
+            {
+                "model_name": "PPO",
+                "category": "Category 1 (Basic)",
+                "hparams_json": json.dumps({"learning_rate": 0.0002, "clip_range": 0.15, "ent_coef": 0.001}),
+            }
+        ])
+        df.to_csv(custom_csv, index=False)
+
+        cmd = [
+            sys.executable,
+            "run_all.py",
+            "--episodes", "1",
+            "--steps-per-episode", "10",
+            "--models", "PPO",
+            "--hparams-csv", str(custom_csv),
+        ]
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        assert res.returncode == 0, f"run_all.py failed: {res.stderr}\nStdout: {res.stdout}"
+        output = res.stderr + res.stdout
+        assert "Applying HPO hyperparameters for PPO" in output
+        assert "All 1 model(s) trained successfully." in output
+
+    def test_08_run_all_with_missing_hparams_csv(self):
+        missing_csv = "/tmp/non_existent_params_12345.csv"
+        cmd = [
+            sys.executable,
+            "run_all.py",
+            "--episodes", "1",
+            "--steps-per-episode", "10",
+            "--models", "PPO",
+            "--hparams-csv", missing_csv,
+        ]
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        assert res.returncode == 0, f"run_all.py failed when CSV missing: {res.stderr}\nStdout: {res.stdout}"
+        output = res.stderr + res.stdout
+        assert "not found" in output or "falling back to default" in output
+        assert "All 1 model(s) trained successfully." in output
+
+    def test_09_run_all_default_acceptance_criterion(self):
+        """Verification acceptance criterion:
+        Running python run_all.py --episodes 1 --steps-per-episode 10 --models PPO completes successfully without crashing.
+        """
+        cmd = [
+            sys.executable,
+            "run_all.py",
+            "--episodes", "1",
+            "--steps-per-episode", "10",
+            "--models", "PPO",
+        ]
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        assert res.returncode == 0, f"Default run_all.py command failed: {res.stderr}\nStdout: {res.stdout}"
+        output = res.stderr + res.stdout
+        assert "All 1 model(s) trained successfully." in output

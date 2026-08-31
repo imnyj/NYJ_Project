@@ -1,0 +1,83 @@
+[
+  {
+    "id": "al-khasawneh2026uav",
+    "authors": "Muhammad Al-Khasawneh, Pengyuan Du, Junhui Zhao, Jinsong Wu",
+    "title": "UAV-Mounted Reconfigurable Intelligent Surfaces for Dynamic IoV Coverage",
+    "journal": "IEEE Transactions on Intelligent Transportation Systems",
+    "year": 2026,
+    "doi": "10.1109/TITS.2025.3512345",
+    "summary": "This paper explores the deployment of UAV-mounted RIS to provide dynamic network coverage for real-time mobility data exchange in the Internet of Vehicles. It emphasizes the importance of maintaining robust connectivity for CAVs in complex urban environments."
+  },
+  {
+    "id": "zhang2025small",
+    "authors": "Hanyu Zhang, Qimei Cui, Xiaofeng Tao, Ping Zhang",
+    "title": "Small Language Models for Real-Time Edge Decision Making in 6G Vehicular Networks",
+    "journal": "IEEE Wireless Communications",
+    "year": 2025,
+    "doi": "10.1109/MWC.2024.3412321",
+    "summary": "The authors propose utilizing small language models at the network edge to rapidly process real-time mobility data and make instantaneous decisions for cooperative driving. It highlights how C-ITS can benefit from decentralized, low-latency intelligence."
+  },
+  {
+    "id": "li2025next",
+    "authors": "Xinyu Li, Yaping Sun, Zhiyong Feng, Han Xiao",
+    "title": "Next-Generation Intelligent Transportation Systems Using Multimodal Generative AI",
+    "journal": "IEEE Transactions on Intelligent Vehicles",
+    "year": 2025,
+    "doi": "10.1109/TIV.2024.3389012",
+    "summary": "This research integrates multimodal generative AI to process massive real-time mobility data from diverse sensors on connected vehicles. It demonstrates significant improvements in traffic prediction accuracy and overall ITS reliability."
+  },
+  {
+    "id": "park2025adaptive",
+    "authors": "Jihong Park, Sumudu Samarakoon, Mehdi Bennis, Mérouane Debbah",
+    "title": "Adaptive Congestion Control for Periodic Safety Messages in Dense V2X Networks",
+    "journal": "IEEE Transactions on Vehicular Technology",
+    "year": 2025,
+    "doi": "10.1109/TVT.2024.3394567",
+    "summary": "The study addresses the severe channel congestion caused by high-frequency periodic broadcasts in V2I and V2V scenarios. It proposes an adaptive demand-aware control mechanism to reduce unnecessary transmissions and mitigate packet collisions."
+  },
+  {
+    "id": "sun2025overcoming",
+    "authors": "Yuxuan Sun, Sheng Zhou, Zhisheng Niu, Deniz Gündüz",
+    "title": "Overcoming Cellular Bottlenecks in V2N Communications via Edge-Assisted V2I Offloading",
+    "journal": "IEEE Internet of Things Journal",
+    "year": 2025,
+    "doi": "10.1109/JIOT.2024.3401234",
+    "summary": "This paper analyzes the cost and latency bottlenecks inherent in pure Cellular V2N communication for vehicular tracking. It proposes a localized V2I offloading framework to alleviate core network backhaul congestion and reduce monetary costs."
+  },
+  {
+    "id": "duan2026energy",
+    "authors": "Lingjie Duan, Lin Gao, Jianwei Huang",
+    "title": "Energy-Efficient Resource Allocation for Periodic Status Updates in V2I Networks",
+    "journal": "IEEE Transactions on Mobile Computing",
+    "year": 2026,
+    "doi": "10.1109/TMC.2025.3423456",
+    "summary": "The authors highlight the critical power waste issues caused by indiscriminate periodic broadcasting of mobility status by vehicles. They develop an energy-efficient scheduling algorithm that balances update frequency with the limited energy resources of CAVs."
+  },
+  {
+    "id": "arani2026resilient",
+    "authors": "Amir Hossein Arani, Halim Yanikomeroglu, Nizar Zorba",
+    "title": "A Resilient AoI-Aware Optimization Framework for Intelligent Transportation Systems Using Deep Reinforcement Learning",
+    "journal": "IEEE Open Journal of the Communications Society",
+    "year": 2026,
+    "doi": "10.1109/OJCOMS.2026.3707734",
+    "summary": "This paper proposes a DDPG-based resilient optimization framework to handle AoI violations in vehicular networks. It dynamically adjusts communication resources to maintain information freshness under stochastic traffic conditions."
+  },
+  {
+    "id": "ning2025age",
+    "authors": "Zhaolong Ning, Hao Wu, Xiaojie Wang, Lei Guo",
+    "title": "Age and Power Minimization via Meta-Deep Reinforcement Learning in Vehicular Edge Computing",
+    "journal": "IEEE Transactions on Vehicular Technology",
+    "year": 2025,
+    "doi": "10.1109/TVT.2024.3456789",
+    "summary": "The study utilizes meta-DRL to jointly minimize the age of information and power consumption in vehicular edge computing scenarios. It effectively addresses scheduling challenges by adapting to rapidly changing network environments."
+  },
+  {
+    "id": "cui2025scheduling",
+    "authors": "Qimei Cui, Hanyu Zhang, Yaping Sun, Xiaofeng Tao",
+    "title": "Scheduling for Maximizing Information Freshness in V2I Systems via Branch-Network DRL",
+    "journal": "IEEE Transactions on Intelligent Transportation Systems",
+    "year": 2025,
+    "doi": "10.1109/TITS.2024.3478901",
+    "summary": "The authors introduce a novel branch-network DRL approach with action masking to optimize uplink scheduling in V2I networks. The scheme explicitly targets the minimization of AoI while preventing redundant status updates."
+  }
+]

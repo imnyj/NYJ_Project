@@ -1,0 +1,51 @@
+# Project: Auto_Stock Codebase Review & Direct Refactoring
+
+## Architecture
+Auto_Stock is an automated stock trading and deep reinforcement learning system built on Python 3.10+.
+- **Core Layer**: `core/config.py` (hierarchical configuration with SecretStr protection), `core/kiwoom_api.py` (Kiwoom 2024 REST API client, OAuth2 token manager, order/quote/balance endpoints).
+- **Data Engine Layer**: `modules/data/` (`collector_price.py`, `collector_fundamental.py`, `consolidator.py`, `streamer.py`, `pipeline.py`) - OHLCV data collection, DART/Naver financial statements, Point-in-Time `merge_asof`, real-time tick streaming and candle aggregation.
+- **Trading & RL Engine Layer**: `modules/engine/` (`mock_environment.py`, `hybrid_trading_env.py`, `live_learning_simulator.py`, `manual_trader.py`) - Virtual accounting with 1-KRW precision, Gymnasium 1.2.0 trading environment, live simulation.
+- **Model Architecture Layer**: `modules/models/` (`feature_extractor.py`, `hybrid_policy.py`) - 1D-CNN + MLP DualStream SL feature extractor, Hybrid Actor-Critic with PPO.
+- **HPO & Analysis Layer**: `modules/hpo/` (`metrics.py`, `optuna_pipeline.py`, `exporter.py`) - Financial metric evaluation (Sharpe, MDD), Optuna Bayesian HPO, atomic CSV export.
+- **Test & Validation Layer**: `tests/` (18 test suites, 426 tests) - Unit, integration, and adversarial stress tests.
+
+## Feature Inventory & Defect Catalog
+| # | Defect ID | Domain | Target Files | Description | Assigned Milestone | Source |
+|---|---|---|---|---|---|---|
+| 1 | BUG-L01 | System / API | `core/kiwoom_api.py` | API null response leads to `Decimal("None")` InvalidOperation crash | M1 | Survey Sys |
+| 2 | BUG-C01 | System / Concurrency | `core/kiwoom_api.py` | `TokenManager` lacks thread lock, causing concurrent token refresh race conditions | M1 | Survey Sys / API |
+| 3 | BUG-A03 | API Compliance | `core/kiwoom_api.py` | Missing `revoke_token()`, `get_account_positions()`, and multi-schema fallback parsing | M1 | Survey API |
+| 4 | BUG-C02 | System / Concurrency | `core/config.py` | `_GLOBAL_CONFIG` lacks thread lock during reload/initialization | M1 | Survey Sys |
+| 5 | BUG-A01 | System / Cleanliness | Project Root | Stray fix scripts (`fix_*.py`, `test_kw.py`) violate cleanliness; must isolate to `backup/` | M1 | Survey Sys / GEMINI |
+| 6 | BUG-A02 | System / Tests | `etc/scripts/test_extreme_4_1.py` | Top-level execution during module import crashes `pytest` test collection | M1 | Survey Sys |
+| 7 | BUG-L02 | Data / Logic | `modules/data/collector_price.py` | `fillna(0.0)` in OHLCV cleaning causes `min` logic to corrupt valid low prices to 0.0 | M2 | Survey Sys |
+| 8 | BUG-M01 | Data / Resource | `collector_price.py`, `collector_fundamental.py` | `requests.Session()` lacks explicit `close()` and Context Manager support, leaking sockets | M2 | Survey Sys |
+| 9 | BUG-L03 | Data / Logic | `modules/data/consolidator.py` | `merge_asof` without symbol filtering causes cross-stock fundamental data contamination | M2 | Survey Sys |
+| 10 | BUG-L06 | Data / Logic | `modules/data/collector_fundamental.py` | Zero operating profit / zero margin boolean falsy check bug | M2 | Survey Sys |
+| 11 | BUG-M02 | Data / Concurrency | `modules/data/streamer.py` | `stop()` join timeout shorter than HTTP timeout, leaving zombie polling threads | M2 | Survey Sys |
+| 12 | BUG-M03 | Data / Memory | `modules/data/streamer.py` | `CircularBuffer` dictionary keys grow unboundedly | M2 | Survey Sys |
+| 13 | BUG-RL01 | ML/RL / Logic | `modules/engine/hybrid_trading_env.py` | `_get_observation()` index calculation duplicates step 0 and introduces 1-step lag | M3 | Survey ML |
+| 14 | BUG-RL02 | ML/RL / Logic | `modules/engine/hybrid_trading_env.py` | HOLD step leaks previous step's `trade_record` in returned info dict | M3 | Survey Sys / ML |
+| 15 | BUG-RL03 | ML/RL / Architecture | `feature_extractor.py`, `hybrid_policy.py` | `isinstance(..., np.ndarray)` check misses `.to(device)` conversion for PyTorch tensors | M3 | Survey ML |
+| 16 | BUG-RL04 | ML/RL / Interface | `modules/engine/live_learning_simulator.py` | Legacy 4-tuple step vs Gymnasium 5-tuple step interface discrepancy | M3 | Survey ML |
+| 17 | BUG-RL05 | ML/RL / HPO | `modules/hpo/optuna_pipeline.py` | 0-variance Sharpe return (0.0) incentivizes inactive 100% cash policy over active policy | M3 | Survey ML |
+| 18 | BUG-T01 | Test / Oracle | `tests/test_adversarial_m2_rl_challenger.py` | `_ground_truth_gae` off-by-one index (`dones[t+1]` vs `dones[t]`) causes 5 test failures | M4 | Survey Sys / ML |
+| 19 | BUG-T02 | Test / API Mock | `tests/test_phase3_api.py` | Test mock response schemas out of sync with Kiwoom 2024 REST API contract (14 failures) | M4 | Survey Sys / API |
+| 20 | BUG-T03 | Test / Regex | `tests/test_phase3_api.py` | 32-character secret regex false-positive on function names in `modules/hpo/__init__.py` | M4 | Survey Sys |
+| 21 | REP-01 | Documentation | `Report/codebase_review_and_fixes.md` | Final comprehensive code review & refactoring report with >=3 deep Before/After analyses | M5 | User Request |
+
+## Milestones
+| # | Name | Scope | Dependencies | Status |
+|---|---|---|---|---|
+| M1 | System & API Core Refactoring | `core/kiwoom_api.py`, `core/config.py`, root workspace cleanup to `backup/`, `etc/scripts/test_extreme_4_1.py` | none | DONE |
+| M2 | Data Engine & Resource Safety | `modules/data/collector_price.py`, `modules/data/collector_fundamental.py`, `modules/data/consolidator.py`, `modules/data/streamer.py` | M1 | DONE |
+| M3 | ML/RL Pipeline & Env Refactoring | `modules/engine/hybrid_trading_env.py`, `modules/models/feature_extractor.py`, `modules/models/hybrid_policy.py`, `modules/engine/live_learning_simulator.py`, `modules/hpo/optuna_pipeline.py` | M1, M2 | IN_PROGRESS |
+| M4 | Test Suite Alignment & 100% Pytest Verification | `tests/test_phase3_api.py`, `tests/test_adversarial_m2_rl_challenger.py`, full pytest test suite execution across all 18 test files | M1, M2, M3 | PLANNED |
+| M5 | Comprehensive Review Report & Final Audit | `Report/codebase_review_and_fixes.md`, Forensic Audit, Final verification & Sentinel sign-off | M1, M2, M3, M4 | PLANNED |
+
+## Interface Contracts & Code Layout
+- **Root Directory Cleanliness**: All temporary/scrap scripts in root must be moved to `backup/` or `etc/scripts/`.
+- **Lock Management & Audit Logging**: Subagents modifying files must respect lock safety and record audit trails per `GEMINI.md`.
+- **Thread Safety**: Singleton configurations and token managers must employ double-checked locking with `threading.Lock()`.
+- **Resource Management**: Network sessions must provide deterministic `.close()` and context managers.
+- **Gymnasium 1.2.0 Standard**: Environments must return 5-tuple `(obs, reward, terminated, truncated, info)`.

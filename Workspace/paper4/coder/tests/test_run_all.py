@@ -40,6 +40,19 @@ def _write_csv(rows):
     return path
 
 
+def _sandbox_env(tmp_path):
+    """Environment for a subprocess run_all.py that must not touch the real tree.
+
+    `--checkpoint-dir` and `--tensorboard-dir` are already redirected by the
+    callers, but `run_hot_swap_training` also writes a per-episode progress CSV,
+    and its default location is the production coder/logs/training/. run_all.py
+    has no --log-dir flag yet and a subprocess is beyond the reach of monkeypatch,
+    so the environment variable is the only handle. Drop this once run_all.py
+    forwards a --log-dir.
+    """
+    return {**os.environ, "PAPER4_TRAINING_LOG_DIR": str(tmp_path / "training_logs")}
+
+
 class TestRunAllHparamsLoading:
     """Unit test suite verifying HPO CSV parsing and model matching."""
 
@@ -211,7 +224,8 @@ class TestRunAllExecutionIntegration:
             "--checkpoint-dir", str(tmp_path / "checkpoints"),
             "--tensorboard-dir", str(tmp_path / "tensorboard"),
         ]
-        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder",
+                             capture_output=True, text=True, env=_sandbox_env(tmp_path))
         assert res.returncode == 0, f"run_all.py failed: {res.stderr}\nStdout: {res.stdout}"
         output = res.stderr + res.stdout
         assert "Applying HPO hyperparameters for PPO" in output
@@ -229,7 +243,8 @@ class TestRunAllExecutionIntegration:
             "--checkpoint-dir", str(tmp_path / "checkpoints"),
             "--tensorboard-dir", str(tmp_path / "tensorboard"),
         ]
-        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder",
+                             capture_output=True, text=True, env=_sandbox_env(tmp_path))
         assert res.returncode == 0, f"run_all.py failed when CSV missing: {res.stderr}\nStdout: {res.stdout}"
         output = res.stderr + res.stdout
         assert "not found" in output or "falling back to default" in output
@@ -245,7 +260,8 @@ class TestRunAllExecutionIntegration:
             "--checkpoint-dir", str(tmp_path / "checkpoints"),
             "--tensorboard-dir", str(tmp_path / "tensorboard"),
         ]
-        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder",
+                             capture_output=True, text=True, env=_sandbox_env(tmp_path))
         assert res.returncode == 0, f"run_all.py failed with lowercase model: {res.stderr}\nStdout: {res.stdout}"
         output = res.stderr + res.stdout
         assert "Starting training for PPO (PPO)" in output
@@ -264,10 +280,12 @@ class TestRunAllExecutionIntegration:
             "--checkpoint-dir", str(tmp_path / "checkpoints"),
             "--tensorboard-dir", str(tmp_path / "tensorboard"),
         ]
-        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder", capture_output=True, text=True)
+        res = subprocess.run(cmd, cwd="/home/imnyj/Workspace/paper4/coder",
+                             capture_output=True, text=True, env=_sandbox_env(tmp_path))
         assert res.returncode == 0, f"Default run_all.py command failed: {res.stderr}\nStdout: {res.stdout}"
         output = res.stderr + res.stdout
         assert "All 1 model(s) trained successfully." in output
+
 
 
 class TestRunAllAdversarialAndEdgeCases:
@@ -512,8 +530,22 @@ class TestRunAllAdversarialAndEdgeCases:
             assert code_neg_step == 1
         assert any("must both be positive integers" in rec.message for rec in caplog.records)
 
-    def test_25_main_programmatic_invocation(self, tmp_path):
+    def test_25_main_programmatic_invocation(self, tmp_path, monkeypatch):
         """main() should execute cleanly when invoked programmatically with valid argv arguments."""
+        # `run_hot_swap_training` writes its episodic CSV to `log_dir`, whose
+        # default is the production coder/logs/training/ tree; run_all.py does not
+        # forward a --log-dir yet, so this test was rewriting the real
+        # PPO_progress.csv on every pytest invocation. Remove this shim once
+        # run_all.py grows the flag.
+        import run_all as _run_all
+
+        _real = _run_all.run_hot_swap_training
+
+        def _sandboxed(*args, **kwargs):
+            kwargs.setdefault("log_dir", str(tmp_path / "logs"))
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(_run_all, "run_hot_swap_training", _sandboxed)
         exit_code = main([
             "--episodes", "1",
             "--steps-per-episode", "5",
@@ -648,6 +680,7 @@ class TestRewardWeightSeparation:
              "--checkpoint-dir", str(ckpt_dir),
              "--tensorboard-dir", str(tmp_path / "tensorboard")],
             cwd=REPO_ROOT, capture_output=True, text=True,
+            env=_sandbox_env(tmp_path),
         )
         assert res.returncode == 0, f"run_all.py failed: {res.stderr}"
 
@@ -656,6 +689,9 @@ class TestRewardWeightSeparation:
 
         after = set(glob.glob(os.path.join(REPO_ROOT, "checkpoints", "*.pt")))
         assert after == before, f"production checkpoints touched: {sorted(after - before)}"
+        assert list((tmp_path / "training_logs").glob("*_progress.csv")), (
+            "the progress CSV did not land in the sandbox, so it went somewhere else"
+        )
 
         stored = torch.load(written[0], map_location="cpu", weights_only=False)
         leaked = set(stored.get("hparams", {})) & ENV_ONLY_HPARAM_KEYS

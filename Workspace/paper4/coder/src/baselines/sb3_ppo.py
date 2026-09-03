@@ -87,6 +87,7 @@ class PPO(SB3BaselineModel):
         target_kl: Optional[float] = None,
         policy: str = "MlpPolicy",
         policy_kwargs: Optional[Dict[str, Any]] = None,
+        hidden_dim: Optional[int] = None,
         device: Union[str, torch.device] = "auto",
         seed: Optional[int] = None,
         rollout_n_steps: int = 64,
@@ -94,6 +95,8 @@ class PPO(SB3BaselineModel):
     ) -> None:
         super().__init__(state_dim=state_dim, num_channels=num_channels, **hparams)
         self.gamma = float(gamma)
+        #: Requested hidden width; None means "keep SB3's own default net_arch".
+        self.hidden_dim = None if hidden_dim is None else int(hidden_dim)
 
         # `rollout_n_steps` only sizes SB3's internal RolloutBuffer, which we never
         # fill (our data comes from RetrospectiveReplayBuffer). It is kept small so
@@ -115,7 +118,7 @@ class PPO(SB3BaselineModel):
             max_grad_norm=max_grad_norm,
             normalize_advantage=bool(normalize_advantage),
             target_kl=target_kl,
-            policy_kwargs=policy_kwargs,
+            policy_kwargs=self.apply_hidden_dim(policy_kwargs, hidden_dim),
         )
 
     # ------------------------------------------------------------------

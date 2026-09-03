@@ -1,0 +1,10 @@
+model_name,num_parameters_default,num_parameters_hidden_dim_128,width_searchable
+PPO,10887,38151,yes
+SAC,357643,96907,yes
+TD3,772810,115722,yes
+RES-MAPDDPG,301656,301656,yes
+MA2HDQN,148880,148880,yes
+I-HAMAPPO,68657,68657,yes
+SPAM-D3QN,87426,87426,yes
+CARLTON,44624,44624,yes
+MADDPG-MT,222748,222748,yes

@@ -59,12 +59,15 @@ class SAC(SB3BaselineModel):
         target_update_interval: int = 1,
         policy: str = "MlpPolicy",
         policy_kwargs: Optional[Dict[str, Any]] = None,
+        hidden_dim: Optional[int] = None,
         device: Union[str, torch.device] = "auto",
         seed: Optional[int] = None,
         **hparams: Any,
     ) -> None:
         super().__init__(state_dim=state_dim, num_channels=num_channels, **hparams)
         self.gamma = float(gamma)
+        #: Requested hidden width; None means "keep SB3's own default net_arch".
+        self.hidden_dim = None if hidden_dim is None else int(hidden_dim)
 
         # buffer_size=1: SB3 allocates its own ReplayBuffer at construction, but our
         # transitions come from RetrospectiveReplayBuffer, so the default 1e6-slot
@@ -81,7 +84,7 @@ class SAC(SB3BaselineModel):
             ent_coef=ent_coef,
             target_entropy=target_entropy,
             target_update_interval=int(target_update_interval),
-            policy_kwargs=policy_kwargs,
+            policy_kwargs=self.apply_hidden_dim(policy_kwargs, hidden_dim),
         )
 
         # --------------------------------------------------------------

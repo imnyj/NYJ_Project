@@ -65,17 +65,26 @@
 #   pipeline's four-term AoI reward. This substitution must be stated in the
 #   paper: what is being compared is CARLTON's learner and channel-allocation
 #   formulation, not CARLTON's objective.
-# * The exploration policy is the mellowmax-induced Boltzmann policy with the
-#   temperature simplified to beta = omega. The exact DeepMellow policy obtains
-#   beta by root-finding on sum_i exp(beta * (q_i - mm)) * (q_i - mm) = 0; using
-#   beta = omega is the standard practical shortcut and changes only the
-#   exploration temperature, not the backup.
+# * The exploration policy is the mellowmax-induced Boltzmann policy. The exact
+#   DeepMellow policy obtains its temperature beta by root-finding on
+#   sum_i exp(beta * (q_i - mm)) * (q_i - mm) = 0; beta = omega is the standard
+#   practical shortcut and changes only the exploration temperature, not the
+#   backup. `policy_beta` is nevertheless exposed as its own argument and
+#   defaults to omega, because the two roles pull in opposite directions: a small
+#   omega makes the BACKUP closer to the mean of the branch (softer, more
+#   conservative bootstrapping) while a small beta makes the POLICY closer to
+#   uniform (more exploration). Tying them forces one search range to serve both,
+#   and CARLTON has no epsilon-greedy fallback, so a large omega chosen for the
+#   backup collapses the policy onto argmax with no way back. Per-branch policy
+#   entropy is reported by `update()` so that collapse is visible in the logs
+#   rather than inferred after the fact.
 # ============================================================================
 
 from __future__ import annotations
 import copy
 import math
-from typing import Any, Dict, List, Tuple, Union
+import logging
+from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import torch.nn as nn
@@ -83,12 +92,14 @@ import torch.optim as optim
 from src.baselines.base_agent import BaseRLModel
 from src.rl_interface import ActionDecoder, STATE_DIM
 
+logger = logging.getLogger(__name__)
+
 
 # The two grid builders below are duplicated verbatim from
 # src/baselines/spam_d3qn.py rather than imported, so the two baseline modules
 # stay independent of one another. The librarian note requires the grids to be
 # IDENTICAL across the two discretised baselines; that equality is asserted in
-# etc/scripts/verify_baselines_similar.py rather than enforced by an import.
+# tests/test_baselines_action_roundtrip.py rather than enforced by an import.
 def build_geometric_delta_grid(decoder: ActionDecoder, num_levels: int) -> List[float]:
     """
     Geometric quantisation of the decoder's Delta range, endpoints inclusive.
@@ -145,6 +156,7 @@ class CARLTON(BaseRLModel):
         lr: float = 3e-4,
         gamma: float = 0.99,
         omega: float = 10.0,
+        policy_beta: Optional[float] = None,
         use_target_network: bool = False,
         tau: float = 0.005,
         grad_clip: float = 0.5,
@@ -152,11 +164,32 @@ class CARLTON(BaseRLModel):
     ) -> None:
         super().__init__(state_dim=state_dim, num_channels=num_channels, **hparams)
         self.gamma = float(gamma)
+        #: Mellowmax operator parameter of the BACKUP. omega -> 0 turns the backup
+        #: into the branch mean (the value of a uniform-random policy); omega -> inf
+        #: turns it into max. The shipped default 10.0 is the near-max end.
         self.omega = float(omega)
+        #: Boltzmann temperature of the BEHAVIOUR POLICY. Defaults to omega, which
+        #: is DeepMellow's usual shortcut, but is a separate argument so the backup
+        #: and the exploration schedule can be searched independently. See the
+        #: module header for why tying them is dangerous here.
+        self.policy_beta = float(omega if policy_beta is None else policy_beta)
         self.use_target_network = bool(use_target_network)
         self.tau = float(tau)
         self.grad_clip = float(grad_clip)
-        self.total_updates = 0
+        if self.tau != 0.005 and not self.use_target_network:
+            # `tau` is read only by the Polyak update below, which runs only when a
+            # target network exists. DeepMellow's whole point is that it does not
+            # need one, so the default is False and `tau` is then INERT. Optuna
+            # currently searches `tau` for this model without ever switching the
+            # target network on, which produces a reported "optimal tau" that had
+            # no effect on any trial. Warn rather than silently accept it.
+            logger.warning(
+                "CARLTON: tau=%.4g was supplied but use_target_network=False, so tau "
+                "has no effect on learning. Search `use_target_network` alongside it "
+                "or drop `tau` from the search space.",
+                self.tau,
+            )
+        self.register_buffer("total_updates", torch.zeros(1))
 
         # ------------------------------------------------------------------
         # Shared discretisation grid (identical to SPAM-D3QN's by construction)
@@ -172,11 +205,6 @@ class CARLTON(BaseRLModel):
             self.num_channels,
         )
         self.num_actions = self.num_delta_levels * self.num_power_levels * self.num_channels
-
-        if self.decoder.delta_min > 0.0 and self.decoder.delta_max > self.decoder.delta_min:
-            self._log_delta_ratio = math.log(self.decoder.delta_max / self.decoder.delta_min)
-        else:
-            self._log_delta_ratio = 0.0
 
         # ------------------------------------------------------------------
         # Shared trunk + one Q-branch per action factor
@@ -253,26 +281,22 @@ class CARLTON(BaseRLModel):
     def _infer_branch_indices(self, actions: torch.Tensor) -> torch.Tensor:
         """
         Recover (B, 3) branch indices from a raw action produced by
-        ActionDecoder.encode_action. All three factors are recovered: dropping
+        `ActionDecoder.encode_action`. All three factors are recovered: dropping
         the Delta and power factors would leave two of the three Q-branches with
-        no gradient at all. Delta is snapped in log space (its grid is
-        geometric), power linearly.
+        no gradient at all.
+
+        The Delta field of a raw action is `logit(unit_from_delta(delta))`, the
+        logit of the GEOMETRIC unit coordinate. Inverting it linearly -- which
+        this method used to do -- put 6 of the 8 Delta levels on the wrong branch
+        index, i.e. 96 of the 128 joint actions were credited to the wrong Q
+        entry. The inversion now goes through `BaseRLModel.raw_units` and the snap
+        happens in the decoder's unit coordinate, which is exactly the coordinate
+        both grids are built in, so the round trip is exact by construction.
         """
-        dec = self.decoder
-        acts = actions.float()
-        delta = dec.delta_min + torch.sigmoid(acts[:, 0]) * (dec.delta_max - dec.delta_min)
-        delta = delta.clamp(min=dec.delta_min, max=dec.delta_max)
-        d_cands = torch.as_tensor(self.delta_candidates, dtype=delta.dtype, device=delta.device)
-        if self._log_delta_ratio > 0.0:
-            d_idx = torch.argmin((torch.log(delta).unsqueeze(1) - torch.log(d_cands).unsqueeze(0)).abs(), dim=1)
-        else:
-            d_idx = torch.argmin((delta.unsqueeze(1) - d_cands.unsqueeze(0)).abs(), dim=1)
-
-        power = dec.p_min + torch.sigmoid(acts[:, 2]) * (dec.p_max - dec.p_min)
-        p_cands = torch.as_tensor(self.power_candidates, dtype=power.dtype, device=power.device)
-        p_idx = torch.argmin((power.unsqueeze(1) - p_cands.unsqueeze(0)).abs(), dim=1)
-
-        ch = acts[:, 1].round().long().remainder(self.num_channels)
+        u_delta, u_power = self.raw_units(actions)
+        d_idx = self.snap_unit_to_grid(u_delta, self.num_delta_levels)
+        p_idx = self.snap_unit_to_grid(u_power, self.num_power_levels)
+        ch = self.raw_channel(actions)
         return torch.stack([d_idx, p_idx, ch], dim=1)
 
     # ----------------------------------------------------------------------
@@ -291,9 +315,9 @@ class CARLTON(BaseRLModel):
                 if deterministic:
                     chosen.append(int(torch.argmax(q, dim=-1)[0].item()))
                 else:
-                    # Mellowmax-induced Boltzmann policy with beta = omega
-                    # (see the module docstring for the simplification).
-                    probs = torch.softmax(self.omega * q[0], dim=-1)
+                    # Mellowmax-induced Boltzmann policy at temperature
+                    # `policy_beta` (defaults to omega; see the module header).
+                    probs = torch.softmax(self.policy_beta * q[0], dim=-1)
                     chosen.append(int(torch.multinomial(probs, 1).item()))
 
         delta_idx, power_idx, ch = chosen[0], chosen[1], chosen[2]
@@ -318,11 +342,8 @@ class CARLTON(BaseRLModel):
         next_states = batch["next_state"].to(device).float()
         dones = batch["done"].to(device).float()
 
-        if "discount" in batch:
-            discounts = batch["discount"].to(device).float()
-        else:
-            delta_ts = batch.get("delta_t", torch.ones_like(rewards)).to(device).float()
-            discounts = torch.pow(torch.as_tensor(self.gamma, device=device), delta_ts)
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
 
         # -- DeepMellow backup: mellowmax per branch, averaged (BDQ aggregation) --
         with torch.no_grad():
@@ -356,7 +377,7 @@ class CARLTON(BaseRLModel):
         nn.utils.clip_grad_norm_(self._online_params, self.grad_clip)
         self.optimizer.step()
 
-        self.total_updates += 1
+        self.total_updates.add_(1.0)
         if self.use_target_network:
             with torch.no_grad():
                 for p, pt in zip(self.trunk.parameters(), self.target_trunk.parameters()):
@@ -372,4 +393,16 @@ class CARLTON(BaseRLModel):
         }
         for name, branch_loss in zip(("delta", "power", "channel"), losses):
             out[f"loss_{name}"] = float(branch_loss.item())
+
+        # Per-branch entropy of the behaviour policy, in nats and normalised by
+        # log(branch_size) so 1.0 is uniform and 0.0 is a collapsed argmax.
+        # CARLTON has no epsilon-greedy fallback, so a collapse here is terminal
+        # for exploration; it has to be observable during the run.
+        with torch.no_grad():
+            for name, q in zip(("delta", "power", "channel"), q_branches):
+                probs = torch.softmax(self.policy_beta * q, dim=-1)
+                ent = -(probs * torch.log(probs.clamp_min(1e-12))).sum(dim=-1).mean()
+                out[f"policy_entropy_{name}"] = float(
+                    ent.item() / math.log(max(2, q.shape[-1]))
+                )
         return out

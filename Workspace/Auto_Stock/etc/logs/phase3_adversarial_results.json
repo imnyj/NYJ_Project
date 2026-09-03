@@ -1,0 +1,496 @@
+{
+  "timestamp": "2026-09-01T23:45:31.320599",
+  "total_tests": 54,
+  "passed_tests": 49,
+  "failed_tests": 5,
+  "reproduced_bugs": 6,
+  "elapsed_seconds": 0.42995285987854004,
+  "results": [
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 빈 문자열 ('')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: ''",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 공백 문자열 ('   ')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '   '",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 5자리 숫자 (자릿수 부족) ('00593')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '00593'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 7자리 숫자 (자릿수 초과) ('0059300')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '0059300'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 영문 혼합 종목코드 ('00593A')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '00593A'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 한글 종목명 ('삼성전자')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '삼성전자'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: SQL Injection 페이로드 ('005930; DROP TABLE stocks;')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '005930; DROP TABLE stocks;'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: SQL Quote Injection (\"005930' OR '1'='1\")",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '005930' OR '1'='1'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: Null Byte 삽입 ('005930\\x00')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '005930\u0000'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 줄바꿈 포함 ('005930\\n')",
+      "passed": false,
+      "severity": "MEDIUM",
+      "details": "예상치 못한 예외 발생: KiwoomNetworkError: 토큰 발급 통신 오류: HTTPSConnectionPool(host='openapivts.kiwoom.com', port=443): Max retries exceeded with url: /oauth2/tokenP (Caused by NameResolutionError(\"HTTPSConnection(host='openapivts.kiwoom.com', port=443): Failed to resolve 'openapivts.kiwoom.com' ([Errno -2] Name or service not known)\"))",
+      "exception_type": "KiwoomNetworkError",
+      "reproduced_bug": true
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 전각 유니코드 숫자 ('００５９３０')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '００５９３０'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: None 객체 (None)",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: 'None'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 정수형 6자리 (123456)",
+      "passed": false,
+      "severity": "MEDIUM",
+      "details": "예상치 못한 예외 발생: KiwoomNetworkError: 토큰 발급 통신 오류: HTTPSConnectionPool(host='openapivts.kiwoom.com', port=443): Max retries exceeded with url: /oauth2/tokenP (Caused by NameResolutionError(\"HTTPSConnection(host='openapivts.kiwoom.com', port=443): Failed to resolve 'openapivts.kiwoom.com' ([Errno -2] Name or service not known)\"))",
+      "exception_type": "KiwoomNetworkError",
+      "reproduced_bug": true
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 정수형 4자리 (5930)",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '5930'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 빈 리스트 ([])",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '[]'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "Symbol validation: 빈 딕셔너리 ({})",
+      "passed": true,
+      "severity": "INFO",
+      "details": "예외 발생으로 정상 차단: 유효하지 않은 6자리 종목코드입니다: '{}'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 0 수량",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 1 이상의 양수여야 합니다: 0",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 음수 수량 (-1)",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 1 이상의 양수여야 합니다: -1",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 대용량 음수 수량",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 1 이상의 양수여야 합니다: -999999",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 문자열 0",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 1 이상의 양수여야 합니다: 0",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 문자열 음수",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 1 이상의 양수여야 합니다: -5",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 비숫자 문자열",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 정수여야 합니다: 'abc'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 빈 문자열 수량",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 정수여야 합니다: ''",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: None 수량",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 정수여야 합니다: 'None'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 소수점 수량 (1.5)",
+      "passed": true,
+      "severity": "LOW",
+      "details": "소수점 1.5가 int() 변환되어 1주로 처리됨 (주의: 절사 허용)",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 소수점 1 미만 수량 (0.1)",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 1 이상의 양수여야 합니다: 0",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: Float NaN",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 거절: ValueError: 주문 수량은 정수여야 합니다: 'nan'",
+      "exception_type": "ValueError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: Float Infinity",
+      "passed": false,
+      "severity": "MEDIUM",
+      "details": "비정상 예외 발생: OverflowError: cannot convert float infinity to integer",
+      "exception_type": "OverflowError",
+      "reproduced_bug": true
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: Float Negative Infinity",
+      "passed": false,
+      "severity": "MEDIUM",
+      "details": "비정상 예외 발생: OverflowError: cannot convert float infinity to integer",
+      "exception_type": "OverflowError",
+      "reproduced_bug": true
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "ManualTrader Qty: 초대용량 정수 (100경)",
+      "passed": true,
+      "severity": "INFO",
+      "details": "대용량 정수 1000000000000000000 파싱 완료 (시스템 정책에 따른 처리)",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "KiwoomClient Qty: Client send_order with 1.5 float",
+      "passed": true,
+      "severity": "INFO",
+      "details": "send_order 실행됨 (ORD_QTY='1.5')",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "KiwoomClient Qty: Client send_order with float('nan')",
+      "passed": false,
+      "severity": "MEDIUM",
+      "details": "send_order가 float('nan')을 차단하지 않고 ORD_QTY='nan'로 전송 시도",
+      "exception_type": null,
+      "reproduced_bug": true
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "KiwoomClient Qty: Client send_order with float('inf')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "send_order 실행됨 (ORD_QTY='inf')",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat1_Boundary_Inputs",
+      "name": "SecretStr Leak Resilience",
+      "passed": true,
+      "severity": "INFO",
+      "details": "str, repr, f-string, 예외 메시지 전역에서 평문 은닉 100% 보장 확인",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat2_Concurrency_Race",
+      "name": "Token Expiration Multi-thread Race Condition",
+      "passed": true,
+      "severity": "LOW",
+      "details": "20개 동시 스레드 환경에서 충돌/예외 없이 모두 유효 토큰 획득 성공. 동시 호출 20회 발생 (Thread-Safe Lock 부재로 인한 중복 발급 가능성 관측 - 보의적 개선 권장)",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat2_Concurrency_Race",
+      "name": "Concurrent API Client Hammering (30 ops, 15 threads)",
+      "passed": true,
+      "severity": "INFO",
+      "details": "30건 동시 시세조회/주문 전송 요청 100% 성공 (스레드 충돌 및 세션 에러 0건)",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "HTML 502 Bad Gateway with HTTP 200",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 방어 및 KiwoomAPIError 발생: API 응답 JSON 파싱 실패: <html><body>502 Bad Gateway</body></html>",
+      "exception_type": "KiwoomAPIError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "HTML 504 Gateway Timeout with HTTP 504",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 방어 및 KiwoomAPIError 발생: 증권사 서버 내부 오류 (HTTP 504): <html><body>504 Gateway Timeout</body></html>",
+      "exception_type": "KiwoomAPIError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Truncated Broken JSON",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 방어 및 KiwoomAPIError 발생: API 응답 JSON 파싱 실패: {\"rt_cd\": \"0\", \"output\": {\"stck_prpr\":",
+      "exception_type": "KiwoomAPIError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Binary Garbage Payload",
+      "passed": true,
+      "severity": "INFO",
+      "details": "정상 방어 및 KiwoomAPIError 발생: API 응답 JSON 파싱 실패: \u0000��\u00124V",
+      "exception_type": "KiwoomAPIError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Non-dict JSON: Top-level JSON Array",
+      "passed": true,
+      "severity": "LOW",
+      "details": "AttributeError로 방어됨 (data.get 호출 실패: 'list' object has no attribute 'get')",
+      "exception_type": "AttributeError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Non-dict JSON: Top-level JSON String",
+      "passed": true,
+      "severity": "LOW",
+      "details": "AttributeError로 방어됨 (data.get 호출 실패: 'str' object has no attribute 'get')",
+      "exception_type": "AttributeError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Non-dict JSON: Top-level JSON Int",
+      "passed": true,
+      "severity": "LOW",
+      "details": "AttributeError로 방어됨 (data.get 호출 실패: 'int' object has no attribute 'get')",
+      "exception_type": "AttributeError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Non-dict JSON: Top-level JSON Null",
+      "passed": true,
+      "severity": "LOW",
+      "details": "AttributeError로 방어됨 (data.get 호출 실패: 'NoneType' object has no attribute 'get')",
+      "exception_type": "AttributeError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "Non-dict JSON: Top-level JSON Bool",
+      "passed": true,
+      "severity": "LOW",
+      "details": "AttributeError로 방어됨 (data.get 호출 실패: 'bool' object has no attribute 'get')",
+      "exception_type": "AttributeError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "get_current_price with output=None",
+      "passed": true,
+      "severity": "LOW",
+      "details": "AttributeError 발생으로 차단 (output.get 호출 실패: 'NoneType' object has no attribute 'get')",
+      "exception_type": "AttributeError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "get_account_balance with output1=None, output2=None",
+      "passed": true,
+      "severity": "LOW",
+      "details": "TypeError로 예외 발생 (raw_positions is None iterable 오류): 'NoneType' object is not iterable",
+      "exception_type": "TypeError",
+      "reproduced_bug": true
+    },
+    {
+      "category": "Cat3_Malformed_Payloads",
+      "name": "get_account_balance with corrupted pchs_avg_pric",
+      "passed": true,
+      "severity": "INFO",
+      "details": "Decimal 변환 에러 정상 포착: InvalidOperation: [<class 'decimal.ConversionSyntax'>]",
+      "exception_type": "InvalidOperation",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat4_Network_Chaos",
+      "name": "1st Attempt Timeout -> 2nd Attempt Retry Recovery",
+      "passed": true,
+      "severity": "INFO",
+      "details": "타임아웃 1회 발생 후 2회차 재시도 성공 (경과시간: 0.010초)",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat4_Network_Chaos",
+      "name": "Consecutive 429 Rate Limits",
+      "passed": true,
+      "severity": "INFO",
+      "details": "KiwoomRateLimitError 정상 발생: API 호출 한도 초과 (HTTP 429)",
+      "exception_type": "KiwoomRateLimitError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat4_Network_Chaos",
+      "name": "Consecutive 503 Service Unavailable",
+      "passed": true,
+      "severity": "INFO",
+      "details": "KiwoomAPIError 정상 발생 (HTTP 503): 증권사 서버 내부 오류 (HTTP 503): Service Unavailable",
+      "exception_type": "KiwoomAPIError",
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat5_ManualTrader_Safety",
+      "name": "Graceful Degradation on Initial Balance Failure",
+      "passed": true,
+      "severity": "INFO",
+      "details": "주문 전 잔고 조회가 실패해도 기본 잔고 객체로 폴백하여 주문 정상 진행 확인",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat5_ManualTrader_Safety",
+      "name": "User Confirmation Cancellation ('n')",
+      "passed": true,
+      "severity": "INFO",
+      "details": "사용자 취소 입력 시 주문 전송 차단 및 CANCELLED 상태 반환 확인",
+      "exception_type": null,
+      "reproduced_bug": false
+    },
+    {
+      "category": "Cat5_ManualTrader_Safety",
+      "name": "CLI Main Exit Code on Invalid Symbol",
+      "passed": true,
+      "severity": "INFO",
+      "details": "유효하지 않은 종목코드 전달 시 CLI가 에러 코드 1로 안전 종료됨 (exit_code=1)",
+      "exception_type": null,
+      "reproduced_bug": false
+    }
+  ]
+}

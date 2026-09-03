@@ -1,0 +1,1345 @@
+"""
+modules/engine/mock_environment.py
+===================================
+Auto Stock ML/RL Trader — Phase 2: 가상 체결 엔진 (Mock Environment)
+
+주요 구성 컴포넌트:
+1. VirtualAccount (R1):
+   - 초기 자본금, 현금 잔고, 종목별 보유 수량 및 평단가(이동평균법) 관리
+   - Python decimal.Decimal 기반 1원 단위 엄격한 정밀 회계 (ROUND_FLOOR / ROUND_HALF_UP)
+   - 실시간 총 평가금(Total Equity), 실현 손익(Realized PnL), 미실현 손익(Unrealized PnL) 산출
+2. MockExecutionEngine (R2):
+   - 한국 주식 시장(KOSPI/KOSDAQ) 표준 거래 비용 모델:
+     * 위탁수수료: 0.015% (매수/매도 공통, 1원 미만 ROUND_FLOOR 절사)
+     * 증권거래세: 0.18% (매도 시에만 부과, 1원 미만 ROUND_FLOOR 절사)
+     * 슬리피지: 현재가 대비 고정 비율(기본 0.1%, 매수는 상방, 매도는 하방 불리하게 체결)
+   - 방어적 잔고 검증: cash_balance < 0 원천 차단 (잔고 부족 시 안전 거절)
+   - 회계 무결성 불변식 검증 (verify_accounting_invariant: 1원 오차 0원 입증)
+3. DummyStrategySimulator (R3):
+   - 1,000회 이상 연속 주문 안정성 검증 래퍼 (Ping-Pong 매매, SMA 교차, 무작위 스트레스)
+4. MockEnvironment (Facade):
+   - ML/RL 표준 인터페이스 (reset, step, get_state) 및 BarData/TickData/DataFrame 연동 지원
+"""
+
+import logging
+import math
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP, ROUND_CEILING
+from enum import Enum
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+
+# ==========================================
+# 0. 유틸리티 및 정밀도 변환 함수
+# ==========================================
+
+def to_decimal(val: Union[Decimal, float, int, np.number, str]) -> Decimal:
+    """모든 수치 타입을 정밀도 손실 없이 Decimal로 변환합니다."""
+    if isinstance(val, Decimal):
+        return val
+    if isinstance(val, (int, np.integer, str)):
+        return Decimal(str(val))
+    if isinstance(val, (float, np.floating)):
+        return Decimal(str(val))
+    return Decimal(str(val))
+
+
+def quantize_krw(amount: Decimal, rounding: str = ROUND_FLOOR) -> Decimal:
+    """1원 단위로 양자화(절사/반올림)합니다."""
+    return amount.quantize(Decimal("1"), rounding=rounding)
+
+
+# ==========================================
+# 1. 열거형 및 예외 정의 (Enums & Exceptions)
+# ==========================================
+
+class OrderSide(str, Enum):
+    """주문 방향 (매수/매도)"""
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class OrderType(str, Enum):
+    """주문 유형 (시장가/지정가)"""
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
+
+
+class OrderStatus(str, Enum):
+    """주문 처리 상태"""
+    PENDING = "PENDING"
+    FILLED = "FILLED"
+    REJECTED = "REJECTED"
+    CANCELLED = "CANCELLED"
+
+
+class ActionType(int, Enum):
+    """강화학습 / 시뮬레이터 이산 액션"""
+    HOLD = 0
+    BUY = 1
+    SELL = 2
+
+
+class EngineError(Exception):
+    """가상 체결 엔진 기본 예외"""
+    pass
+
+
+class InsufficientFundsError(EngineError):
+    """현금 잔고 부족 예외 (cash_balance < required_amount)"""
+    pass
+
+
+class InsufficientSharesError(EngineError):
+    """보유 주식 수량 부족 예외 (holding_shares < sell_quantity)"""
+    pass
+
+
+class InvalidOrderError(EngineError):
+    """유효하지 않은 주문 파라미터 예외 (수량 <= 0, 가격 <= 0 등)"""
+    pass
+
+
+class AccountingInvariantError(EngineError):
+    """회계 무결성 불변식 위반 예외"""
+    pass
+
+
+# ==========================================
+# 2. 데이터 구조체 (Data Models)
+# ==========================================
+
+@dataclass(frozen=True)
+class FeeConfig:
+    """
+    거래 비용 및 슬리피지 설정
+    - commission_rate: 증권사 위탁수수료율 (기본 0.015% = 0.00015)
+    - tax_rate: 증권거래세 및 농특세율 (기본 0.18% = 0.0018, 매도시만 부과)
+    - slippage_rate: 고정 슬리피지율 (기본 0.1% = 0.0010)
+    - price_tick_size: 주가 호가단위 (기본 1원)
+    """
+    commission_rate: Decimal = Decimal("0.00015")
+    tax_rate: Decimal = Decimal("0.0018")
+    slippage_rate: Decimal = Decimal("0.0010")
+    price_tick_size: Decimal = Decimal("1")
+
+
+@dataclass
+class Position:
+    """
+    개별 종목 보유 포지션 데이터 클래스
+    - 이동평균법(Moving Average Method)으로 매입 평단가를 관리합니다.
+    """
+    symbol: str
+    quantity: int = 0
+    avg_price: Decimal = Decimal("0")
+    total_cost: Decimal = Decimal("0")  # quantity * avg_price
+
+    def market_value(self, current_price: Union[Decimal, float, int, np.number, str]) -> Decimal:
+        """현재 시장가 기준 평가금액"""
+        p = to_decimal(current_price)
+        return quantize_krw(p * Decimal(self.quantity), rounding=ROUND_FLOOR)
+
+    def unrealized_pnl(self, current_price: Union[Decimal, float, int, np.number, str]) -> Decimal:
+        """현재 시장가 기준 미실현 손익 (평가손익)"""
+        if self.quantity == 0:
+            return Decimal("0")
+        p = to_decimal(current_price)
+        return (p - self.avg_price) * Decimal(self.quantity)
+
+    def return_rate(self, current_price: Union[Decimal, float, int, np.number, str]) -> Decimal:
+        """수익률 (단위: 비율, 예: 0.05 = 5%)"""
+        if self.quantity == 0 or self.avg_price == Decimal("0"):
+            return Decimal("0")
+        p = to_decimal(current_price)
+        return (p - self.avg_price) / self.avg_price
+
+
+@dataclass
+class Order:
+    """주문 요청 객체"""
+    symbol: str
+    side: OrderSide
+    quantity: int
+    order_type: OrderType = OrderType.MARKET
+    price: Optional[Decimal] = None
+    order_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+    timestamp: Optional[datetime] = None
+
+
+@dataclass(frozen=True)
+class TradeRecord:
+    """
+    체결 완료 또는 거절 기록 (Trade Execution Record)
+    모든 거래 정산 내역을 1원 단위 정밀도로 보존합니다.
+    """
+    trade_id: str
+    order_id: str
+    timestamp: datetime
+    symbol: str
+    side: OrderSide
+    order_type: OrderType
+    quantity: int
+    market_price: Decimal
+    executed_price: Decimal
+    gross_amount: Decimal
+    commission: Decimal
+    tax: Decimal
+    slippage_cost: Decimal
+    net_cash_flow: Decimal      # 매수: -(gross + comm), 매도: +(gross - comm - tax)
+    cash_after: Decimal
+    position_qty_after: int
+    avg_price_after: Decimal
+    is_success: bool = True
+    error_message: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AccountSnapshot:
+    """가상 계좌 상태 스냅샷"""
+    timestamp: datetime
+    initial_cash: Decimal
+    cash_balance: Decimal
+    holdings_valuation: Decimal
+    total_equity: Decimal
+    realized_pnl: Decimal
+    unrealized_pnl: Decimal
+    cumulative_commission: Decimal
+    cumulative_tax: Decimal
+    cumulative_slippage: Decimal
+    positions: Dict[str, Position]
+
+
+# ==========================================
+# 3. VirtualAccount (R1: 가상 계좌 관리자)
+# ==========================================
+
+class VirtualAccount:
+    """
+    가상 계좌 관리자 클래스 (R1)
+    - 모든 회계 연산에 Decimal을 사용하여 1원의 부동소수점 오차도 원천 차단합니다.
+    - 이동평균법(Moving Average Method)에 따른 평단가 갱신을 수행합니다.
+    - 마이너스 잔고(cash_balance < 0) 방어 로직을 내장합니다.
+    """
+
+    def __init__(self, initial_cash: Union[Decimal, int, float, np.number, str] = Decimal("10000000")):
+        self.initial_cash = to_decimal(initial_cash)
+        self.cash_balance = self.initial_cash
+        self.positions: Dict[str, Position] = {}
+        self.realized_pnl: Decimal = Decimal("0")
+        self.cumulative_commission: Decimal = Decimal("0")
+        self.cumulative_tax: Decimal = Decimal("0")
+        self.cumulative_slippage: Decimal = Decimal("0")
+
+    @property
+    def holdings(self) -> Dict[str, int]:
+        """보유 종목 및 수량 매핑 (수량이 0보다 큰 종목만 반환)"""
+        return {sym: pos.quantity for sym, pos in self.positions.items() if pos.quantity > 0}
+
+    @property
+    def avg_prices(self) -> Dict[str, Decimal]:
+        """보유 종목 및 평단가 매핑 (수량이 0보다 큰 종목만 반환)"""
+        return {sym: pos.avg_price for sym, pos in self.positions.items() if pos.quantity > 0}
+
+    def get_position(self, symbol: str) -> Position:
+        """종목별 포지션을 반환하며, 없으면 0으로 초기화된 새 포지션을 생성합니다."""
+        if symbol not in self.positions:
+            self.positions[symbol] = Position(symbol=symbol)
+        return self.positions[symbol]
+
+    def can_buy(
+        self,
+        price: Union[Decimal, float, int, np.number, str],
+        quantity: Union[int, np.integer],
+        fee_rate: Union[Decimal, float, int, np.number, str] = Decimal("0.00015"),
+        slippage_rate: Union[Decimal, float, int, np.number, str] = Decimal("0.0010")
+    ) -> bool:
+        """
+        매수 가능 여부 사전 검증
+        슬리피지 반영 예상 체결가와 수수료를 포함한 총 필요 현금과 현재 잔고를 비교합니다.
+        """
+        qty = int(quantity)
+        if qty <= 0:
+            return False
+        p = to_decimal(price)
+        if p <= Decimal("0"):
+            return False
+
+        f_rate = to_decimal(fee_rate)
+        s_rate = to_decimal(slippage_rate)
+
+        # 예상 체결가 (반올림)
+        expected_exec_price = quantize_krw(p * (Decimal("1") + s_rate), rounding=ROUND_HALF_UP)
+        gross_amount = expected_exec_price * Decimal(qty)
+        commission = quantize_krw(gross_amount * f_rate, rounding=ROUND_FLOOR)
+        required_cash = gross_amount + commission
+
+        return self.cash_balance >= required_cash
+
+    def can_sell(self, symbol: str, quantity: Union[int, np.integer]) -> bool:
+        """매도 가능 여부 사전 검증 (보유 수량 >= 주문 수량)"""
+        qty = int(quantity)
+        if qty <= 0:
+            return False
+        pos = self.positions.get(symbol)
+        if not pos or pos.quantity < qty:
+            return False
+        return True
+
+    def apply_buy(
+        self,
+        symbol: str,
+        exec_price: Union[Decimal, float, int, np.number, str],
+        quantity: Union[int, np.integer],
+        commission: Union[Decimal, float, int, np.number, str],
+        slippage_cost: Union[Decimal, float, int, np.number, str] = Decimal("0")
+    ) -> None:
+        """
+        매수 체결 내역을 계좌에 원자적으로 반영합니다.
+        - 현금 차감 = (체결금액 + 수수료)
+        - 평단가 이동평균 갱신
+        """
+        qty = int(quantity)
+        if qty <= 0:
+            raise InvalidOrderError(f"Buy quantity must be positive, got {qty}")
+        p_exec = to_decimal(exec_price)
+        if p_exec <= Decimal("0"):
+            raise InvalidOrderError(f"Exec price must be positive, got {p_exec}")
+
+        comm = quantize_krw(to_decimal(commission), rounding=ROUND_FLOOR)
+        slip = to_decimal(slippage_cost)
+        gross_amount = quantize_krw(p_exec * Decimal(qty), rounding=ROUND_FLOOR)
+        total_outflow = gross_amount + comm
+
+        if self.cash_balance < total_outflow:
+            raise InsufficientFundsError(
+                f"Required cash {total_outflow} exceeds available balance {self.cash_balance}"
+            )
+
+        # 현금 차감
+        self.cash_balance -= total_outflow
+
+        # 포지션 갱신 (이동평균 평단가)
+        pos = self.get_position(symbol)
+        old_qty = pos.quantity
+        old_cost = pos.total_cost
+        new_qty = old_qty + qty
+        new_cost = old_cost + gross_amount
+
+        pos.quantity = new_qty
+        pos.total_cost = new_cost
+        pos.avg_price = new_cost / Decimal(new_qty)
+
+        # 누적 비용 추적
+        self.cumulative_commission += comm
+        self.cumulative_slippage += slip
+
+    def apply_sell(
+        self,
+        symbol: str,
+        exec_price: Union[Decimal, float, int, np.number, str],
+        quantity: Union[int, np.integer],
+        commission: Union[Decimal, float, int, np.number, str],
+        tax: Union[Decimal, float, int, np.number, str],
+        slippage_cost: Union[Decimal, float, int, np.number, str] = Decimal("0")
+    ) -> None:
+        """
+        매도 체결 내역을 계좌에 원자적으로 반영합니다.
+        - 현금 유입 = (체결금액 - 수수료 - 증권거래세)
+        - 포지션 수량 차감 및 실현 손익 계산
+        """
+        qty = int(quantity)
+        if qty <= 0:
+            raise InvalidOrderError(f"Sell quantity must be positive, got {qty}")
+        p_exec = to_decimal(exec_price)
+        if p_exec <= Decimal("0"):
+            raise InvalidOrderError(f"Exec price must be positive, got {p_exec}")
+
+        pos = self.get_position(symbol)
+        if pos.quantity < qty:
+            raise InsufficientSharesError(
+                f"Cannot sell {qty} shares of {symbol}, current holding is {pos.quantity}"
+            )
+
+        comm = quantize_krw(to_decimal(commission), rounding=ROUND_FLOOR)
+        tx = quantize_krw(to_decimal(tax), rounding=ROUND_FLOOR)
+        slip = to_decimal(slippage_cost)
+        gross_amount = quantize_krw(p_exec * Decimal(qty), rounding=ROUND_FLOOR)
+        net_inflow = gross_amount - comm - tx
+
+        # 현금 가산
+        self.cash_balance += net_inflow
+
+        # 실현 손익 계산
+        cost_of_sold = pos.avg_price * Decimal(qty)
+        trade_realized_pnl = gross_amount - cost_of_sold - comm - tx
+        self.realized_pnl += trade_realized_pnl
+
+        # 포지션 갱신
+        new_qty = pos.quantity - qty
+        if new_qty == 0:
+            pos.quantity = 0
+            pos.avg_price = Decimal("0")
+            pos.total_cost = Decimal("0")
+        else:
+            pos.quantity = new_qty
+            pos.total_cost = pos.total_cost - cost_of_sold
+
+        # 누적 비용 추적
+        self.cumulative_commission += comm
+        self.cumulative_tax += tx
+        self.cumulative_slippage += slip
+
+    def get_total_equity(
+        self,
+        current_prices: Optional[Union[Dict[str, Union[Decimal, float, int, np.number, str]], Decimal, float, int, np.number, str]] = None
+    ) -> Decimal:
+        """
+        총 자산 평가액(Total Equity) = 현금 잔고 + 보유 주식 현재 평가금
+        """
+        stock_eval = Decimal("0")
+        if current_prices is None:
+            # 기본값: 보유 종목의 평단가 기준
+            for sym, pos in self.positions.items():
+                if pos.quantity > 0:
+                    stock_eval += pos.market_value(pos.avg_price)
+        elif isinstance(current_prices, dict):
+            for sym, pos in self.positions.items():
+                if pos.quantity > 0:
+                    price = to_decimal(current_prices.get(sym, pos.avg_price))
+                    stock_eval += pos.market_value(price)
+        else:
+            # 단일 가격인 경우 모든 보유 종목에 적용
+            p = to_decimal(current_prices)
+            for sym, pos in self.positions.items():
+                if pos.quantity > 0:
+                    stock_eval += pos.market_value(p)
+
+        return self.cash_balance + stock_eval
+
+    def deposit(self, amount: Union[Decimal, float, int, np.number, str]) -> None:
+        """현금 입금"""
+        amt = to_decimal(amount)
+        if amt <= Decimal("0"):
+            raise ValueError(f"Deposit amount must be positive, got {amt}")
+        self.cash_balance += amt
+
+    def withdraw(self, amount: Union[Decimal, float, int, np.number, str]) -> None:
+        """현금 출금"""
+        amt = to_decimal(amount)
+        if amt <= Decimal("0"):
+            raise ValueError(f"Withdraw amount must be positive, got {amt}")
+        if self.cash_balance < amt:
+            raise InsufficientFundsError(
+                f"Withdraw amount {amt} exceeds available balance {self.cash_balance}"
+            )
+        self.cash_balance -= amt
+
+    def get_snapshot(
+        self,
+        current_prices: Optional[Union[Dict[str, Union[Decimal, float, int, np.number, str]], Decimal, float, int, np.number, str]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> AccountSnapshot:
+        """현재 계좌의 정밀 스냅샷을 생성합니다."""
+        ts = timestamp or datetime.now()
+        prices_dict: Dict[str, Decimal] = {}
+        if current_prices is None:
+            for sym, pos in self.positions.items():
+                prices_dict[sym] = pos.avg_price
+        elif isinstance(current_prices, dict):
+            prices_dict = {k: to_decimal(v) for k, v in current_prices.items()}
+        else:
+            p = to_decimal(current_prices)
+            for sym in self.positions:
+                prices_dict[sym] = p
+
+        stock_eval = Decimal("0")
+        unrealized = Decimal("0")
+        for sym, pos in self.positions.items():
+            if pos.quantity > 0:
+                p = prices_dict.get(sym, pos.avg_price)
+                stock_eval += pos.market_value(p)
+                unrealized += pos.unrealized_pnl(p)
+
+        total_eq = self.cash_balance + stock_eval
+
+        # 복사본 positions
+        copied_positions = {
+            sym: Position(
+                symbol=pos.symbol,
+                quantity=pos.quantity,
+                avg_price=pos.avg_price,
+                total_cost=pos.total_cost
+            )
+            for sym, pos in self.positions.items()
+        }
+
+        return AccountSnapshot(
+            timestamp=ts,
+            initial_cash=self.initial_cash,
+            cash_balance=self.cash_balance,
+            holdings_valuation=stock_eval,
+            total_equity=total_eq,
+            realized_pnl=self.realized_pnl,
+            unrealized_pnl=unrealized,
+            cumulative_commission=self.cumulative_commission,
+            cumulative_tax=self.cumulative_tax,
+            cumulative_slippage=self.cumulative_slippage,
+            positions=copied_positions
+        )
+
+    def reset(self, initial_cash: Optional[Union[Decimal, int, float, np.number, str]] = None) -> None:
+        """계좌를 초기 자본금 상태로 리셋합니다."""
+        if initial_cash is not None:
+            self.initial_cash = to_decimal(initial_cash)
+        self.cash_balance = self.initial_cash
+        self.positions.clear()
+        self.realized_pnl = Decimal("0")
+        self.cumulative_commission = Decimal("0")
+        self.cumulative_tax = Decimal("0")
+        self.cumulative_slippage = Decimal("0")
+
+
+# ==========================================
+# 4. MockExecutionEngine (R2: 가상 주문 체결 엔진)
+# ==========================================
+
+class MockExecutionEngine:
+    """
+    가상 주문 체결 엔진 클래스 (R2)
+    - 표준 거래 수수료(0.015%), 증권거래세(0.18% 매도시만), 고정 슬리피지(0.1%) 적용
+    - 시장가/지정가 주문 처리 및 방어적 유효성 검증
+    - 1원 단위 회계 무결성 불변식 검증 (verify_accounting_invariant)
+    """
+
+    def __init__(
+        self,
+        account: Optional[VirtualAccount] = None,
+        fee_config: Optional[FeeConfig] = None
+    ):
+        self.account = account or VirtualAccount()
+        self.fee_config = fee_config or FeeConfig()
+        self.trade_history: List[TradeRecord] = []
+        self.order_history: List[Order] = []
+        # 시장 가격 변동으로 인한 누적 순수 시장 손익 (Price Drift PnL) 추적
+        self._cumulative_market_drift_pnl: Decimal = Decimal("0")
+        self._last_market_prices: Dict[str, Decimal] = {}
+
+    def update_market_price(self, symbol: str, new_price: Union[Decimal, float, int, np.number, str]) -> None:
+        """
+        새로운 시장 가격이 유입될 때 이전 보유 주식에 대한 가격 변동 손익(Price Drift PnL)을 누적합니다.
+        불변식 검증 시 주가 시계열 변동 손익을 완벽하게 추적하기 위함입니다.
+        """
+        p_new = to_decimal(new_price)
+        if symbol in self._last_market_prices:
+            p_old = self._last_market_prices[symbol]
+            pos = self.account.get_position(symbol)
+            if pos.quantity > 0:
+                drift = (p_new - p_old) * Decimal(pos.quantity)
+                self._cumulative_market_drift_pnl += drift
+        self._last_market_prices[symbol] = p_new
+
+    def calculate_executed_price(
+        self,
+        side: OrderSide,
+        market_price: Union[Decimal, float, int, np.number, str]
+    ) -> Decimal:
+        """
+        슬리피지가 반영된 실제 체결 단가를 산출합니다 (1원 단위 반올림).
+        - BUY: Market Price * (1 + slippage_rate)
+        - SELL: Market Price * (1 - slippage_rate)
+        """
+        p = to_decimal(market_price)
+        slip = self.fee_config.slippage_rate
+        tick = self.fee_config.price_tick_size
+
+        if side == OrderSide.BUY:
+            raw_price = p * (Decimal("1") + slip)
+        else:
+            raw_price = p * (Decimal("1") - slip)
+
+        return raw_price.quantize(tick, rounding=ROUND_HALF_UP)
+
+    def calculate_slippage_cost(
+        self,
+        side: OrderSide,
+        market_price: Union[Decimal, float, int, np.number, str],
+        executed_price: Union[Decimal, float, int, np.number, str],
+        quantity: Union[int, np.integer]
+    ) -> Decimal:
+        """
+        슬리피지로 인해 발생한 페널티 손실액을 계산합니다 (항상 >= 0).
+        - BUY: (executed_price - market_price) * quantity
+        - SELL: (market_price - executed_price) * quantity
+        """
+        p_m = to_decimal(market_price)
+        p_e = to_decimal(executed_price)
+        q = Decimal(int(quantity))
+
+        if side == OrderSide.BUY:
+            return quantize_krw((p_e - p_m) * q, rounding=ROUND_FLOOR)
+        else:
+            return quantize_krw((p_m - p_e) * q, rounding=ROUND_FLOOR)
+
+    def calculate_commission(self, gross_amount: Union[Decimal, float, int, np.number, str]) -> Decimal:
+        """위탁수수료 계산 (1원 미만 절사 ROUND_FLOOR)"""
+        gross = to_decimal(gross_amount)
+        return quantize_krw(gross * self.fee_config.commission_rate, rounding=ROUND_FLOOR)
+
+    def calculate_tax(
+        self,
+        side: OrderSide,
+        gross_amount: Union[Decimal, float, int, np.number, str]
+    ) -> Decimal:
+        """증권거래세 계산 (매도시만 부과, 1원 미만 절사 ROUND_FLOOR)"""
+        if side == OrderSide.BUY:
+            return Decimal("0")
+        gross = to_decimal(gross_amount)
+        return quantize_krw(gross * self.fee_config.tax_rate, rounding=ROUND_FLOOR)
+
+    def execute_order(
+        self,
+        symbol: str,
+        side: Union[OrderSide, str],
+        quantity: Union[int, np.integer],
+        current_price: Union[Decimal, float, int, np.number, str],
+        order_type: Union[OrderType, str] = OrderType.MARKET,
+        limit_price: Optional[Union[Decimal, float, int, np.number, str]] = None,
+        timestamp: Optional[datetime] = None,
+        raise_on_failure: bool = False
+    ) -> TradeRecord:
+        """
+        주문을 수신하여 가상 체결을 수행합니다.
+        - 잔고 부족 또는 수량 부족 시 주문을 안전하게 거절하고 거절 레코드를 반환합니다.
+        """
+        ts = timestamp or datetime.now()
+        side_enum = OrderSide(side) if isinstance(side, str) else side
+        type_enum = OrderType(order_type) if isinstance(order_type, str) else order_type
+        qty = int(quantity)
+        mkt_price = to_decimal(current_price)
+        trade_id = str(uuid.uuid4())[:8]
+        order_id = str(uuid.uuid4())[:8]
+
+        # 기본 주문 정보 기록
+        order_obj = Order(
+            symbol=symbol,
+            side=side_enum,
+            quantity=qty,
+            order_type=type_enum,
+            price=to_decimal(limit_price) if limit_price is not None else None,
+            order_id=order_id,
+            timestamp=ts
+        )
+        self.order_history.append(order_obj)
+
+        # 1. 입력값 유효성 검사
+        if qty <= 0:
+            err_msg = f"Quantity must be positive, got {qty}"
+            if raise_on_failure:
+                raise InvalidOrderError(err_msg)
+            return self._create_rejected_trade(
+                trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+            )
+
+        if mkt_price <= Decimal("0"):
+            err_msg = f"Market price must be positive, got {mkt_price}"
+            if raise_on_failure:
+                raise InvalidOrderError(err_msg)
+            return self._create_rejected_trade(
+                trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+            )
+
+        # 2. 지정가(LIMIT) 주문 조건 검사
+        if type_enum == OrderType.LIMIT:
+            if limit_price is None:
+                err_msg = "Limit price must be specified for LIMIT orders"
+                if raise_on_failure:
+                    raise InvalidOrderError(err_msg)
+                return self._create_rejected_trade(
+                    trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+                )
+            l_price = to_decimal(limit_price)
+            if side_enum == OrderSide.BUY and mkt_price > l_price:
+                # 매수 지정가보다 시장가가 높으면 미체결 거절
+                err_msg = f"Limit BUY price {l_price} < current market price {mkt_price}"
+                if raise_on_failure:
+                    raise InvalidOrderError(err_msg)
+                return self._create_rejected_trade(
+                    trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+                )
+            elif side_enum == OrderSide.SELL and mkt_price < l_price:
+                # 매도 지정가보다 시장가가 낮으면 미체결 거절
+                err_msg = f"Limit SELL price {l_price} > current market price {mkt_price}"
+                if raise_on_failure:
+                    raise InvalidOrderError(err_msg)
+                return self._create_rejected_trade(
+                    trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+                )
+
+        # 3. 체결 가격 및 거래 비용 산출
+        exec_price = self.calculate_executed_price(side_enum, mkt_price)
+        slippage_cost = self.calculate_slippage_cost(side_enum, mkt_price, exec_price, qty)
+        gross_amount = quantize_krw(exec_price * Decimal(qty), rounding=ROUND_FLOOR)
+        commission = self.calculate_commission(gross_amount)
+        tax = self.calculate_tax(side_enum, gross_amount)
+
+        # 시장가 업데이트 (Drift 추적)
+        self.update_market_price(symbol, mkt_price)
+
+        # 4. 잔고 및 수량 검증 후 계좌 반영
+        if side_enum == OrderSide.BUY:
+            required_cash = gross_amount + commission
+            if self.account.cash_balance < required_cash:
+                err_msg = (
+                    f"Insufficient cash: required {required_cash} (gross {gross_amount} + comm {commission}), "
+                    f"available {self.account.cash_balance}"
+                )
+                if raise_on_failure:
+                    raise InsufficientFundsError(err_msg)
+                return self._create_rejected_trade(
+                    trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+                )
+
+            # 정상 매수 체결
+            self.account.apply_buy(
+                symbol=symbol,
+                exec_price=exec_price,
+                quantity=qty,
+                commission=commission,
+                slippage_cost=slippage_cost
+            )
+            net_flow = -(gross_amount + commission)
+
+        else:  # SELL
+            pos = self.account.get_position(symbol)
+            if pos.quantity < qty:
+                err_msg = (
+                    f"Insufficient shares: required {qty}, "
+                    f"available {pos.quantity}"
+                )
+                if raise_on_failure:
+                    raise InsufficientSharesError(err_msg)
+                return self._create_rejected_trade(
+                    trade_id, order_id, ts, symbol, side_enum, type_enum, qty, mkt_price, err_msg
+                )
+
+            # 정상 매도 체결
+            self.account.apply_sell(
+                symbol=symbol,
+                exec_price=exec_price,
+                quantity=qty,
+                commission=commission,
+                tax=tax,
+                slippage_cost=slippage_cost
+            )
+            net_flow = gross_amount - commission - tax
+
+        # 5. 체결 레코드 생성 및 저장
+        pos_after = self.account.get_position(symbol)
+        record = TradeRecord(
+            trade_id=trade_id,
+            order_id=order_id,
+            timestamp=ts,
+            symbol=symbol,
+            side=side_enum,
+            order_type=type_enum,
+            quantity=qty,
+            market_price=mkt_price,
+            executed_price=exec_price,
+            gross_amount=gross_amount,
+            commission=commission,
+            tax=tax,
+            slippage_cost=slippage_cost,
+            net_cash_flow=net_flow,
+            cash_after=self.account.cash_balance,
+            position_qty_after=pos_after.quantity,
+            avg_price_after=pos_after.avg_price,
+            is_success=True,
+            error_message=None
+        )
+        self.trade_history.append(record)
+        return record
+
+    def _create_rejected_trade(
+        self,
+        trade_id: str,
+        order_id: str,
+        timestamp: datetime,
+        symbol: str,
+        side: OrderSide,
+        order_type: OrderType,
+        quantity: int,
+        market_price: Decimal,
+        error_message: str
+    ) -> TradeRecord:
+        """거절된 주문에 대한 TradeRecord를 생성합니다."""
+        pos = self.account.get_position(symbol)
+        record = TradeRecord(
+            trade_id=trade_id,
+            order_id=order_id,
+            timestamp=timestamp,
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=quantity,
+            market_price=market_price,
+            executed_price=Decimal("0"),
+            gross_amount=Decimal("0"),
+            commission=Decimal("0"),
+            tax=Decimal("0"),
+            slippage_cost=Decimal("0"),
+            net_cash_flow=Decimal("0"),
+            cash_after=self.account.cash_balance,
+            position_qty_after=pos.quantity,
+            avg_price_after=pos.avg_price,
+            is_success=False,
+            error_message=error_message
+        )
+        self.trade_history.append(record)
+        return record
+
+    def get_accounting_audit(
+        self,
+        current_market_prices: Optional[Union[Dict[str, Union[Decimal, float, int, np.number, str]], Decimal, float, int, np.number, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        가상 계좌 및 체결 엔진의 전체 회계 감사 내역을 1원 단위로 집계하여 반환합니다.
+        """
+        prices = current_market_prices or self._last_market_prices
+        total_eq = self.account.get_total_equity(prices)
+        stock_eval = total_eq - self.account.cash_balance
+
+        cum_comm = self.account.cumulative_commission
+        cum_tx = self.account.cumulative_tax
+        cum_slip = self.account.cumulative_slippage
+        total_frictions = cum_comm + cum_tx + cum_slip
+
+        return {
+            "initial_cash": self.account.initial_cash,
+            "cash_balance": self.account.cash_balance,
+            "holdings_valuation": stock_eval,
+            "total_equity": total_eq,
+            "cumulative_commission": cum_comm,
+            "cumulative_tax": cum_tx,
+            "cumulative_slippage": cum_slip,
+            "total_frictions": total_frictions,
+            "realized_pnl": self.account.realized_pnl,
+            "cumulative_market_drift_pnl": self._cumulative_market_drift_pnl,
+            "trade_count": len([t for t in self.trade_history if t.is_success]),
+            "rejected_count": len([t for t in self.trade_history if not t.is_success])
+        }
+
+    def verify_accounting_invariant(
+        self,
+        initial_capital: Optional[Union[Decimal, float, int, np.number, str]] = None,
+        current_market_prices: Optional[Union[Dict[str, Union[Decimal, float, int, np.number, str]], Decimal, float, int, np.number, str]] = None,
+        price_drift_pnl: Optional[Union[Decimal, float, int, np.number, str]] = None,
+        tolerance: Decimal = Decimal("0")
+    ) -> bool:
+        """
+        회계 무결성 불변식 검증 (Zero Discrepancy Accounting Invariant)
+        
+        [불변식 수학 정의]
+        1. 고정 가격 매매 (Price Drift = 0):
+           Initial_Capital == (Final_Cash + Final_Holdings_Valuation) + (Cum_Fee + Cum_Tax + Cum_Slippage)
+           => Initial_Capital - Total_Equity == Total_Frictions (정확히 0원 일치)
+           
+        2. 가격 변동 매매 (Price Drift != 0):
+           Total_Equity == Initial_Capital + Total_Market_Drift_PnL - Total_Frictions
+           => Initial_Capital + Drift_PnL - Total_Equity - Total_Frictions == 0
+        """
+        init_cap = to_decimal(initial_capital) if initial_capital is not None else self.account.initial_cash
+        prices = current_market_prices if current_market_prices is not None else self._last_market_prices
+        total_eq = self.account.get_total_equity(prices)
+
+        total_frictions = (
+            self.account.cumulative_commission +
+            self.account.cumulative_tax +
+            self.account.cumulative_slippage
+        )
+
+        drift = to_decimal(price_drift_pnl) if price_drift_pnl is not None else self._cumulative_market_drift_pnl
+
+        # 불변식 오차 계산
+        # 좌변: 초기자본 + 시장변동손익
+        # 우변: 최종자산 + 누적비용
+        lhs = init_cap + drift
+        rhs = total_eq + total_frictions
+        discrepancy = lhs - rhs
+
+        if abs(discrepancy) <= tolerance:
+            return True
+        else:
+            logger.error(
+                f"Accounting Invariant Violation: Discrepancy = {discrepancy} KRW "
+                f"(Initial: {init_cap}, Drift: {drift}, TotalEquity: {total_eq}, Frictions: {total_frictions})"
+            )
+            return False
+
+
+# ==========================================
+# 5. DummyStrategySimulator (R3: 더미 룰 기반 검증 래퍼)
+# ==========================================
+
+class DummyStrategySimulator:
+    """
+    더미 룰 기반 전략 시뮬레이터 (R3)
+    - 1,000회 이상 연속 주문을 안전하게 수행하여 가상 엔진의 안정성 및 회계 무결성을 검증합니다.
+    """
+
+    def __init__(
+        self,
+        engine: Optional[MockExecutionEngine] = None,
+        initial_cash: Union[Decimal, int, float, np.number, str] = Decimal("10000000")
+    ):
+        if engine is not None:
+            self.engine = engine
+        else:
+            account = VirtualAccount(initial_cash=initial_cash)
+            self.engine = MockExecutionEngine(account=account)
+        self.equity_curve: List[Decimal] = []
+
+    def run_ping_pong(
+        self,
+        symbol: str = "005930",
+        base_price: Union[Decimal, float, int, np.number, str] = Decimal("70000"),
+        quantity: Union[int, np.integer] = 10,
+        iterations: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        고정 가격 핑퐁 매매 (Ping-Pong Strategy):
+        - BUY(quantity) <-> SELL(quantity)를 `iterations`회 연속 반복 실행합니다.
+        - 매매 종료 후 포지션이 0주가 되도록 짝수 회차로 정리합니다.
+        - 최종 회계 불변식(Initial Cash - Final Cash == Total Frictions)을 0원 오차로 검증합니다.
+        """
+        p = to_decimal(base_price)
+        qty = int(quantity)
+        self.equity_curve.clear()
+        initial_cash = self.engine.account.cash_balance
+
+        for i in range(iterations):
+            holding = self.engine.account.get_position(symbol).quantity
+            # 홀수 번째 또는 보유 수량이 없으면 매수, 보유 수량이 있으면 매도
+            if holding == 0:
+                # 매수 시도 (잔고 확인)
+                if self.engine.account.can_buy(p, qty, self.engine.fee_config.commission_rate, self.engine.fee_config.slippage_rate):
+                    self.engine.execute_order(symbol, OrderSide.BUY, qty, p)
+                else:
+                    # 잔고 부족 시 중단
+                    break
+            else:
+                # 매도 시도
+                sell_qty = min(holding, qty)
+                self.engine.execute_order(symbol, OrderSide.SELL, sell_qty, p)
+
+            # 에쿼티 기록
+            eq = self.engine.account.get_total_equity({symbol: p})
+            self.equity_curve.append(eq)
+
+        # 잔여 포지션 청산 (Clean-up)
+        rem_pos = self.engine.account.get_position(symbol).quantity
+        if rem_pos > 0:
+            self.engine.execute_order(symbol, OrderSide.SELL, rem_pos, p)
+            self.equity_curve.append(self.engine.account.get_total_equity({symbol: p}))
+
+        # 회계 불변식 검증
+        invariant_passed = self.engine.verify_accounting_invariant(
+            initial_capital=initial_cash,
+            current_market_prices={symbol: p},
+            price_drift_pnl=Decimal("0")
+        )
+
+        audit = self.engine.get_accounting_audit({symbol: p})
+
+        return {
+            "total_iterations": iterations,
+            "total_trades": audit["trade_count"],
+            "rejected_trades": audit["rejected_count"],
+            "initial_cash": initial_cash,
+            "final_cash": self.engine.account.cash_balance,
+            "final_holdings": self.engine.account.get_position(symbol).quantity,
+            "cumulative_commission": audit["cumulative_commission"],
+            "cumulative_tax": audit["cumulative_tax"],
+            "cumulative_slippage": audit["cumulative_slippage"],
+            "total_frictions": audit["total_frictions"],
+            "invariant_passed": invariant_passed,
+            "equity_curve": list(self.equity_curve)
+        }
+
+    def run_sma_crossover(
+        self,
+        prices_or_df: Any,
+        symbol: str = "005930",
+        short_window: int = 5,
+        long_window: int = 20,
+        trade_quantity: Union[int, np.integer] = 10
+    ) -> Dict[str, Any]:
+        """
+        단순 이동평균(SMA) 교차 전략:
+        - 골든크로스(단기 > 장기) 시 매수, 데드크로스(단기 < 장기) 시 매도
+        - 실제 DataFrame 또는 시계열 가격 리스트를 수신하여 시뮬레이션 수행
+        """
+        qty = int(trade_quantity)
+        if isinstance(prices_or_df, pd.DataFrame):
+            if "close" in prices_or_df.columns:
+                series = prices_or_df["close"].astype(float).values
+            else:
+                series = prices_or_df.iloc[:, 0].astype(float).values
+        elif isinstance(prices_or_df, (list, tuple, np.ndarray)):
+            series = np.array([float(x) for x in prices_or_df])
+        else:
+            raise ValueError(f"Unsupported data format for SMA strategy: {type(prices_or_df)}")
+
+        if len(series) < long_window:
+            raise ValueError(f"Data length ({len(series)}) must be >= long_window ({long_window})")
+
+        self.equity_curve.clear()
+        initial_cash = self.engine.account.cash_balance
+
+        df_calc = pd.DataFrame({"close": series})
+        df_calc["sma_short"] = df_calc["close"].rolling(window=short_window).mean()
+        df_calc["sma_long"] = df_calc["close"].rolling(window=long_window).mean()
+
+        for idx in range(long_window, len(df_calc)):
+            curr_p = to_decimal(df_calc.loc[idx, "close"])
+            prev_short = df_calc.loc[idx - 1, "sma_short"]
+            prev_long = df_calc.loc[idx - 1, "sma_long"]
+            curr_short = df_calc.loc[idx, "sma_short"]
+            curr_long = df_calc.loc[idx, "sma_long"]
+
+            holding = self.engine.account.get_position(symbol).quantity
+
+            # 골든 크로스 (Short crosses above Long)
+            if prev_short <= prev_long and curr_short > curr_long:
+                if self.engine.account.can_buy(curr_p, qty, self.engine.fee_config.commission_rate, self.engine.fee_config.slippage_rate):
+                    self.engine.execute_order(symbol, OrderSide.BUY, qty, curr_p)
+            # 데드 크로스 (Short crosses below Long)
+            elif prev_short >= prev_long and curr_short < curr_long:
+                if holding > 0:
+                    sell_qty = min(holding, qty)
+                    self.engine.execute_order(symbol, OrderSide.SELL, sell_qty, curr_p)
+
+            # 시장가 업데이트 및 에쿼티 기록
+            self.engine.update_market_price(symbol, curr_p)
+            eq = self.engine.account.get_total_equity({symbol: curr_p})
+            self.equity_curve.append(eq)
+
+        # 최종 시장가
+        last_price = to_decimal(series[-1])
+        audit = self.engine.get_accounting_audit({symbol: last_price})
+        invariant_passed = self.engine.verify_accounting_invariant(
+            initial_capital=initial_cash,
+            current_market_prices={symbol: last_price}
+        )
+
+        return {
+            "total_bars": len(series),
+            "total_trades": audit["trade_count"],
+            "rejected_trades": audit["rejected_count"],
+            "final_cash": self.engine.account.cash_balance,
+            "final_holdings": self.engine.account.get_position(symbol).quantity,
+            "final_equity": audit["total_equity"],
+            "cumulative_commission": audit["cumulative_commission"],
+            "cumulative_tax": audit["cumulative_tax"],
+            "cumulative_slippage": audit["cumulative_slippage"],
+            "total_frictions": audit["total_frictions"],
+            "invariant_passed": invariant_passed,
+            "equity_curve": list(self.equity_curve)
+        }
+
+    def run_random_stress(
+        self,
+        symbol: str = "005930",
+        base_price: Union[Decimal, float, int, np.number, str] = Decimal("70000"),
+        steps: int = 1000,
+        max_quantity: int = 20,
+        seed: int = 42
+    ) -> Dict[str, Any]:
+        """
+        무작위 스트레스 테스트 (Random Walk Stress Test):
+        - 주가의 기하 브라운 운동(GBM) 시뮬레이션 및 무작위 BUY/SELL/HOLD 주문 난사
+        - 마이너스 잔고 미발생 및 회계 불변식을 검증합니다.
+        """
+        np.random.seed(seed)
+        p_curr = float(base_price)
+        initial_cash = self.engine.account.cash_balance
+        self.equity_curve.clear()
+
+        for step in range(steps):
+            # 주가 변동 (Random Walk +- 1%)
+            ret = np.random.normal(0, 0.01)
+            p_curr = max(100.0, p_curr * (1.0 + ret))
+            curr_decimal_price = quantize_krw(to_decimal(p_curr), rounding=ROUND_HALF_UP)
+
+            # 무작위 액션 (0: HOLD, 1: BUY, 2: SELL)
+            action = int(np.random.choice([0, 1, 2], p=[0.2, 0.4, 0.4]))
+            qty = int(np.random.randint(1, max_quantity + 1))
+
+            if action == 1:  # BUY
+                self.engine.execute_order(symbol, OrderSide.BUY, qty, curr_decimal_price)
+            elif action == 2:  # SELL
+                self.engine.execute_order(symbol, OrderSide.SELL, qty, curr_decimal_price)
+
+            # 가격 변동 추적
+            self.engine.update_market_price(symbol, curr_decimal_price)
+            eq = self.engine.account.get_total_equity({symbol: curr_decimal_price})
+            self.equity_curve.append(eq)
+
+            # 잔고가 음수가 아닌지 엄격한 단언
+            if self.engine.account.cash_balance < Decimal("0"):
+                raise AccountingInvariantError(
+                    f"Fatal: Cash balance became negative ({self.engine.account.cash_balance}) at step {step}"
+                )
+
+        last_price = quantize_krw(to_decimal(p_curr), rounding=ROUND_HALF_UP)
+        audit = self.engine.get_accounting_audit({symbol: last_price})
+        invariant_passed = self.engine.verify_accounting_invariant(
+            initial_capital=initial_cash,
+            current_market_prices={symbol: last_price}
+        )
+
+        return {
+            "steps": steps,
+            "total_trades": audit["trade_count"],
+            "rejected_trades": audit["rejected_count"],
+            "final_cash": self.engine.account.cash_balance,
+            "final_holdings": self.engine.account.get_position(symbol).quantity,
+            "final_equity": audit["total_equity"],
+            "total_frictions": audit["total_frictions"],
+            "invariant_passed": invariant_passed,
+            "min_cash_observed": min([audit["cash_balance"], self.engine.account.cash_balance])
+        }
+
+
+# ==========================================
+# 6. MockEnvironment (Facade: 통합 가상 환경)
+# ==========================================
+
+class MockEnvironment:
+    """
+    ML/RL 호환 통합 가상 환경 Facade
+    - BarData, TickData, DataFrame 스트림과 연동
+    - reset(), step(), get_state() 표준 인터페이스 제공
+    """
+
+    def __init__(
+        self,
+        data_stream: Optional[Union[Iterable[Any], pd.DataFrame]] = None,
+        initial_capital: Union[Decimal, int, float, np.number, str] = Decimal("10000000"),
+        fee_config: Optional[FeeConfig] = None,
+        default_symbol: str = "005930",
+        default_trade_quantity: int = 10
+    ):
+        self.default_symbol = default_symbol
+        self.default_trade_quantity = default_trade_quantity
+        self.initial_capital = to_decimal(initial_capital)
+        self.fee_config = fee_config or FeeConfig()
+
+        self.account = VirtualAccount(initial_cash=self.initial_capital)
+        self.engine = MockExecutionEngine(account=self.account, fee_config=self.fee_config)
+
+        # 데이터 스트림 설정
+        self._raw_data: List[Any] = []
+        if data_stream is not None:
+            self.set_data_stream(data_stream)
+        self._current_step: int = 0
+        self._prev_equity: Decimal = self.initial_capital
+
+    def set_data_stream(self, data_stream: Union[Iterable[Any], pd.DataFrame]) -> None:
+        """데이터 스트림을 설정합니다."""
+        if isinstance(data_stream, pd.DataFrame):
+            self._raw_data = data_stream.to_dict(orient="records")
+        else:
+            self._raw_data = list(data_stream)
+        self._current_step = 0
+
+    def reset(
+        self,
+        initial_capital: Optional[Union[Decimal, int, float, np.number, str]] = None
+    ) -> Dict[str, Any]:
+        """환경을 초기 상태로 리셋하고 초기 관측 상태를 반환합니다."""
+        if initial_capital is not None:
+            self.initial_capital = to_decimal(initial_capital)
+        self.account.reset(initial_cash=self.initial_capital)
+        self.engine = MockExecutionEngine(account=self.account, fee_config=self.fee_config)
+        self._current_step = 0
+        self._prev_equity = self.initial_capital
+
+        return self.get_state()
+
+    def _extract_bar_info(self, bar: Any) -> Tuple[str, Decimal, datetime]:
+        """다양한 형태(BarData, TickData, Dict, Series)의 단일 데이터에서 종목, 종가, 타임스탬프를 추출합니다."""
+        symbol = self.default_symbol
+        price = Decimal("70000")
+        ts = datetime.now()
+
+        # BarData 또는 객체 속성
+        if hasattr(bar, "close"):
+            price = to_decimal(getattr(bar, "close"))
+            symbol = getattr(bar, "symbol", self.default_symbol)
+            ts = getattr(bar, "timestamp", getattr(bar, "date", datetime.now()))
+        elif hasattr(bar, "price"):  # TickData
+            price = to_decimal(getattr(bar, "price"))
+            symbol = getattr(bar, "symbol", self.default_symbol)
+            ts = getattr(bar, "timestamp", datetime.now())
+        elif isinstance(bar, dict):
+            symbol = bar.get("symbol", self.default_symbol)
+            price = to_decimal(bar.get("close", bar.get("price", 70000)))
+            ts = bar.get("timestamp", bar.get("date", datetime.now()))
+        elif isinstance(bar, pd.Series):
+            symbol = bar.get("symbol", self.default_symbol)
+            price = to_decimal(bar.get("close", bar.get("price", 70000)))
+            ts = bar.get("date", bar.get("timestamp", datetime.now()))
+        elif isinstance(bar, (int, float, Decimal, str, np.number)):
+            price = to_decimal(bar)
+
+        if isinstance(ts, str):
+            try:
+                ts = pd.to_datetime(ts).to_pydatetime()
+            except Exception:
+                ts = datetime.now()
+        elif isinstance(ts, pd.Timestamp):
+            ts = ts.to_pydatetime()
+
+        return symbol, price, ts
+
+    def step(
+        self,
+        action: Union[int, np.integer, ActionType, Dict[str, Any], Order]
+    ) -> Tuple[Dict[str, Any], float, bool, Dict[str, Any]]:
+        """
+        한 스텝 시뮬레이션을 진행합니다.
+        - action: 0 (HOLD), 1 (BUY), 2 (SELL) 또는 세부 파라미터 Dict/Order
+        - returns: (observation_dict, reward, done, info_dict)
+        """
+        if self._current_step >= len(self._raw_data):
+            # 데이터 소진 시 종료
+            state = self.get_state()
+            return state, 0.0, True, {"reason": "data_exhausted"}
+
+        bar = self._raw_data[self._current_step]
+        symbol, current_price, ts = self._extract_bar_info(bar)
+
+        # 액션 해석 및 주문 실행
+        trade_record = None
+        if isinstance(action, (int, np.integer, ActionType)):
+            act_val = int(action)
+            if act_val == int(ActionType.BUY):
+                trade_record = self.engine.execute_order(
+                    symbol=symbol,
+                    side=OrderSide.BUY,
+                    quantity=self.default_trade_quantity,
+                    current_price=current_price,
+                    timestamp=ts
+                )
+            elif act_val == int(ActionType.SELL):
+                pos = self.account.get_position(symbol)
+                qty_to_sell = min(pos.quantity, self.default_trade_quantity)
+                if qty_to_sell > 0:
+                    trade_record = self.engine.execute_order(
+                        symbol=symbol,
+                        side=OrderSide.SELL,
+                        quantity=qty_to_sell,
+                        current_price=current_price,
+                        timestamp=ts
+                    )
+        elif isinstance(action, dict):
+            side = action.get("side", OrderSide.BUY)
+            qty = action.get("quantity", self.default_trade_quantity)
+            sym = action.get("symbol", symbol)
+            o_type = action.get("order_type", OrderType.MARKET)
+            l_price = action.get("limit_price")
+            trade_record = self.engine.execute_order(
+                symbol=sym,
+                side=side,
+                quantity=qty,
+                current_price=current_price,
+                order_type=o_type,
+                limit_price=l_price,
+                timestamp=ts
+            )
+        elif isinstance(action, Order):
+            trade_record = self.engine.execute_order(
+                symbol=action.symbol,
+                side=action.side,
+                quantity=action.quantity,
+                current_price=current_price,
+                order_type=action.order_type,
+                limit_price=action.price,
+                timestamp=ts
+            )
+
+        # 시장가 업데이트
+        self.engine.update_market_price(symbol, current_price)
+
+        # 에쿼티 계산 및 보상 산출
+        curr_equity = self.account.get_total_equity({symbol: current_price})
+        # 보상: 에쿼티 변화율 (또는 차이)
+        reward = float((curr_equity - self._prev_equity) / self._prev_equity) if self._prev_equity > 0 else 0.0
+        self._prev_equity = curr_equity
+
+        self._current_step += 1
+        done = self._current_step >= len(self._raw_data)
+
+        state = self.get_state(current_price, symbol)
+        info = {
+            "step": self._current_step,
+            "trade": trade_record,
+            "audit": self.engine.get_accounting_audit({symbol: current_price})
+        }
+
+        return state, reward, done, info
+
+    def get_state(
+        self,
+        current_price: Optional[Decimal] = None,
+        symbol: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """현재 환경의 상태(관측값)를 반환합니다."""
+        sym = symbol or self.default_symbol
+        p = current_price or self.engine._last_market_prices.get(sym, Decimal("70000"))
+        pos = self.account.get_position(sym)
+        tot_eq = self.account.get_total_equity({sym: p})
+
+        return {
+            "step": self._current_step,
+            "symbol": sym,
+            "current_price": float(p),
+            "cash_balance": float(self.account.cash_balance),
+            "holding_quantity": pos.quantity,
+            "avg_buy_price": float(pos.avg_price),
+            "total_equity": float(tot_eq),
+            "realized_pnl": float(self.account.realized_pnl),
+            "unrealized_pnl": float(pos.unrealized_pnl(p)),
+            "cumulative_frictions": float(
+                self.account.cumulative_commission +
+                self.account.cumulative_tax +
+                self.account.cumulative_slippage
+            )
+        }
+
+    def render(self, mode: str = "human") -> str:
+        """현재 환경의 상태를 텍스트로 요약 출력합니다."""
+        state = self.get_state()
+        lines = [
+            f"=== MockEnvironment Step {state['step']} ===",
+            f"Symbol: {state['symbol']} | Price: {state['current_price']:,.0f} KRW",
+            f"Cash: {state['cash_balance']:,.0f} KRW | Holdings: {state['holding_quantity']} shares (Avg: {state['avg_buy_price']:,.0f} KRW)",
+            f"Total Equity: {state['total_equity']:,.0f} KRW | Realized PnL: {state['realized_pnl']:,.0f} KRW | Unrealized PnL: {state['unrealized_pnl']:,.0f} KRW",
+            f"Cumulative Frictions: {state['cumulative_frictions']:,.0f} KRW"
+        ]
+        text = "\n".join(lines)
+        if mode == "human":
+            print(text)
+        return text
+
+    def get_accounting_audit(self) -> Dict[str, Any]:
+        """회계 감사 내역 반환"""
+        return self.engine.get_accounting_audit()

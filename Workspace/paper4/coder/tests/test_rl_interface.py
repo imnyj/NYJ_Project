@@ -12,6 +12,7 @@ import math
 import numpy as np
 import pytest
 import torch
+import src.rl_interface as rli
 from src.rl_interface import (
     StateVectorizer,
     ActionDecoder,
@@ -79,7 +80,12 @@ class TestStateVectorizer:
         veh = DummyVehicle(pos=(300.0, 400.0), vel=(12.0, -16.0), accel=-2.0, prev_t=10.0, n_queue=5.0)
         # Feature [0] is the RSU's last prediction error, not age (design_spec_v2 D4/P4:
         # age is identically zero at every SMDP decision epoch, so the slot carried nothing).
-        veh.last_pred_err = E_REF  # norm_sq_error(E_REF) == 0.5 by construction
+        # Read E_REF LIVE, not from the import-time binding. `norm_sq_error`
+        # resolves the module global on every call (so it tracks
+        # `refresh_scenario_constants()`), and any test that ran a real SUMO
+        # episode first will have moved it. Comparing a live computation against a
+        # stale snapshot made this assertion depend on test ordering.
+        veh.last_pred_err = rli.E_REF  # norm_sq_error(E_REF) == 0.5 by construction
         rsu = DummyRSU(pos=(0.0, 0.0), comm_range=1000.0)
         tls_info = {
             "state": "g",
@@ -155,7 +161,7 @@ class TestStateVectorizer:
             "n_active": 30,
             "n_queue": 2.0,
             "heading": 0.8,
-            "last_pred_err": E_REF,
+            "last_pred_err": rli.E_REF,  # live value; see note above
         }
         vec = vectorizer.vectorize_from_dict(state_dict)
         assert vec.shape == (17,)

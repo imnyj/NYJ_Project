@@ -1,0 +1,742 @@
+"""
+modules/data/collector_price.py
+===============================
+과거 시계열 주가(OHLCV) 수집 및 전처리 모듈.
+
+주요 기능:
+1. BasePriceFetcher: 주가 수집기 추상 기본 클래스
+2. NaverPriceFetcher: 네이버 금융 일봉(XML) 및 분봉(JSON) 실시간/과거 데이터 수집기
+3. MockPriceFetcher: 백테스트/테스트용 합성 OHLCV 데이터 생성기
+4. PriceDataCollector: 다중 수집원 Fallback 관리, 타임프레임 리샘플링, 데이터 무결성 검증/정제 오케스트레이터
+"""
+
+import os
+import re
+import time
+import logging
+import xml.etree.ElementTree as ET
+from abc import ABC, abstractmethod
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import pandas as pd
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+class TimeFrame(str, Enum):
+    """지원하는 타임프레임 정의"""
+    MINUTE_1 = '1m'
+    MINUTE_3 = '3m'
+    MINUTE_5 = '5m'
+    MINUTE_10 = '10m'
+    MINUTE_15 = '15m'
+    MINUTE_30 = '30m'
+    MINUTE_60 = '60m'
+    DAILY = '1d'
+    WEEKLY = '1w'
+    MONTHLY = '1M'
+
+
+class PriceDataError(Exception):
+    """주가 데이터 관련 기본 예외"""
+    pass
+
+
+class FetchError(PriceDataError):
+    """데이터 수집 실패 예외"""
+    pass
+
+
+class ValidationError(PriceDataError):
+    """데이터 무결성 검증 실패 예외"""
+    pass
+
+
+class BasePriceFetcher(ABC):
+    """주가 수집기 추상 기본 클래스"""
+
+    @abstractmethod
+    def fetch_daily(
+        self,
+        symbol: str,
+        count: int = 500,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        adjusted: bool = True
+    ) -> pd.DataFrame:
+        """
+        일봉 OHLCV 데이터를 수집하여 표준 DataFrame으로 반환.
+        반환 컬럼: ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume', 'timeframe']
+        """
+        pass
+
+    @abstractmethod
+    def fetch_minute(
+        self,
+        symbol: str,
+        date: Optional[str] = None,
+        timeframe: str = '1m',
+        period: str = 'day'
+    ) -> pd.DataFrame:
+        """
+        분봉 OHLCV 데이터를 수집하여 표준 DataFrame으로 반환.
+        반환 컬럼: ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume', 'timeframe']
+        """
+        pass
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """수집원 가용 여부 확인"""
+        pass
+
+
+class NaverPriceFetcher(BasePriceFetcher):
+    """
+    네이버 금융 API를 활용한 시계열 주가 수집기.
+    - 일봉/주봉/월봉: https://fchart.stock.naver.com/sise.nhn (XML)
+    - 당일/최근 분봉: https://api.stock.naver.com/chart/domestic/item/{symbol}?periodType=day (JSON)
+    """
+
+    FCHART_URL = "https://fchart.stock.naver.com/sise.nhn"
+    MINUTE_URL = "https://api.stock.naver.com/chart/domestic/item/{symbol}"
+
+    def __init__(
+        self,
+        timeout: int = 10,
+        max_retries: int = 3,
+        backoff_factor: float = 1.5,
+        session: Optional[requests.Session] = None
+    ):
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.session = session or requests.Session()
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+
+    def is_available(self) -> bool:
+        """네이버 금융 엔드포인트 연결성 확인"""
+        try:
+            r = self.session.get(
+                f"{self.FCHART_URL}?symbol=005930&timeframe=day&count=1&requestType=0",
+                headers=self.headers,
+                timeout=5
+            )
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    def _normalize_symbol(self, symbol: str) -> str:
+        """6자리 종목코드로 정규화"""
+        clean_symbol = str(symbol).strip().upper()
+        # 종목코드 숫자 부분만 추출 (예: 'A005930' -> '005930')
+        digits = re.sub(r'[^0-9]', '', clean_symbol)
+        if digits:
+            return digits.zfill(6)
+        return clean_symbol
+
+    def _request_with_retry(self, url: str, params: Optional[Dict[str, Any]] = None) -> requests.Response:
+        """지수 백오프 기반 HTTP GET 재시도 요청"""
+        last_exception = None
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.get(
+                    url,
+                    params=params,
+                    headers=self.headers,
+                    timeout=self.timeout
+                )
+                if response.status_code == 200:
+                    return response
+                logger.warning(
+                    f"NaverPriceFetcher request failed [HTTP {response.status_code}] for {url}, attempt {attempt + 1}/{self.max_retries}"
+                )
+            except Exception as e:
+                last_exception = e
+                logger.warning(
+                    f"NaverPriceFetcher connection error: {e}, attempt {attempt + 1}/{self.max_retries}"
+                )
+
+            if attempt < self.max_retries - 1:
+                sleep_time = self.backoff_factor ** attempt
+                time.sleep(sleep_time)
+
+        raise FetchError(f"Failed to fetch data from {url} after {self.max_retries} attempts: {last_exception}")
+
+    def fetch_daily(
+        self,
+        symbol: str,
+        count: int = 500,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        adjusted: bool = True
+    ) -> pd.DataFrame:
+        """
+        네이버 fchart XML 엔드포인트로부터 일봉 데이터를 수집하고 파싱.
+        """
+        norm_symbol = self._normalize_symbol(symbol)
+        params = {
+            "symbol": norm_symbol,
+            "timeframe": "day",
+            "count": count,
+            "requestType": "0"
+        }
+
+        try:
+            resp = self._request_with_retry(self.FCHART_URL, params=params)
+            # 네이버 XML은 EUC-KR 인코딩 선언이 포함되어 있으므로 디코딩 후 파싱
+            decoded_text = resp.content.decode("euc-kr", errors="replace")
+            clean_xml = re.sub(r'encoding=[\'"][^\'"]*[\'"]', 'encoding="utf-8"', decoded_text, count=1, flags=re.IGNORECASE)
+            root = ET.fromstring(clean_xml.encode("utf-8"))
+        except Exception as e:
+            raise FetchError(f"Error requesting or parsing XML from Naver fchart for {symbol}: {e}")
+
+        items = root.findall(".//item")
+        if not items:
+            logger.warning(f"No price items found in Naver XML response for symbol {norm_symbol}")
+            return self._empty_ohlcv_dataframe(norm_symbol, '1d')
+
+        records = []
+        for item in items:
+            raw_data = item.get("data")
+            if not raw_data:
+                continue
+            parts = raw_data.split("|")
+            if len(parts) < 6:
+                continue
+
+            try:
+                # 형식: YYYYMMDD|open|high|low|close|volume
+                date_str = parts[0].strip()
+                open_val = float(parts[1].strip())
+                high_val = float(parts[2].strip())
+                low_val = float(parts[3].strip())
+                close_val = float(parts[4].strip())
+                vol_val = int(parts[5].strip())
+
+                dt = pd.to_datetime(date_str, format="%Y%m%d")
+
+                records.append({
+                    "date": dt,
+                    "symbol": norm_symbol,
+                    "open": open_val,
+                    "high": high_val,
+                    "low": low_val,
+                    "close": close_val,
+                    "volume": vol_val,
+                    "value": float(close_val * vol_val),
+                    "timeframe": "1d",
+                    "adj_factor": 1.0,
+                    "is_trading_halt": bool((vol_val == 0) or (open_val == high_val == low_val == close_val and vol_val == 0))
+                })
+            except (ValueError, TypeError) as pe:
+                logger.debug(f"Skipping malformed row '{raw_data}': {pe}")
+                continue
+
+        if not records:
+            return self._empty_ohlcv_dataframe(norm_symbol, '1d')
+
+        df = pd.DataFrame(records)
+        df = df.sort_values("date").reset_index(drop=True)
+
+        # 날짜 필터링 적용
+        if start_date:
+            s_dt = pd.to_datetime(start_date)
+            df = df[df["date"] >= s_dt].reset_index(drop=True)
+        if end_date:
+            e_dt = pd.to_datetime(end_date)
+            df = df[df["date"] <= e_dt].reset_index(drop=True)
+
+        return df
+
+    def fetch_minute(
+        self,
+        symbol: str,
+        date: Optional[str] = None,
+        timeframe: str = '1m',
+        period: str = 'day'
+    ) -> pd.DataFrame:
+        """
+        네이버 주가 차트 JSON 엔드포인트로부터 당일/최근 분봉 데이터를 수집하고 파싱.
+        """
+        norm_symbol = self._normalize_symbol(symbol)
+        url = self.MINUTE_URL.format(symbol=norm_symbol)
+        params = {"periodType": period}
+
+        try:
+            resp = self._request_with_retry(url, params=params)
+            data = resp.json()
+        except Exception as e:
+            raise FetchError(f"Error requesting or parsing JSON from Naver minute API for {symbol}: {e}")
+
+        price_infos = data.get("priceInfos", [])
+        if not price_infos:
+            logger.warning(f"No minute priceInfos found in Naver response for symbol {norm_symbol}")
+            return self._empty_ohlcv_dataframe(norm_symbol, timeframe)
+
+        records = []
+        prev_accum_vol = None
+
+        for item in price_infos:
+            try:
+                local_dt_str = item.get("localDateTime")
+                if not local_dt_str:
+                    continue
+
+                # YYYYMMDDHHMMSS -> Datetime
+                dt = pd.to_datetime(str(local_dt_str), format="%Y%m%d%H%M%S")
+
+                current_p = float(item.get("currentPrice", 0.0))
+                open_p = float(item.get("openPrice", current_p))
+                high_p = float(item.get("highPrice", max(open_p, current_p)))
+                low_p = float(item.get("lowPrice", min(open_p, current_p)))
+                accum_vol = int(item.get("accumulatedTradingVolume", 0))
+
+                # 구간 거래량 계산 (누적 거래량 차분)
+                if prev_accum_vol is None:
+                    interval_vol = max(0, accum_vol)
+                else:
+                    interval_vol = max(0, accum_vol - prev_accum_vol)
+                prev_accum_vol = accum_vol
+
+                records.append({
+                    "date": dt,
+                    "symbol": norm_symbol,
+                    "open": open_p,
+                    "high": high_p,
+                    "low": low_p,
+                    "close": current_p,
+                    "volume": interval_vol,
+                    "value": float(current_p * interval_vol),
+                    "timeframe": "1m",
+                    "adj_factor": 1.0,
+                    "is_trading_halt": bool(interval_vol == 0 and open_p == high_p == low_p == current_p)
+                })
+            except Exception as pe:
+                logger.debug(f"Skipping malformed minute item {item}: {pe}")
+                continue
+
+        if not records:
+            return self._empty_ohlcv_dataframe(norm_symbol, timeframe)
+
+        df = pd.DataFrame(records)
+        df = df.sort_values("date").reset_index(drop=True)
+
+        # 특정 날짜 필터링
+        if date:
+            target_date = pd.to_datetime(date).date()
+            df = df[df["date"].dt.date == target_date].reset_index(drop=True)
+
+        # 1m이 아닌 경우 리샘플링
+        if timeframe != '1m' and not df.empty:
+            df = PriceDataCollector.resample_ohlcv(df, target_timeframe=timeframe)
+
+        return df
+
+    def _empty_ohlcv_dataframe(self, symbol: str, timeframe: str) -> pd.DataFrame:
+        """빈 표준 OHLCV 데이터프레임 생성"""
+        return pd.DataFrame(columns=[
+            "date", "symbol", "open", "high", "low", "close", "volume",
+            "value", "timeframe", "adj_factor", "is_trading_halt"
+        ])
+
+
+class MockPriceFetcher(BasePriceFetcher):
+    """
+    단위 테스트, 백테스트, 오프라인 시뮬레이션을 위한 합성 주가 데이터 생성기.
+    기하 브라운 운동(GBM) 기반의 현실적인 OHLCV 시계열을 생성.
+    """
+
+    def __init__(
+        self,
+        base_price: float = 70000.0,
+        volatility: float = 0.015,
+        drift: float = 0.0002,
+        seed: Optional[int] = 42
+    ):
+        self.base_price = base_price
+        self.volatility = volatility
+        self.drift = drift
+        self.seed = seed
+
+    def is_available(self) -> bool:
+        return True
+
+    def fetch_daily(
+        self,
+        symbol: str,
+        count: int = 500,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        adjusted: bool = True
+    ) -> pd.DataFrame:
+        rng = np.random.default_rng(self.seed)
+
+        if end_date:
+            end_dt = pd.to_datetime(end_date)
+        else:
+            end_dt = pd.to_datetime(datetime.now().strftime("%Y-%m-%d"))
+
+        # 거래일 생성 (주말 제외)
+        dates = pd.bdate_range(end=end_dt, periods=count)
+
+        price = self.base_price
+        records = []
+
+        for dt in dates:
+            ret = rng.normal(self.drift, self.volatility)
+            close = max(100.0, price * (1.0 + ret))
+            # Open, High, Low 생성
+            day_vol = self.volatility * rng.uniform(0.5, 1.5)
+            high = max(price, close) * (1.0 + abs(rng.normal(0, day_vol * 0.5)))
+            low = min(price, close) * (1.0 - abs(rng.normal(0, day_vol * 0.5)))
+            open_p = price + rng.uniform(-1, 1) * (high - low) * 0.2
+            open_p = min(max(open_p, low), high)
+
+            volume = int(rng.integers(100000, 2000000))
+            value = float(close * volume)
+
+            records.append({
+                "date": dt,
+                "symbol": symbol,
+                "open": round(open_p, 2),
+                "high": round(high, 2),
+                "low": round(low, 2),
+                "close": round(close, 2),
+                "volume": volume,
+                "value": value,
+                "timeframe": "1d",
+                "adj_factor": 1.0,
+                "is_trading_halt": False
+            })
+            price = close
+
+        df = pd.DataFrame(records)
+        if start_date:
+            df = df[df["date"] >= pd.to_datetime(start_date)].reset_index(drop=True)
+        return df
+
+    def fetch_minute(
+        self,
+        symbol: str,
+        date: Optional[str] = None,
+        timeframe: str = '1m',
+        period: str = 'day'
+    ) -> pd.DataFrame:
+        rng = np.random.default_rng(self.seed)
+        target_date = pd.to_datetime(date if date else datetime.now().strftime("%Y-%m-%d"))
+
+        # 09:00:00부터 15:30:00까지 1분 단위 생성 (총 391개 봉)
+        start_time = target_date.replace(hour=9, minute=0, second=0)
+        times = [start_time + timedelta(minutes=i) for i in range(391)]
+
+        price = self.base_price
+        records = []
+
+        for dt in times:
+            ret = rng.normal(0, self.volatility / np.sqrt(390))
+            close = max(100.0, price * (1.0 + ret))
+            high = max(price, close) * (1.0 + abs(rng.normal(0, 0.0005)))
+            low = min(price, close) * (1.0 - abs(rng.normal(0, 0.0005)))
+            open_p = price
+            volume = int(rng.integers(100, 10000))
+
+            records.append({
+                "date": dt,
+                "symbol": symbol,
+                "open": round(open_p, 2),
+                "high": round(high, 2),
+                "low": round(low, 2),
+                "close": round(close, 2),
+                "volume": volume,
+                "value": float(close * volume),
+                "timeframe": "1m",
+                "adj_factor": 1.0,
+                "is_trading_halt": False
+            })
+            price = close
+
+        df = pd.DataFrame(records)
+        if timeframe != '1m':
+            df = PriceDataCollector.resample_ohlcv(df, target_timeframe=timeframe)
+        return df
+
+
+class PriceDataCollector:
+    """
+    주가 시계열 수집, 다중 소스 Fallback, 리샘플링 및 무결성 검증 오케스트레이터.
+    """
+
+    STANDARD_COLUMNS = ['date', 'symbol', 'open', 'high', 'low', 'close', 'volume', 'timeframe']
+
+    def __init__(
+        self,
+        fetchers: Optional[List[BasePriceFetcher]] = None,
+        timeout: int = 10,
+        max_retries: int = 3,
+        backoff_factor: float = 1.5
+    ):
+        self.fetchers = fetchers or [
+            NaverPriceFetcher(timeout=timeout, max_retries=max_retries, backoff_factor=backoff_factor)
+        ]
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+
+    def add_fetcher(self, fetcher: BasePriceFetcher) -> None:
+        """새 수집기 추가"""
+        self.fetchers.append(fetcher)
+
+    def get_daily_price(
+        self,
+        symbol: str,
+        count: int = 500,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        adjusted: bool = True
+    ) -> pd.DataFrame:
+        """
+        일봉 데이터 수집 (우선순위 기반 다중 소스 Fallback 체계)
+        """
+        last_error = None
+        for fetcher in self.fetchers:
+            try:
+                if not fetcher.is_available():
+                    continue
+                df = fetcher.fetch_daily(
+                    symbol=symbol,
+                    count=count,
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjusted=adjusted
+                )
+                if df is not None and not df.empty:
+                    cleaned_df, _ = self.validate_and_clean_ohlcv(df)
+                    return cleaned_df
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Fetcher {fetcher.__class__.__name__} failed for {symbol}: {e}")
+                continue
+
+        logger.error(f"All fetchers failed to fetch daily prices for {symbol}. Last error: {last_error}")
+        # fallback으로 빈 데이터프레임 반환
+        return pd.DataFrame(columns=self.STANDARD_COLUMNS)
+
+    def get_daily_ohlcv(
+        self,
+        symbol: str,
+        count: int = 500,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        adjusted: bool = True
+    ) -> pd.DataFrame:
+        """get_daily_price 별칭"""
+        return self.get_daily_price(
+            symbol=symbol,
+            count=count,
+            start_date=start_date,
+            end_date=end_date,
+            adjusted=adjusted
+        )
+
+    def get_minute_price(
+        self,
+        symbol: str,
+        period: str = 'day',
+        timeframe: str = '1m',
+        date: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        분봉 데이터 수집 (우선순위 기반 다중 소스 Fallback 체계)
+        """
+        last_error = None
+        for fetcher in self.fetchers:
+            try:
+                if not fetcher.is_available():
+                    continue
+                df = fetcher.fetch_minute(
+                    symbol=symbol,
+                    date=date,
+                    timeframe=timeframe,
+                    period=period
+                )
+                if df is not None and not df.empty:
+                    cleaned_df, _ = self.validate_and_clean_ohlcv(df)
+                    return cleaned_df
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Fetcher {fetcher.__class__.__name__} failed for minute price {symbol}: {e}")
+                continue
+
+        logger.error(f"All fetchers failed to fetch minute prices for {symbol}. Last error: {last_error}")
+        return pd.DataFrame(columns=self.STANDARD_COLUMNS)
+
+    def get_minute_ohlcv(
+        self,
+        symbol: str,
+        date: Optional[str] = None,
+        timeframe: str = '1m',
+        period: str = 'day'
+    ) -> pd.DataFrame:
+        """get_minute_price 별칭"""
+        return self.get_minute_price(
+            symbol=symbol,
+            period=period,
+            timeframe=timeframe,
+            date=date
+        )
+
+    @staticmethod
+    def resample_ohlcv(
+        df: pd.DataFrame,
+        target_timeframe: str = '5m'
+    ) -> pd.DataFrame:
+        """
+        고빈도 OHLCV DataFrame을 목표 타임프레임으로 리샘플링/집계.
+        규칙:
+        - open: first
+        - high: max
+        - low: min
+        - close: last
+        - volume: sum
+        - value: sum (존재 시)
+        """
+        if df.empty:
+            return df.copy()
+
+        df_copy = df.copy()
+        if not pd.api.types.is_datetime64_any_dtype(df_copy['date']):
+            df_copy['date'] = pd.to_datetime(df_copy['date'])
+
+        # 타임프레임 매핑 (예: '5m' -> '5min', '15m' -> '15min', '1h' -> '1h', '1d' -> '1D')
+        tf_clean = target_timeframe.lower()
+        if tf_clean.endswith('m') and not tf_clean.endswith('min'):
+            rule = tf_clean.replace('m', 'min')
+        elif tf_clean.endswith('d'):
+            rule = tf_clean.upper()
+        else:
+            rule = target_timeframe
+
+        df_copy = df_copy.set_index('date')
+
+        agg_dict = {
+            'open': 'first',
+            'high': 'max',
+            'low': 'min',
+            'close': 'last',
+            'volume': 'sum'
+        }
+        if 'value' in df_copy.columns:
+            agg_dict['value'] = 'sum'
+        if 'symbol' in df_copy.columns:
+            agg_dict['symbol'] = 'first'
+        if 'adj_factor' in df_copy.columns:
+            agg_dict['adj_factor'] = 'first'
+
+        resampled = df_copy.resample(rule).agg(agg_dict)
+        # 데이터가 없는 구간(NaN) 제거
+        resampled = resampled.dropna(subset=['open', 'close']).reset_index()
+
+        resampled['timeframe'] = target_timeframe
+        if 'symbol' not in resampled.columns or resampled['symbol'].isna().any():
+            resampled['symbol'] = df['symbol'].iloc[0] if 'symbol' in df.columns else 'UNKNOWN'
+
+        if 'is_trading_halt' not in resampled.columns:
+            resampled['is_trading_halt'] = (resampled['volume'] == 0) & (
+                resampled['open'] == resampled['high']
+            ) & (resampled['high'] == resampled['low']) & (resampled['low'] == resampled['close'])
+
+        return resampled
+
+    @classmethod
+    def validate_and_clean_ohlcv(
+        cls,
+        df: pd.DataFrame
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        OHLCV 데이터프레임의 정합성을 검증하고 이상치를 정제.
+        검증 항목:
+        1. 필수 컬럼 확인 및 타입 변환
+        2. 날짜 중복 제거 및 시간순 정렬
+        3. 가격 모순 검증 (low <= min(open, close) <= max(open, close) <= high)
+        4. 음수 거래량 및 NaN 처리
+        5. 거래정지 플래그(is_trading_halt) 기록
+        """
+        summary: Dict[str, Any] = {
+            "initial_rows": len(df),
+            "duplicates_removed": 0,
+            "anomalies_corrected": 0,
+            "trading_halts_detected": 0,
+            "final_rows": 0,
+            "is_valid": True,
+            "errors": []
+        }
+
+        if df.empty:
+            summary["final_rows"] = 0
+            return df.copy(), summary
+
+        df_clean = df.copy()
+
+        # 1. 필수 컬럼 검사
+        missing_cols = [col for col in cls.STANDARD_COLUMNS if col not in df_clean.columns]
+        if missing_cols:
+            summary["is_valid"] = False
+            summary["errors"].append(f"Missing required columns: {missing_cols}")
+            for col in missing_cols:
+                if col == 'timeframe':
+                    df_clean['timeframe'] = '1d'
+                elif col == 'symbol':
+                    df_clean['symbol'] = '000000'
+                elif col in ['open', 'high', 'low', 'close']:
+                    df_clean[col] = 0.0
+                elif col == 'volume':
+                    df_clean[col] = 0
+
+        # 2. 날짜 파싱 및 정렬
+        df_clean['date'] = pd.to_datetime(df_clean['date'])
+        init_len = len(df_clean)
+        df_clean = df_clean.drop_duplicates(subset=['date', 'symbol'], keep='last')
+        summary["duplicates_removed"] = init_len - len(df_clean)
+        df_clean = df_clean.sort_values('date').reset_index(drop=True)
+
+        # 3. 타입 캐스팅
+        df_clean['open'] = pd.to_numeric(df_clean['open'], errors='coerce').fillna(0.0).astype(float)
+        df_clean['high'] = pd.to_numeric(df_clean['high'], errors='coerce').fillna(0.0).astype(float)
+        df_clean['low'] = pd.to_numeric(df_clean['low'], errors='coerce').fillna(0.0).astype(float)
+        df_clean['close'] = pd.to_numeric(df_clean['close'], errors='coerce').fillna(0.0).astype(float)
+        df_clean['volume'] = pd.to_numeric(df_clean['volume'], errors='coerce').fillna(0).clip(lower=0).astype(int)
+
+        # 4. 가격 모순 교정: high는 max(open, high, low, close), low는 min(open, high, low, close)
+        anomalies_count = 0
+        computed_high = df_clean[['open', 'high', 'low', 'close']].max(axis=1)
+        computed_low = df_clean[['open', 'high', 'low', 'close']].min(axis=1)
+
+        high_mismatch = df_clean['high'] < computed_high
+        low_mismatch = df_clean['low'] > computed_low
+        anomalies_count += int((high_mismatch | low_mismatch).sum())
+
+        df_clean['high'] = computed_high
+        df_clean['low'] = computed_low
+        summary["anomalies_corrected"] = anomalies_count
+
+        # 5. 거래정지 플래그
+        is_halt = (df_clean['volume'] == 0) & (
+            df_clean['open'] == df_clean['high']
+        ) & (df_clean['high'] == df_clean['low']) & (df_clean['low'] == df_clean['close'])
+        df_clean['is_trading_halt'] = is_halt
+        summary["trading_halts_detected"] = int(is_halt.sum())
+
+        # 6. 추가 유용한 컬럼 보장
+        if 'value' not in df_clean.columns:
+            df_clean['value'] = df_clean['close'] * df_clean['volume']
+        if 'adj_factor' not in df_clean.columns:
+            df_clean['adj_factor'] = 1.0
+
+        summary["final_rows"] = len(df_clean)
+        return df_clean, summary

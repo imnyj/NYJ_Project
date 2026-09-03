@@ -3,7 +3,6 @@
 # Unit and Integration Tests for Hyperparameter Optimization (Optuna HPO - R3)
 # ============================================================================
 
-import json
 import math
 import os
 import optuna
@@ -38,36 +37,56 @@ class TestHyperparameterOptimization:
         assert isinstance(params, dict), f"{model_name}: hparams must be a dict"
         assert len(params) > 0, f"{model_name}: search space must not be empty"
 
-        # Model-specific signature checks
-        if model_name in ["HybridPPO", "MAPPO", "HyARPPO"]:
-            assert "clip_ratio" in params
-            assert "entropy_coef" in params
-            assert "value_coef" in params
+        # Model-specific signature checks.
+        #
+        # Every branch here used to be keyed on a baseline that was discarded on
+        # 2026-08-28 (HybridPPO, HybridSAC, HybridTD3, MPDQN, PureAoI,
+        # DuelingQAoI, SACAoI). `CANONICAL_MODEL_NAMES` never contains any of
+        # them, so no branch could match and all nine parametrised cases reduced
+        # to `isinstance(params, dict)` -- while `sample_hparams` itself was
+        # keyed on the same dead names, which is the bug this test existed to
+        # catch. The branches below name the models that actually exist.
+        expected_keys = {
+            # hidden_dim is searched for the three SB3 baselines so the nine
+            # models can be compared at comparable capacity; without it their
+            # parameter counts differ by 71x.
+            "PPO": {"hidden_dim", "learning_rate", "gamma", "clip_range", "ent_coef",
+                    "vf_coef", "n_epochs"},
+            "SAC": {"hidden_dim", "learning_rate", "gamma", "tau", "target_update_interval"},
+            "TD3": {"hidden_dim", "learning_rate", "gamma", "tau", "policy_delay",
+                    "target_policy_noise", "target_noise_clip"},
+            "RES-MAPDDPG": {"hidden_dim", "lr_actor", "lr_critic", "gamma", "tau",
+                            "num_res_blocks", "epsilon_decay"},
+            # `n_step` is absent on purpose: the uniform-sampling SMDP buffer
+            # cannot build an n-step return, so the model reports
+            # n_step_active=False and searching it would tune a no-op.
+            "MA2HDQN": {"hidden_dim", "lr_q", "lr_actor", "lr_critic", "gamma", "tau",
+                        "epsilon_decay"},
+            "I-HAMAPPO": {"hidden_dim", "lr_actor", "lr_critic", "gamma", "clip_ratio",
+                          "entropy_coef", "value_coef"},
+            "SPAM-D3QN": {"hidden_dim", "lr", "gamma", "target_update_freq",
+                          "epsilon_decay", "per_alpha"},
+            # `tau` is absent on purpose: CARLTON removes the target network
+            # (use_target_network=False), which is the published method's claim,
+            # so tau has nothing to move.
+            "CARLTON": {"hidden_dim", "lr", "gamma", "omega"},
+            "MADDPG-MT": {"hidden_dim", "actor_lr", "critic_lr", "gamma", "tau",
+                          "global_critic_weight", "gumbel_tau"},
+        }
+        assert model_name in expected_keys, f"{model_name} has no search-space contract here"
+        assert set(params) == expected_keys[model_name], (
+            f"{model_name}: sampled {sorted(params)}, expected {sorted(expected_keys[model_name])}"
+        )
+
+        # Ranges that the paper quotes.
+        if "clip_ratio" in params:
             assert 0.1 <= params["clip_ratio"] <= 0.3
-            assert 1e-4 <= params["entropy_coef"] <= 0.05
-        elif model_name == "HybridSAC":
-            assert "tau" in params
-            assert "lr" in params
-            assert "hidden_dim" in params
-        elif model_name == "HybridTD3":
-            assert "tau" in params
-            assert "policy_noise" in params
-            assert "noise_clip" in params
-            assert "policy_freq" in params
-        elif model_name == "MPDQN":
-            assert "lr_actor" in params
-            assert "lr_critic" in params
-            assert "epsilon_initial" in params
-            assert "epsilon_decay" in params
-        elif model_name == "PureAoI":
-            assert "urgency_threshold" in params
-            assert 0.1 <= params["urgency_threshold"] <= 0.7
-        elif model_name == "DuelingQAoI":
-            assert "lr" in params
-            assert "epsilon_initial" in params
-        elif model_name == "SACAoI":
-            assert "lyapunov_v" in params
-            assert "aoi_thresh" in params
+        if "clip_range" in params:
+            assert 0.1 <= params["clip_range"] <= 0.3
+        for coef in ("entropy_coef", "ent_coef"):
+            if coef in params:
+                assert 1e-4 <= params[coef] <= 0.05
+        assert 0.95 <= params["gamma"] <= 0.999
 
     def test_02_model_name_normalization_and_aliases(self):
         """Alias resolution maps to the canonical names in the baseline registry."""
@@ -122,7 +141,6 @@ class TestHyperparameterOptimization:
             model=model,
             seed=42,
             n_steps=20,
-            n_vehicles=10,
             train_steps_during_rollout=1,
         )
 
@@ -133,6 +151,14 @@ class TestHyperparameterOptimization:
         assert "avg_power_norm" in metrics
         assert "tx_attempts" in metrics
 
+        # The emptiness signals must always be present. Without them
+        # `compute_composite_objective` cannot tell a rollout that measured
+        # nothing from a rollout that measured a perfect policy.
+        assert "n_observations" in metrics
+        assert "run_failed" in metrics
+        assert "n_update_failures" in metrics
+        assert metrics["n_update_failures"] == 0
+
         assert metrics["mean_error"] >= 0.0
         assert metrics["mean_aoi"] > 0.0
         assert 0.0 <= metrics["outage_rate"] <= 1.0
@@ -141,20 +167,34 @@ class TestHyperparameterOptimization:
         assert metrics["tx_attempts"] >= 0
 
     def test_05_evaluate_trial_multiseed(self):
-        """Verify multi-seed evaluation computes averaged composite score and metrics."""
-        hparams = {"lr": 1e-3, "hidden_dim": 32, "gamma": 0.98}
-        
+        """Multi-seed evaluation must return a score from rollouts that measured something.
+
+        This used to run DummyPolicy for 15 steps and assert only `score > 0.0`.
+        `evaluate_trial_multiseed` returns the failure penalty when every seed
+        raises, so the assertion passed for a total failure -- the one outcome it
+        existed to catch. It now runs a real baseline long enough to transmit and
+        asserts that no seed failed and that the score is a measured one.
+        """
+        from src.baselines import get_baseline
+        from src.hpo import FAILED_RUN_PENALTY
+
+        hparams = {"lr": 1e-3, "hidden_dim": 64, "gamma": 0.98}
+
         score, avg_metrics = evaluate_trial_multiseed(
-            model_cls=DummyPolicy,
+            model_cls=get_baseline("CARLTON"),
             hparams=hparams,
             seeds=[42, 101],
-            n_steps=15,
-            n_vehicles=8,
+            n_steps=40,
         )
 
         assert isinstance(score, float)
         assert not math.isnan(score) and not math.isinf(score)
         assert score > 0.0
+        assert avg_metrics["n_failed_seeds"] == 0, "a seed rollout failed or measured nothing"
+        assert avg_metrics["n_update_failures"] == 0, "model.update() raised during the rollout"
+        assert score < FAILED_RUN_PENALTY, "score is the failure penalty, not a measurement"
+        assert avg_metrics["n_observations"] > 0
+        assert avg_metrics["tx_attempts"] > 0
         assert "mean_error" in avg_metrics
         assert "mean_aoi" in avg_metrics
 
@@ -230,8 +270,144 @@ class TestHyperparameterOptimization:
             run_hpo_study(model_name="HybridPPO", n_trials=1, seeds=[42], n_steps=8)
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestEmptyRunIsNotTheGlobalOptimum:
+    """A rollout that measured nothing must never win a minimisation study.
+
+    `AoiV2IEnv.get_metrics` degrades to zeros when no vehicle was ever in range,
+    and every term of the composite is a penalty, so an unmeasured run scored
+    exactly 0.0 -- below every real trial (the committed studies sit in
+    0.887..1.459). Any hyperparameter combination that happened to kill the
+    environment was therefore selected as "optimal". Nothing in the 144-test
+    suite caught this.
+    """
+
+    def test_all_zero_metrics_score_the_failure_penalty(self):
+        from src.hpo import FAILED_RUN_PENALTY
+
+        dead = {
+            "mean_error": 0.0,
+            "mean_aoi": 0.0,
+            "outage_rate": 0.0,
+            "avg_power_norm": 0.0,
+            "n_observations": 0,
+            "tx_attempts": 0,
+        }
+        assert compute_composite_objective(dead) == FAILED_RUN_PENALTY
+
+    def test_empty_run_never_beats_a_real_trial(self):
+        """The exact failure mode: an empty run must not rank below a healthy one."""
+        healthy = {
+            "mean_error": 1.0, "mean_aoi": 2.0, "outage_rate": 0.05,
+            "avg_power_norm": 0.5, "n_observations": 900, "tx_attempts": 30,
+        }
+        for dead in (
+            {"mean_error": 0.0, "mean_aoi": 0.0, "outage_rate": 0.0,
+             "avg_power_norm": 0.0, "n_observations": 0, "tx_attempts": 12},
+            {"mean_error": 0.0, "mean_aoi": 0.0, "outage_rate": 0.0,
+             "avg_power_norm": 0.0, "n_observations": 900, "tx_attempts": 0},
+            {"mean_error": 0.0, "mean_aoi": 0.0, "outage_rate": 0.0,
+             "avg_power_norm": 0.0, "run_failed": True},
+        ):
+            assert compute_composite_objective(dead) > compute_composite_objective(healthy)
+
+    def test_run_is_empty_tolerates_absent_signals(self):
+        """A pre-aggregated dict that says nothing about emptiness is not empty."""
+        from src.hpo import run_is_empty
+
+        assert not run_is_empty({"mean_error": 1.0, "mean_aoi": 2.0})
+        assert run_is_empty({"n_observations": 0})
+        assert run_is_empty({"tx_attempts": 0})
+        assert not run_is_empty({"n_observations": 5, "tx_attempts": 5})
+
+    def test_rollout_marks_and_reports_its_own_emptiness(self):
+        """The live path must attach the signals, not just tolerate them."""
+        from src.hpo import FAILED_RUN_PENALTY
+
+        model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        metrics = evaluate_model_in_env(model=model, seed=42, n_steps=15)
+
+        assert "n_observations" in metrics and "tx_attempts" in metrics
+        assert metrics["run_failed"] == (
+            metrics["n_observations"] <= 0 or metrics["tx_attempts"] <= 0
+        )
+        if metrics["run_failed"]:
+            assert compute_composite_objective(metrics) == FAILED_RUN_PENALTY
+
+
+class TestOutageIsCoverageOutage:
+    """Outage is the coverage definition, fixed by the user on 2026-08-31."""
+
+    def test_objective_prefers_the_coverage_metric_over_frame_errors(self):
+        from src.evaluate import LEGACY_OUTAGE_METRIC_KEY, OUTAGE_METRIC_KEY
+
+        assert OUTAGE_METRIC_KEY == "coverage_outage_rate"
+        assert LEGACY_OUTAGE_METRIC_KEY == "packet_loss_rate"
+
+        # `outage_rate` is what the composite reads; when the environment
+        # provides the coverage metric it must be that one, not the frame
+        # error rate the two columns used to share.
+        metrics = {
+            "mean_error": 1.0, "mean_aoi": 2.0, "avg_power_norm": 0.5,
+            "n_observations": 900, "tx_attempts": 30,
+            "outage_rate": 0.4,
+        }
+        with_coverage = compute_composite_objective(metrics)
+        assert with_coverage == pytest.approx(1.0 + 0.5 * 2.0 + 2.0 * 0.4 + 0.2 * 0.5)
+
+    def test_rollout_tags_which_outage_definition_it_scored(self):
+        model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
+        metrics = evaluate_model_in_env(model=model, seed=42, n_steps=15)
+        from src.evaluate import LEGACY_OUTAGE_METRIC_KEY, OUTAGE_METRIC_KEY
+
+        assert metrics["outage_metric"] in (OUTAGE_METRIC_KEY, LEGACY_OUTAGE_METRIC_KEY)
+        if OUTAGE_METRIC_KEY in metrics:
+            assert metrics["outage_metric"] == OUTAGE_METRIC_KEY
+            assert metrics["outage_rate"] == metrics[OUTAGE_METRIC_KEY]
+
+
+
+def _probe_value(model_cls, key: str):
+    """A type-correct probe value for `key`, taken from the constructor default.
+
+    Typing the probe off the declared default is what keeps this test honest: a
+    literal guess would either crash on an int-typed knob or, worse, be silently
+    coerced. A key no constructor in the MRO declares gets an arbitrary value --
+    which is fine, because that is exactly the case the test must flag.
+    """
+    import inspect as _inspect
+
+    for klass in getattr(model_cls, "__mro__", [model_cls]):
+        init = klass.__dict__.get("__init__")
+        if init is None:
+            continue
+        try:
+            prm = _inspect.signature(init).parameters.get(key)
+        except (TypeError, ValueError):
+            continue
+        if prm is None or prm.default is _inspect.Parameter.empty:
+            continue
+        default = prm.default
+        if isinstance(default, bool):
+            return not default
+        if isinstance(default, int):
+            return int(default) + 1 if default else 4
+        if isinstance(default, float):
+            return float(default) * 0.5 if default else 0.123
+        if default is None:
+            # An `Optional[...] = None` knob carries its type only in the
+            # annotation. `hidden_dim: Optional[int] = None` on the three SB3
+            # wrappers is the live case: falling through to the 0.123 float
+            # probe made `apply_hidden_dim` reject it as non-positive, which
+            # looked like a search-space defect and was really a probe defect.
+            ann = prm.annotation
+            ann_s = ann if isinstance(ann, str) else getattr(ann, "__name__", str(ann))
+            if "bool" in ann_s:
+                return True
+            if "int" in ann_s:
+                return 128 if key == "hidden_dim" else 4
+            if "float" in ann_s:
+                return 0.123
+    return 0.123
 
 
 class TestHparamsActuallyReachModels:
@@ -255,6 +431,49 @@ class TestHparamsActuallyReachModels:
         assert not unreachable, (
             f"These sampled hyperparameters would vanish into **hparams: {unreachable}"
         )
+
+    def test_every_sampled_key_is_actually_CONSUMED_by_the_model(self):
+        """Name matching is not consumption. This checks the value was absorbed.
+
+        Every baseline `__init__` ends in `**hparams` and forwards the remainder
+        up the chain; `BaseAgent.__init__` is the terminus and parks whatever is
+        left on `self.hparams` purely for the save file. So "the key is still in
+        `model.hparams` after construction" is an EXACT test for "no constructor
+        in the MRO named it, and it therefore changed nothing" -- and unlike a
+        signature whitelist on the leaf class it does not reject keys that are
+        legitimately forwarded through `super().__init__(**hparams)` chains or
+        through the SB3 wrappers' `**algo_kwargs`.
+
+        Measured before the routing fix: `density=55.0`, `warmup_steps=9` and
+        `total_nonsense=1` were all accepted in silence by SPAMD3QN, PPO and
+        CARLTON, so an HPO CSV column could claim a value the run never used.
+        """
+        from src.baselines import get_baseline
+        from src.hpo import CANONICAL_MODEL_NAMES, _search_space_keys
+        from src.rl_interface import STATE_DIM as _SD
+
+        swallowed = {}
+        for name in CANONICAL_MODEL_NAMES:
+            cls = get_baseline(name)
+            keys = list(_search_space_keys(name))
+            probe = {k: _probe_value(cls, k) for k in keys}
+            model = cls(state_dim=_SD, num_channels=4, **probe)
+            leftovers = getattr(model, "hparams", {}) or {}
+            unused = sorted(k for k in keys if k in leftovers)
+            if unused:
+                swallowed[name] = unused
+        assert not swallowed, (
+            "these sampled hyperparameters were absorbed by `**hparams` and had no "
+            f"effect on training: {swallowed}"
+        )
+
+    def test_the_consumption_check_would_catch_a_bogus_key(self):
+        """Guard against the test above passing vacuously."""
+        from src.baselines import get_baseline
+        from src.rl_interface import STATE_DIM as _SD
+
+        model = get_baseline("CARLTON")(state_dim=_SD, num_channels=4, total_nonsense=1)
+        assert "total_nonsense" in (getattr(model, "hparams", {}) or {})
 
     def test_search_space_is_not_the_generic_fallback(self):
         """Each baseline needs its own space, not the three-key default."""
@@ -284,3 +503,53 @@ class TestHparamsActuallyReachModels:
         )
         assert carlton.optimizer.param_groups[0]["lr"] == pytest.approx(7e-4)
         assert carlton.omega == pytest.approx(0.77)
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+
+
+class TestOpenIntervalsReachTheBuffer:
+    """HPO's training rollout must not lose the intervals open at the cut-off.
+
+    `evaluate_model_in_env` pushes a transition only when `step()` reports the
+    interval closed, so every interval still in flight when the step budget ran
+    out was dropped -- measured at 12.3 % of a 600-step episode, biased towards
+    long Delta. The trial then tuned hyperparameters against a buffer that had
+    seen long-Delta successes but not long-Delta failures.
+    """
+
+    def test_finalised_intervals_are_pushed_and_nothing_is_discarded(self, monkeypatch, caplog):
+        import logging as _logging
+        import src.hpo as hpo
+        from src.baselines import get_baseline
+
+        seen = {"finalized": 0, "instances": []}
+        real_cls = hpo.AoiV2IEnv
+
+        class _SpyEnv(real_cls):
+            def finalize_open_intervals(self):
+                recs = super().finalize_open_intervals()
+                seen["finalized"] += len(recs)
+                return recs
+
+        def _factory(*a, **k):
+            env = _SpyEnv(*a, **k)
+            seen["instances"].append(env)
+            return env
+
+        monkeypatch.setattr(hpo, "AoiV2IEnv", _factory)
+
+        model = get_baseline("CARLTON")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
+        with caplog.at_level(_logging.WARNING):
+            hpo.evaluate_model_in_env(
+                model=model, seed=42, n_steps=60, train_steps_during_rollout=1
+            )
+
+        assert seen["instances"], "the spy env was never constructed"
+        env = seen["instances"][0]
+        assert not env.interval_start_t, "intervals were still open at close()"
+        assert seen["finalized"] > 0, "no interval was in flight; the test proves nothing"
+        assert not [r for r in caplog.records if "discarding" in r.getMessage()], (
+            "close() reported discarded SMDP intervals"
+        )

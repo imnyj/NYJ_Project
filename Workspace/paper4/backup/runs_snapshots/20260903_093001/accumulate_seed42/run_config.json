@@ -1,0 +1,9 @@
+{
+  "arm": "accumulate",
+  "seed": 42,
+  "episodes": 100,
+  "steps_per_episode": 2000,
+  "total_steps": 200000,
+  "densities": [5,10,15,20,25,30,35],
+  "started": "2026-09-02T14:49:03+09:00"
+}

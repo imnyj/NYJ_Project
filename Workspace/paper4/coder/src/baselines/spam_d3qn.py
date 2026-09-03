@@ -60,7 +60,6 @@
 
 from __future__ import annotations
 import copy
-import math
 from typing import Any, Dict, List, Tuple, Union
 import numpy as np
 import torch
@@ -120,8 +119,9 @@ class SPAMD3QN(BaseRLModel):
     recovers the FULL index -- all three factors -- from the stored raw action.
     Recovering only the subchannel factor would leave the delta and power slices
     of the advantage head permanently untrained; that bug was found and fixed in
-    the previous generation's dueling-Q model and is asserted against in
-    etc/scripts/verify_baselines_similar.py.
+    the previous generation's dueling-Q model. The exhaustive
+    encode -> recover round trip over all `num_actions` indices is asserted in
+    `tests/test_baselines_action_roundtrip.py`.
     """
 
     def __init__(
@@ -147,15 +147,24 @@ class SPAMD3QN(BaseRLModel):
         super().__init__(state_dim=state_dim, num_channels=num_channels, **hparams)
         self.gamma = float(gamma)
         self.target_update_freq = max(1, int(target_update_freq))
-        self.epsilon = float(epsilon_initial)
         self.epsilon_decay = float(epsilon_decay)
         self.epsilon_min = float(epsilon_min)
         self.per_alpha = float(per_alpha)
-        self.per_beta = float(per_beta)
         self.per_beta_increment = float(per_beta_increment)
         self.per_eps = float(per_eps)
         self.grad_clip = float(grad_clip)
-        self.total_updates = 0
+
+        # Exploration / annealing state rides in BUFFERS, not plain attributes.
+        # `DualModelHotSwapManager.hot_swap()` copies parameters and buffers from
+        # the Rest model onto the Act model, and `update()` only ever runs on the
+        # Rest model. As plain attributes these three never crossed the swap, so
+        # the ACTING model's epsilon stayed pinned at `epsilon_initial` for the
+        # whole run while the other epsilon-greedy baselines annealed to
+        # `epsilon_min`, and neither epsilon nor per_beta survived a checkpoint
+        # reload. Same rule as res_mapddpg.py / ma2hdqn.py.
+        self.register_buffer("epsilon", torch.tensor(float(epsilon_initial)))
+        self.register_buffer("per_beta", torch.tensor(float(per_beta)))
+        self.register_buffer("total_updates", torch.zeros(1))
 
         # ------------------------------------------------------------------
         # Discretised joint action grid. Bounds come from the decoder only.
@@ -165,15 +174,6 @@ class SPAMD3QN(BaseRLModel):
         self.num_delta_levels = len(self.delta_candidates)
         self.num_power_levels = len(self.power_candidates)
         self.num_actions = self.num_delta_levels * self.num_power_levels * self.num_channels
-
-        # Cached geometric span of the Delta range (log(delta_max / delta_min)),
-        # used for snapping a recovered Delta to the nearest grid level in LOG
-        # space -- the metric the grid is built in. Derived from the decoder, and
-        # 0.0 for a degenerate range, mirroring ActionDecoder's own guard.
-        if self.decoder.delta_min > 0.0 and self.decoder.delta_max > self.decoder.delta_min:
-            self._log_delta_ratio = math.log(self.decoder.delta_max / self.decoder.delta_min)
-        else:
-            self._log_delta_ratio = 0.0
 
         # ------------------------------------------------------------------
         # Dueling network
@@ -250,34 +250,32 @@ class SPAMD3QN(BaseRLModel):
         """
         Recover the FULL combined action index from the stored raw action.
 
-        Raw actions are produced by ActionDecoder.encode_action, i.e.
-        [logit((delta - d_min) / (d_max - d_min)), ch, logit((p - p_min) / (p_max - p_min))],
-        so sigmoid() inverts each continuous field exactly (up to encode_action's
-        1e-6 clamp) and the recovered values are then snapped back onto the grid:
-        Delta in log space, because the Delta grid is geometric, and power
-        linearly. All THREE factors are recovered -- recovering only `ch` would
-        train a 1/(num_delta_levels * num_power_levels) prefix-slice of the
-        advantage head and silently freeze the rest.
+        Raw actions are produced by `ActionDecoder.encode_action`, whose Delta
+        field is `logit(unit_from_delta(delta))` -- the logit of the GEOMETRIC
+        unit coordinate, NOT of a linear normalisation. This method used to
+        invert it linearly, which mapped 6 of the 8 Delta levels onto the wrong
+        grid slot and so trained the wrong column of the advantage head for
+        96 of the 128 joint actions.
+
+        The inversion now goes through `BaseRLModel.raw_units`, and the snap onto
+        the grid happens in the decoder's unit coordinate rather than in Delta or
+        log-Delta space. That coordinate is where both grids are actually built
+        (`delta_from_unit(i / (n - 1))`, `p_min + (p_max - p_min) * i / (n - 1)`),
+        so the round trip is exact by construction and stays exact if the decoder
+        ever changes its Delta geometry again.
+
+        All THREE factors are recovered -- recovering only `ch` would train a
+        1/(num_delta_levels * num_power_levels) prefix-slice of the advantage head
+        and silently freeze the rest.
 
         Only used when the batch carries no explicit "action_idx"; note that the
         live pipeline (hot_swap_trainer.TransitionStreamer) does not currently
         plumb the index through, so this IS the path that runs in training.
         """
-        dec = self.decoder
-        acts = actions.float()
-        delta = dec.delta_min + torch.sigmoid(acts[:, 0]) * (dec.delta_max - dec.delta_min)
-        delta = delta.clamp(min=dec.delta_min, max=dec.delta_max)
-        d_cands = torch.as_tensor(self.delta_candidates, dtype=delta.dtype, device=delta.device)
-        if self._log_delta_ratio > 0.0:
-            d_idx = torch.argmin((torch.log(delta).unsqueeze(1) - torch.log(d_cands).unsqueeze(0)).abs(), dim=1)
-        else:
-            d_idx = torch.argmin((delta.unsqueeze(1) - d_cands.unsqueeze(0)).abs(), dim=1)
-
-        power = dec.p_min + torch.sigmoid(acts[:, 2]) * (dec.p_max - dec.p_min)
-        p_cands = torch.as_tensor(self.power_candidates, dtype=power.dtype, device=power.device)
-        p_idx = torch.argmin((power.unsqueeze(1) - p_cands.unsqueeze(0)).abs(), dim=1)
-
-        ch = acts[:, 1].round().long().remainder(self.num_channels)
+        u_delta, u_power = self.raw_units(actions)
+        d_idx = self.snap_unit_to_grid(u_delta, self.num_delta_levels)
+        p_idx = self.snap_unit_to_grid(u_power, self.num_power_levels)
+        ch = self.raw_channel(actions)
         return (d_idx * self.num_power_levels + p_idx) * self.num_channels + ch
 
     # ----------------------------------------------------------------------
@@ -289,9 +287,10 @@ class SPAMD3QN(BaseRLModel):
         deterministic: bool = False,
     ) -> Tuple[Tuple[float, int, float], np.ndarray, Dict[str, Any]]:
         state_t = self._prepare_state_tensor(state)
+        eps = float(self.epsilon.item())
         with torch.no_grad():
             q_vals = self._forward_q(state_t, use_target=False)
-            if (not deterministic) and np.random.rand() < self.epsilon:
+            if (not deterministic) and np.random.rand() < eps:
                 act_idx = int(np.random.randint(0, self.num_actions))
             else:
                 act_idx = int(torch.argmax(q_vals, dim=-1)[0].item())
@@ -307,7 +306,7 @@ class SPAMD3QN(BaseRLModel):
             "channel_idx": int(ch),
             "q_values": q_vals[0].detach().cpu().numpy(),
             "raw_action": raw_action,
-            "epsilon": self.epsilon,
+            "epsilon": eps,
         }
         return (float(delta), int(ch), float(power)), raw_action, info
 
@@ -318,11 +317,8 @@ class SPAMD3QN(BaseRLModel):
         next_states = batch["next_state"].to(device).float()
         dones = batch["done"].to(device).float()
 
-        if "discount" in batch:
-            discounts = batch["discount"].to(device).float()
-        else:
-            delta_ts = batch.get("delta_t", torch.ones_like(rewards)).to(device).float()
-            discounts = torch.pow(torch.as_tensor(self.gamma, device=device), delta_ts)
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
 
         # -- Double DQN target -------------------------------------------------
         with torch.no_grad():
@@ -347,7 +343,7 @@ class SPAMD3QN(BaseRLModel):
             priorities = (td_error.abs() + self.per_eps).pow(self.per_alpha).reshape(-1)
             probs = priorities / priorities.sum().clamp_min(1e-12)
             n = float(priorities.numel())
-            is_weights = (n * probs).clamp_min(1e-12).pow(-self.per_beta)
+            is_weights = (n * probs).clamp_min(1e-12).pow(-float(self.per_beta.item()))
             is_weights = is_weights / is_weights.max().clamp_min(1e-12)
             self.last_priorities = priorities.detach().cpu().numpy()
         if "weights" in batch:  # honour an externally supplied PER weight vector
@@ -361,21 +357,24 @@ class SPAMD3QN(BaseRLModel):
         self.optimizer.step()
 
         # -- Periodic hard target refresh (Bai et al. use a hard copy) ----------
-        self.total_updates += 1
-        if self.total_updates % self.target_update_freq == 0:
+        self.total_updates.add_(1.0)
+        if int(self.total_updates.item()) % self.target_update_freq == 0:
             with torch.no_grad():
                 self.target_trunk.load_state_dict(self.trunk.state_dict())
                 self.target_value_head.load_state_dict(self.value_head.state_dict())
                 self.target_adv_head.load_state_dict(self.adv_head.state_dict())
 
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
-        self.per_beta = min(1.0, self.per_beta + self.per_beta_increment)
+        # In-place so the registered buffers keep their identity (a plain
+        # assignment would shadow them with Python floats and break the hot swap).
+        with torch.no_grad():
+            self.epsilon.fill_(max(self.epsilon_min, float(self.epsilon.item()) * self.epsilon_decay))
+            self.per_beta.fill_(min(1.0, float(self.per_beta.item()) + self.per_beta_increment))
 
         return {
             "loss": float(loss.item()),
             "td_error": float(td_error.abs().mean().item()),
             "mean_q": float(curr_q.mean().item()),
-            "epsilon": float(self.epsilon),
-            "per_beta": float(self.per_beta),
+            "epsilon": float(self.epsilon.item()),
+            "per_beta": float(self.per_beta.item()),
             "n_distinct_actions": float(np.unique(self._last_action_indices).size),
         }

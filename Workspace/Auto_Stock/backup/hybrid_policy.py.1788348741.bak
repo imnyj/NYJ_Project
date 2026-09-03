@@ -1,0 +1,874 @@
+"""
+modules/models/hybrid_policy.py
+===============================
+Auto Stock ML/RL Trader — Milestone 2: 하이브리드 강화학습(RL) 정책망 및 PPO 에이전트.
+
+주요 컴포넌트:
+1. HybridActorCritic:
+   - PyTorch 기반 하이브리드 정책-가치망.
+   - Discrete Action: 3개 범주 (0: HOLD, 1: BUY, 2: SELL) -> Categorical 분포.
+   - Continuous Action: [0.0, 1.0] 포지션 비중 (Order Weight) -> Beta/Normal 분포.
+   - Value Function: 상태 가치 V(s) 추정.
+   - SLPretrainer 백본 가중치 전이(Transfer) 및 부분 고정(Freeze) 지원.
+2. HybridPPO:
+   - Gymnasium 1.2.0 HybridTradingEnv의 액션 공간을 네이티브로 학습하는 고성능 PPO 에이전트.
+   - GAE (Generalized Advantage Estimation), Clipped Surrogate Loss, Value Loss Clipping, Entropy Bonus.
+3. SB3CustomFeaturesExtractor & SB3HybridPolicyAdapter:
+   - Stable-Baselines3 (PPO/A2C)와 ContinuousToHybridActionWrapper 간 완벽한 연동 브릿지.
+"""
+
+import os
+import math
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import gymnasium as gym
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.distributions import Beta, Categorical, Normal
+
+from stable_baselines3 import PPO
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+
+from modules.engine.hybrid_trading_env import (
+    ContinuousToHybridActionWrapper,
+    HybridTradingEnv,
+)
+from modules.models.feature_extractor import (
+    DualStreamSLFeatureExtractor,
+    SLPretrainer,
+    TabularMLPFeatureExtractor,
+)
+
+
+class HybridActorCritic(nn.Module):
+    """
+    이산 매매 결정(Categorical 3)과 연속 비중 결정(Beta/Gaussian [0, 1])을 동시에 산출하는
+    하이브리드 Actor-Critic 신경망.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int = 14,
+        feature_extractor: Optional[nn.Module] = None,
+        feature_dim: int = 64,
+        hidden_dims: Optional[List[int]] = None,
+        action_dim: int = 3,
+        distribution_type: str = "beta",  # "beta" or "gaussian"
+        ortho_init: bool = True,
+        freeze_feature_extractor: bool = False,
+    ):
+        super().__init__()
+        self.obs_dim = obs_dim
+        self.feature_dim = feature_dim
+        self.hidden_dims = hidden_dims if hidden_dims is not None else [64, 64]
+        self.action_dim = action_dim
+        self.distribution_type = distribution_type.lower()
+        self.freeze_feature_extractor = freeze_feature_extractor
+
+        # 1. Feature Extractor Backbone
+        if feature_extractor is not None:
+            self.feature_extractor = feature_extractor
+            self.feature_dim = getattr(feature_extractor, "output_dim", feature_dim)
+        else:
+            self.feature_extractor = TabularMLPFeatureExtractor(
+                input_dim=obs_dim,
+                hidden_dims=[128, 64],
+                output_dim=self.feature_dim,
+                dropout=0.0,
+            )
+
+        if self.freeze_feature_extractor:
+            self.freeze_backbone()
+
+        # 2. Shared Actor / Critic MLP Latents (or separate branches)
+        actor_layers: List[nn.Module] = []
+        prev_dim = self.feature_dim
+        for h_dim in self.hidden_dims:
+            actor_layers.append(nn.Linear(prev_dim, h_dim))
+            actor_layers.append(nn.LayerNorm(h_dim))
+            actor_layers.append(nn.Tanh())
+            prev_dim = h_dim
+        self.actor_latent = nn.Sequential(*actor_layers)
+
+        critic_layers: List[nn.Module] = []
+        prev_dim = self.feature_dim
+        for h_dim in self.hidden_dims:
+            critic_layers.append(nn.Linear(prev_dim, h_dim))
+            critic_layers.append(nn.LayerNorm(h_dim))
+            critic_layers.append(nn.Tanh())
+            prev_dim = h_dim
+        self.critic_latent = nn.Sequential(*critic_layers)
+
+        # 3. Discrete Action Head (3-class logits: 0: HOLD, 1: BUY, 2: SELL)
+        self.discrete_head = nn.Linear(prev_dim, self.action_dim)
+
+        # 4. Continuous Action Head (Position weight sizing in [0, 1])
+        if self.distribution_type == "beta":
+            self.alpha_head = nn.Linear(prev_dim, 1)
+            self.beta_head = nn.Linear(prev_dim, 1)
+        elif self.distribution_type == "gaussian":
+            self.mu_head = nn.Linear(prev_dim, 1)
+            self.log_std = nn.Parameter(torch.zeros(1))
+        else:
+            raise ValueError(f"지원하지 않는 분포 타입: {distribution_type}. 'beta' 또는 'gaussian'이어야 합니다.")
+
+        # 5. Value Head (Critic V(s))
+        self.value_head = nn.Linear(prev_dim, 1)
+
+        if ortho_init:
+            self._init_weights()
+
+    def _init_weights(self) -> None:
+        """직교 초기화 (PPO 표준 게인 적용)"""
+        for m in self.actor_latent.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+        for m in self.critic_latent.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+
+        # Policy output heads (gain=0.01 for exploration)
+        nn.init.orthogonal_(self.discrete_head.weight, gain=0.01)
+        nn.init.zeros_(self.discrete_head.bias)
+
+        if self.distribution_type == "beta":
+            nn.init.orthogonal_(self.alpha_head.weight, gain=0.01)
+            nn.init.zeros_(self.alpha_head.bias)
+            nn.init.orthogonal_(self.beta_head.weight, gain=0.01)
+            nn.init.zeros_(self.beta_head.bias)
+        elif self.distribution_type == "gaussian":
+            nn.init.orthogonal_(self.mu_head.weight, gain=0.01)
+            nn.init.zeros_(self.mu_head.bias)
+
+        # Value head (gain=1.0)
+        nn.init.orthogonal_(self.value_head.weight, gain=1.0)
+        nn.init.zeros_(self.value_head.bias)
+
+    def freeze_backbone(self) -> None:
+        """특징 추출기 파라미터 고정 및 기존 그래디언트 초기화"""
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = False
+            param.grad = None
+        self.freeze_feature_extractor = True
+
+    def unfreeze_backbone(self) -> None:
+        """특징 추출기 파라미터 고정 해제"""
+        for param in self.feature_extractor.parameters():
+            param.requires_grad = True
+        self.freeze_feature_extractor = False
+
+    def load_from_sl_pretrainer(
+        self,
+        pretrainer_or_path: Union[SLPretrainer, str],
+        freeze: bool = False,
+    ) -> None:
+        """
+        사전학습된 SLPretrainer로부터 백본 특징 추출기 가중치를 로드합니다.
+        """
+        if isinstance(pretrainer_or_path, str):
+            ckpt = torch.load(pretrainer_or_path, map_location="cpu")
+            state_dict = ckpt.get("state_dict", ckpt)
+            backbone_dict = {
+                k.replace("backbone.", ""): v
+                for k, v in state_dict.items()
+                if k.startswith("backbone.")
+            }
+            if backbone_dict:
+                self.feature_extractor.load_state_dict(backbone_dict, strict=False)
+            else:
+                self.feature_extractor.load_state_dict(state_dict, strict=False)
+        elif isinstance(pretrainer_or_path, SLPretrainer):
+            backbone = pretrainer_or_path.get_backbone()
+            self.feature_extractor.load_state_dict(backbone.state_dict(), strict=False)
+
+        if freeze:
+            self.freeze_backbone()
+
+    def extract_features(self, obs: Union[torch.Tensor, np.ndarray, Dict, Tuple]) -> torch.Tensor:
+        """관측값으로부터 특징 표현 추출"""
+        device = next(self.parameters()).device if list(self.parameters()) else torch.device("cpu")
+        if isinstance(obs, np.ndarray):
+            obs = torch.as_tensor(obs, dtype=torch.float32, device=device)
+
+        if hasattr(self.feature_extractor, "forward"):
+            try:
+                feats = self.feature_extractor(obs)
+            except (TypeError, AttributeError, ValueError):
+                if isinstance(obs, (tuple, list)) and len(obs) >= 2:
+                    t_x = torch.as_tensor(obs[0], dtype=torch.float32, device=device) if isinstance(obs[0], np.ndarray) else obs[0]
+                    tab_x = torch.as_tensor(obs[1], dtype=torch.float32, device=device) if isinstance(obs[1], np.ndarray) else obs[1]
+                    try:
+                        feats = self.feature_extractor(temporal_x=t_x, tabular_x=tab_x)
+                    except (TypeError, AttributeError, ValueError):
+                        try:
+                            feats = self.feature_extractor(x=(t_x, tab_x))
+                        except (TypeError, AttributeError, ValueError):
+                            t_flat = t_x[:, -1, :] if t_x.dim() == 3 else t_x
+                            flat_x = torch.cat([t_flat, tab_x], dim=-1)
+                            feats = self.feature_extractor(flat_x)
+                elif isinstance(obs, dict):
+                    t_x = obs.get("temporal")
+                    tab_x = obs.get("tabular")
+                    if isinstance(t_x, np.ndarray):
+                        t_x = torch.as_tensor(t_x, dtype=torch.float32, device=device)
+                    if isinstance(tab_x, np.ndarray):
+                        tab_x = torch.as_tensor(tab_x, dtype=torch.float32, device=device)
+                    try:
+                        feats = self.feature_extractor(temporal_x=t_x, tabular_x=tab_x)
+                    except (TypeError, AttributeError, ValueError):
+                        try:
+                            feats = self.feature_extractor(x=obs)
+                        except (TypeError, AttributeError, ValueError):
+                            t_flat = t_x[:, -1, :] if (t_x is not None and t_x.dim() == 3) else t_x
+                            if t_flat is not None and tab_x is not None:
+                                flat_x = torch.cat([t_flat, tab_x], dim=-1)
+                                feats = self.feature_extractor(flat_x)
+                            else:
+                                feats = self.feature_extractor(obs)
+                else:
+                    feats = self.feature_extractor(x=obs)
+        else:
+            feats = obs
+        if feats.dim() == 1:
+            feats = feats.unsqueeze(0)
+        return feats
+
+    def forward(
+        self,
+        obs: Union[torch.Tensor, Dict, Tuple],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        순전파: (action_logits, cont_param1, cont_param2, value) 반환.
+        """
+        feats = self.extract_features(obs)
+        act_latent = self.actor_latent(feats)
+        crt_latent = self.critic_latent(feats)
+
+        # Discrete logits
+        disc_logits = self.discrete_head(act_latent)
+
+        # Continuous parameters
+        if self.distribution_type == "beta":
+            # Softplus + 1.0 ensures alpha, beta >= 1.0 for unimodal bounded distribution
+            alpha = F.softplus(self.alpha_head(act_latent)) + 1.0 + 1e-6
+            beta = F.softplus(self.beta_head(act_latent)) + 1.0 + 1e-6
+            p1, p2 = alpha, beta
+        elif self.distribution_type == "gaussian":
+            mu = torch.sigmoid(self.mu_head(act_latent))  # bounded in [0, 1]
+            std = torch.exp(self.log_std.clamp(-5.0, 2.0)).expand_as(mu)
+            p1, p2 = mu, std
+
+        # Value
+        value = self.value_head(crt_latent)
+        return disc_logits, p1, p2, value
+
+    def get_action_distribution(
+        self,
+        obs: Union[torch.Tensor, Dict, Tuple],
+    ) -> Tuple[Categorical, Union[Beta, Normal]]:
+        """이산 및 연속 액션 확률 분포 객체를 반환합니다."""
+        disc_logits, p1, p2, _ = self.forward(obs)
+        disc_dist = Categorical(logits=disc_logits)
+
+        if self.distribution_type == "beta":
+            cont_dist = Beta(p1, p2)
+        elif self.distribution_type == "gaussian":
+            cont_dist = Normal(p1, p2)
+        return disc_dist, cont_dist
+
+    def sample_action(
+        self,
+        obs: Union[torch.Tensor, np.ndarray, Dict, Tuple],
+        deterministic: bool = False,
+    ) -> Tuple[Union[Tuple[int, float], Tuple[np.ndarray, np.ndarray]], torch.Tensor, torch.Tensor]:
+        """
+        액션을 샘플링하고 (action_tuple, total_log_prob, value)를 반환합니다.
+        """
+        is_numpy = isinstance(obs, np.ndarray)
+        is_unbatched = False
+        device = next(self.parameters()).device
+
+        if is_numpy:
+            if obs.ndim == 1:
+                is_unbatched = True
+                obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
+            else:
+                obs_t = torch.as_tensor(obs, dtype=torch.float32, device=device)
+        elif isinstance(obs, torch.Tensor):
+            if obs.dim() == 1:
+                is_unbatched = True
+                obs_t = obs.unsqueeze(0).to(device)
+            else:
+                obs_t = obs.to(device)
+        else:
+            obs_t = obs
+
+        disc_logits, p1, p2, value = self.forward(obs_t)
+        disc_dist = Categorical(logits=disc_logits)
+
+        if self.distribution_type == "beta":
+            cont_dist = Beta(p1, p2)
+            if deterministic:
+                # Mode for Beta(alpha, beta) when alpha, beta > 1
+                disc_act = torch.argmax(disc_logits, dim=-1)
+                alpha, beta = p1, p2
+                cont_act = torch.where(
+                    (alpha > 1.0) & (beta > 1.0),
+                    (alpha - 1.0) / (alpha + beta - 2.0),
+                    alpha / (alpha + beta),
+                )
+            else:
+                disc_act = disc_dist.sample()
+                cont_act = cont_dist.sample()
+        elif self.distribution_type == "gaussian":
+            cont_dist = Normal(p1, p2)
+            if deterministic:
+                disc_act = torch.argmax(disc_logits, dim=-1)
+                cont_act = p1
+            else:
+                disc_act = disc_dist.sample()
+                cont_act = cont_dist.sample()
+
+        cont_act_clamped = torch.clamp(cont_act, 1e-6, 1.0 - 1e-6)
+
+        # Compute log probs
+        log_prob_disc = disc_dist.log_prob(disc_act)
+        log_prob_cont = cont_dist.log_prob(cont_act_clamped).sum(dim=-1)
+        total_log_prob = log_prob_disc + log_prob_cont
+
+        if is_unbatched:
+            act_type = int(disc_act.squeeze(0).item())
+            pos_weight = float(cont_act_clamped.squeeze().item())
+            return (act_type, pos_weight), total_log_prob.squeeze(0), value.squeeze(0)
+        else:
+            act_type_np = disc_act.detach().cpu().numpy()
+            pos_weight_np = cont_act_clamped.detach().cpu().numpy().squeeze(-1)
+            return (act_type_np, pos_weight_np), total_log_prob, value.squeeze(-1)
+
+    def evaluate_actions(
+        self,
+        obs: Union[torch.Tensor, np.ndarray],
+        actions: Union[Tuple, torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        PPO 손실 계산용 log_prob, entropy, value 산출.
+        """
+        if isinstance(actions, (tuple, list)):
+            disc_actions, cont_actions = actions
+        elif isinstance(actions, torch.Tensor):
+            if actions.shape[-1] == 2:
+                disc_actions = actions[..., 0].long()
+                cont_actions = actions[..., 1].unsqueeze(-1)
+            else:
+                raise ValueError("Action tensor shape must have 2 elements in the last dimension.")
+        else:
+            raise TypeError(f"지원하지 않는 액션 형식: {type(actions)}")
+
+        disc_dist, cont_dist = self.get_action_distribution(obs)
+        value = self.get_value(obs)
+
+        if not isinstance(disc_actions, torch.Tensor):
+            disc_actions = torch.as_tensor(disc_actions, dtype=torch.long, device=value.device)
+        else:
+            disc_actions = disc_actions.long().to(value.device)
+
+        if not isinstance(cont_actions, torch.Tensor):
+            cont_actions = torch.as_tensor(cont_actions, dtype=torch.float32, device=value.device)
+        else:
+            cont_actions = cont_actions.float().to(value.device)
+
+        if cont_actions.dim() == 1:
+            cont_actions = cont_actions.unsqueeze(-1)
+
+        cont_actions_clamped = torch.clamp(cont_actions, 1e-6, 1.0 - 1e-6)
+
+        log_prob_disc = disc_dist.log_prob(disc_actions)
+        log_prob_cont = cont_dist.log_prob(cont_actions_clamped).sum(dim=-1)
+        total_log_prob = log_prob_disc + log_prob_cont
+
+        entropy = disc_dist.entropy() + cont_dist.entropy().sum(dim=-1)
+        return total_log_prob, entropy, value.squeeze(-1)
+
+    def get_value(self, obs: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
+        """상태 가치 V(s) 산출"""
+        feats = self.extract_features(obs)
+        crt_latent = self.critic_latent(feats)
+        return self.value_head(crt_latent).squeeze(-1)
+
+
+class RolloutBuffer:
+    """하이브리드 액션 공간 전용 온폴리시 롤아웃 버퍼"""
+
+    def __init__(self, buffer_size: int, obs_dim: int, device: torch.device):
+        self.buffer_size = buffer_size
+        self.obs_dim = obs_dim
+        self.device = device
+        self.reset()
+
+    def reset(self) -> None:
+        self.obs = np.zeros((self.buffer_size, self.obs_dim), dtype=np.float32)
+        self.actions_disc = np.zeros(self.buffer_size, dtype=np.int64)
+        self.actions_cont = np.zeros(self.buffer_size, dtype=np.float32)
+        self.rewards = np.zeros(self.buffer_size, dtype=np.float32)
+        self.values = np.zeros(self.buffer_size, dtype=np.float32)
+        self.log_probs = np.zeros(self.buffer_size, dtype=np.float32)
+        self.dones = np.zeros(self.buffer_size, dtype=np.float32)
+        self.advantages = np.zeros(self.buffer_size, dtype=np.float32)
+        self.returns = np.zeros(self.buffer_size, dtype=np.float32)
+        self.ptr = 0
+        self.full = False
+
+    def add(
+        self,
+        obs: np.ndarray,
+        action: Tuple[int, float],
+        reward: float,
+        value: float,
+        log_prob: float,
+        done: bool,
+    ) -> None:
+        if self.ptr >= self.buffer_size:
+            return
+        self.obs[self.ptr] = obs
+        self.actions_disc[self.ptr] = int(action[0])
+        self.actions_cont[self.ptr] = float(action[1])
+        self.rewards[self.ptr] = float(reward)
+        self.values[self.ptr] = float(value)
+        self.log_probs[self.ptr] = float(log_prob)
+        self.dones[self.ptr] = float(done)
+        self.ptr += 1
+        if self.ptr == self.buffer_size:
+            self.full = True
+
+    def compute_returns_and_advantages(
+        self,
+        last_value: float,
+        last_done: bool,
+        gamma: float = 0.99,
+        gae_lambda: float = 0.95,
+    ) -> None:
+        """GAE (Generalized Advantage Estimation) 계산"""
+        last_gae = 0.0
+        for step in reversed(range(self.ptr)):
+            if step == self.ptr - 1:
+                next_non_terminal = 1.0 - float(last_done)
+                next_value = float(last_value)
+            else:
+                next_non_terminal = 1.0 - self.dones[step]
+                next_value = self.values[step + 1]
+
+            delta = self.rewards[step] + gamma * next_value * next_non_terminal - self.values[step]
+            last_gae = delta + gamma * gae_lambda * next_non_terminal * last_gae
+            self.advantages[step] = last_gae
+
+        self.returns[:self.ptr] = self.advantages[:self.ptr] + self.values[:self.ptr]
+
+    def get_batches(self, batch_size: int):
+        """미니배치 제너레이터"""
+        indices = np.random.permutation(self.ptr)
+        for start in range(0, self.ptr, batch_size):
+            batch_idx = indices[start : start + batch_size]
+            yield (
+                torch.as_tensor(self.obs[batch_idx], dtype=torch.float32, device=self.device),
+                torch.as_tensor(self.actions_disc[batch_idx], dtype=torch.long, device=self.device),
+                torch.as_tensor(self.actions_cont[batch_idx], dtype=torch.float32, device=self.device),
+                torch.as_tensor(self.log_probs[batch_idx], dtype=torch.float32, device=self.device),
+                torch.as_tensor(self.values[batch_idx], dtype=torch.float32, device=self.device),
+                torch.as_tensor(self.advantages[batch_idx], dtype=torch.float32, device=self.device),
+                torch.as_tensor(self.returns[batch_idx], dtype=torch.float32, device=self.device),
+            )
+
+
+class HybridPPO:
+    """
+    HybridTradingEnv 전용 고속/경량 PyTorch PPO 에이전트.
+    """
+
+    def __init__(
+        self,
+        env: Optional[gym.Env] = None,
+        policy: Optional[HybridActorCritic] = None,
+        obs_dim: Optional[int] = None,
+        learning_rate: float = 3e-4,
+        n_steps: int = 128,
+        batch_size: int = 32,
+        n_epochs: int = 4,
+        gamma: float = 0.99,
+        gae_lambda: float = 0.95,
+        clip_range: float = 0.2,
+        clip_range_vf: Optional[float] = None,
+        ent_coef: float = 0.01,
+        vf_coef: float = 0.5,
+        max_grad_norm: float = 0.5,
+        device: str = "auto",
+        seed: Optional[int] = 42,
+    ):
+        if device == "auto":
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+
+        if seed is not None:
+            torch.manual_seed(seed)
+            np.random.seed(seed)
+
+        self.env = env
+        self.learning_rate = learning_rate
+        self.n_steps = n_steps
+        self.batch_size = batch_size
+        self.n_epochs = n_epochs
+        self.gamma = gamma
+        self.gae_lambda = gae_lambda
+        self.clip_range = clip_range
+        self.clip_range_vf = clip_range_vf
+        self.ent_coef = ent_coef
+        self.vf_coef = vf_coef
+        self.max_grad_norm = max_grad_norm
+
+        if policy is not None:
+            self.policy = policy.to(self.device)
+            self.obs_dim = policy.obs_dim
+        else:
+            if env is not None:
+                self.obs_dim = env.observation_space.shape[0]
+            elif obs_dim is not None:
+                self.obs_dim = obs_dim
+            else:
+                self.obs_dim = 14
+            self.policy = HybridActorCritic(obs_dim=self.obs_dim).to(self.device)
+
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=self.learning_rate, eps=1e-5)
+        self.buffer = RolloutBuffer(buffer_size=self.n_steps, obs_dim=self.obs_dim, device=self.device)
+
+    def train_epoch(self) -> Dict[str, float]:
+        """버퍼에 저장된 트랜지션으로 PPO 최적화 수행"""
+        self.policy.train()
+        total_pg_loss, total_vf_loss, total_ent_loss, total_loss = 0.0, 0.0, 0.0, 0.0
+        n_updates = 0
+
+        # Advantage 정규화
+        adv = self.buffer.advantages[:self.buffer.ptr]
+        adv_mean, adv_std = adv.mean(), adv.std() + 1e-8
+        self.buffer.advantages[:self.buffer.ptr] = (adv - adv_mean) / adv_std
+
+        for _ in range(self.n_epochs):
+            for obs_b, act_d_b, act_c_b, old_log_p_b, old_val_b, adv_b, ret_b in self.buffer.get_batches(self.batch_size):
+                log_prob, entropy, values = self.policy.evaluate_actions(
+                    obs_b, (act_d_b, act_c_b)
+                )
+
+                # Policy Loss (Clipped Surrogate)
+                ratio = torch.exp(log_prob - old_log_p_b)
+                surr1 = ratio * adv_b
+                surr2 = torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * adv_b
+                policy_loss = -torch.min(surr1, surr2).mean()
+
+                # Value Loss
+                if self.clip_range_vf is not None:
+                    # Clipped value loss
+                    val_clipped = old_val_b + torch.clamp(
+                        values - old_val_b, -self.clip_range_vf, self.clip_range_vf
+                    )
+                    v_loss1 = (values - ret_b) ** 2
+                    v_loss2 = (val_clipped - ret_b) ** 2
+                    value_loss = 0.5 * torch.max(v_loss1, v_loss2).mean()
+                else:
+                    value_loss = 0.5 * F.mse_loss(values, ret_b)
+
+                # Entropy Loss
+                entropy_loss = -self.ent_coef * entropy.mean()
+
+                loss = policy_loss + (self.vf_coef * value_loss) + entropy_loss
+
+                self.optimizer.zero_grad()
+                loss.backward()
+                nn.utils.clip_grad_norm_(self.policy.parameters(), max_norm=self.max_grad_norm)
+                self.optimizer.step()
+
+                total_pg_loss += policy_loss.item()
+                total_vf_loss += value_loss.item()
+                total_ent_loss += entropy.mean().item()
+                total_loss += loss.item()
+                n_updates += 1
+
+        return {
+            "policy_loss": total_pg_loss / max(1, n_updates),
+            "value_loss": total_vf_loss / max(1, n_updates),
+            "entropy": total_ent_loss / max(1, n_updates),
+            "total_loss": total_loss / max(1, n_updates),
+        }
+
+    def learn(
+        self,
+        total_timesteps: int,
+        env: Optional[gym.Env] = None,
+        callback: Optional[Callable] = None,
+        log_interval: int = 10,
+    ) -> "HybridPPO":
+        """PPO 학습 루프 실행"""
+        target_env = env or self.env
+        if target_env is None:
+            raise ValueError("학습을 수행할 환경(env)이 제공되지 않았습니다.")
+
+        obs, _ = target_env.reset()
+        timesteps = 0
+        episode_reward = 0.0
+        episodes_completed = 0
+
+        while timesteps < total_timesteps:
+            self.buffer.reset()
+            for _ in range(self.n_steps):
+                action, log_prob, value = self.policy.sample_action(obs, deterministic=False)
+                next_obs, reward, terminated, truncated, info = target_env.step(action)
+                done = terminated or truncated
+
+                self.buffer.add(
+                    obs=obs,
+                    action=action,
+                    reward=reward,
+                    value=value.item() if isinstance(value, torch.Tensor) else float(value),
+                    log_prob=log_prob.item() if isinstance(log_prob, torch.Tensor) else float(log_prob),
+                    done=done,
+                )
+
+                obs = next_obs
+                episode_reward += reward
+                timesteps += 1
+
+                if done:
+                    obs, _ = target_env.reset()
+                    episodes_completed += 1
+                    episode_reward = 0.0
+
+                if timesteps >= total_timesteps:
+                    break
+
+            # Rollout 종료 시 마지막 상태 가치 추정 및 GAE 계산
+            with torch.no_grad():
+                last_value = self.policy.get_value(obs).item() if not done else 0.0
+            self.buffer.compute_returns_and_advantages(
+                last_value=last_value,
+                last_done=done,
+                gamma=self.gamma,
+                gae_lambda=self.gae_lambda,
+            )
+
+            # PPO 에폭 업데이트
+            metrics = self.train_epoch()
+
+            if callback is not None:
+                callback(locals(), globals())
+
+        return self
+
+    def predict(
+        self,
+        obs: Union[np.ndarray, torch.Tensor],
+        deterministic: bool = True,
+    ) -> Tuple[Tuple[int, float], None]:
+        """추론용 액션 예측 메서드 (SB3 호환 (action, state) 반환)"""
+        self.policy.eval()
+        with torch.no_grad():
+            action, _, _ = self.policy.sample_action(obs, deterministic=deterministic)
+        return action, None
+
+    def evaluate(
+        self,
+        env: Optional[gym.Env] = None,
+        n_episodes: int = 5,
+        deterministic: bool = True,
+    ) -> Dict[str, float]:
+        """평가 에피소드 실행 및 성과 지표 산출"""
+        target_env = env or self.env
+        if target_env is None:
+            raise ValueError("평가할 환경이 지정되지 않았습니다.")
+
+        total_rewards: List[float] = []
+        final_equities: List[float] = []
+
+        for _ in range(n_episodes):
+            obs, info = target_env.reset()
+            ep_ret = 0.0
+            done = False
+            while not done:
+                action, _ = self.predict(obs, deterministic=deterministic)
+                obs, reward, terminated, truncated, info = target_env.step(action)
+                ep_ret += reward
+                done = terminated or truncated
+            total_rewards.append(ep_ret)
+            final_equities.append(info.get("total_equity", 10_000_000.0))
+
+        return {
+            "mean_reward": float(np.mean(total_rewards)),
+            "std_reward": float(np.std(total_rewards)),
+            "mean_final_equity": float(np.mean(final_equities)),
+        }
+
+    def save(self, filepath: str) -> None:
+        """모델 체크포인트 저장"""
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+        torch.save(
+            {
+                "policy_state_dict": self.policy.state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+                "obs_dim": self.obs_dim,
+                "learning_rate": self.learning_rate,
+                "distribution_type": self.policy.distribution_type,
+            },
+            filepath,
+        )
+
+    def load(self, filepath: str) -> "HybridPPO":
+        """모델 체크포인트 로드"""
+        checkpoint = torch.load(filepath, map_location=self.device)
+        self.policy.load_state_dict(checkpoint["policy_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        return self
+
+
+class SB3CustomFeaturesExtractor(BaseFeaturesExtractor):
+    """
+    Stable-Baselines3와 완벽히 호환되는 커스텀 특징 추출기.
+    - 내부적으로 TabularMLPFeatureExtractor 또는 DualStreamSLFeatureExtractor를 구동.
+    """
+
+    def __init__(
+        self,
+        observation_space: gym.Space,
+        features_dim: int = 64,
+        backbone: Optional[nn.Module] = None,
+    ):
+        super().__init__(observation_space, features_dim)
+        obs_dim = observation_space.shape[0]
+
+        if backbone is not None:
+            self.backbone = backbone
+            self._features_dim = getattr(backbone, "output_dim", features_dim)
+        else:
+            self.backbone = TabularMLPFeatureExtractor(
+                input_dim=obs_dim,
+                hidden_dims=[128, 64],
+                output_dim=features_dim,
+                dropout=0.0,
+            )
+            self._features_dim = features_dim
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        return self.backbone(observations)
+
+    def load_pretrained_weights(self, filepath_or_pretrainer: Union[str, SLPretrainer]) -> None:
+        """사전학습 SL 가중치 로드"""
+        if isinstance(filepath_or_pretrainer, str):
+            ckpt = torch.load(filepath_or_pretrainer, map_location="cpu")
+            state_dict = ckpt.get("state_dict", ckpt)
+            backbone_dict = {
+                k.replace("backbone.", ""): v
+                for k, v in state_dict.items()
+                if k.startswith("backbone.")
+            }
+            if backbone_dict:
+                self.backbone.load_state_dict(backbone_dict, strict=False)
+            else:
+                self.backbone.load_state_dict(state_dict, strict=False)
+        elif isinstance(filepath_or_pretrainer, SLPretrainer):
+            self.backbone.load_state_dict(
+                filepath_or_pretrainer.get_backbone().state_dict(), strict=False
+            )
+
+
+class SB3HybridPolicyAdapter:
+    """
+    Stable-Baselines3 (PPO)와 Gymnasium HybridTradingEnv 간의 완벽한 상호운용 브릿지.
+    """
+
+    @staticmethod
+    def wrap_env(env: gym.Env) -> gym.Env:
+        """환경을 SB3 연속형 액션 공간 어댑터로 감쌉니다."""
+        if isinstance(env, ContinuousToHybridActionWrapper):
+            return env
+        return ContinuousToHybridActionWrapper(env)
+
+    @staticmethod
+    def create_sb3_ppo(
+        env: gym.Env,
+        features_extractor_class: type = SB3CustomFeaturesExtractor,
+        features_dim: int = 64,
+        learning_rate: float = 3e-4,
+        n_steps: int = 128,
+        batch_size: int = 32,
+        gamma: float = 0.99,
+        seed: int = 42,
+        **kwargs,
+    ) -> PPO:
+        """
+        SB3 PPO 에이전트 생성.
+        """
+        wrapped_env = SB3HybridPolicyAdapter.wrap_env(env)
+        policy_kwargs = kwargs.pop("policy_kwargs", {})
+        policy_kwargs["features_extractor_class"] = features_extractor_class
+        policy_kwargs["features_extractor_kwargs"] = {"features_dim": features_dim}
+
+        model = PPO(
+            policy="MlpPolicy",
+            env=wrapped_env,
+            learning_rate=learning_rate,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            gamma=gamma,
+            seed=seed,
+            policy_kwargs=policy_kwargs,
+            verbose=0,
+            **kwargs,
+        )
+        return model
+
+    @staticmethod
+    def train_sb3_agent(
+        model: PPO,
+        total_timesteps: int = 1000,
+        progress_bar: bool = False,
+    ) -> PPO:
+        """SB3 에이전트 학습 실행"""
+        model.learn(total_timesteps=total_timesteps, progress_bar=progress_bar)
+        return model
+
+    @staticmethod
+    def predict_hybrid(
+        model: PPO,
+        obs: np.ndarray,
+        deterministic: bool = True,
+    ) -> Tuple[Union[Tuple[int, float], List[Tuple[int, float]]], np.ndarray]:
+        """
+        SB3 모델의 2D Continuous 예측을 하이브리드 (action_type: int, weight: float)로 디코딩합니다.
+        1D 단일 관측값 및 2D 배치 관측값을 모두 지원합니다.
+        """
+        raw_action, _ = model.predict(obs, deterministic=deterministic)
+
+        # 2D Batch observation handling (B, 2)
+        if raw_action.ndim == 2:
+            signals = raw_action[:, 0]
+            weights = np.clip(raw_action[:, 1], 0.0, 1.0)
+            act_types = np.where(signals > 0.333, 1, np.where(signals < -0.333, 2, 0))
+            hybrid_actions = [
+                (int(at), float(w)) for at, w in zip(act_types, weights)
+            ]
+            return hybrid_actions, raw_action
+
+        # 1D Single observation handling (2,)
+        signal = float(raw_action[0])
+        weight = float(np.clip(raw_action[1], 0.0, 1.0))
+
+        if signal > 0.333:
+            act_type = 1  # BUY
+        elif signal < -0.333:
+            act_type = 2  # SELL
+        else:
+            act_type = 0  # HOLD
+
+        return (act_type, weight), raw_action

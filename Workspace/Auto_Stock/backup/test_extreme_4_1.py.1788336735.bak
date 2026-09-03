@@ -1,0 +1,26 @@
+import optuna
+from modules.hpo.optuna_pipeline import create_hpo_study, objective
+
+study = create_hpo_study(seed=42)
+study.enqueue_trial({
+    "sl_lr": 1e-7,
+    "sl_hidden_dim": 4,
+    "sl_batch_size": 1,
+    "rl_lr": 1e-7,
+    "rl_gamma": 0.90,
+    "rl_clip_range": 0.1,
+    "rl_ent_coef": 1e-4,
+    "rl_hidden_dim": 4,
+})
+
+def _obj(trial):
+    return objective(
+        trial=trial,
+        output_csv="etc/hpo_results/test_extreme_4_1.csv",
+        n_timesteps=30,
+        fast_mode=True,
+    )
+
+study.optimize(_obj, n_trials=1)
+trial = study.trials[0]
+print(f"Trial state: {trial.state}, value: {trial.value}, params: {trial.params}")

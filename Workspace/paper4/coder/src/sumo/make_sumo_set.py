@@ -28,10 +28,48 @@ AV_SPEED: float = 40.0           # 평균 속도 (km/h). 0이면 에피소드마
 DENSITY: float = 20.0            # 평균 밀도 (/1km-lane). 0이면 에피소드마다 임의로 설정
 P_GEN: float = 0.005
 NUM_BLOCKS: int = 6
-MAX_STEPS: float = 3600.0
+# Horizon written into the `end=` attribute of every <flow>. rou.xml `end=` is in
+# SECONDS, and the caller used to assign a STEP COUNT to it (hot_swap_trainer set
+# `ss.MAX_STEPS = max_steps + warmup + 100`), which at a 0.1 s step made the flows
+# 10x longer than intended. Harmless in that direction, but the sign flips the
+# moment the step length changes, and vehicle generation would then stop partway
+# through an episode. The name now says the unit.
+FLOW_END_S: float = 3600.0
+#: Deprecated alias kept for external scripts; `FLOW_END_S` is the live value.
+MAX_STEPS: float = FLOW_END_S
 CORNER_SPEED_LIMIT: float = 50.0 / 3.6
 STEP_LENGTH: float = 0.1         # SUMO simulation resolution (s). Must be <= the
                                  # minimum action update interval Delta = 0.1 s.
+
+# ----------------------------------------------------------------------------
+# Explicit vehicle type.
+#
+# Without a <vType> the flows inherit SUMO's DEFAULT_VEHTYPE, whose speedFactor
+# is drawn from `normc(1, 0.1, 0.2, 2)` -- a truncated normal whose UPPER bound
+# is 2.0. Vehicles therefore exceed the lane speed limit by an amount with no
+# deterministic ceiling, and `rl_interface.get_sumo_max_edge_speed()` (which
+# reads the *lane* limit out of net.xml) is not the observable maximum. Measured
+# on this scenario: fastest observed vehicle 14.768 m/s against a 13.32 m/s lane
+# limit (+11 %), with 8.62 % of all observations clipped to exactly 1.0 in the
+# normalised speed feature -- i.e. the fastest vehicles, whose constant-velocity
+# extrapolation decays quickest and which this paper most needs to tell apart,
+# were indistinguishable from one another.
+#
+# Truncating at +/- 2 sigma keeps the same mean and spread (so the traffic stays
+# heterogeneous) while making the ceiling a declared, reproducible property of
+# the scenario file: max observable speed = 1.20 * lane limit.
+# `rl_interface.get_sumo_max_speed_factor()` reads this bound back.
+#
+# `maxSpeed` is deliberately NOT pinned here. The binding constraint is
+# lane_limit * speedFactor (15.98 m/s in this scenario); the SUMO passenger
+# default maxSpeed is 55.55 m/s and is nowhere near binding. Pinning it would
+# make it the binding constraint the moment anyone raises AV_SPEED, and the
+# observation normaliser would then silently disagree with the simulation.
+VTYPE_ID: str = "v2i"
+SPEED_FACTOR_MEAN: float = 1.00
+SPEED_FACTOR_DEV: float = 0.10
+SPEED_FACTOR_MIN: float = 0.80
+SPEED_FACTOR_MAX: float = 1.20
 
 # ============= Environment Variables ===============
 # 300 m is the defensible upper bound for an ITS-G5 / C-V2X 5.9 GHz RSU in an
@@ -49,11 +87,50 @@ DEL_SPEED: float = 0.2                             # delta speed variance
 # here. A former MAX_SPEED literal sat at this spot, was recomputed on every
 # make_sumo_files() call, and was never read by anything.
 step: float = GRID_SIZE / NUM_BLOCKS
-BASE_PATH: str = os.path.dirname(os.path.abspath(__file__))
+# Where the generated scenario files live.
+#
+# This used to be unconditionally the package directory, which made every process
+# on the machine share ONE `generated.net.xml` / `generated.rou.xml` /
+# `.sumo_gen_signature.json`. Generation itself is serialised by a file lock, but
+# that only prevents a torn write: if process A generates for density 25 and
+# process B then regenerates for density 20, A's `libsumo.start()` silently reads
+# B's network. No error, no warning, and the run reports metrics for a scenario
+# it never asked for. It was observed in practice on 2026-09-01 when two
+# measurement processes overlapped.
+#
+# That makes a parallel run -- nine models spread over four GPUs, which is the
+# whole point of having four -- unable to produce trustworthy numbers. Setting
+# PAPER4_SUMO_DIR gives a process its own scenario directory; leaving it unset
+# keeps the original single-process behaviour byte for byte.
+BASE_PATH: str = os.environ.get("PAPER4_SUMO_DIR") or os.path.dirname(os.path.abspath(__file__))
+if not os.path.isdir(BASE_PATH):
+    os.makedirs(BASE_PATH, exist_ok=True)
 
 T_to_INIT: float = 0.0
 L_tot: float = 0.0
 L_path_avg: float = 0.0
+
+# ----------------------------------------------------------------------------
+# Network generation randomness.
+#
+# The per-edge speed limits used to be drawn from the `random` module's GLOBAL
+# stream. That made every downstream consumer of that stream depend on whether
+# the cached SUMO files happened to be reusable: regenerating consumed exactly
+# 200 `random.uniform` draws, a cache hit consumed none, so the environment's
+# Bernoulli uplink-success draws (`random.random()`) started from a different
+# stream position on episode 1 (signature miss -> regenerate) than on episode 2
+# (cache hit). Same seed, different channel realisations, i.e. the runs were not
+# reproducible at all. A private generator is the same remedy
+# `Communications._shadow_rng` already applies for shadowing.
+GENERATION_SEED: int = 42
+_gen_rng: random.Random = random.Random(GENERATION_SEED)
+
+
+def seed_generation(seed: int) -> None:
+    """Reseed the private network-generation RNG. Call before make_sumo_files()."""
+    global GENERATION_SEED
+    GENERATION_SEED = int(seed)
+    _gen_rng.seed(int(seed))
 
 
 def _atomic_write_text(file_path: str, content: str) -> None:
@@ -153,6 +230,13 @@ _SIGNATURE_EXACT_KEYS = (
     "AV_SPEED",
     "DEL_SPEED",
     "STEP_LENGTH",
+    # The speedFactor bounds are written into generated.rou.xml and are read back
+    # by rl_interface.get_sumo_max_speed_factor() as the observation normaliser,
+    # so a cached file set generated under different bounds is NOT reusable.
+    "SPEED_FACTOR_MEAN",
+    "SPEED_FACTOR_DEV",
+    "SPEED_FACTOR_MIN",
+    "SPEED_FACTOR_MAX",
 )
 
 
@@ -165,7 +249,7 @@ def current_generation_signature(num_blocks: Optional[int] = None) -> Dict[str, 
         nb = 6
     sig: Dict[str, float] = {k: float(globals()[k]) for k in _SIGNATURE_EXACT_KEYS}
     sig["NUM_BLOCKS"] = float(nb)
-    sig["MAX_STEPS"] = float(MAX_STEPS)
+    sig["FLOW_END_S"] = float(FLOW_END_S)
     return sig
 
 
@@ -189,7 +273,7 @@ def generation_signature_matches(
 ) -> bool:
     """True when the cached SUMO files were generated with the current parameters.
 
-    All geometry/demand knobs must match exactly. `MAX_STEPS` only sets the flow
+    All geometry/demand knobs must match exactly. `FLOW_END_S` only sets the flow
     `end=` horizon, so a cached file whose horizon is at least as long as the one
     now requested is still usable; this avoids regenerating on every episode just
     because a caller shortened its step budget.
@@ -201,7 +285,7 @@ def generation_signature_matches(
     for key in _SIGNATURE_EXACT_KEYS + ("NUM_BLOCKS",):
         if key not in stored or abs(stored[key] - wanted[key]) > 1e-9:
             return False
-    if stored.get("MAX_STEPS", -1.0) + 1e-9 < wanted["MAX_STEPS"]:
+    if stored.get("FLOW_END_S", -1.0) + 1e-9 < wanted["FLOW_END_S"]:
         return False
     return True
 
@@ -329,11 +413,11 @@ def _make_sumo_files_impl(force_regenerate: bool = False, num_blocks: Optional[i
                 for dx, dy in [[0, 1], [1, 0], [0, -1], [-1, 0]]:
                     to_node = temp_N[(i + dx, j + dy)]
                     if SPEED == 0:
-                        speed1 = random.uniform(10.0 / 3.6, 120.0 / 3.6)
-                        speed2 = random.uniform(10.0 / 3.6, 120.0 / 3.6)
+                        speed1 = _gen_rng.uniform(10.0 / 3.6, 120.0 / 3.6)
+                        speed2 = _gen_rng.uniform(10.0 / 3.6, 120.0 / 3.6)
                     else:
-                        speed1 = random.uniform(SPEED * (1.0 - DEL_SPEED), SPEED * (1.0 + DEL_SPEED))
-                        speed2 = random.uniform(SPEED * (1.0 - DEL_SPEED), SPEED * (1.0 + DEL_SPEED))
+                        speed1 = _gen_rng.uniform(SPEED * (1.0 - DEL_SPEED), SPEED * (1.0 + DEL_SPEED))
+                        speed2 = _gen_rng.uniform(SPEED * (1.0 - DEL_SPEED), SPEED * (1.0 + DEL_SPEED))
                     ed1 = f'<edge id="E{edge_id}" from="{from_node}" to="{to_node}" numLanes="{NUM_LANES}" speed="{speed1}"/>'
                     ed2 = f'<edge id="-E{edge_id}" from="{to_node}" to="{from_node}" numLanes="{NUM_LANES}" speed="{speed2}"/>'
                     if (from_node, to_node) not in chk_edge:
@@ -430,6 +514,11 @@ def _make_sumo_files_impl(force_regenerate: bool = False, num_blocks: Optional[i
 
     # 5. Generate and atomically write generated.rou.xml (traffic flows)
     rou_content: List[str] = ["<routes>"]
+    rou_content.append(
+        f'  <vType id="{VTYPE_ID}" vClass="passenger" '
+        f'speedFactor="normc({SPEED_FACTOR_MEAN:.2f},{SPEED_FACTOR_DEV:.2f},'
+        f'{SPEED_FACTOR_MIN:.2f},{SPEED_FACTOR_MAX:.2f})"/>'
+    )
     CalcP_GEN(DENSITY)
     global P_GEN
     taz_len = len(taz_sinks)
@@ -437,11 +526,23 @@ def _make_sumo_files_impl(force_regenerate: bool = False, num_blocks: Optional[i
         for j in range(taz_len):
             if i == j:
                 continue
-            P_GEN = CalcP_GEN(DENSITY) if DENSITY > 0 else CalcP_GEN(random.randint(1, 20))
+            P_GEN = CalcP_GEN(DENSITY) if DENSITY > 0 else CalcP_GEN(_gen_rng.randint(1, 20))
             prob = P_GEN / (taz_len - 1) if (taz_len - 1) > 0 else 0.0
             rou_content.append(
-                f'  <flow id="F{i}_{j}" begin="0.00" departLane="random" '
-                f'fromTaz="taz_{i}" toTaz="taz_{j}" end="{MAX_STEPS}" probability="{prob}"/>'
+                # departSpeed="max" enters each vehicle at the fastest speed that is
+                # safe behind its leader, instead of SUMO's default of 0.
+                #
+                # Starting every vehicle at rest throttles the boundary: an entering
+                # vehicle occupies the insertion point until it accelerates away, so
+                # the edge admits far less than the demand asks for. Measured at
+                # requested density 50, 47 % of the demanded vehicles were never
+                # inserted, and the realised in-range count stopped tracking the
+                # request and then went NON-MONOTONIC -- request 30 gave 144.2
+                # vehicles, request 40 gave 132.0. A density axis that is not
+                # monotone in the requested density cannot be the x-axis of the
+                # results table.
+                f'  <flow id="F{i}_{j}" begin="0.00" departLane="random" departSpeed="max" '
+                f'type="{VTYPE_ID}" fromTaz="taz_{i}" toTaz="taz_{j}" end="{FLOW_END_S}" probability="{prob}"/>'
             )
     rou_content.append("</routes>\n")
     _atomic_write_text(os.path.join(BASE_PATH, "generated.rou.xml"), "\n".join(rou_content))

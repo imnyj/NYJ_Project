@@ -1,0 +1,139 @@
+#!/usr/bin/env bash
+# Supervised, unattended launcher for the 200k-step main training.
+#
+# WHY A SUPERVISOR. The run takes many hours across nine models, two reward arms
+# and several seeds. A workstation reboot, an OOM from someone else's job, or a
+# transient CUDA fault should cost the last episode, not the whole run. Every
+# model already checkpoints per episode and `run_all.py` resumes from the newest
+# one, so the recovery a supervisor needs to provide is simply: notice the death,
+# wait, start again without --no-resume, and stop if it is failing repeatedly
+# rather than spinning forever on a broken build.
+#
+# WHY NOT `--no-resume` ON RESTART. That flag exists to start clean, and a
+# supervisor that passed it would silently discard everything on the first crash.
+# It is used exactly once, by the caller, for the very first launch of a
+# (arm, seed) pair; see FRESH below.
+#
+# Usage:
+#   etc/run_main_training.sh <arm> <seed> [--fresh]
+#     arm  : accumulate | mean   (which reward-aggregation ablation arm)
+#     seed : training seed, e.g. 42
+#     --fresh : start this (arm, seed) from scratch, ignoring any checkpoints
+#
+# Detach it so an SSH drop cannot kill it:
+#   setsid nohup etc/run_main_training.sh accumulate 42 --fresh \
+#     > /dev/null 2>&1 < /dev/null &
+set -uo pipefail
+
+CODER_DIR="/home/imnyj/Workspace/paper4/coder"
+PY="/home/imnyj/venv/bin/python"
+cd "$CODER_DIR" || exit 1
+
+ARM="${1:-}"
+SEED="${2:-}"
+FRESH="${3:-}"
+if [[ "$ARM" != "accumulate" && "$ARM" != "mean" ]]; then
+    echo "usage: $0 <accumulate|mean> <seed> [--fresh]" >&2
+    exit 2
+fi
+if ! [[ "$SEED" =~ ^[0-9]+$ ]]; then
+    echo "usage: $0 <accumulate|mean> <seed> [--fresh]" >&2
+    exit 2
+fi
+
+RUN_ROOT="${CODER_DIR}/runs/${ARM}_seed${SEED}"
+mkdir -p "${RUN_ROOT}"/{ck,tb,lg,sup,sumo}
+SUP_LOG="${RUN_ROOT}/sup/supervisor.log"
+
+log() { echo "[$(date '+%F %T')] $*" | tee -a "$SUP_LOG"; }
+
+# The density schedule and the reward arm define the experiment; they are written
+# into the run directory so a run can always be traced back to its configuration
+# even if this script later changes.
+DENSITIES=(5 10 15 20 25 30 35 40 45 50)
+EPISODES=100
+STEPS_PER_EPISODE=2000
+
+cat > "${RUN_ROOT}/run_config.json" <<EOF
+{
+  "arm": "${ARM}",
+  "seed": ${SEED},
+  "episodes": ${EPISODES},
+  "steps_per_episode": ${STEPS_PER_EPISODE},
+  "total_steps": $((EPISODES * STEPS_PER_EPISODE)),
+  "densities": [$(IFS=,; echo "${DENSITIES[*]}")],
+  "started": "$(date -Iseconds)"
+}
+EOF
+
+# --- GPU selection ---------------------------------------------------------
+# Read the live state rather than assuming the box is ours. If nothing is free we
+# wait instead of fighting: someone else's job finishing is a normal event, and
+# failing outright would mean a human has to notice and restart.
+GPU_WAIT_S=600
+GPU_LIST=""
+for _ in $(seq 1 24); do   # up to 4 hours of waiting
+    GPU_LIST="$($PY etc/gpu_alloc.py --need 1 2>>"$SUP_LOG")"
+    if [[ -n "$GPU_LIST" ]]; then break; fi
+    log "no usable GPU; retrying in ${GPU_WAIT_S}s"
+    sleep "$GPU_WAIT_S"
+done
+if [[ -z "$GPU_LIST" ]]; then
+    log "FATAL: no usable GPU after waiting; giving up"
+    exit 1
+fi
+log "arm=${ARM} seed=${SEED} using GPU(s) ${GPU_LIST}"
+
+# --- Supervised run --------------------------------------------------------
+MAX_ATTEMPTS=20
+BACKOFF_S=60
+attempt=0
+rc=1
+
+while (( attempt < MAX_ATTEMPTS )); do
+    attempt=$((attempt + 1))
+
+    RESUME_FLAG=""
+    if [[ "$FRESH" == "--fresh" && $attempt -eq 1 ]]; then
+        RESUME_FLAG="--no-resume"
+        log "attempt ${attempt}: starting FRESH (checkpoints in ${RUN_ROOT}/ck will be ignored)"
+    else
+        log "attempt ${attempt}: resuming from newest checkpoint if any"
+    fi
+
+    # PAPER4_SUMO_DIR gives this run its own generated.net.xml. Without it every
+    # concurrent run shares one scenario directory and silently reads whichever
+    # network was written last -- no error, wrong numbers.
+    CUDA_VISIBLE_DEVICES="$GPU_LIST" PAPER4_SUMO_DIR="${RUN_ROOT}/sumo" $PY run_all.py \
+        --episodes "$EPISODES" \
+        --steps-per-episode "$STEPS_PER_EPISODE" \
+        --seed "$SEED" \
+        --density "${DENSITIES[@]}" \
+        --error-mode "$ARM" \
+        --checkpoint-dir "${RUN_ROOT}/ck" \
+        --tensorboard-dir "${RUN_ROOT}/tb" \
+        --log-dir "${RUN_ROOT}/lg" \
+        $RESUME_FLAG \
+        >> "${RUN_ROOT}/sup/train.log" 2>&1
+    rc=$?
+
+    if [[ $rc -eq 0 ]]; then
+        log "run finished successfully on attempt ${attempt}"
+        break
+    fi
+
+    log "attempt ${attempt} exited rc=${rc}; backing off ${BACKOFF_S}s then resuming"
+    sleep "$BACKOFF_S"
+    # Grow the wait so a persistently broken build does not hammer the box, but
+    # cap it so an hours-long transient (someone else's big job) still recovers.
+    BACKOFF_S=$(( BACKOFF_S * 2 ))
+    (( BACKOFF_S > 1800 )) && BACKOFF_S=1800
+done
+
+echo "{\"arm\":\"${ARM}\",\"seed\":${SEED},\"exit_code\":${rc},\"attempts\":${attempt},\"finished\":\"$(date -Iseconds)\"}" \
+    > "${RUN_ROOT}/run_result.json"
+
+if [[ $rc -ne 0 ]]; then
+    log "FATAL: gave up after ${attempt} attempts (last rc=${rc})"
+fi
+exit "$rc"

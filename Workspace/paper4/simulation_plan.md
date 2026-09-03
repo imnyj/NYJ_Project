@@ -19,6 +19,11 @@
 >
 > 아래 4-그룹 배정과 실행 절차는 유효하나, **상태 차원이 18 → 17로 바뀌었고 warmup 기본값이
 > 35 → 350으로 올라갔다.** 5-4절의 사전 점검 수치는 수정 전 것이라 재측정이 필요하다.
+>
+> **[2026-09-01] 5-4절 표는 폐기 대상이다.** 그 이후 보상 자체가 두 번 바뀌었다. 혼잡 항이
+> 실현 최대치 `CBR_REF = 0.25`로 정규화되었고, 오차 집계가 두 팔로 갈렸다. 게다가 그 표는
+> 구간 종결 누락(에피소드 종료 시 12.3% 유실)과 장부 한 스텝 지연이 남아 있던 코드로 측정된
+> 것이라 어떤 수치도 현행과 비교할 수 없다. 기동 전 재측정이 필요하다.
 
 > rev.1(agy 작성)의 결함 4건을 수정한 판이다. 변경 이력은 문서 하단 참조.
 > 원본은 `backup/simulation_plan.md.agy.*`에 보존.
@@ -78,6 +83,12 @@ rev.1은 Basic 3종을 한 GPU에 몰아 그룹 A가 190분 병목이 되고 나
 
 **완료 예상 2.42 h** (rev.1 대비 3.16 h → 2.42 h, 유휴 225분 → 46분).
 
+> **[2026-09-01 개정]** 위 2.42 h는 **팔 하나, 시드 하나**의 값이고 밀도 25 고정 측정치다. 실제
+> 예산은 (팔 2) x (시드 수)를 곱해야 한다. 시드 3개면 약 14.5 h다. 밀도가 5까지 내려가는 구간은
+> 차량이 적어 더 빠르고 50 구간은 더 느리므로 평균은 이 값 근처로 보되, 정확한 값은 첫 시드가
+> 끝난 뒤 실측으로 갱신할 것. `--updates-per-env-step`으로 갱신 예산을 맞추면 빠른 모델이
+> 대기하므로 시간이 더 늘어난다.
+
 느린 두 모델(I-HAMAPPO 79분, SAC 75분)을 서로 다른 GPU로 분리하고, 빠른 세 모델을 그룹 D에 모아 균형을 맞췄다. 담당 구분은 rev.1과 같이 A·B가 Antigravity, C·D가 Claude다.
 
 ### GPU 하드웨어 격리에 대한 주의
@@ -127,33 +138,60 @@ print('SUMO cache warmed:', ss.generation_signature_matches())
 
 `--no-resume`가 **모든 명령에 필수**다. 빠뜨리면 체크포인트에서 재개를 시도한다.
 
+> **[2026-09-01 개정]** 아래 명령은 오늘 확정된 세 가지를 반영한다. 첫째, 훈련 밀도가 25 고정에서
+> 열 개 격자로 바뀌어 `--density`가 필수다. 100 에피소드이므로 각 밀도가 정확히 열 번씩 돈다.
+> 둘째, 보상 집계 방식이 두 팔로 갈려 `--error-mode`로 어느 팔인지 지정해야 한다. 두 팔의 보상은
+> 척도가 달라 서로 비교할 수 없으므로 산출물 디렉터리도 팔별로 분리한다. 셋째, 체크포인트·텐서보드·
+> 진행 로그 경로를 명시적으로 준다. 세 경로 모두 기본값이 절대경로 하드코딩이라, 지정하지 않으면
+> 두 팔과 여러 시드의 산출물이 같은 자리에 겹쳐 쓰인다.
+>
+> 시드는 `SEED`로 바꿔가며 반복한다. 평가 시드 5001~5005와 HPO 시드 1001~1003은 훈련이 쓰는
+> 42..141과 겹치지 않게 분리해 두었으므로 훈련 시드를 그 범위로 넘기지 말 것.
+
 ```bash
 cd /home/imnyj/Workspace/paper4/coder
-mkdir -p logs
+
+# 이 실행이 어느 ablation 팔의 어느 시드인지. 두 팔 x 시드마다 따로 돈다.
+ARM=accumulate      # 또는 mean
+SEED=42
+RUN="runs/${ARM}_seed${SEED}"
+mkdir -p "$RUN"
 
 # 그룹 A (GPU 0, CPU 0-4)
 setsid nohup taskset -c 0-4 env CUDA_VISIBLE_DEVICES=0 \
   /home/imnyj/venv/bin/python run_all.py \
-  --models I-HAMAPPO PPO --seed 42 --no-resume \
-  > logs/training_groupA.log 2>&1 < /dev/null &
+  --models I-HAMAPPO PPO --seed "$SEED" --no-resume \
+  --density 5 10 15 20 25 30 35 40 45 50 \
+  --error-mode "$ARM" \
+  --checkpoint-dir "$RUN/ck" --tensorboard-dir "$RUN/tb" --log-dir "$RUN/lg" \
+  > "$RUN/training_groupA.log" 2>&1 < /dev/null &
 
 # 그룹 B (GPU 1, CPU 5-9)
 setsid nohup taskset -c 5-9 env CUDA_VISIBLE_DEVICES=1 \
   /home/imnyj/venv/bin/python run_all.py \
-  --models SAC CARLTON --seed 42 --no-resume \
-  > logs/training_groupB.log 2>&1 < /dev/null &
+  --models SAC CARLTON --seed "$SEED" --no-resume \
+  --density 5 10 15 20 25 30 35 40 45 50 \
+  --error-mode "$ARM" \
+  --checkpoint-dir "$RUN/ck" --tensorboard-dir "$RUN/tb" --log-dir "$RUN/lg" \
+  > "$RUN/training_groupB.log" 2>&1 < /dev/null &
 
 # 그룹 C (GPU 2, CPU 10-14)
 setsid nohup taskset -c 10-14 env CUDA_VISIBLE_DEVICES=2 \
   /home/imnyj/venv/bin/python run_all.py \
-  --models RES-MAPDDPG TD3 --seed 42 --no-resume \
-  > logs/training_groupC.log 2>&1 < /dev/null &
+  --models RES-MAPDDPG TD3 --seed "$SEED" --no-resume \
+  --density 5 10 15 20 25 30 35 40 45 50 \
+  --error-mode "$ARM" \
+  --checkpoint-dir "$RUN/ck" --tensorboard-dir "$RUN/tb" --log-dir "$RUN/lg" \
+  > "$RUN/training_groupC.log" 2>&1 < /dev/null &
 
 # 그룹 D (GPU 3, CPU 15-19)
 setsid nohup taskset -c 15-19 env CUDA_VISIBLE_DEVICES=3 \
   /home/imnyj/venv/bin/python run_all.py \
-  --models SPAM-D3QN MADDPG-MT MA2HDQN --seed 42 --no-resume \
-  > logs/training_groupD.log 2>&1 < /dev/null &
+  --models SPAM-D3QN MADDPG-MT MA2HDQN --seed "$SEED" --no-resume \
+  --density 5 10 15 20 25 30 35 40 45 50 \
+  --error-mode "$ARM" \
+  --checkpoint-dir "$RUN/ck" --tensorboard-dir "$RUN/tb" --log-dir "$RUN/lg" \
+  > "$RUN/training_groupD.log" 2>&1 < /dev/null &
 ```
 
 ### 5-3. 기동 직후 5분 내 확인 (중요)
@@ -237,7 +275,11 @@ ls -la checkpoints/ | tail                             # 에피소드 10마다 �
 ## 7. 훈련 후 다음 단계
 
 1. **Optuna HPO** — `src/hpo.py`. 탐색 공간에 보상 가중치 w1~w4가 포함되어 있다.
-2. **벤치마크 평가** — `src/evaluate.py`. 5개 밀도(15~55 veh/km) × 5개 시드.
+2. **벤치마크 평가** — `src/evaluate.py`. 10개 밀도(5~50 veh/km) × 5개 시드(5001~5005).
+   평가 격자를 훈련 격자와 같게 맞춰 모든 셀이 훈련 지지집합 안에 들어온다. 이전 계획의 55는
+   훈련 범위 밖 외삽이었고 희소 구간 5와 10은 아예 평가되지 않았다. 실행 수가 25에서 50으로
+   늘었으므로 소요도 그만큼 늘어난다. `--checkpoint-dir`로 평가할 팔의 체크포인트를 지정해야
+   하며, 지정하지 않으면 체크포인트가 없다고 중단된다. 평가는 학습된 가중치를 반드시 로드한다.
    > [!WARNING]
    > 밀도 스윕은 에피소드마다 SUMO를 다른 밀도로 재생성한다. 훈련과 **동시에 돌리면 안 된다.** 락이 손상은 막지만 서로의 네트워크를 계속 재생성해 양쪽이 느려진다.
 3. **논문 결과 반영** — `writer/main.tex`의 결과 섹션은 현재 비어 있고, 참고문헌은 폐기된 옛 목록이라 `librarian/baselines_v2.md`로 교체해야 한다.

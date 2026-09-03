@@ -1,0 +1,31 @@
+# config/settings.yaml
+# Auto Stock ML/RL Trader — System Configuration
+
+app:
+  name: "AutoStockTrader"
+  version: "1.0.0"
+  log_level: "INFO"
+
+kiwoom:
+  # API Credentials (Template interpolation from environment variables)
+  app_key: "${KIWOOM_APP_KEY:oRX-1VLnwZncdLrUCh_VoU6jcadn52Z8T22OUGKCcos}"
+  app_secret: "${KIWOOM_APP_SECRET:RA0xar6k2yMNlBejPs7raLLSK7VooKPe4PgvRS038e8}"
+  account_no: "${KIWOOM_ACCOUNT_NO:5536-3115}"
+  account_product_code: "${KIWOOM_ACCOUNT_PRODUCT_CODE:01}"
+
+  # Server environment (true: Paper Trading / Mock Server, false: Real / Live Server)
+  use_mock_server: false
+
+  # Base URLs
+  live_base_url: "https://api.kiwoom.com"
+  mock_base_url: "https://mockapi.kiwoom.com"
+
+  # Network & Retry settings
+  timeout_seconds: 10.0
+  max_retries: 3
+  retry_backoff_factor: 0.5
+
+trading:
+  default_order_type: "MARKET"
+  default_quantity: 1
+  max_order_amount_krw: 10000000

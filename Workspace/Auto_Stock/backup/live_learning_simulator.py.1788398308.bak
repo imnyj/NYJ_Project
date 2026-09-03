@@ -1,0 +1,192 @@
+"""
+modules/engine/live_learning_simulator.py
+=========================================
+실거래 정보 기반 학습 전용 시뮬레이터.
+전역(Global) 가상 계좌를 유지하며, 매수/매도 요청 시 실제 Kiwoom REST API를 호출하여
+실시간 주가를 가져온 뒤 가상 체결 엔진을 통해 시뮬레이션 체결을 수행합니다.
+머신러닝/강화학습 봇이 실거래 데이터를 기반으로 Paper Trading(모의 훈련)을 할 때 사용됩니다.
+Gymnasium 1.2.0 표준 규격 5-tuple (obs, reward, terminated, truncated, info) 및 Log Equity Return을 지원합니다.
+"""
+
+import logging
+import threading
+from decimal import Decimal
+from typing import Any, Dict, Optional, Tuple, Union
+
+import numpy as np
+
+from core.kiwoom_api import KiwoomClient
+from modules.engine.mock_environment import (
+    ActionType,
+    FeeConfig,
+    MockExecutionEngine,
+    OrderSide,
+    OrderType,
+    VirtualAccount,
+    to_decimal,
+)
+
+logger = logging.getLogger("AutoStock.LiveSimulator")
+
+
+class LiveLearningSimulator:
+    """실시간 주가 연동형 가상 체결 시뮬레이터"""
+
+    def __init__(self, initial_cash: Union[int, Decimal] = 10_000_000, fee_config: Optional[FeeConfig] = None):
+        self.initial_cash = to_decimal(initial_cash)
+        self.account = VirtualAccount(initial_cash=self.initial_cash)
+        self.fee_config = fee_config or FeeConfig()
+        self.engine = MockExecutionEngine(account=self.account, fee_config=self.fee_config)
+
+        # Kiwoom API 클라이언트 (내부적으로 토큰 갱신 등 자동 처리)
+        self.api_client = KiwoomClient()
+        self._prev_equity = self.initial_cash
+
+    def reset(self, initial_cash: Optional[Union[int, Decimal]] = None) -> Dict[str, Any]:
+        """계좌를 초기화하고 초기 상태를 반환합니다."""
+        if initial_cash is not None:
+            self.initial_cash = to_decimal(initial_cash)
+        self.account.reset(initial_cash=self.initial_cash)
+        self.engine = MockExecutionEngine(account=self.account, fee_config=self.fee_config)
+        self._prev_equity = self.initial_cash
+        logger.info(f"시뮬레이터가 초기화되었습니다. (초기 자본금: {self.initial_cash:,.0f}원)")
+        return self.get_state(symbol="005930")  # 기본 종목으로 초기 상태 반환 (실제 시세는 아직 미반영)
+
+    def fetch_live_price(self, symbol: str) -> Decimal:
+        """Kiwoom API를 통해 종목의 현재가를 조회합니다."""
+        try:
+            quote = self.api_client.get_current_price(symbol)
+            return quote.current_price
+        except Exception as e:
+            logger.error(f"실시간 주가 조회 실패 ({symbol}): {e}")
+            # 통신 실패 시 캐싱된 마지막 시장가를 반환하거나, 없으면 에러 발생
+            if symbol in self.engine._last_market_prices:
+                return self.engine._last_market_prices[symbol]
+            raise
+
+    def step(
+        self,
+        symbol: str,
+        action: Union[int, ActionType],
+        quantity: int = 1,
+    ) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]:
+        """
+        Gymnasium 1.2.0 표준 규격 강화학습 Step 함수.
+        실시간 시세를 조회한 뒤, 주어진 액션(매수/매도/관망)을 가상 계좌에 체결시킵니다.
+
+        Args:
+            symbol (str): 거래할 종목코드 (예: "005930")
+            action (ActionType/int): 0 (HOLD), 1 (BUY), 2 (SELL)
+            quantity (int): 거래 수량
+
+        Returns:
+            state (dict): 체결 후 계좌 및 시세 상태 (obs)
+            reward (float): 이번 스텝에서의 Log Equity Return ln(E_t / E_{t-1})
+            terminated (bool): 파산 조건 도달 여부 (총 자산 < 초기 자본의 5%)
+            truncated (bool): 에피소드 타임아웃/잘림 여부 (기본 False)
+            info (dict): 체결 상세 내역 및 감사 정보
+        """
+        # 1. 실시간 주가 조회
+        current_price = self.fetch_live_price(symbol)
+
+        trade_record = None
+        act_val = int(action)
+
+        # 2. 가상 주문 체결
+        if act_val == int(ActionType.BUY):
+            # 매수 가능 수량 체크
+            estimated_cost = current_price * quantity * Decimal("1.00015")  # 수수료 대략 포함
+            if self.account.cash_balance >= estimated_cost:
+                trade_record = self.engine.execute_order(
+                    symbol=symbol,
+                    side=OrderSide.BUY,
+                    quantity=quantity,
+                    current_price=current_price,
+                )
+            else:
+                logger.warning(
+                    f"매수 실패: 잔고 부족 (필요: {estimated_cost:,.0f}, 잔고: {self.account.cash_balance:,.0f})"
+                )
+
+        elif act_val == int(ActionType.SELL):
+            pos = self.account.get_position(symbol)
+            if pos.quantity >= quantity:
+                trade_record = self.engine.execute_order(
+                    symbol=symbol,
+                    side=OrderSide.SELL,
+                    quantity=quantity,
+                    current_price=current_price,
+                )
+            else:
+                logger.warning(f"매도 실패: 보유 수량 부족 (보유: {pos.quantity}, 요청: {quantity})")
+
+        # 3. 시장가 업데이트
+        self.engine.update_market_price(symbol, current_price)
+
+        # 4. 보상 계산 (Log Equity Return ln(E_t / E_{t-1}))
+        curr_equity = self.account.get_total_equity({symbol: current_price})
+        if self._prev_equity > 0 and curr_equity > 0:
+            reward = float(np.log(float(curr_equity) / float(self._prev_equity)))
+        else:
+            reward = 0.0
+        self._prev_equity = curr_equity
+
+        # 파산(총 자산이 초기 자본금의 5% 미만) 검사
+        terminated = bool(curr_equity < (self.initial_cash * Decimal("0.05")))
+        truncated = False
+
+        # 5. 상태 및 정보 반환
+        state = self.get_state(symbol, current_price)
+        info = {
+            "trade": trade_record,
+            "audit": self.engine.get_accounting_audit({symbol: current_price}),
+            "live_price_used": float(current_price),
+        }
+
+        return state, reward, terminated, truncated, info
+
+    def get_state(self, symbol: str, current_price: Optional[Decimal] = None) -> Dict[str, Any]:
+        """현재 가상 계좌의 관측 상태를 반환합니다."""
+        p = current_price or self.engine._last_market_prices.get(symbol, Decimal("0"))
+        pos = self.account.get_position(symbol)
+        tot_eq = self.account.get_total_equity({symbol: p})
+
+        return {
+            "symbol": symbol,
+            "current_price": float(p),
+            "cash_balance": float(self.account.cash_balance),
+            "holding_quantity": pos.quantity,
+            "avg_buy_price": float(pos.avg_price),
+            "total_equity": float(tot_eq),
+            "realized_pnl": float(self.account.realized_pnl),
+            "unrealized_pnl": float(pos.unrealized_pnl(p)),
+            "cumulative_frictions": float(
+                self.account.cumulative_commission
+                + self.account.cumulative_tax
+                + self.account.cumulative_slippage
+            ),
+        }
+
+
+# ==============================================================================
+# Global Singleton Instance (Thread-Safe with Double-Checked Locking)
+# ==============================================================================
+_SIMULATOR_LOCK = threading.Lock()
+_GLOBAL_SIMULATOR: Optional[LiveLearningSimulator] = None
+
+
+def get_live_simulator(initial_cash: Union[int, Decimal] = 10_000_000) -> LiveLearningSimulator:
+    """전역 시뮬레이터 인스턴스를 스레드 안전하게 반환합니다 (Double-Checked Locking)."""
+    global _GLOBAL_SIMULATOR
+    if _GLOBAL_SIMULATOR is None:
+        with _SIMULATOR_LOCK:
+            if _GLOBAL_SIMULATOR is None:
+                _GLOBAL_SIMULATOR = LiveLearningSimulator(initial_cash=initial_cash)
+    return _GLOBAL_SIMULATOR
+
+
+def reset_global_simulator() -> None:
+    """전역 시뮬레이터 인스턴스를 초기화합니다."""
+    global _GLOBAL_SIMULATOR
+    with _SIMULATOR_LOCK:
+        _GLOBAL_SIMULATOR = None

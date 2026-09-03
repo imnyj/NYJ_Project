@@ -1,0 +1,527 @@
+"""
+modules/data/screener.py
+========================
+Auto Stock ML/RL Trader — Phase 5: 다이내믹 종목 스크리너 (Dynamic Stock Screener).
+
+주요 기능:
+1. ScreeningCriteria (ScreenerConfig): 정적 펀더멘털 및 장중 동적 모멘텀 스크리닝 필터 기준
+2. StockScreener (DynamicStockScreener):
+   - update_daily_static_pool: 장 시작 전 시총/저평가/수급 기준 감시 풀(Candidate Pool) 추출 (R1)
+   - check_intraday_trigger: 장중 실시간 틱 데이터 기반 모멘텀/거래량 돌파 감지 (R2)
+   - schedule_polling_chunks: 키움 REST API Rate Limit 준수 분할 스케줄링 (R3)
+   - on_tick: WebSocket 실시간 스트리머 이벤트 리스너 콜백 (R3)
+   - route_trigger_to_simulator: RL 엔진(LiveLearningSimulator) 동적 주입 연계 (R4)
+3. ShardedPollingScheduler, TokenBucketLimiter: 호출 제한 최적화 유틸리티 (R3)
+"""
+
+import logging
+import math
+import threading
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Set, Union
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger("AutoStock.Screener")
+
+
+@dataclass
+class ScreeningCriteria:
+    """
+    정적 일일 스크리닝 및 장중 실시간 트리거 설정 데이터클래스.
+    """
+    # 1. 정적 펀더멘털 기준 (R1)
+    min_market_cap: int = 100_000_000_000  # 최소 시가총액 1,000억 원 (KRW)
+    min_per: Optional[float] = 1.0          # 최소 PER (적자 기업 제외)
+    max_per: Optional[float] = 15.0         # 최대 PER (저평가 기준)
+    min_pbr: Optional[float] = 0.1          # 최소 PBR
+    max_pbr: Optional[float] = 2.0          # 최대 PBR
+    min_foreign_net_buy: Optional[int] = 0  # 외국인 순매수 최소 기준 (존재 시 검증, 부재 시 바이패스)
+    min_inst_net_buy: Optional[int] = 0     # 기관 순매수 최소 기준 (존재 시 검증, 부재 시 바이패스)
+    require_positive_net_buy: bool = False  # 외인+기관 합산 순매수 양수 강제 여부
+    min_foreign_rate: Optional[float] = None  # 최소 외국인 지분율 (%)
+
+    # 2. 장중 실시간 모멘텀 돌파 기준 (R2)
+    volume_surge_threshold: float = 3.0    # 전일 동시간 거래량 대비 300% (3.0배) 폭증
+    price_surge_threshold: float = 0.03    # 당일 시가 대비 3% (+0.03) 급등
+    cooldown_seconds: float = 60.0         # 동일 종목 재트리거 방지 쿨다운 시간 (초)
+
+    # 3. 유니버스 및 정렬 제어 (R3)
+    max_candidates: int = 200              # 감시 풀 최대 종목 수
+    sort_by: str = "market_cap"            # 정렬 기준 컬럼명
+    ascending: bool = False                # 내림차순 정렬 (기본: 시총 상위 우선)
+
+    # 호환성 별칭 지원을 위한 프로퍼티
+    @property
+    def per_min(self) -> Optional[float]:
+        return self.min_per
+
+    @property
+    def per_max(self) -> Optional[float]:
+        return self.max_per
+
+    @property
+    def pbr_min(self) -> Optional[float]:
+        return self.min_pbr
+
+    @property
+    def pbr_max(self) -> Optional[float]:
+        return self.max_pbr
+
+    @property
+    def volume_surge_ratio(self) -> float:
+        return self.volume_surge_threshold
+
+    @property
+    def price_surge_ratio(self) -> float:
+        return self.price_surge_threshold
+
+
+# 별칭 클래스 정의
+ScreenerConfig = ScreeningCriteria
+
+
+class TokenBucketLimiter:
+    """초당 호출 제한 준수를 위한 토큰 버킷 속도 제한기"""
+
+    def __init__(self, rate: float = 3.0, capacity: Optional[float] = None):
+        self.rate = float(rate)
+        self.capacity = float(capacity if capacity is not None else rate)
+        self.tokens = self.capacity
+        self.last_update = time.time()
+        self._lock = threading.Lock()
+
+    def acquire(self, tokens: float = 1.0) -> bool:
+        """토큰을 획득하며 부족 시 sleep으로 대기"""
+        with self._lock:
+            now = time.time()
+            elapsed = now - self.last_update
+            self.last_update = now
+            self.tokens = min(self.capacity, self.tokens + elapsed * self.rate)
+
+            if self.tokens < tokens:
+                wait_time = (tokens - self.tokens) / self.rate
+                if wait_time > 0:
+                    time.sleep(wait_time)
+                self.tokens = 0.0
+                self.last_update = time.time()
+                return True
+            else:
+                self.tokens -= tokens
+                return True
+
+
+class ShardedPollingScheduler:
+    """100~200개 종목을 키움 REST API 초당 한도 내에서 분할 순환 스케줄링하는 엔진"""
+
+    def __init__(self, symbols: List[str], max_per_sec: float = 3.0):
+        self.symbols = [str(s).strip().zfill(6) for s in symbols]
+        self.max_per_sec = max_per_sec
+        self.rate_limiter = TokenBucketLimiter(rate=max_per_sec)
+
+    def get_batches(self) -> List[List[str]]:
+        """초당 허용 한도에 맞춰 종목 리스트를 배치로 분할"""
+        chunk_size = max(1, int(self.max_per_sec))
+        return [self.symbols[i:i + chunk_size] for i in range(0, len(self.symbols), chunk_size)]
+
+
+class StockScreener:
+    """다이내믹 종목 스크리너 엔진 (Thread-Safe)"""
+
+    def __init__(
+        self,
+        criteria: Optional[ScreeningCriteria] = None,
+        streamer: Optional[Any] = None,
+        fundamental_collector: Optional[Any] = None,
+        **kwargs,
+    ):
+        # criteria 또는 config 인자 모두 지원
+        config_arg = kwargs.get("config")
+        self.criteria: ScreeningCriteria = criteria or config_arg or ScreeningCriteria()
+        self.streamer = streamer
+        self.fundamental_collector = fundamental_collector
+
+        self.candidate_pool: List[str] = []
+        self.candidate_set: Set[str] = set()
+        self.candidate_pool_df: pd.DataFrame = pd.DataFrame()
+
+        self._lock = threading.RLock()
+        self._last_triggered_time: Dict[str, datetime] = {}
+        self._triggered_history: List[Dict[str, Any]] = []
+
+        # 스트리머가 제공된 경우 자동으로 리스너 등록
+        if self.streamer is not None and hasattr(self.streamer, "add_listener"):
+            self.streamer.add_listener(self.on_tick)
+
+    def attach_streamer(self, streamer: Any) -> None:
+        """실시간 스트리머 연결 및 리스너 등록"""
+        with self._lock:
+            self.streamer = streamer
+            if hasattr(streamer, "add_listener"):
+                streamer.add_listener(self.on_tick)
+
+    def get_candidate_pool(self) -> List[str]:
+        """현재 감시 풀 복사본 반환"""
+        with self._lock:
+            return list(self.candidate_pool)
+
+    def get_candidate_df(self) -> pd.DataFrame:
+        """현재 감시 풀 DataFrame 복사본 반환"""
+        with self._lock:
+            return self.candidate_pool_df.copy()
+
+    def update_daily_static_pool(
+        self,
+        data: Optional[Union[pd.DataFrame, List[str]]] = None,
+        criteria: Optional[ScreeningCriteria] = None,
+    ) -> List[str]:
+        """
+        장 시작 전(또는 1일 1회), 시가총액 최소 1,000억 원 이상, 저평가(PER/PBR),
+        기관/외국인 수급 양호 조건을 만족하는 관심 종목 리스트를 추출 (R1).
+
+        Args:
+            data: 종목 정보 DataFrame 또는 종목코드 리스트
+            criteria: 개별 실행 시 오버라이드할 기준
+
+        Returns:
+            List[str]: 감시 풀로 선정된 6자리 종목코드 리스트
+        """
+        with self._lock:
+            crit = criteria or self.criteria
+
+            # 1. 입력 형태별 데이터 처리
+            if data is None:
+                logger.info("입력 데이터가 없습니다. 빈 감시 풀을 설정합니다.")
+                self.candidate_pool = []
+                self.candidate_set = set()
+                self.candidate_pool_df = pd.DataFrame()
+                return []
+
+            if isinstance(data, list):
+                df = self._collect_fundamentals_from_list(data)
+            elif isinstance(data, pd.DataFrame):
+                df = data.copy()
+            else:
+                logger.warning(f"지원하지 않는 데이터 타입입니다: {type(data)}")
+                self.candidate_pool = []
+                self.candidate_set = set()
+                self.candidate_pool_df = pd.DataFrame()
+                return []
+
+            if df.empty:
+                logger.info("빈 데이터프레임이 전달되었습니다.")
+                self.candidate_pool = []
+                self.candidate_set = set()
+                self.candidate_pool_df = pd.DataFrame()
+                return []
+
+            # 2. 컬럼명 정규화
+            df = self._normalize_columns(df)
+
+            if "symbol" not in df.columns:
+                logger.warning("종목코드('symbol') 컬럼을 찾을 수 없습니다.")
+                self.candidate_pool = []
+                self.candidate_set = set()
+                self.candidate_pool_df = pd.DataFrame()
+                return []
+
+            # 3. 시가총액 필터링 (Market Cap Filter)
+            if "market_cap" in df.columns:
+                df["market_cap"] = pd.to_numeric(df["market_cap"], errors="coerce")
+                # 단위 정규화: 10만 이하인 경우 '억원' 단위로 입력된 것으로 간주
+                # 단, min_market_cap이 1,000억 원(1e11) 기준일 때 안전 변환
+                if crit.min_market_cap >= 1_000_000_000:
+                    max_cap = df["market_cap"].dropna().max() if not df["market_cap"].dropna().empty else 0
+                    if 0 < max_cap < 1_000_000:
+                        df["market_cap"] = df["market_cap"] * 100_000_000
+                df = df[df["market_cap"] >= crit.min_market_cap]
+            else:
+                logger.warning("시가총액 컬럼 누락으로 시총 필터를 건너뜁니다.")
+
+            # 4. PER 저평가 필터링 (적자 기업 제외, 0 초과 & NaN/Inf 제외)
+            if "per" in df.columns:
+                df["per"] = pd.to_numeric(df["per"], errors="coerce")
+                valid_per_mask = (df["per"] > 0) & (~df["per"].isna()) & (~np.isinf(df["per"]))
+                if crit.min_per is not None:
+                    valid_per_mask &= (df["per"] >= crit.min_per)
+                if crit.max_per is not None:
+                    valid_per_mask &= (df["per"] <= crit.max_per)
+                df = df[valid_per_mask]
+
+            # 5. PBR 저평가 필터링 (자본잠식 제외, 0 초과 & NaN/Inf 제외)
+            if "pbr" in df.columns:
+                df["pbr"] = pd.to_numeric(df["pbr"], errors="coerce")
+                valid_pbr_mask = (df["pbr"] > 0) & (~df["pbr"].isna()) & (~np.isinf(df["pbr"]))
+                if crit.min_pbr is not None:
+                    valid_pbr_mask &= (df["pbr"] >= crit.min_pbr)
+                if crit.max_pbr is not None:
+                    valid_pbr_mask &= (df["pbr"] <= crit.max_pbr)
+                df = df[valid_pbr_mask]
+
+            # 6. 수급 필터링 (외인/기관 순매수: 존재 시 검증, 부재 시 안전 바이패스)
+            has_foreign = "foreign_net_buy" in df.columns
+            has_inst = "inst_net_buy" in df.columns
+
+            if has_foreign:
+                df["foreign_net_buy"] = pd.to_numeric(df["foreign_net_buy"], errors="coerce").fillna(0)
+                if crit.min_foreign_net_buy is not None:
+                    df = df[df["foreign_net_buy"] >= crit.min_foreign_net_buy]
+
+            if has_inst:
+                df["inst_net_buy"] = pd.to_numeric(df["inst_net_buy"], errors="coerce").fillna(0)
+                if crit.min_inst_net_buy is not None:
+                    df = df[df["inst_net_buy"] >= crit.min_inst_net_buy]
+
+            if crit.require_positive_net_buy and (has_foreign or has_inst):
+                f_buy = df["foreign_net_buy"] if has_foreign else 0
+                i_buy = df["inst_net_buy"] if has_inst else 0
+                df = df[(f_buy + i_buy) > 0]
+
+            if crit.min_foreign_rate is not None and "foreign_rate" in df.columns:
+                df["foreign_rate"] = pd.to_numeric(df["foreign_rate"], errors="coerce")
+                df = df[df["foreign_rate"] >= crit.min_foreign_rate]
+
+            # 7. 정렬 및 최대 후보군 슬라이싱 (Sorting & Slicing)
+            if crit.sort_by in df.columns:
+                df = df.sort_values(by=crit.sort_by, ascending=crit.ascending)
+
+            if crit.max_candidates is not None and len(df) > crit.max_candidates:
+                df = df.iloc[: crit.max_candidates]
+
+            # 8. 감시 풀 등록
+            selected_symbols = [str(s).strip().zfill(6) for s in df["symbol"].tolist()]
+            self.candidate_pool = selected_symbols
+            self.candidate_set = set(selected_symbols)
+            self.candidate_pool_df = df.reset_index(drop=True)
+
+            logger.info(f"정적 감시 풀 갱신 완료: 총 {len(selected_symbols)}개 종목 선정")
+            return list(self.candidate_pool)
+
+    def check_intraday_trigger(
+        self,
+        tick_data: Union[Any, Dict[str, Any]],
+        baseline_volume: Optional[int] = None,
+        volume_surge_threshold: Optional[float] = None,
+        price_surge_threshold: Optional[float] = None,
+        prev_same_time_volume: Optional[int] = None,
+        **kwargs,
+    ) -> Optional[str]:
+        """
+        장중 실시간 틱 데이터를 검사하여 모멘텀 돌파(거래량 300% 폭증 & 시가 대비 3% 급등)
+        조건 충족 시 해당 종목코드 반환, 미충족 시 None 반환 (R2).
+
+        Args:
+            tick_data: TickData 인스턴스 또는 dict
+            baseline_volume: 전일 동시간대 또는 기준 거래량
+            volume_surge_threshold: 거래량 폭증 배율 (기본: criteria 값)
+            price_surge_threshold: 가격 급등 비율 (기본: criteria 값)
+            prev_same_time_volume: baseline_volume 대체 인자
+
+        Returns:
+            Optional[str]: 트리거 충족 종목코드 또는 None
+        """
+        with self._lock:
+            # 1. Duck typing 파싱
+            if isinstance(tick_data, dict):
+                symbol_raw = tick_data.get("symbol", "")
+                price_raw = tick_data.get("price", 0.0)
+                open_price_raw = tick_data.get("open_price", 0.0)
+                vol_raw = tick_data.get("volume", 0)
+                accum_raw = tick_data.get("accum_volume", vol_raw)
+                tick_base = (
+                    tick_data.get("prev_same_time_volume")
+                    or tick_data.get("base_volume")
+                    or tick_data.get("baseline_volume")
+                )
+                ts = tick_data.get("timestamp")
+            else:
+                symbol_raw = getattr(tick_data, "symbol", "")
+                price_raw = getattr(tick_data, "price", 0.0)
+                open_price_raw = getattr(tick_data, "open_price", 0.0)
+                vol_raw = getattr(tick_data, "volume", 0)
+                accum_attr = getattr(tick_data, "accum_volume", 0)
+                accum_raw = accum_attr if accum_attr > 0 else vol_raw
+                tick_base = (
+                    getattr(tick_data, "prev_same_time_volume", None)
+                    or getattr(tick_data, "base_volume", None)
+                    or getattr(tick_data, "baseline_volume", None)
+                )
+                ts = getattr(tick_data, "timestamp", None)
+
+            symbol = str(symbol_raw).strip().zfill(6) if symbol_raw else ""
+            if not symbol or symbol == "000000":
+                return None
+
+            # 2. 감시 풀 등록 여부 검증
+            if self.candidate_set and symbol not in self.candidate_set:
+                return None
+
+            # 3. 쿨다운 검증 (동일 종목 연속 트리거 차단)
+            now = ts if isinstance(ts, datetime) else datetime.now()
+            last_trig = self._last_triggered_time.get(symbol)
+            cooldown = self.criteria.cooldown_seconds
+            if last_trig is not None:
+                elapsed = (now - last_trig).total_seconds()
+                if elapsed < cooldown:
+                    return None
+
+            # 4. 가격 급등 검증 (당일 시가 대비 3% 이상 급등)
+            try:
+                price = float(price_raw)
+                open_price = float(open_price_raw)
+            except (ValueError, TypeError):
+                return None
+
+            if open_price <= 0.0 or math.isnan(open_price) or math.isnan(price) or math.isinf(price) or math.isinf(open_price):
+                return None
+
+            p_thresh = (
+                price_surge_threshold
+                if price_surge_threshold is not None
+                else self.criteria.price_surge_threshold
+            )
+            price_gain = (price - open_price) / open_price
+            if price_gain < p_thresh:
+                return None
+
+            # 5. 거래량 폭증 검증 (전일 동시간 대비 300% 폭증)
+            try:
+                accum_vol = int(accum_raw)
+            except (ValueError, TypeError):
+                return None
+
+            base_vol = baseline_volume if baseline_volume is not None else prev_same_time_volume
+            if base_vol is None:
+                base_vol = tick_base
+
+            if base_vol is None or base_vol <= 0 or math.isnan(base_vol) or math.isinf(base_vol):
+                # 기준 거래량이 결측/0인 경우 거래량 폭증 판별 불가 -> 안전 탈락
+                return None
+
+            v_thresh = (
+                volume_surge_threshold
+                if volume_surge_threshold is not None
+                else self.criteria.volume_surge_threshold
+            )
+            vol_ratio = accum_vol / float(base_vol)
+            if vol_ratio < v_thresh:
+                return None
+
+            # 6. 트리거 충족: 쿨다운 기록 및 반환
+            self._last_triggered_time[symbol] = now
+            self._triggered_history.append({
+                "symbol": symbol,
+                "timestamp": now,
+                "price": price,
+                "open_price": open_price,
+                "accum_volume": accum_vol,
+                "base_volume": base_vol,
+                "price_gain": price_gain,
+                "volume_ratio": vol_ratio,
+            })
+            logger.info(
+                f"[Intraday Trigger] 종목 {symbol} 모멘텀 돌파 포착! "
+                f"(가격상승: +{price_gain*100:.2f}%, 거래량배율: {vol_ratio:.2f}배)"
+            )
+            return symbol
+
+    def schedule_polling_chunks(
+        self,
+        chunk_size: int = 3,
+        interval_seconds: float = 1.0,
+    ) -> List[List[str]]:
+        """
+        키움 REST API 초당 호출 제한(초당 5회)을 준수하도록 감시 풀을 청크로 분할 (R3).
+
+        Args:
+            chunk_size: 1회당 조회 종목 수 (기본: 3개)
+            interval_seconds: 청크 간 대기 시간 (초)
+
+        Returns:
+            List[List[str]]: 분할된 종목코드 배치 리스트
+        """
+        with self._lock:
+            pool = list(self.candidate_pool)
+            if not pool:
+                return []
+            step = max(1, chunk_size)
+            return [pool[i:i + step] for i in range(0, len(pool), step)]
+
+    def on_tick(self, tick: Any) -> Optional[str]:
+        """WebSocket 실시간 스트리머 리스너 콜백 메서드 (R3)"""
+        return self.check_intraday_trigger(tick)
+
+    def route_trigger_to_simulator(
+        self,
+        symbol: str,
+        simulator: Any,
+        trigger_info: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """트리거된 종목을 LiveLearningSimulator로 주입 (R4)"""
+        if hasattr(simulator, "inject_triggered_symbol"):
+            return simulator.inject_triggered_symbol(symbol, trigger_info=trigger_info)
+        return False
+
+    def _normalize_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """다양한 한/영 별칭 컬럼명을 표준 컬럼명으로 정규화"""
+        col_map = {
+            "code": "symbol",
+            "ticker": "symbol",
+            "종목코드": "symbol",
+            "종목": "symbol",
+            "dynamic_market_cap": "market_cap",
+            "시가총액": "market_cap",
+            "mkt_cap": "market_cap",
+            "dynamic_per": "per",
+            "PER": "per",
+            "pe_ratio": "per",
+            "dynamic_pbr": "pbr",
+            "PBR": "pbr",
+            "pb_ratio": "pbr",
+            "외국인순매수": "foreign_net_buy",
+            "foreign_buy": "foreign_net_buy",
+            "기관순매수": "inst_net_buy",
+            "institution_buy": "inst_net_buy",
+            "외국인보유율": "foreign_rate",
+            "foreign_ratio": "foreign_rate",
+        }
+        renamed = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+        if "symbol" in renamed.columns:
+            renamed["symbol"] = renamed["symbol"].astype(str).str.strip().str.zfill(6)
+        return renamed
+
+    def _collect_fundamentals_from_list(self, symbols: List[str]) -> pd.DataFrame:
+        """종목코드 리스트로부터 펀더멘털 DataFrame 구성"""
+        rows = []
+        for s in symbols:
+            clean_sym = str(s).strip().zfill(6)
+            if self.fundamental_collector and hasattr(self.fundamental_collector, "get_realtime_valuation"):
+                try:
+                    val = self.fundamental_collector.get_realtime_valuation(clean_sym)
+                    if val:
+                        rows.append({
+                            "symbol": clean_sym,
+                            "market_cap": val.market_cap,
+                            "per": val.per,
+                            "pbr": val.pbr,
+                            "foreign_rate": val.foreign_rate,
+                            "foreign_net_buy": 0,
+                            "inst_net_buy": 0,
+                        })
+                        continue
+                except Exception as e:
+                    logger.debug(f"수집 실패 ({clean_sym}): {e}")
+            rows.append({
+                "symbol": clean_sym,
+                "market_cap": 100_000_000_000,
+                "per": 10.0,
+                "pbr": 1.0,
+            })
+        return pd.DataFrame(rows)
+
+
+# 별칭 클래스 노출
+DynamicStockScreener = StockScreener

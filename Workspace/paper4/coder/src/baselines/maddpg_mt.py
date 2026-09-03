@@ -91,7 +91,6 @@
 
 from __future__ import annotations
 import copy
-import math
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
@@ -144,7 +143,10 @@ class MADDPGMT(BaseRLModel):
         self.gumbel_tau = float(gumbel_tau)
         self.grad_clip = float(grad_clip)
         self.num_tasks = int(num_tasks)
-        self.total_updates = 0
+        # Buffer, not a plain int: the hot-swap manager copies parameters and
+        # buffers only, and `update()` runs on the Rest model, so a plain counter
+        # would neither cross the swap nor survive a checkpoint reload.
+        self.register_buffer("total_updates", torch.zeros(1))
 
         # Fallback split of a scalar reward across the task heads (see the
         # module docstring: with a scalar reward the decomposition is inert).
@@ -155,14 +157,6 @@ class MADDPGMT(BaseRLModel):
             if len(weights) != self.num_tasks:
                 raise ValueError(f"task_weights must have {self.num_tasks} entries, got {len(weights)}")
         self.register_buffer("task_weights", torch.tensor(weights, dtype=torch.float32))
-
-        # Geometric span of the Delta range, read off the decoder. This is the
-        # vectorised twin of ActionDecoder.delta_from_unit / unit_from_delta; the
-        # scalar path in select_action calls the decoder itself.
-        if self.decoder.delta_min > 0.0 and self.decoder.delta_max > self.decoder.delta_min:
-            self._log_delta_ratio = math.log(self.decoder.delta_max / self.decoder.delta_min)
-        else:
-            self._log_delta_ratio = 0.0
 
         #: [u_delta, u_p] + one-hot subchannel.
         self.action_dim = 2 + self.num_channels
@@ -233,38 +227,26 @@ class MADDPGMT(BaseRLModel):
     # ----------------------------------------------------------------------
     # Action-space helpers (all bounds come from the decoder)
     # ----------------------------------------------------------------------
-    def _delta_from_unit_t(self, u: torch.Tensor) -> torch.Tensor:
-        """Vectorised ActionDecoder.delta_from_unit."""
-        u = u.clamp(0.0, 1.0)
-        if self._log_delta_ratio <= 0.0:
-            return self.decoder.delta_min + u * (self.decoder.delta_max - self.decoder.delta_min)
-        return self.decoder.delta_min * torch.exp(u * self._log_delta_ratio)
-
-    def _unit_from_delta_t(self, delta: torch.Tensor) -> torch.Tensor:
-        """Vectorised ActionDecoder.unit_from_delta."""
-        d = delta.clamp(min=self.decoder.delta_min, max=self.decoder.delta_max)
-        if self._log_delta_ratio <= 0.0:
-            span = max(1e-6, self.decoder.delta_max - self.decoder.delta_min)
-            return (d - self.decoder.delta_min) / span
-        return torch.log(d / self.decoder.delta_min) / self._log_delta_ratio
-
     def _decode_batch_actions(self, actions: torch.Tensor) -> torch.Tensor:
         """
         Raw replay actions -> the critic's action vector [u_delta, u_p, one_hot(ch)].
 
-        Raw actions are ActionDecoder.encode_action output, whose Delta field is a
-        logit of the LINEARLY normalised Delta; it is inverted linearly and then
-        re-expressed in the GEOMETRIC unit space the actor works in, so both
-        halves of the critic input agree.
+        Raw actions are `ActionDecoder.encode_action` output, whose Delta field is
+        `logit(unit_from_delta(delta))`. The unit coordinate the actor works in is
+        therefore recovered by a single sigmoid -- `BaseRLModel.raw_units` -- and
+        no Delta round trip is involved at all.
+
+        This method used to invert the logit LINEARLY and then re-map the result
+        through `unit_from_delta`, which compressed every executed action towards
+        the top of the range (u = 0.1 came back as 0.63, u = 0.5 as 0.89). The
+        critic was therefore conditioned on an action the actor had not taken,
+        and the deterministic policy gradient flowed through the wrong point of
+        the Q surface.
         """
-        dec = self.decoder
-        acts = actions.float()
-        delta = dec.delta_min + torch.sigmoid(acts[:, 0]) * (dec.delta_max - dec.delta_min)
-        u_delta = self._unit_from_delta_t(delta).unsqueeze(1)
-        u_p = torch.sigmoid(acts[:, 2]).unsqueeze(1)
-        ch = acts[:, 1].round().long().remainder(self.num_channels)
-        one_hot = F.one_hot(ch, num_classes=self.num_channels).to(acts.dtype)
-        return torch.cat([u_delta, u_p, one_hot], dim=1)
+        u_delta, u_p = self.raw_units(actions)
+        ch = self.raw_channel(actions)
+        one_hot = F.one_hot(ch, num_classes=self.num_channels).to(torch.float32)
+        return torch.cat([u_delta.unsqueeze(1), u_p.unsqueeze(1), one_hot], dim=1)
 
     def _actor_action(
         self,
@@ -370,11 +352,8 @@ class MADDPGMT(BaseRLModel):
         dones = batch["done"].to(device).float()
         batch_size = states.shape[0]
 
-        if "discount" in batch:
-            discounts = batch["discount"].to(device).float()
-        else:
-            delta_ts = batch.get("delta_t", torch.ones_like(rewards)).to(device).float()
-            discounts = torch.pow(torch.as_tensor(self.gamma, device=device), delta_ts)
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
 
         # -- Task-decomposed rewards (B, num_tasks) ---------------------------
         if "reward_terms" in batch:
@@ -450,7 +429,7 @@ class MADDPGMT(BaseRLModel):
                 for p, pt in zip(online.parameters(), target.parameters()):
                     pt.data.copy_(self.tau * p.data + (1.0 - self.tau) * pt.data)
 
-        self.total_updates += 1
+        self.total_updates.add_(1.0)
 
         out = {
             "loss": float(critic_loss.item() + actor_loss.item()),

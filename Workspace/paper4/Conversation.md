@@ -36,6 +36,22 @@
 - 오차($m^2$), 전력(dBm) 등 각 항의 Scale이 매우 상이하므로, 보상 계산 전 모든 항목을 $[0, 1]$ 범위로 **Min-Max 정규화(Normalization)** 처리합니다.
 - 가중치 $w_1 \sim w_4$는 휴리스틱하게 고정하지 않고, **Optuna 최적화 공간(Hyperparameter Search Space)에 포함**시켜, 베이스라인 탐색 시 에이전트가 최적의 보상 밸런스를 스스로 찾도록 운용합니다.
 
+> **[2026-08-31 개정 — 사용자 승인]** 위 방침을 철회하고 $w_1 \sim w_4$를 아홉 베이스라인 전체에
+> 공통인 고정값 0.5 / 0.2 / 0.2 / 0.1로 둔다. 단일 출처는
+> `coder/src/hot_swap_trainer.py`의 `DEFAULT_REWARD_WEIGHTS`이며 훈련·평가·HPO 세 경로가 모두
+> 이 상수를 읽는다. Optuna는 모델 하이퍼파라미터만 탐색한다.
+>
+> 철회 이유는 벤치마크 공정성이다. 가중치를 모델마다 최적화하면 아홉 모델이 서로 다른 목적함수를
+> 최적화하게 되어 비교표가 같은 자를 쓰지 않게 된다. 실제로 이전 탐색 결과는 $w_1$이 CARLTON에서
+> 0.523, PPO에서 0.079로 갈렸다. 투고 목표가 IEEE TWC이므로 리뷰어가 이 지점을 문제 삼을
+> 여지를 남기지 않는 편을 택했다.
+>
+> 덧붙여 Optuna의 목적함수 `compute_composite_objective`는 원래부터
+> `w_error=1.0, w_aoi=0.5, w_outage=2.0, w_power=0.2`로 고정되어 있었고 탐색된 $w_1 \sim w_4$와
+> 무관했다. 즉 이전 방침은 "고정된 평가 지표에 대한 reward shaping 튜닝"이었지 목적함수 자체의
+> 탐색이 아니었다. 모델별 가중치 탐색이 필요해지면 `src/hpo.py --tune-reward-weights`로 되살릴
+> 수 있으나, 그 결과는 ablation으로만 쓰고 본 비교표에는 넣지 않는다.
+
 ### [x] 4. 채택한 Baselines 모두 나열 (모델 마다 "논문의 IEEE식 reference 표현. doi 검증 결과: 사용한 모델."로 표기할 것. 가짜 baselines는 모든 내용에서 삭제할 것.)
 > 2026-08-27 전면 재조사. 이전 목록(SAC-RIS, DDPG-CV2X, DDPG-Resilient, MARL-VLC, Platoon-DRL, DRL-IoV)은 **코드에 구현된 적이 없어 폐기**했고 처음부터 다시 찾았다.
 > 조사 기준: IEEE/ACM/Elsevier·ScienceDirect/Springer 상위만, **arXiv·MDPI 배제**. 투고 목표가 IEEE TWC이므로 TWC 게재 논문을 최우선으로 탐색하고 피인용 수를 선정 기준에 포함했다.

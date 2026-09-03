@@ -13,9 +13,13 @@
 # ============================================================================
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional, Tuple, List
 import src.Communications as comm
 from src.dynamics_predictor import extract_tls_features, predict_stop_imminent, predict_start_imminent
+from src.rl_interface import ActionDecoder
+
+logger = logging.getLogger(__name__)
 
 try:
     import libsumo as sumo
@@ -29,28 +33,68 @@ except ImportError:
 class HeuristicScheduler:
     """
     S2.5 Domain-Knowledge Rule-Based Scheduler for AoI-aware V2I Uplink.
+
+    ACTION SPACE PARITY. This baseline is compared head to head with nine RL
+    baselines that all draw their bounds from `src.rl_interface.ActionDecoder`.
+    The bounds therefore default to `None` here and are resolved from a decoder
+    at construction time rather than restated as literals: a scheduler built with
+    a narrower Delta range is not competing on the same action space, and Rule 2
+    in particular exists to hold a stopped vehicle silent for the full 45 s red
+    phase, which a `delta_max` of 10 s makes impossible. `delta_max` is resolved
+    at construction (not at import) because `ActionDecoder` itself resolves
+    `DELTA_MAX` from the loaded scenario.
+
+    Passing explicit bounds is still allowed -- unit tests of the Rule 2 clamp
+    need it -- but anything strictly inside the decoder's range is logged as a
+    handicap so it cannot happen silently in a benchmark run.
     """
     def __init__(
         self,
-        delta_min: float = 0.1,
-        delta_max: float = 45.0,
+        delta_min: Optional[float] = None,
+        delta_max: Optional[float] = None,
         delta_cruise_steady: float = 3.5,
         delta_cruise_accel: float = 1.5,
-        p_high: float = 23.0,
+        p_high: Optional[float] = None,
         p_mid: float = 20.0,
-        p_low: float = 10.0,
+        p_low: Optional[float] = None,
         num_subchannels: int = comm.NUM_SUBCHANNELS,
         sumo_conn: Any = None,
+        decoder: Optional[ActionDecoder] = None,
     ) -> None:
-        self.delta_min = float(delta_min)
-        self.delta_max = float(delta_max)
+        #: Single source of truth for the action space, shared with all nine RL
+        #: baselines (they get theirs through BaseRLModel).
+        self.decoder = decoder if decoder is not None else ActionDecoder(
+            num_channels=int(num_subchannels)
+        )
+        self.delta_min = float(self.decoder.delta_min if delta_min is None else delta_min)
+        self.delta_max = float(self.decoder.delta_max if delta_max is None else delta_max)
         self.delta_cruise_steady = float(delta_cruise_steady)
         self.delta_cruise_accel = float(delta_cruise_accel)
-        self.p_high = float(p_high)
+        self.p_high = float(self.decoder.p_max if p_high is None else p_high)
         self.p_mid = float(p_mid)
-        self.p_low = float(p_low)
+        self.p_low = float(self.decoder.p_min if p_low is None else p_low)
         self.num_subchannels = int(num_subchannels)
         self.sumo_conn = sumo_conn
+
+        #: True when the caller narrowed the action space relative to the decoder.
+        #: Benchmarks must run with this False, or the comparison is unfair.
+        self.action_space_handicapped = (
+            self.delta_min > self.decoder.delta_min
+            or self.delta_max < self.decoder.delta_max
+            or self.p_high < self.decoder.p_max
+            or self.p_low > self.decoder.p_min
+        )
+        if self.action_space_handicapped:
+            logger.warning(
+                "HeuristicScheduler built on a NARROWER action space than the RL "
+                "baselines: Delta [%.3f, %.3f] vs decoder [%.3f, %.3f], power "
+                "[%.1f, %.1f] vs decoder [%.1f, %.1f] dBm. Benchmark results from "
+                "this instance are not a fair comparison.",
+                self.delta_min, self.delta_max,
+                self.decoder.delta_min, self.decoder.delta_max,
+                self.p_low, self.p_high,
+                self.decoder.p_min, self.decoder.p_max,
+            )
 
         # Channel load tracker: counts grants allocated per subchannel for load-balancing
         self.channel_alloc_counts: List[int] = [0] * self.num_subchannels
@@ -109,7 +153,20 @@ class HeuristicScheduler:
             tls_info = {}
 
         sig_state = str(tls_info.get("state", state.get("signal_state", "none"))).lower()
-        t_left = float(tls_info.get("time_to_switch", state.get("time_to_switch", float("inf"))))
+        # Time until THIS link shows green, not until the program's next phase
+        # change. The two differ by the cross direction's yellow (3 s here) for the
+        # first 42 s of every 45 s red, which is exactly the window Rule 2 backs
+        # off in. `time_to_switch` remains the fallback only for callers that hand
+        # in a hand-built state dict without the corrected key.
+        t_left = float(
+            tls_info.get(
+                "time_to_green",
+                state.get(
+                    "time_to_green",
+                    tls_info.get("time_to_switch", state.get("time_to_switch", float("inf"))),
+                ),
+            )
+        )
         dist_stopline = float(tls_info.get("dist_to_stopline", state.get("dist_to_stopline", float("inf"))))
 
         # Check indicators from tls_info or compute from state
@@ -122,7 +179,7 @@ class HeuristicScheduler:
                 accel=accel,
                 dist_to_stopline=dist_stopline,
                 signal_state=sig_state,
-                time_to_switch=t_left,
+                time_to_green=t_left,
                 leader_dist=tls_info.get("leader_gap"),
                 leader_speed=tls_info.get("leader_speed"),
             )
@@ -131,7 +188,7 @@ class HeuristicScheduler:
                 accel=accel,
                 dist_to_stopline=dist_stopline,
                 signal_state=sig_state,
-                time_to_switch=t_left,
+                time_to_green=t_left,
                 leader_dist=tls_info.get("leader_gap"),
                 leader_speed=tls_info.get("leader_speed"),
                 waiting_time=float(tls_info.get("waiting_time", 0.0)),
@@ -153,7 +210,9 @@ class HeuristicScheduler:
         # Vehicle is stationary at red light with substantial time remaining:
         # Zero-velocity extrapolation is completely accurate (error ~ 0).
         if speed <= 1.0 and sig_state in ("r", "y") and t_left > 2.0:
-            # Backoff: wake up just before the signal turns green (t_left - 1.0s)
+            # Backoff: wake up just before the signal turns green (t_left - 1.0s).
+            # `t_left` is time-to-green, so an `inf` (unresolvable program) must not
+            # become an infinite silence -- delta_max caps it below.
             backoff_t = max(1.0, t_left - 1.0)
             interval = min(self.delta_max, backoff_t)
             power = self.p_low          # lower bound, saves energy and avoids interference

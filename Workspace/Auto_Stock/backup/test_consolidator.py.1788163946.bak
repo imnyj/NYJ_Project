@@ -1,0 +1,577 @@
+"""
+tests/test_consolidator.py
+==========================
+Auto Stock ML/RL Trader — Milestone 3 (R3) Data Consolidation & Pipeline Test Suite.
+
+4-Tier Test Architecture:
+- Tier 1: Functional Unit Tests (PIT merge_asof, dynamic valuation features, ZSTD Parquet I/O, Pipeline run/batch)
+- Tier 2: Boundary & Error Defense Tests (Empty inputs, negative EPS / deficit, trading halt, pre-announcement, auto directory creation)
+- Tier 3: Integration & Interaction Tests (MockKiwoom + MockPrice full flow, cross-validation status propagation, symbol isolation)
+- Tier 4: Real-World Scenarios (Samsung 005930, SK Hynix 000660 turnaround, ZSTD compression efficiency)
+"""
+
+import os
+import pathlib
+import tempfile
+from datetime import datetime, timedelta
+from typing import Any, Dict, List
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from modules.data.collector_fundamental import (
+    FinancialStatement,
+    FundamentalCrossValidator,
+    FundamentalDataCollector,
+    MockKiwoomCollector,
+    PeriodType,
+    ValidationStatus,
+)
+from modules.data.collector_price import (
+    MockPriceFetcher,
+    PriceDataCollector,
+)
+from modules.data.consolidator import (
+    DataConsolidator,
+)
+from modules.data.pipeline import (
+    DataCollectionPipeline,
+    DataPipeline,
+)
+
+
+# =====================================================================
+# Fixtures & Helper Generators
+# =====================================================================
+
+@pytest.fixture
+def sample_price_df() -> pd.DataFrame:
+    """기본 테스트용 100일 일봉 주가 데이터"""
+    dates = pd.bdate_range(start="2024-01-02", periods=100)
+    prices = []
+    base_p = 70000.0
+    for i, dt in enumerate(dates):
+        close_p = base_p + (i * 150.0) + (100.0 if i % 2 == 0 else -100.0)
+        prices.append({
+            "date": dt,
+            "symbol": "005930",
+            "open": close_p - 200.0,
+            "high": close_p + 500.0,
+            "low": close_p - 400.0,
+            "close": close_p,
+            "volume": 1000000 + i * 5000,
+            "value": float(close_p * (1000000 + i * 5000)),
+            "timeframe": "1d",
+            "adj_factor": 1.0,
+            "is_trading_halt": False
+        })
+    return pd.DataFrame(prices)
+
+
+@pytest.fixture
+def sample_fundamental_df() -> pd.DataFrame:
+    """기본 테스트용 분기 재무제표 데이터"""
+    records = [
+        {
+            "symbol": "005930",
+            "period_end": pd.to_datetime("2023-12-31"),
+            "announcement_date": pd.to_datetime("2024-03-15"),  # 2023 4Q/Annual
+            "revenue": 300000000000000,
+            "operating_income": 32000000000000,
+            "net_income": 34000000000000,
+            "assets": 480000000000000,
+            "liabilities": 100000000000000,
+            "equity": 380000000000000,
+            "per": 15.0,
+            "pbr": 1.5,
+            "roe": 10.0,
+            "eps": 5000.0,
+            "bps": 55000.0,
+            "div_yield": 2.0,
+            "is_consensus": False,
+            "source": "MOCK",
+            "validation_status": "PASSED"
+        },
+        {
+            "symbol": "005930",
+            "period_end": pd.to_datetime("2024-03-31"),
+            "announcement_date": pd.to_datetime("2024-05-15"),  # 2024 1Q
+            "revenue": 75000000000000,
+            "operating_income": 9000000000000,
+            "net_income": 8500000000000,
+            "assets": 490000000000000,
+            "liabilities": 105000000000000,
+            "equity": 385000000000000,
+            "per": 14.5,
+            "pbr": 1.55,
+            "roe": 10.5,
+            "eps": 5200.0,
+            "bps": 56000.0,
+            "div_yield": 2.1,
+            "is_consensus": False,
+            "source": "MOCK",
+            "validation_status": "PASSED"
+        }
+    ]
+    return pd.DataFrame(records)
+
+
+# =====================================================================
+# TIER 1: Functional Unit Tests (기능 단위 검증)
+# =====================================================================
+
+class TestTier1FunctionalUnits:
+    """
+    Tier 1: DataConsolidator & DataCollectionPipeline 핵심 기능 단위 테스트
+    """
+
+    def test_consolidator_pit_merge_basic(self, sample_price_df, sample_fundamental_df):
+        """Point-in-Time merge_asof 기본 병합 동작 확인"""
+        merged = DataConsolidator.consolidate_point_in_time(
+            price_df=sample_price_df,
+            fundamental_df=sample_fundamental_df,
+            symbol="005930"
+        )
+
+        assert not merged.empty
+        assert len(merged) == len(sample_price_df)
+        assert "dynamic_per" in merged.columns
+        assert "dynamic_pbr" in merged.columns
+        assert "returns_1d" in merged.columns
+        assert "return_1d" in merged.columns
+        assert "volatility_20d" in merged.columns
+        assert "log_return" in merged.columns
+        assert "ma_5" in merged.columns
+        assert "ma_20" in merged.columns
+        assert "ma_60" in merged.columns
+        assert "warning_flags" in merged.columns
+
+    def test_lookahead_bias_prevention_explicit(self):
+        """
+        선행 편향(Look-ahead bias) 방지 정밀 검증:
+        - 2024-05-14 (1분기 공시일 05-15 전날): 2023년 사업보고서(EPS=5000) 매핑
+        - 2024-05-15 (1분기 공시일 당일): 2024년 1분기 보고서(EPS=5200) 매핑
+        """
+        prices = pd.DataFrame([
+            {"date": pd.to_datetime("2024-05-14"), "symbol": "005930", "open": 70000, "high": 71000, "low": 69500, "close": 70000, "volume": 10000},
+            {"date": pd.to_datetime("2024-05-15"), "symbol": "005930", "open": 71000, "high": 72000, "low": 70500, "close": 71500, "volume": 15000},
+            {"date": pd.to_datetime("2024-05-16"), "symbol": "005930", "open": 71500, "high": 72500, "low": 71000, "close": 72000, "volume": 12000},
+        ])
+
+        fundamentals = pd.DataFrame([
+            {
+                "symbol": "005930",
+                "period_end": pd.to_datetime("2023-12-31"),
+                "announcement_date": pd.to_datetime("2024-03-15"),
+                "eps": 5000.0,
+                "bps": 50000.0,
+                "revenue": 300000000000000,
+                "operating_income": 30000000000000,
+                "validation_status": "PASSED"
+            },
+            {
+                "symbol": "005930",
+                "period_end": pd.to_datetime("2024-03-31"),
+                "announcement_date": pd.to_datetime("2024-05-15"),
+                "eps": 5200.0,
+                "bps": 52000.0,
+                "revenue": 75000000000000,
+                "operating_income": 8000000000000,
+                "validation_status": "PASSED"
+            }
+        ])
+
+        merged = DataConsolidator.consolidate_point_in_time(prices, fundamentals, "005930")
+
+        # 2024-05-14 (공시 전일) -> 이전 공시(2024-03-15, EPS 5000) 매핑
+        row_0514 = merged[merged["date"] == pd.to_datetime("2024-05-14")].iloc[0]
+        assert row_0514["announcement_date"] == pd.to_datetime("2024-03-15")
+        assert row_0514["eps"] == 5000.0
+        assert row_0514["dynamic_per"] == pytest.approx(70000 / 5000.0)
+
+        # 2024-05-15 (공시 당일) -> 신규 공시(2024-05-15, EPS 5200) 매핑
+        row_0515 = merged[merged["date"] == pd.to_datetime("2024-05-15")].iloc[0]
+        assert row_0515["announcement_date"] == pd.to_datetime("2024-05-15")
+        assert row_0515["eps"] == 5200.0
+        assert row_0515["dynamic_per"] == pytest.approx(71500 / 5200.0)
+
+    def test_dynamic_valuation_and_technical_features(self, sample_price_df, sample_fundamental_df):
+        """동적 밸류에이션 및 기술적 피처 정확도 산출 검증"""
+        merged = DataConsolidator.consolidate_point_in_time(sample_price_df, sample_fundamental_df, "005930")
+
+        # Dynamic PER/PBR 검증
+        valid_rows = merged[merged["announcement_date"].notna()]
+        for _, row in valid_rows.iterrows():
+            if row["eps"] > 0:
+                expected_per = row["close"] / row["eps"]
+                assert row["dynamic_per"] == pytest.approx(expected_per)
+            if row["bps"] > 0:
+                expected_pbr = row["close"] / row["bps"]
+                assert row["dynamic_pbr"] == pytest.approx(expected_pbr)
+
+        # returns_1d 및 log_return 검증
+        for i in range(1, len(merged)):
+            prev_close = merged.loc[i - 1, "close"]
+            curr_close = merged.loc[i, "close"]
+            expected_ret = (curr_close - prev_close) / prev_close
+            expected_log = np.log(curr_close / prev_close)
+            assert merged.loc[i, "returns_1d"] == pytest.approx(expected_ret, rel=1e-5)
+            assert merged.loc[i, "return_1d"] == pytest.approx(expected_ret, rel=1e-5)
+            assert merged.loc[i, "log_return"] == pytest.approx(expected_log, rel=1e-5)
+
+        # ma_5 검증
+        assert len(merged["ma_5"]) == len(merged)
+        assert merged.loc[4, "ma_5"] == pytest.approx(merged.loc[:4, "close"].mean())
+
+    def test_parquet_storage_zstd_roundtrip(self, sample_price_df, sample_fundamental_df):
+        """PyArrow ZSTD 압축 Parquet 저장 및 로드 무결성 검증"""
+        merged = DataConsolidator.consolidate_point_in_time(sample_price_df, sample_fundamental_df, "005930")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fpath = pathlib.Path(tmp_dir) / "005930_test.parquet"
+            saved_path = DataConsolidator.save_to_parquet(
+                df=merged,
+                filepath=fpath,
+                compression="ZSTD",
+                compression_level=3
+            )
+            assert saved_path.exists()
+
+            loaded_df = DataConsolidator.load_from_parquet(fpath)
+            assert len(loaded_df) == len(merged)
+            assert list(loaded_df.columns) == list(merged.columns)
+            assert (loaded_df["close"] == merged["close"]).all()
+            assert (loaded_df["dynamic_per"].dropna() == merged["dynamic_per"].dropna()).all()
+
+    def test_pipeline_run_single_symbol(self):
+        """DataCollectionPipeline 단일 종목 실행 및 Parquet 저장 검증"""
+        pipeline = DataCollectionPipeline()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_path = pathlib.Path(tmp_dir) / "005930_pipeline.parquet"
+            df, meta = pipeline.run(
+                symbol="005930",
+                days=30,
+                save=True,
+                output_filepath=out_path
+            )
+            assert not df.empty
+            assert len(df) >= 20
+            assert meta["symbol"] == "005930"
+            assert meta["saved_path"] == str(out_path)
+            assert out_path.exists()
+
+    def test_pipeline_run_batch(self):
+        """DataCollectionPipeline 멀티 종목 일괄 실행 검증"""
+        pipeline = DataCollectionPipeline()
+        symbols = ["005930", "000660"]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            batch_results = pipeline.run_batch(
+                symbols=symbols,
+                days=20,
+                save=True,
+                output_dir=tmp_dir
+            )
+            assert len(batch_results) == 2
+            for sym in symbols:
+                df, meta = batch_results[sym]
+                assert not df.empty
+                assert meta["symbol"] == sym
+                assert (pathlib.Path(tmp_dir) / f"{sym}_consolidated.parquet").exists()
+
+
+# =====================================================================
+# TIER 2: Boundary & Error Defense Tests (경계값 및 방어 로직)
+# =====================================================================
+
+class TestTier2BoundaryAndErrorDefense:
+    """
+    Tier 2: 결측치, 음수 EPS/적자, 거래정지, 공시 이전 구간, 파일시스템 예외 방어 검증
+    """
+
+    def test_empty_price_dataframe(self, sample_fundamental_df):
+        """빈 주가 데이터 입력 시 빈 DataFrame 안전 반환"""
+        empty_price = pd.DataFrame()
+        result = DataConsolidator.consolidate_point_in_time(empty_price, sample_fundamental_df, "005930")
+        assert result.empty
+
+    def test_empty_fundamental_dataframe(self, sample_price_df):
+        """재무 데이터가 전혀 없을 때 NO_FUNDAMENTAL_DATA 플래깅 및 안전한 기본 피처 생성"""
+        empty_fund = pd.DataFrame()
+        result = DataConsolidator.consolidate_point_in_time(sample_price_df, empty_fund, "005930")
+        assert not result.empty
+        assert len(result) == len(sample_price_df)
+        assert result["dynamic_per"].isna().all()
+        assert result["dynamic_pbr"].isna().all()
+        assert (result["warning_flags"] == "NO_FUNDAMENTAL_DATA").all()
+        assert (result["is_cross_verified"] == False).all()
+
+    def test_negative_eps_and_operating_loss_handling(self):
+        """적자/음수 EPS 기업 처리: dynamic_per NaN 마스킹 및 NEGATIVE_EPS/OPERATING_LOSS 플래그"""
+        prices = pd.DataFrame([
+            {"date": pd.to_datetime("2024-06-01"), "symbol": "000660", "open": 100000, "high": 105000, "low": 98000, "close": 102000, "volume": 50000},
+        ])
+        fundamentals = pd.DataFrame([
+            {
+                "symbol": "000660",
+                "period_end": pd.to_datetime("2024-03-31"),
+                "announcement_date": pd.to_datetime("2024-05-15"),
+                "eps": -1250.0,       # 음수 EPS
+                "bps": 45000.0,       # 양수 BPS
+                "revenue": 5000000000000,
+                "operating_income": -800000000000,  # 영업적자
+                "validation_status": "PASSED"
+            }
+        ])
+
+        merged = DataConsolidator.consolidate_point_in_time(prices, fundamentals, "000660")
+        row = merged.iloc[0]
+
+        # dynamic_per는 음수 EPS이므로 NaN이어야 함
+        assert np.isnan(row["dynamic_per"])
+        # dynamic_pbr는 정상 계산
+        assert row["dynamic_pbr"] == pytest.approx(102000 / 45000.0)
+        # 경고 플래그 검증
+        assert "NEGATIVE_EPS" in row["warning_flags"]
+        assert "OPERATING_LOSS" in row["warning_flags"]
+
+    def test_trading_halt_handling(self):
+        """거래정지일(is_trading_halt) 처리 및 TRADING_HALT 플래깅"""
+        prices = pd.DataFrame([
+            {
+                "date": pd.to_datetime("2024-06-01"),
+                "symbol": "005930",
+                "open": 70000, "high": 70000, "low": 70000, "close": 70000,
+                "volume": 0,
+                "is_trading_halt": True
+            },
+        ])
+        fundamentals = pd.DataFrame([
+            {
+                "symbol": "005930",
+                "period_end": pd.to_datetime("2024-03-31"),
+                "announcement_date": pd.to_datetime("2024-05-15"),
+                "eps": 5000.0,
+                "bps": 50000.0,
+                "revenue": 300000000000000,
+                "operating_income": 30000000000000,
+                "validation_status": "PASSED"
+            }
+        ])
+
+        merged = DataConsolidator.consolidate_point_in_time(prices, fundamentals, "005930")
+        row = merged.iloc[0]
+        assert "TRADING_HALT" in row["warning_flags"]
+
+    def test_pre_announcement_period_flag(self):
+        """최초 공시 이전 날짜의 주가 데이터에 PRE_ANNOUNCEMENT_PERIOD 플래깅"""
+        prices = pd.DataFrame([
+            {"date": pd.to_datetime("2024-01-10"), "symbol": "005930", "open": 70000, "high": 71000, "low": 69000, "close": 70000, "volume": 10000},
+            {"date": pd.to_datetime("2024-03-20"), "symbol": "005930", "open": 71000, "high": 72000, "low": 70000, "close": 71000, "volume": 10000},
+        ])
+        fundamentals = pd.DataFrame([
+            {
+                "symbol": "005930",
+                "period_end": pd.to_datetime("2023-12-31"),
+                "announcement_date": pd.to_datetime("2024-03-15"),
+                "eps": 5000.0,
+                "bps": 50000.0,
+                "revenue": 300000000000000,
+                "operating_income": 30000000000000,
+                "validation_status": "PASSED"
+            }
+        ])
+
+        merged = DataConsolidator.consolidate_point_in_time(prices, fundamentals, "005930")
+        assert "PRE_ANNOUNCEMENT_PERIOD" in merged.iloc[0]["warning_flags"]
+        assert "NORMAL" in merged.iloc[1]["warning_flags"]
+
+    def test_nested_directory_auto_creation(self, sample_price_df, sample_fundamental_df):
+        """깊게 중첩된 비존재 경로 지정 시 디렉토리 자동 생성 저장 검증"""
+        merged = DataConsolidator.consolidate_point_in_time(sample_price_df, sample_fundamental_df, "005930")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            nested_path = pathlib.Path(tmp_dir) / "level1" / "level2" / "level3" / "data.parquet"
+            saved_path = DataConsolidator.save_to_parquet(merged, filepath=nested_path)
+            assert saved_path.exists()
+            assert nested_path.is_file()
+
+    def test_load_nonexistent_file_raises_filenotfound(self):
+        """존재하지 않는 Parquet 로드 시 FileNotFoundError 예외 발생"""
+        with pytest.raises(FileNotFoundError):
+            DataConsolidator.load_from_parquet("/tmp/non_existent_path_xyz123.parquet")
+
+
+# =====================================================================
+# TIER 3: Integration & Interaction Tests (상호작용 및 통합 검증)
+# =====================================================================
+
+class TestTier3IntegrationAndInteraction:
+    """
+    Tier 3: Mock 수집기들과 Consolidator/Pipeline 간 풀-스택 통합 검증
+    """
+
+    def test_full_mock_stack_pipeline_flow(self):
+        """MockKiwoomCollector + MockPriceFetcher -> DataConsolidator -> Parquet 파이프라인 E2E 검증"""
+        fund_collector = FundamentalDataCollector(mock_mode=True)
+        price_collector = PriceDataCollector(fetchers=[MockPriceFetcher(seed=123)])
+        consolidator = DataConsolidator()
+
+        pipeline = DataCollectionPipeline(
+            fundamental_collector=fund_collector,
+            price_collector=price_collector,
+            consolidator=consolidator
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_file = pathlib.Path(tmp_dir) / "005930_full.parquet"
+            df, meta = pipeline.run(
+                symbol="005930",
+                days=100,
+                save=True,
+                output_filepath=out_file
+            )
+
+            assert len(df) == 100
+            assert meta["row_count"] == 100
+            assert out_file.exists()
+
+            # 저장된 파일 다시 로드하여 컬럼 검증
+            reloaded = DataConsolidator.load_from_parquet(out_file)
+            assert len(reloaded) == 100
+            assert "dynamic_per" in reloaded.columns
+            assert "dynamic_pbr" in reloaded.columns
+            assert "volatility_20d" in reloaded.columns
+
+    def test_cross_verification_flag_propagation(self):
+        """교차 검증 상태(ValidationStatus)가 Consolidator의 is_cross_verified 플래그로 전파되는지 확인"""
+        prices = pd.DataFrame([
+            {"date": pd.to_datetime("2024-06-01"), "symbol": "005930", "open": 70000, "high": 71000, "low": 69000, "close": 70000, "volume": 10000},
+        ])
+
+        # PASSED 상태
+        fund_passed = pd.DataFrame([{
+            "symbol": "005930", "announcement_date": pd.to_datetime("2024-05-15"),
+            "eps": 5000.0, "bps": 50000.0, "operating_income": 30000000000000,
+            "validation_status": "PASSED"
+        }])
+        merged_passed = DataConsolidator.consolidate_point_in_time(prices, fund_passed, "005930")
+        assert merged_passed.iloc[0]["is_cross_verified"] == True
+
+        # CRITICAL_DISCREPANCY 상태
+        fund_critical = pd.DataFrame([{
+            "symbol": "005930", "announcement_date": pd.to_datetime("2024-05-15"),
+            "eps": 5000.0, "bps": 50000.0, "operating_income": 30000000000000,
+            "validation_status": "CRITICAL_DISCREPANCY"
+        }])
+        merged_critical = DataConsolidator.consolidate_point_in_time(prices, fund_critical, "005930")
+        assert merged_critical.iloc[0]["is_cross_verified"] == False
+
+    def test_alias_compatibility_datapipeline(self):
+        """DataPipeline 별칭 클래스가 DataCollectionPipeline과 동일하게 동작하는지 확인"""
+        assert DataPipeline is DataCollectionPipeline
+        dp = DataPipeline()
+        assert hasattr(dp, "run")
+        assert hasattr(dp, "run_pipeline")
+        assert hasattr(dp, "run_batch")
+
+
+# =====================================================================
+# TIER 4: Real-World Scenarios (실데이터 및 실전 시나리오)
+# =====================================================================
+
+class TestTier4RealWorldScenarios:
+    """
+    Tier 4: 삼성전자, SK하이닉스 턴어라운드 및 ZSTD 압축 성능 실전 시나리오
+    """
+
+    def test_samsung_electronics_live_consolidation(self):
+        """삼성전자(005930) 실데이터 기반 파이프라인 수집, PIT 병합, 저장 검증"""
+        pipeline = DataCollectionPipeline()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            target_path = pathlib.Path(tmp_dir) / "005930_live_consolidated.parquet"
+            df, meta = pipeline.run(
+                symbol="005930",
+                days=60,
+                save=True,
+                output_filepath=target_path
+            )
+
+            assert not df.empty
+            assert len(df) >= 30
+            assert (df["symbol"] == "005930").all()
+            assert target_path.exists()
+
+            # 저장된 Parquet 스키마 확인
+            loaded = DataConsolidator.load_from_parquet(target_path)
+            assert len(loaded) == len(df)
+            assert loaded["dynamic_per"].notna().sum() > 0
+
+    def test_sk_hynix_turnaround_scenario(self):
+        """SK하이닉스(000660) 2023 적자 -> 2024 흑자 전환 턴어라운드 시나리오 PIT 검증"""
+        prices = pd.DataFrame([
+            # 2023년 사업보고서 공시 후(2024-03-20): 2023년 적자 적용
+            {"date": pd.to_datetime("2024-03-20"), "symbol": "000660", "open": 150000, "high": 155000, "low": 148000, "close": 152000, "volume": 100000},
+            # 2024년 1분기 흑자전환 공시 후(2024-05-20): 2024년 1Q 흑자 적용
+            {"date": pd.to_datetime("2024-05-20"), "symbol": "000660", "open": 180000, "high": 185000, "low": 178000, "close": 182000, "volume": 120000},
+        ])
+
+        fundamentals = pd.DataFrame([
+            {
+                "symbol": "000660",
+                "period_end": pd.to_datetime("2023-12-31"),
+                "announcement_date": pd.to_datetime("2024-03-15"),
+                "eps": -12500.0,
+                "bps": 72000.0,
+                "revenue": 32000000000000,
+                "operating_income": -7700000000000,
+                "validation_status": "PASSED"
+            },
+            {
+                "symbol": "000660",
+                "period_end": pd.to_datetime("2024-03-31"),
+                "announcement_date": pd.to_datetime("2024-05-15"),
+                "eps": 2500.0,
+                "bps": 76000.0,
+                "revenue": 12000000000000,
+                "operating_income": 2800000000000,
+                "validation_status": "PASSED"
+            }
+        ])
+
+        merged = DataConsolidator.consolidate_point_in_time(prices, fundamentals, "000660")
+
+        # 2024-03-20: 적자 상태 (dynamic_per NaN, NEGATIVE_EPS)
+        row1 = merged.iloc[0]
+        assert np.isnan(row1["dynamic_per"])
+        assert "NEGATIVE_EPS" in row1["warning_flags"]
+
+        # 2024-05-20: 흑자 턴어라운드 상태 (dynamic_per 정상 계산)
+        row2 = merged.iloc[1]
+        assert row2["dynamic_per"] == pytest.approx(182000 / 2500.0)
+        assert "NORMAL" in row2["warning_flags"]
+
+    def test_parquet_zstd_compression_efficiency(self, sample_price_df, sample_fundamental_df):
+        """ZSTD 압축 저장 시 파일 크기 효율 및 읽기 속도 검증"""
+        # 1,000개 행 데이터 생성
+        large_prices = []
+        for i in range(1000):
+            row = sample_price_df.iloc[i % len(sample_price_df)].to_dict()
+            row["date"] = pd.to_datetime("2020-01-01") + timedelta(days=i)
+            large_prices.append(row)
+        large_price_df = pd.DataFrame(large_prices)
+
+        merged = DataConsolidator.consolidate_point_in_time(large_price_df, sample_fundamental_df, "005930")
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            zstd_file = pathlib.Path(tmp_dir) / "zstd.parquet"
+            uncompressed_file = pathlib.Path(tmp_dir) / "uncompressed.parquet"
+
+            DataConsolidator.save_to_parquet(merged, filepath=zstd_file, compression="ZSTD", compression_level=3)
+            DataConsolidator.save_to_parquet(merged, filepath=uncompressed_file, compression="NONE")
+
+            zstd_size = zstd_file.stat().st_size
+            uncompressed_size = uncompressed_file.stat().st_size
+
+            # ZSTD 압축 파일이 비압축 파일보다 훨씬 작아야 함
+            assert zstd_size < uncompressed_size
+            logger.info(f"ZSTD compression ratio: {zstd_size / uncompressed_size:.2%}")

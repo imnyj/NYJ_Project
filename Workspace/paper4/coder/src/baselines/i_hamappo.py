@@ -323,10 +323,8 @@ class IHAMAPPO(BaseRLModel):
         dones = batch["done"]
         device = states.device
 
-        if "discount" in batch:
-            discounts = batch["discount"]
-        else:
-            discounts = torch.pow(self.gamma, batch.get("delta_t", torch.ones_like(rewards)))
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
 
         neighbour_states = batch.get("neighbour_state", batch.get("neighbor_state"))
         neighbour_mask = batch.get("neighbour_mask", batch.get("neighbor_mask"))
@@ -346,8 +344,13 @@ class IHAMAPPO(BaseRLModel):
         v_pred = self._value(states, neighbour_states, neighbour_mask)
         value_loss = F.mse_loss(v_pred, target_v)
 
+        # `value_coef` is PPO's c1: it weights the value term against the policy
+        # term. The two branches here own separate optimizers, so the weight has
+        # to multiply the critic loss before its backward pass -- it used to be
+        # applied only to the "loss" number in the returned dict, which made the
+        # searched value cosmetic while Optuna reported it as an optimum.
         self.critic_optimizer.zero_grad(set_to_none=True)
-        value_loss.backward()
+        (self.value_coef * value_loss).backward()
         nn.utils.clip_grad_norm_(self.critic_params, self.grad_clip)
         self.critic_optimizer.step()
 
@@ -355,7 +358,20 @@ class IHAMAPPO(BaseRLModel):
         # 2. Clipped surrogate against the frozen behaviour snapshot
         # --------------------------------------------------------------------
         advantages = (target_v - v_pred.detach())
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        # Batch normalisation of the advantage is undefined for a single sample
+        # (std of one element is NaN in torch) and is numerically meaningless when
+        # every sampled transition carries nearly the same advantage. Both happen
+        # at the low end of the density sweep: with density 5 only a handful of
+        # vehicles are ever in range, so a minibatch can be tiny and its entries
+        # highly correlated. Unguarded, the first case wrote NaN straight into the
+        # actor weights and the second divided by ~1e-8 and blew the policy step
+        # up. Centre always; scale only when the scale is real. SB3's PPO takes
+        # the same `shape[0] > 1` guard.
+        advantages = advantages - advantages.mean()
+        if advantages.shape[0] > 1:
+            adv_std = advantages.std()
+            if torch.isfinite(adv_std) and float(adv_std.item()) > 1e-6:
+                advantages = advantages / adv_std
 
         ch_dist, cont_dist = self._distributions(states, use_old=False)
         new_log_prob = self._policy_log_prob(ch_dist, cont_dist, ch_targets, cont_targets)

@@ -1,0 +1,6 @@
+# Execution Notes
+
+## 2026-08-31T17:06:00+09:00 - Worker M2
+1. 수행한 작업: Milestone 2 주가 수집기(collector_price.py), 실시간 스트리머 및 링버퍼(streamer.py), 단위 테스트(test_price_streamer.py, 35개 케이스) 구현 및 검증 완료.
+2. 실패/재시도 지점: 네이버 일봉 XML의 EUC-KR 인코딩 선언으로 인한 파싱 예외 발생.
+3. 수동 교정 내용: EUC-KR 디코딩 후 정규식 기반 utf-8 변환 파싱 로직을 적용하여 예외 해결 및 35/35 테스트 100% 통과.

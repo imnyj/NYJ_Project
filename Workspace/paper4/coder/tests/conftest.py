@@ -71,3 +71,11 @@ def temp_results_dir():
     d = tempfile.mkdtemp(prefix="aoi_test_results_")
     yield d
     shutil.rmtree(d, ignore_errors=True)
+
+
+def pytest_configure(config):
+    """Register the markers this suite uses so `-W error` stays usable."""
+    config.addinivalue_line(
+        "markers",
+        "slow: exercises a real SUMO episode (seconds, not milliseconds)",
+    )

@@ -62,6 +62,7 @@ Adaptations
 
 from __future__ import annotations
 import copy
+import logging
 from typing import Any, Dict, Sequence, Tuple, Union
 import numpy as np
 import torch
@@ -70,6 +71,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from src.baselines.base_agent import BaseRLModel
 from src.rl_interface import STATE_DIM
+
+logger = logging.getLogger(__name__)
 
 
 class MA2HDQN(BaseRLModel):
@@ -120,6 +123,21 @@ class MA2HDQN(BaseRLModel):
         self.lr_factor_max = float(lr_factor_max)
         self.n_step = max(1, int(n_step))
         self.grad_clip = float(grad_clip)
+        #: True only when the replay batch actually carries an n-step return.
+        #: `RetrospectiveReplayBuffer` never does (see the module header), so on
+        #: the shipped pipeline `n_step` is INERT: it selects nothing, and an
+        #: Optuna study that searches it reports an "optimal n_step" that had no
+        #: effect on any trial. The flag is set per `update()` call so the
+        #: condition is observable in the returned dict instead of being assumed.
+        self.n_step_active = False
+        if self.n_step > 1:
+            logger.warning(
+                "MA2HDQN: n_step=%d was requested, but n-step returns require the "
+                "replay buffer to supply 'n_step_reward'/'n_step_discount'. "
+                "RetrospectiveReplayBuffer does not, so this update stays a one-step "
+                "SMDP backup. Remove `n_step` from the search space or extend the buffer.",
+                self.n_step,
+            )
 
         #: Continuous branch width: (Delta, p). The paper's is 1 -- power only.
         self.cont_dim = 2
@@ -318,15 +336,14 @@ class MA2HDQN(BaseRLModel):
         dones = batch["done"]
         device = states.device
 
-        if "discount" in batch:
-            discounts = batch["discount"]
-        else:
-            discounts = torch.pow(self.gamma, batch.get("delta_t", torch.ones_like(rewards)))
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
 
         # Multi-step return, only if a buffer ever supplies one. Our
         # RetrospectiveReplayBuffer does not (see module docstring), so in the normal
         # training path this is a one-step SMDP backup.
-        if "n_step_reward" in batch and "n_step_discount" in batch:
+        self.n_step_active = "n_step_reward" in batch and "n_step_discount" in batch
+        if self.n_step_active:
             rewards = batch["n_step_reward"]
             discounts = batch["n_step_discount"]
 
@@ -420,5 +437,6 @@ class MA2HDQN(BaseRLModel):
             "actor_loss": float(actor_loss.item()),
             "lr_scale": float(lr_factor),
             "target_synced": float(synced),
+            "n_step_active": float(self.n_step_active),
             "epsilon": float(self.epsilon.item()),
         }

@@ -29,7 +29,11 @@ import pandas as pd
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from src.baselines import ALL_BASELINES, get_baseline
-from src.hot_swap_trainer import ENV_ONLY_HPARAM_KEYS  # noqa: E402
+from src.hot_swap_trainer import (
+    DEFAULT_ERROR_MODE,
+    ENV_ONLY_HPARAM_KEYS,
+    REWARD_ERROR_MODES,
+)  # noqa: E402
 from src.hot_swap_trainer import run_hot_swap_training  # noqa: E402
 
 EPISODES = 100
@@ -289,6 +293,33 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="where to write checkpoints (default: the trainer's own checkpoints/ dir)")
     ap.add_argument("--tensorboard-dir", type=str, default=None,
                     help="where to write TensorBoard logs (default: the trainer's own logs/tensorboard dir)")
+    ap.add_argument("--log-dir", type=str, default=None,
+                    help="where to write per-episode progress CSVs (default: the trainer's own logs/training dir)")
+    # Seven densities over 100 episodes: each is visited 14 times (the last two
+    # get 15). The grid stops at 35 because the road saturates there -- measured
+    # in-range counts flatten at 138-142 for requests of 35 and above and go
+    # non-monotone, so a larger request does not make a busier network. Training on
+    # a single density and evaluating across a range would have made every
+    # reported cell but one an extrapolation.
+    ap.add_argument("--density", type=float, nargs="+",
+                    default=[5, 10, 15, 20, 25, 30, 35],
+                    help="traffic densities to cycle through, one per episode")
+    # The two reward-aggregation arms are trained separately and compared; a run
+    # must say which arm it belongs to because their rewards are not on the same
+    # scale. See hot_swap_trainer.REWARD_ERROR_MODES.
+    ap.add_argument("--error-mode", type=str, default=DEFAULT_ERROR_MODE,
+                    choices=list(REWARD_ERROR_MODES),
+                    help="how the error term aggregates over an SMDP interval")
+    # Without this, each model trains as fast as its own forward/backward pass
+    # allows, so a cheap model receives many more gradient updates than an
+    # expensive one over the same 200k environment steps -- measured at 18x
+    # across the density schedule. For a comparison table that is a confound.
+    # The cap only slows the fast models, so no baseline is ever handed less
+    # training than it would otherwise have had; the cost is wall-clock time.
+    ap.add_argument("--updates-per-env-step", type=float, default=None,
+                    help="cap gradient updates at this ratio of environment steps "
+                         "so every baseline gets an equal training budget "
+                         "(default: uncapped, i.e. wall-clock bound)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO,
@@ -329,6 +360,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     logging.info("Training %d model(s): %s", len(deduped_models), ", ".join(deduped_models))
     logging.info("Per model: %d episodes x %d steps = %d total env steps",
                  args.episodes, args.steps_per_episode, total_steps)
+    logging.info("Reward error mode: %s | density schedule: %s",
+                 args.error_mode, args.density)
 
     # Load HPO best hyperparameters
     hparams_by_model = load_hparams_from_csv(args.hparams_csv)
@@ -357,6 +390,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 extra_dirs["checkpoint_dir"] = args.checkpoint_dir
             if args.tensorboard_dir:
                 extra_dirs["tensorboard_dir"] = args.tensorboard_dir
+            if args.log_dir:
+                extra_dirs["log_dir"] = args.log_dir
 
             summary = run_hot_swap_training(
                 model_name=model_cls,
@@ -365,6 +400,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 hparams=model_hparams,
                 seed=args.seed,
                 resume=not args.no_resume,
+                density=list(args.density),
+                error_mode=args.error_mode,
+                updates_per_env_step=args.updates_per_env_step,
                 **extra_dirs,
             )
             logging.info("Finished %s | %s", canonical_name, summary)

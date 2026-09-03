@@ -1,0 +1,359 @@
+"""
+core/kiwoom_api.py
+==================
+Auto Stock ML/RL Trader — Phase 3: 키움 REST API (2024) 통신 및 트레이딩 코어 모듈
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from decimal import Decimal
+from enum import Enum
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
+
+import requests
+
+from core.config import KiwoomConfig, SecretStr, get_config
+
+logger = logging.getLogger("AutoStock.KiwoomAPI")
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+class OrderSide(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+class OrderType(str, Enum):
+    MARKET = "3"  # 시장가 (키움 REST API 기준 3)
+    LIMIT = "0"   # 지정가 (키움 REST API 기준 0)
+
+# ==============================================================================
+# Custom Exceptions Hierarchy
+# ==============================================================================
+
+class KiwoomAPIError(Exception):
+    def __init__(self, message: str, code: Optional[str] = None, raw_response: Optional[Dict[str, Any]] = None, status_code: Optional[int] = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.raw_response = raw_response or {}
+        self.status_code = status_code
+
+class KiwoomAuthError(KiwoomAPIError): pass
+class TokenError(KiwoomAuthError): pass
+class KiwoomOrderError(KiwoomAPIError): pass
+class KiwoomQueryError(KiwoomAPIError): pass
+class KiwoomRateLimitError(KiwoomAPIError): pass
+class KiwoomNetworkError(KiwoomAPIError): pass
+
+# ==============================================================================
+# Data Models with Dual Object/Dict Interface
+# ==============================================================================
+
+@dataclass
+class PriceQuote(Mapping[str, Any]):
+    symbol: str
+    current_price: Decimal
+    price_change: Decimal
+    change_rate: Decimal
+    open_price: Decimal
+    high_price: Decimal
+    low_price: Decimal
+    volume: int
+    trade_amount: Decimal
+    raw_response: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol, "current_price": self.current_price, "price_change": self.price_change,
+            "change_rate": self.change_rate, "open_price": self.open_price, "high_price": self.high_price,
+            "low_price": self.low_price, "volume": self.volume, "trade_amount": self.trade_amount,
+            "timestamp": self.timestamp.isoformat(), "raw_response": self.raw_response,
+        }
+    def __getitem__(self, key: str) -> Any: return self.to_dict()[key]
+    def __iter__(self) -> Iterator[str]: return iter(self.to_dict())
+    def __len__(self) -> int: return len(self.to_dict())
+
+
+@dataclass
+class OrderResult(Mapping[str, Any]):
+    order_id: str
+    symbol: str
+    side: str
+    quantity: int
+    price: int
+    order_type: str
+    order_time: str
+    message: str
+    raw_response: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "order_id": self.order_id, "symbol": self.symbol, "side": self.side, "quantity": self.quantity,
+            "price": self.price, "order_type": self.order_type, "order_time": self.order_time,
+            "message": self.message, "raw_response": self.raw_response,
+        }
+    def __getitem__(self, key: str) -> Any: return self.to_dict()[key]
+    def __iter__(self) -> Iterator[str]: return iter(self.to_dict())
+    def __len__(self) -> int: return len(self.to_dict())
+
+
+@dataclass
+class PositionItem(Mapping[str, Any]):
+    symbol: str
+    name: str
+    quantity: int
+    available_quantity: int
+    avg_purchase_price: Decimal
+    purchase_amount: Decimal
+    current_price: Decimal
+    eval_amount: Decimal
+    eval_pnl: Decimal
+    eval_pnl_rate: Decimal
+    raw_response: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "symbol": self.symbol, "name": self.name, "quantity": self.quantity, "available_quantity": self.available_quantity,
+            "avg_purchase_price": self.avg_purchase_price, "purchase_amount": self.purchase_amount, "current_price": self.current_price,
+            "eval_amount": self.eval_amount, "eval_pnl": self.eval_pnl, "eval_pnl_rate": self.eval_pnl_rate, "raw_response": self.raw_response,
+        }
+    def __getitem__(self, key: str) -> Any: return self.to_dict()[key]
+    def __iter__(self) -> Iterator[str]: return iter(self.to_dict())
+    def __len__(self) -> int: return len(self.to_dict())
+
+
+@dataclass
+class AccountBalance(Mapping[str, Any]):
+    account_no: str
+    deposit_received: Decimal
+    available_cash: Decimal
+    total_eval_amount: Decimal
+    total_asset: Decimal
+    total_eval_pnl: Decimal
+    positions: List[PositionItem] = field(default_factory=list)
+    raw_response: Dict[str, Any] = field(default_factory=dict)
+    timestamp: datetime = field(default_factory=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "account_no": self.account_no, "deposit_received": self.deposit_received, "available_cash": self.available_cash,
+            "total_eval_amount": self.total_eval_amount, "total_asset": self.total_asset, "total_eval_pnl": self.total_eval_pnl,
+            "positions": [pos.to_dict() for pos in self.positions], "timestamp": self.timestamp.isoformat(), "raw_response": self.raw_response,
+        }
+    def __getitem__(self, key: str) -> Any: return self.to_dict()[key]
+    def __iter__(self) -> Iterator[str]: return iter(self.to_dict())
+    def __len__(self) -> int: return len(self.to_dict())
+
+# ==============================================================================
+# Token Manager (OAuth 2.0 Caching & Auto-Refresh)
+# ==============================================================================
+
+class TokenManager:
+    def __init__(self, config: KiwoomConfig, session: Optional[requests.Session] = None) -> None:
+        self.config = config
+        self.session = session or requests.Session()
+        self._access_token: Optional[str] = None
+        self._expires_at: Optional[datetime] = None
+
+    def is_expired(self, buffer_seconds: int = 600) -> bool:
+        if not self._access_token or not self._expires_at:
+            return True
+        return datetime.now() + timedelta(seconds=buffer_seconds) >= self._expires_at
+
+    def get_access_token(self, force_refresh: bool = False) -> str:
+        if force_refresh or self.is_expired():
+            self.refresh_token()
+        return self._access_token or ""
+
+    def refresh_token(self) -> str:
+        url = f"{self.config.base_url}/oauth2/token"
+        app_key = self.config.app_key.get_secret_value()
+        app_secret = self.config.app_secret.get_secret_value()
+        
+        if not app_key or not app_secret:
+            raise KiwoomAuthError("API 키 또는 시크릿이 설정되지 않았습니다.")
+        
+        payload = {
+            "grant_type": "client_credentials",
+            "appkey": app_key,
+            "secretkey": app_secret,
+        }
+        headers = {"Content-Type": "application/json;charset=UTF-8", "User-Agent": USER_AGENT}
+
+        try:
+            resp = self.session.post(url, json=payload, headers=headers, timeout=self.config.timeout_seconds)
+        except requests.exceptions.RequestException as e:
+            raise KiwoomNetworkError(f"토큰 발급 통신 오류: {e}") from e
+
+        data = resp.json() if resp.text else {}
+        token = data.get("token") or data.get("access_token")
+        
+        if not token:
+            raise KiwoomAuthError(f"토큰 발급 실패: {data.get('return_msg', resp.text)}", raw_response=data)
+
+        # Parse expires_dt (e.g. 20260903102555)
+        expires_dt_str = data.get("expires_dt")
+        if expires_dt_str and len(expires_dt_str) == 14:
+            self._expires_at = datetime.strptime(expires_dt_str, "%Y%m%d%H%M%S")
+        else:
+            self._expires_at = datetime.now() + timedelta(hours=23)
+
+        self._access_token = token
+        logger.info("Kiwoom Access Token이 갱신되었습니다.")
+        return self._access_token
+
+
+# ==============================================================================
+# Kiwoom Client / API Engine
+# ==============================================================================
+
+class KiwoomClient:
+    def __init__(self, config: Optional[KiwoomConfig] = None, session: Optional[requests.Session] = None) -> None:
+        if config is None:
+            config = get_config().kiwoom
+        self.config = config
+        self.session = session or requests.Session()
+        self.token_manager = TokenManager(self.config, self.session)
+
+    def __enter__(self) -> "KiwoomClient": return self
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None: self.close()
+    def close(self) -> None:
+        if self.session: self.session.close()
+
+    def _get_common_headers(self, tr_id: str) -> Dict[str, str]:
+        token = self.token_manager.get_access_token()
+        return {
+            "Content-Type": "application/json;charset=UTF-8",
+            "authorization": f"Bearer {token}",
+            "api-id": tr_id,
+            "User-Agent": USER_AGENT,
+        }
+
+    def _request(self, method: str, path: str, tr_id: str, json_data: Optional[Dict[str, Any]] = None, is_order: bool = False, retry_on_401: bool = True) -> Dict[str, Any]:
+        url = f"{self.config.base_url}{path}"
+        max_attempts = max(1, self.config.max_retries)
+        last_exception = None
+
+        for attempt in range(max_attempts):
+            headers = self._get_common_headers(tr_id=tr_id)
+            try:
+                resp = self.session.request(method=method, url=url, headers=headers, json=json_data, timeout=self.config.timeout_seconds)
+            except requests.exceptions.RequestException as e:
+                last_exception = KiwoomNetworkError(f"API 통신 장애: {e}")
+                time.sleep(self.config.retry_backoff_factor * (2 ** attempt))
+                continue
+
+            if resp.status_code == 401 and retry_on_401:
+                self.token_manager.get_access_token(force_refresh=True)
+                return self._request(method, path, tr_id, json_data, is_order, False)
+            if resp.status_code == 429:
+                time.sleep(self.config.retry_backoff_factor * (2 ** attempt) + 0.1)
+                continue
+            if resp.status_code >= 500:
+                time.sleep(self.config.retry_backoff_factor * (2 ** attempt))
+                continue
+
+            data = resp.json() if resp.text else {}
+            
+            # Kiwoom returns return_code: 0 for success
+            rt_cd = str(data.get("return_code", "0")).strip()
+            if rt_cd != "0":
+                msg = data.get("return_msg") or f"API 에러 (code={rt_cd})"
+                if is_order:
+                    raise KiwoomOrderError(msg, code=rt_cd, raw_response=data)
+                raise KiwoomQueryError(msg, code=rt_cd, raw_response=data)
+
+            return data
+
+        raise last_exception or KiwoomAPIError("최대 재시도 초과")
+
+    def get_current_price(self, symbol: str) -> PriceQuote:
+        symbol_clean = str(symbol).strip()
+        path = "/api/dostk/stkinfo"
+        tr_id = "ka10001"
+        payload = {"stk_cd": symbol_clean}
+
+        res = self._request("POST", path, tr_id=tr_id, json_data=payload)
+        
+        current_price = Decimal(str(abs(int(res.get("cur_prc", 0)))))
+        price_change = Decimal(str(res.get("pred_pre", 0)))
+        change_rate = Decimal(str(res.get("flu_rt", "0.0")))
+        open_price = Decimal(str(abs(int(res.get("open_pric", 0)))))
+        high_price = Decimal(str(abs(int(res.get("high_pric", 0)))))
+        low_price = Decimal(str(abs(int(res.get("low_pric", 0)))))
+        volume = int(res.get("trde_qty", 0))
+
+        return PriceQuote(
+            symbol=symbol_clean, current_price=current_price, price_change=price_change, change_rate=change_rate,
+            open_price=open_price, high_price=high_price, low_price=low_price, volume=volume, trade_amount=Decimal(0),
+            raw_response=res,
+        )
+
+    def send_order(self, symbol: str, side: Union[str, OrderSide], quantity: int, price: int = 0, order_type: Union[str, OrderType] = "3") -> OrderResult:
+        symbol_clean = str(symbol).strip()
+        side_raw = str(side.value if isinstance(side, OrderSide) else side).upper().strip()
+        is_buy = side_raw in ("BUY", "02", "매수")
+        
+        type_raw = str(order_type.value if isinstance(order_type, OrderType) else order_type).strip()
+        
+        path = "/api/dostk/ordr"
+        tr_id = "kt10000" if is_buy else "kt10001"
+        payload = {
+            "dmst_stex_tp": "KRX",
+            "stk_cd": symbol_clean,
+            "ord_qty": str(quantity),
+            "ord_uv": str(price),
+            "trde_tp": type_raw,
+        }
+
+        res = self._request("POST", path, tr_id=tr_id, json_data=payload, is_order=True)
+        return OrderResult(
+            order_id=str(res.get("ord_no", "")), symbol=symbol_clean, side="BUY" if is_buy else "SELL",
+            quantity=quantity, price=price, order_type=type_raw, order_time=datetime.now().strftime("%H%M%S"),
+            message=res.get("return_msg", "주문 접수"), raw_response=res,
+        )
+
+    def get_account_balance(self) -> AccountBalance:
+        path = "/api/dostk/acnt"
+        tr_id = "kt00018"
+        payload = {"qry_tp": "1", "dmst_stex_tp": "KRX"}
+
+        res = self._request("POST", path, tr_id=tr_id, json_data=payload)
+
+        positions = []
+        raw_positions = res.get("acnt_evlt_remn_indv_tot", [])
+        if isinstance(raw_positions, dict): raw_positions = [raw_positions]
+        for item in raw_positions:
+            if not isinstance(item, dict): continue
+            pdno = str(item.get("stk_cd", "")).strip()
+            if not pdno: continue
+            hld_qty = int(item.get("hld_qty", 0))
+            if hld_qty <= 0: continue
+            positions.append(PositionItem(
+                symbol=pdno, name=str(item.get("stk_nm", "")), quantity=hld_qty, available_quantity=hld_qty,
+                avg_purchase_price=Decimal(str(item.get("pchs_avg_uv", 0))), purchase_amount=Decimal(str(item.get("pchs_amt", 0))),
+                current_price=Decimal(str(item.get("cur_prc", 0))), eval_amount=Decimal(str(item.get("evlt_amt", 0))),
+                eval_pnl=Decimal(str(item.get("evlt_pl", 0))), eval_pnl_rate=Decimal(str(item.get("prft_rt", 0))), raw_response=item,
+            ))
+
+        deposit_received = Decimal(str(res.get("prsm_dpst_aset_amt", 0)))
+        total_eval_amount = Decimal(str(res.get("tot_evlt_amt", 0)))
+        total_eval_pnl = Decimal(str(res.get("tot_evlt_pl", 0)))
+
+        return AccountBalance(
+            account_no=self.config.account_no, deposit_received=deposit_received, available_cash=deposit_received,
+            total_eval_amount=total_eval_amount, total_asset=deposit_received + total_eval_amount,
+            total_eval_pnl=total_eval_pnl, positions=positions, raw_response=res,
+        )
+
+    def revoke_token(self) -> bool:
+        """토큰 폐기 (현재 API에서 지원하지 않으나 하위 호환성을 위해 유지)"""
+        self.token_manager._access_token = None
+        return True
+
+KiwoomAPI = KiwoomClient

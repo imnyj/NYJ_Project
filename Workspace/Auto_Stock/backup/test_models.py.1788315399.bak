@@ -1,0 +1,586 @@
+"""
+tests/test_models.py
+====================
+Milestone 2 단위 및 통합 테스트 스위트:
+1. Supervised Learning Feature Extractors (TabularMLP, Temporal1DCNN, DualStream, SLPretrainer)
+2. Hybrid RL Policies & PPO Agent (HybridActorCritic, HybridPPO, RolloutBuffer)
+3. Stable-Baselines3 Compatibility & Integration (SB3CustomFeaturesExtractor, SB3HybridPolicyAdapter)
+"""
+
+import os
+import tempfile
+import numpy as np
+import pytest
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+
+from modules.engine.hybrid_trading_env import (
+    ContinuousToHybridActionWrapper,
+    HybridTradingEnv,
+)
+from modules.models.feature_extractor import (
+    DualStreamSLFeatureExtractor,
+    SLPretrainer,
+    TabularMLPFeatureExtractor,
+    Temporal1DCNNFeatureExtractor,
+    get_activation_fn,
+)
+from modules.models.hybrid_policy import (
+    HybridActorCritic,
+    HybridPPO,
+    RolloutBuffer,
+    SB3CustomFeaturesExtractor,
+    SB3HybridPolicyAdapter,
+)
+
+
+# ============================================================================
+# Tier 1: SL Feature Extractor Tests
+# ============================================================================
+
+class TestSLFeatureExtractors:
+    """지도학습 특징 추출기 단위 테스트"""
+
+    def test_activation_function_factory(self):
+        """지원되는 모든 활성화 함수 팩토리 테스트"""
+        for act in ["relu", "gelu", "tanh", "elu", "leaky_relu", "silu", "swish"]:
+            fn = get_activation_fn(act)
+            assert isinstance(fn, nn.Module)
+
+        with pytest.raises(ValueError, match="지원하지 않는 활성화 함수"):
+            get_activation_fn("unsupported_act_123")
+
+    def test_tabular_mlp_forward_backward_and_residuals(self):
+        """TabularMLPFeatureExtractor 순전파, 역전파 및 잔차 연결 검증"""
+        input_dim = 14
+        output_dim = 64
+        batch_size = 16
+
+        # Standard MLP
+        mlp = TabularMLPFeatureExtractor(
+            input_dim=input_dim,
+            hidden_dims=[128, 64],
+            output_dim=output_dim,
+            activation="gelu",
+            dropout=0.1,
+            use_layer_norm=True,
+            use_residual=True,
+        )
+
+        # 2D Batched Tensor
+        x = torch.randn(batch_size, input_dim, requires_grad=True)
+        out = mlp(x)
+        assert out.shape == (batch_size, output_dim)
+        loss = out.sum()
+        loss.backward()
+        assert x.grad is not None
+        assert not torch.isnan(x.grad).any()
+
+        # 1D Unbatched Tensor
+        x_unb = torch.randn(input_dim)
+        out_unb = mlp(x_unb)
+        assert out_unb.shape == (output_dim,)
+
+        # NumPy input
+        x_np = np.random.randn(batch_size, input_dim).astype(np.float32)
+        out_np = mlp(x_np)
+        assert out_np.shape == (batch_size, output_dim)
+
+        # NaN & Inf Resilience
+        x_nan = torch.tensor([[float('nan'), float('inf'), -float('inf')] + [0.0] * 11])
+        out_nan = mlp(x_nan)
+        assert not torch.isnan(out_nan).any()
+        assert not torch.isinf(out_nan).any()
+
+    def test_temporal_1dcnn_various_shapes_and_pooling(self):
+        """Temporal1DCNNFeatureExtractor 다양한 입력 형상 및 풀링 방식 검증"""
+        in_channels = 10
+        seq_len = 20
+        output_dim = 48
+        batch_size = 8
+
+        for pooling in ["adaptive_avg", "adaptive_max", "flatten"]:
+            cnn = Temporal1DCNNFeatureExtractor(
+                in_channels=in_channels,
+                seq_len=seq_len,
+                num_filters=[32, 64],
+                kernel_sizes=[3, 3],
+                output_dim=output_dim,
+                dropout=0.1,
+                pooling=pooling,
+            )
+
+            # Shape 1: (B, seq_len, in_channels)
+            x1 = torch.randn(batch_size, seq_len, in_channels, requires_grad=True)
+            out1 = cnn(x1)
+            assert out1.shape == (batch_size, output_dim)
+            out1.sum().backward()
+            assert x1.grad is not None
+
+            # Shape 2: (B, in_channels, seq_len)
+            x2 = torch.randn(batch_size, in_channels, seq_len)
+            out2 = cnn(x2)
+            assert out2.shape == (batch_size, output_dim)
+
+            # Shape 3: Single time step (B, in_channels)
+            x3 = torch.randn(batch_size, in_channels)
+            out3 = cnn(x3)
+            assert out3.shape == (batch_size, output_dim)
+
+            # Shape 4: Unbatched (seq_len, in_channels)
+            x4 = torch.randn(seq_len, in_channels)
+            out4 = cnn(x4)
+            assert out4.shape == (output_dim,)
+
+    def test_dual_stream_sl_feature_extractor_fusion(self):
+        """DualStreamSLFeatureExtractor 멀티모달 퓨전 검증"""
+        temp_c = 10
+        seq_l = 20
+        tab_dim = 4
+        out_dim = 64
+        b_size = 8
+
+        dual = DualStreamSLFeatureExtractor(
+            temporal_in_channels=temp_c,
+            temporal_seq_len=seq_l,
+            tabular_dim=tab_dim,
+            output_dim=out_dim,
+        )
+
+        # 1. Dual stream explicit inputs
+        t_x = torch.randn(b_size, seq_l, temp_c)
+        tab_x = torch.randn(b_size, tab_dim)
+        out_dual = dual(temporal_x=t_x, tabular_x=tab_x)
+        assert out_dual.shape == (b_size, out_dim)
+
+        # 2. Dictionary input
+        dict_inp = {"temporal": t_x, "tabular": tab_x}
+        out_dict = dual(x=dict_inp)
+        assert out_dict.shape == (b_size, out_dim)
+
+        # 3. Tuple input
+        tuple_inp = (t_x, tab_x)
+        out_tuple = dual(x=tuple_inp)
+        assert out_tuple.shape == (b_size, out_dim)
+
+        # 4. Flat observation input (B, temp_c + tab_dim)
+        flat_inp = torch.randn(b_size, temp_c + tab_dim)
+        out_flat = dual(x=flat_inp)
+        assert out_flat.shape == (b_size, out_dim)
+
+        # 5. Unbatched flat obs
+        unb_flat = torch.randn(temp_c + tab_dim)
+        out_unb = dual(x=unb_flat)
+        assert out_unb.shape == (out_dim,)
+
+    def test_sl_pretrainer_multitask_training_and_serialization(self):
+        """SLPretrainer 멀티태스크 학습, 손실 감소, 평가 및 저장/로드 검증"""
+        dual = DualStreamSLFeatureExtractor(
+            temporal_in_channels=10,
+            temporal_seq_len=20,
+            tabular_dim=4,
+            output_dim=64,
+        )
+        pretrainer = SLPretrainer(
+            backbone=dual,
+            feature_dim=64,
+            num_classes=3,
+            task_weight_cls=1.0,
+            task_weight_reg=1.0,
+            regression_loss_type="smooth_l1",
+            lr=1e-3,
+        )
+
+        n_samples = 64
+        t_data = torch.randn(n_samples, 20, 10)
+        tab_data = torch.randn(n_samples, 4)
+        target_ret = torch.randn(n_samples, 1) * 0.02
+        target_dir = torch.randint(0, 3, (n_samples,))
+
+        # Train 3 epochs
+        history = pretrainer.fit(
+            train_data=(t_data, tab_data, target_ret, target_dir),
+            val_data=(t_data[:16], tab_data[:16], target_ret[:16], target_dir[:16]),
+            epochs=3,
+            batch_size=16,
+        )
+
+        assert len(history["train_total_loss"]) == 3
+        assert len(history["val_total_loss"]) == 3
+        assert history["train_total_loss"][-1] >= 0.0
+
+        # Evaluate
+        eval_metrics = pretrainer.evaluate((t_data[:16], tab_data[:16], target_ret[:16], target_dir[:16]))
+        assert "total_loss" in eval_metrics
+        assert "accuracy" in eval_metrics
+        assert 0.0 <= eval_metrics["accuracy"] <= 1.0
+
+        # Save & Load Checkpoint
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            pretrainer.save_pretrained(tmp_path)
+            assert os.path.exists(tmp_path)
+
+            new_pretrainer = SLPretrainer(feature_dim=64)
+            new_pretrainer.load_pretrained(tmp_path)
+
+            # Compare predictions in eval mode (disabling dropout)
+            pretrainer.eval()
+            new_pretrainer.eval()
+            with torch.no_grad():
+                pred1_r, pred1_d = pretrainer(temporal_x=t_data[:4], tabular_x=tab_data[:4])
+                pred2_r, pred2_d = new_pretrainer(temporal_x=t_data[:4], tabular_x=tab_data[:4])
+            torch.testing.assert_close(pred1_r, pred2_r)
+            torch.testing.assert_close(pred1_d, pred2_d)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+
+# ============================================================================
+# Tier 2: Hybrid RL Policy & Agent Tests
+# ============================================================================
+
+class TestHybridActorCriticAndPolicy:
+    """하이브리드 액션 정책 및 가치망 단위 테스트"""
+
+    def test_hybrid_actor_critic_beta_distribution(self):
+        """Beta 분포 기반 HybridActorCritic 샘플링 및 log_prob 검증"""
+        policy = HybridActorCritic(obs_dim=14, feature_dim=64, distribution_type="beta")
+        obs = np.random.randn(14).astype(np.float32)
+
+        # 1. Stochastic sampling (unbatched)
+        action, log_prob, value = policy.sample_action(obs, deterministic=False)
+        act_type, weight = action
+        assert act_type in (0, 1, 2)
+        assert 0.0 <= weight <= 1.0
+        assert isinstance(log_prob, torch.Tensor)
+        assert isinstance(value, torch.Tensor)
+        assert not torch.isnan(log_prob)
+        assert not torch.isnan(value)
+
+        # 2. Deterministic sampling (unbatched)
+        action_det, _, _ = policy.sample_action(obs, deterministic=True)
+        act_type_det, weight_det = action_det
+        assert act_type_det in (0, 1, 2)
+        assert 0.0 <= weight_det <= 1.0
+
+        # 3. Batched sampling
+        obs_batch = np.random.randn(8, 14).astype(np.float32)
+        (act_types, weights), log_probs, values = policy.sample_action(obs_batch, deterministic=False)
+        assert len(act_types) == 8
+        assert len(weights) == 8
+        assert log_probs.shape == (8,)
+        assert values.shape == (8,)
+
+    def test_hybrid_actor_critic_gaussian_distribution(self):
+        """Gaussian 분포 기반 HybridActorCritic 샘플링 및 log_prob 검증"""
+        policy = HybridActorCritic(obs_dim=14, feature_dim=64, distribution_type="gaussian")
+        obs = np.random.randn(14).astype(np.float32)
+
+        action, log_prob, value = policy.sample_action(obs, deterministic=False)
+        act_type, weight = action
+        assert act_type in (0, 1, 2)
+        assert 0.0 <= weight <= 1.0
+
+    def test_hybrid_actor_critic_evaluate_actions_and_entropy(self):
+        """PPO 손실 계산용 evaluate_actions 무결성 검증"""
+        policy = HybridActorCritic(obs_dim=14, feature_dim=64, distribution_type="beta")
+        batch_size = 16
+
+        obs = torch.randn(batch_size, 14)
+        act_disc = torch.randint(0, 3, (batch_size,))
+        act_cont = torch.rand(batch_size, 1)
+
+        log_prob, entropy, value = policy.evaluate_actions(obs, (act_disc, act_cont))
+
+        assert log_prob.shape == (batch_size,)
+        assert entropy.shape == (batch_size,)
+        assert value.shape == (batch_size,)
+
+        # Log prob and entropy should be non-NaN
+        assert not torch.isnan(log_prob).any()
+        assert not torch.isnan(entropy).any()
+        assert not torch.isnan(value).any()
+
+        # Differentiability check
+        loss = -log_prob.mean() - 0.01 * entropy.mean() + value.mean()
+        loss.backward()
+
+        for name, param in policy.named_parameters():
+            if param.requires_grad:
+                assert param.grad is not None, f"Gradient missing for {name}"
+
+    def test_sl_to_rl_weight_transfer_and_freezing(self):
+        """사전학습된 SL 가중치의 RL 정책망 전이 및 Freeze/Unfreeze 검증"""
+        dual = DualStreamSLFeatureExtractor(output_dim=64)
+        pretrainer = SLPretrainer(backbone=dual, feature_dim=64)
+
+        # Train a bit to have distinct weights
+        pretrainer.fit(
+            train_data=(torch.randn(16, 20, 10), torch.randn(16, 4), torch.randn(16, 1), torch.randint(0, 3, (16,))),
+            epochs=1,
+            batch_size=8,
+        )
+
+        rl_policy = HybridActorCritic(obs_dim=14, feature_dim=64)
+        rl_policy.load_from_sl_pretrainer(pretrainer, freeze=True)
+
+        # Verify frozen parameters
+        for param in rl_policy.feature_extractor.parameters():
+            assert not param.requires_grad
+
+        # Unfreeze
+        rl_policy.unfreeze_backbone()
+        for param in rl_policy.feature_extractor.parameters():
+            assert param.requires_grad
+
+
+class TestHybridPPOAgent:
+    """하이브리드 PPO 에이전트 학습 및 평가 테스트"""
+
+    def test_rollout_buffer_gae_computation(self):
+        """RolloutBuffer GAE 및 어드밴티지 계산 검증"""
+        buf_size = 32
+        obs_dim = 14
+        device = torch.device("cpu")
+        buffer = RolloutBuffer(buffer_size=buf_size, obs_dim=obs_dim, device=device)
+
+        for i in range(buf_size):
+            buffer.add(
+                obs=np.random.randn(obs_dim).astype(np.float32),
+                action=(np.random.randint(0, 3), float(np.random.rand())),
+                reward=float(np.random.randn() * 0.01),
+                value=float(np.random.randn()),
+                log_prob=float(-np.random.rand()),
+                done=(i == buf_size - 1),
+            )
+
+        assert buffer.full
+        buffer.compute_returns_and_advantages(last_value=0.0, last_done=True, gamma=0.99, gae_lambda=0.95)
+
+        assert not np.isnan(buffer.advantages).any()
+        assert not np.isnan(buffer.returns).any()
+
+        # Check mini-batches
+        batch_count = 0
+        for obs_b, act_d_b, act_c_b, log_p_b, adv_b, ret_b in buffer.get_batches(batch_size=8):
+            assert obs_b.shape == (8, obs_dim)
+            assert act_d_b.shape == (8,)
+            assert act_c_b.shape == (8,)
+            batch_count += 1
+        assert batch_count == 4
+
+    def test_hybrid_ppo_training_loop_and_convergence(self):
+        """HybridPPO 학습 루프(Rollout 수집 -> GAE -> PPO Update) 실행 검증"""
+        env = HybridTradingEnv()
+        ppo = HybridPPO(
+            env=env,
+            learning_rate=1e-3,
+            n_steps=32,
+            batch_size=16,
+            n_epochs=2,
+            gamma=0.99,
+            gae_lambda=0.95,
+            clip_range=0.2,
+            ent_coef=0.01,
+            vf_coef=0.5,
+        )
+
+        # Train for 64 steps (2 rollout cycles)
+        ppo.learn(total_timesteps=64)
+
+        # Prediction test
+        obs, _ = env.reset()
+        action, state = ppo.predict(obs, deterministic=True)
+        assert action[0] in (0, 1, 2)
+        assert 0.0 <= action[1] <= 1.0
+        assert state is None
+
+        # Evaluation test
+        eval_metrics = ppo.evaluate(env=env, n_episodes=2, deterministic=True)
+        assert "mean_reward" in eval_metrics
+        assert "mean_final_equity" in eval_metrics
+        assert eval_metrics["mean_final_equity"] > 0.0
+
+    def test_hybrid_ppo_save_and_load(self):
+        """HybridPPO 모델 직렬화 및 복원 검증"""
+        env = HybridTradingEnv()
+        ppo1 = HybridPPO(env=env, learning_rate=5e-4, n_steps=32)
+        ppo1.learn(total_timesteps=32)
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            ppo1.save(tmp_path)
+            assert os.path.exists(tmp_path)
+
+            ppo2 = HybridPPO(env=env)
+            ppo2.load(tmp_path)
+
+            obs, _ = env.reset()
+            act1, _ = ppo1.predict(obs, deterministic=True)
+            act2, _ = ppo2.predict(obs, deterministic=True)
+            assert act1[0] == act2[0]
+            np.testing.assert_almost_equal(act1[1], act2[1], decimal=4)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+
+# ============================================================================
+# Tier 3: SB3 Integration & Adapter Tests
+# ============================================================================
+
+class TestSB3HybridAdapter:
+    """Stable-Baselines3 호환성 및 어댑터 통합 테스트"""
+
+    def test_sb3_custom_features_extractor_forward(self):
+        """SB3CustomFeaturesExtractor의 SB3 내장 정책 순전파 검증"""
+        env = ContinuousToHybridActionWrapper(HybridTradingEnv())
+        extractor = SB3CustomFeaturesExtractor(
+            observation_space=env.observation_space,
+            features_dim=64,
+        )
+        obs = torch.randn(8, env.observation_space.shape[0])
+        out = extractor(obs)
+        assert out.shape == (8, 64)
+
+    def test_sb3_hybrid_adapter_train_and_predict(self):
+        """SB3HybridPolicyAdapter PPO 생성, 학습 및 하이브리드 액션 디코딩 검증"""
+        env = HybridTradingEnv()
+        model = SB3HybridPolicyAdapter.create_sb3_ppo(
+            env=env,
+            features_dim=32,
+            n_steps=32,
+            batch_size=16,
+            learning_rate=3e-4,
+        )
+
+        # Train agent
+        SB3HybridPolicyAdapter.train_sb3_agent(model, total_timesteps=64)
+
+        # Test predict_hybrid
+        obs, _ = env.reset()
+        hybrid_act, raw_act = SB3HybridPolicyAdapter.predict_hybrid(model, obs, deterministic=True)
+
+        assert hybrid_act[0] in (0, 1, 2)
+        assert 0.0 <= hybrid_act[1] <= 1.0
+        assert len(raw_act) == 2
+
+
+# ============================================================================
+# Tier 4: Edge Cases & Deep Hardening Tests
+# ============================================================================
+
+class TestModelsDeepHardeningAndEdgeCases:
+    """경계값, 예외 처리 및 추가 커버리지 심층 검증"""
+
+    def test_feature_extractor_exceptions_and_edge_paths(self):
+        """특징 추출기 예외 및 경계 조건 검증"""
+        # 1. Kernel size mismatch error
+        with pytest.raises(ValueError, match="길이는 동일해야"):
+            Temporal1DCNNFeatureExtractor(num_filters=[32, 64], kernel_sizes=[3])
+
+        # 2. Unsupported pooling error
+        with pytest.raises(ValueError, match="지원하지 않는 풀링"):
+            Temporal1DCNNFeatureExtractor(pooling="unsupported_pool")
+
+        # 3. BatchNorm option
+        cnn_bn = Temporal1DCNNFeatureExtractor(norm_type="batch_norm")
+        assert isinstance(cnn_bn, Temporal1DCNNFeatureExtractor)
+
+        # 4. Custom feature extractors passed to DualStream
+        custom_temp = Temporal1DCNNFeatureExtractor(in_channels=10, output_dim=32)
+        custom_tab = TabularMLPFeatureExtractor(input_dim=4, output_dim=16)
+        dual_custom = DualStreamSLFeatureExtractor(
+            temporal_extractor=custom_temp,
+            tabular_extractor=custom_tab,
+            output_dim=48,
+        )
+        out_custom = dual_custom(torch.randn(4, 20, 10), torch.randn(4, 4))
+        assert out_custom.shape == (4, 48)
+
+    def test_sl_pretrainer_mse_and_dict_and_tuple_batch(self):
+        """SLPretrainer MSE 손실, Dict 배치 및 3-튜플 배치 처리 검증"""
+        pretrainer_mse = SLPretrainer(
+            feature_dim=32,
+            regression_loss_type="mse",
+        )
+
+        # 3-tuple batch (flat_x, target_return, target_direction)
+        batch_3 = (torch.randn(8, 14), torch.randn(8, 1), torch.randint(0, 3, (8,)))
+        res_3 = pretrainer_mse.train_step(batch_3)
+        assert "total_loss" in res_3
+
+        # Dict batch
+        batch_dict = {
+            "temporal": torch.randn(8, 20, 10),
+            "tabular": torch.randn(8, 4),
+            "target_return": torch.randn(8, 1),
+            "target_direction": torch.randint(0, 3, (8,)),
+        }
+        res_dict = pretrainer_mse.train_step(batch_dict)
+        assert "total_loss" in res_dict
+
+        # Verbose fit
+        train_ds = TensorDataset(torch.randn(16, 20, 10), torch.randn(16, 4), torch.randn(16, 1), torch.randint(0, 3, (16,)))
+        train_loader = DataLoader(train_ds, batch_size=8)
+        hist = pretrainer_mse.fit(train_loader, epochs=2, verbose=True)
+        assert len(hist["train_total_loss"]) == 2
+
+    def test_hybrid_policy_action_tensor_and_clip_vf_and_callbacks(self):
+        """HybridActorCritic 텐서 액션 평가, VF Clipping 및 PPO 콜백 검증"""
+        # 1. Invalid distribution type error
+        with pytest.raises(ValueError, match="지원하지 않는 분포"):
+            HybridActorCritic(distribution_type="invalid_dist")
+
+        # 2. Evaluate actions using 2D Tensor
+        policy = HybridActorCritic(obs_dim=14, feature_dim=32)
+        obs = torch.randn(8, 14)
+        act_tensor = torch.tensor([[1.0, 0.5]] * 8)
+        log_p, ent, val = policy.evaluate_actions(obs, act_tensor)
+        assert log_p.shape == (8,)
+
+        # 3. HybridPPO with clip_range_vf and custom obs_dim
+        env = HybridTradingEnv()
+        callbacks_called = []
+        def test_callback(local_vars, global_vars):
+            callbacks_called.append(True)
+
+        ppo_vf = HybridPPO(
+            env=env,
+            clip_range_vf=0.5,
+            n_steps=16,
+            batch_size=8,
+            n_epochs=1,
+        )
+        ppo_vf.learn(total_timesteps=16, callback=test_callback)
+        assert len(callbacks_called) >= 1
+
+    def test_sb3_custom_extractor_loading_and_weights_sync(self):
+        """SB3CustomFeaturesExtractor 가중치 로드 및 동기화 검증"""
+        pretrainer = SLPretrainer(feature_dim=32)
+        env = ContinuousToHybridActionWrapper(HybridTradingEnv())
+
+        extractor = SB3CustomFeaturesExtractor(
+            observation_space=env.observation_space,
+            features_dim=32,
+        )
+        # Load from pretrainer instance
+        extractor.load_pretrained_weights(pretrainer)
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            pretrainer.save_pretrained(tmp_path)
+            # Load from file path
+            extractor.load_pretrained_weights(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)

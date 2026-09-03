@@ -1,0 +1,347 @@
+"""
+modules/data/consolidator.py
+============================
+Point-in-Time (PIT) 데이터 통합 및 Parquet 스토리지 I/O 모듈.
+
+주요 기능:
+1. DataConsolidator:
+   - DART 공시일(announcement_date) 기준 merge_asof(direction='backward')를 통한 Look-ahead bias 원천 차단.
+   - 일별 주가 기반 동적 밸류에이션 피처(dynamic_per, dynamic_pbr, dynamic_market_cap) 및 기술적 파생 피처(returns_1d, return_1d, volatility_20d, log_return, ma_5, ma_20, ma_60) 생성.
+   - PyArrow 기반 ZSTD 압축 Parquet 고속 직렬화 및 역직렬화(save_to_parquet, load_from_parquet).
+"""
+
+import logging
+import os
+import pathlib
+from typing import Any, Dict, List, Optional, Union
+
+import numpy as np
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from modules.data.collector_fundamental import ValidationStatus
+
+logger = logging.getLogger(__name__)
+
+
+class DataConsolidator:
+    """
+    Look-ahead bias 방지 Point-in-Time(PIT) 데이터 병합 및 Parquet 저장기.
+    """
+
+    DEFAULT_COLUMNS = [
+        "date", "symbol", "open", "high", "low", "close", "volume", "value",
+        "announcement_date", "revenue", "operating_income", "net_income",
+        "assets", "liabilities", "equity", "eps", "bps", "per", "pbr", "roe", "div_yield",
+        "dynamic_per", "dynamic_pbr", "dynamic_market_cap",
+        "returns_1d", "return_1d", "volatility_20d", "log_return",
+        "ma_5", "ma_20", "ma_60",
+        "is_cross_verified", "warning_flags"
+    ]
+
+    @staticmethod
+    def consolidate_point_in_time(
+        price_df: pd.DataFrame,
+        fundamental_df: pd.DataFrame,
+        symbol: Optional[str] = None
+    ) -> pd.DataFrame:
+        """
+        DART 공시일(announcement_date) 기준 merge_asof(direction='backward')를 수행하여
+        미래 데이터 참조(Look-ahead bias)를 원천 차단하고 동적 피처를 산출.
+
+        Args:
+            price_df: OHLCV 시계열 데이터프레임 (date, open, high, low, close, volume 등)
+            fundamental_df: 재무제표 데이터프레임 (announcement_date, eps, bps, revenue 등)
+            symbol: 선택적 종목코드 필터
+
+        Returns:
+            pd.DataFrame: PIT 병합 및 동적 피처가 산출된 통합 데이터프레임
+        """
+        if price_df is None or price_df.empty:
+            return pd.DataFrame(columns=DataConsolidator.DEFAULT_COLUMNS)
+
+        p_df = price_df.copy()
+
+        # 1. 날짜 표준화 및 정렬
+        if not pd.api.types.is_datetime64_any_dtype(p_df['date']):
+            p_df['date'] = pd.to_datetime(p_df['date'])
+        p_df = p_df.sort_values('date').reset_index(drop=True)
+
+        if symbol:
+            clean_sym = str(symbol).strip().zfill(6) if str(symbol).isdigit() else str(symbol).strip()
+            if 'symbol' not in p_df.columns:
+                p_df['symbol'] = clean_sym
+            else:
+                p_df['symbol'] = p_df['symbol'].fillna(clean_sym)
+                # 종목 코드가 명시된 경우 해당 종목 행만 필터링
+                if (p_df['symbol'] == clean_sym).any():
+                    p_df = p_df[p_df['symbol'] == clean_sym].reset_index(drop=True)
+        elif 'symbol' not in p_df.columns:
+            p_df['symbol'] = 'UNKNOWN'
+
+        # 2. 펀더멘털 데이터가 없는 경우 기본값 채우기
+        if fundamental_df is None or fundamental_df.empty:
+            p_df['dynamic_per'] = np.nan
+            p_df['dynamic_pbr'] = np.nan
+            p_df['dynamic_market_cap'] = np.nan
+
+            returns_1d = p_df['close'].pct_change(1).fillna(0.0)
+            p_df['returns_1d'] = returns_1d
+            p_df['return_1d'] = returns_1d
+            p_df['volatility_20d'] = returns_1d.rolling(20, min_periods=1).std().fillna(0.0) * np.sqrt(252)
+
+            close_shifted = p_df['close'].shift(1)
+            p_df['log_return'] = np.where(
+                (close_shifted > 0) & (p_df['close'] > 0),
+                np.log(p_df['close'] / close_shifted),
+                0.0
+            )
+            p_df['log_return'] = pd.Series(p_df['log_return']).fillna(0.0)
+
+            p_df['ma_5'] = p_df['close'].rolling(5, min_periods=1).mean()
+            p_df['ma_20'] = p_df['close'].rolling(20, min_periods=1).mean()
+            p_df['ma_60'] = p_df['close'].rolling(60, min_periods=1).mean()
+
+            p_df['is_cross_verified'] = False
+            p_df['warning_flags'] = 'NO_FUNDAMENTAL_DATA'
+            return p_df
+
+        f_df = fundamental_df.copy()
+
+        # 특정 종목 필터링 적용 (다중 종목 교차 오염 방지)
+        if symbol and 'symbol' in f_df.columns:
+            clean_sym = str(symbol).strip().zfill(6) if str(symbol).isdigit() else str(symbol).strip()
+            f_df = f_df[f_df['symbol'] == clean_sym].copy()
+
+        # 공시일자 컬럼 확인 및 정규화 (Lookahead Bias 방어: 12월 결산/사업보고서는 90일, 기타 분기는 45일)
+        def _estimate_announcement(row: pd.Series) -> pd.Timestamp:
+            if pd.notna(row.get('announcement_date')):
+                return pd.to_datetime(row['announcement_date'])
+            p_end = pd.to_datetime(row.get('period_end'))
+            if pd.isna(p_end):
+                return pd.NaT
+            is_annual = (
+                p_end.month == 12 or
+                str(row.get('period_type', '')).lower() in ('annual', 'periodtype.annual') or
+                row.get('quarter') in (4, None)
+            )
+            days = 90 if is_annual else 45
+            return p_end + pd.Timedelta(days=days)
+
+        if 'announcement_date' not in f_df.columns:
+            if 'period_end' in f_df.columns:
+                f_df['announcement_date'] = f_df.apply(_estimate_announcement, axis=1)
+            else:
+                f_df['announcement_date'] = pd.NaT
+        else:
+            if 'period_end' in f_df.columns and f_df['announcement_date'].isna().any():
+                f_df['announcement_date'] = f_df.apply(_estimate_announcement, axis=1)
+
+        if not pd.api.types.is_datetime64_any_dtype(f_df['announcement_date']):
+            f_df['announcement_date'] = pd.to_datetime(f_df['announcement_date'])
+
+        # NaT 공시일자 제거 후 정렬
+        f_df = f_df.dropna(subset=['announcement_date']).sort_values('announcement_date').reset_index(drop=True)
+
+        if f_df.empty:
+            p_df['dynamic_per'] = np.nan
+            p_df['dynamic_pbr'] = np.nan
+            p_df['dynamic_market_cap'] = np.nan
+            returns_1d = p_df['close'].pct_change(1).fillna(0.0)
+            p_df['returns_1d'] = returns_1d
+            p_df['return_1d'] = returns_1d
+            p_df['volatility_20d'] = returns_1d.rolling(20, min_periods=1).std().fillna(0.0) * np.sqrt(252)
+            close_shifted = p_df['close'].shift(1)
+            p_df['log_return'] = np.where(
+                (close_shifted > 0) & (p_df['close'] > 0),
+                np.log(p_df['close'] / close_shifted),
+                0.0
+            )
+            p_df['log_return'] = pd.Series(p_df['log_return']).fillna(0.0)
+            p_df['ma_5'] = p_df['close'].rolling(5, min_periods=1).mean()
+            p_df['ma_20'] = p_df['close'].rolling(20, min_periods=1).mean()
+            p_df['ma_60'] = p_df['close'].rolling(60, min_periods=1).mean()
+            p_df['is_cross_verified'] = False
+            p_df['warning_flags'] = 'NO_FUNDAMENTAL_DATA'
+            return p_df
+
+        # 3. Look-ahead bias 및 교차 오염 방지: pd.merge_asof(direction='backward', by='symbol')
+        # 주가 거래일(date) 시점에 이미 공시된 해당 종목의 최신 펀더멘털 데이터만 매핑
+        by_col = 'symbol' if ('symbol' in p_df.columns and 'symbol' in f_df.columns) else None
+        merged = pd.merge_asof(
+            p_df,
+            f_df,
+            left_on='date',
+            right_on='announcement_date',
+            by=by_col,
+            direction='backward',
+            suffixes=('', '_fund')
+        )
+
+        # 중복 종목코드 컬럼 정리
+        if 'symbol_fund' in merged.columns:
+            merged = merged.drop(columns=['symbol_fund'])
+
+        # 4. 동적 밸류에이션 지표 산출
+        # (1) Dynamic PER = Close / EPS (단, EPS > 0 인 경우만, 적자/음수 시 np.nan)
+        if 'eps' in merged.columns:
+            valid_eps = merged['eps'].apply(lambda x: float(x) if (pd.notna(x) and float(x) > 0) else np.nan)
+            merged['dynamic_per'] = merged['close'] / valid_eps
+        else:
+            merged['dynamic_per'] = np.nan
+
+        # (2) Dynamic PBR = Close / BPS (단, BPS > 0 인 경우만, 적자/음수 시 np.nan)
+        if 'bps' in merged.columns:
+            valid_bps = merged['bps'].apply(lambda x: float(x) if (pd.notna(x) and float(x) > 0) else np.nan)
+            merged['dynamic_pbr'] = merged['close'] / valid_bps
+        else:
+            merged['dynamic_pbr'] = np.nan
+
+        # (3) Dynamic Market Cap = Close * Shares Outstanding (또는 Equity / BPS 역산)
+        if 'shares_outstanding' in merged.columns and merged['shares_outstanding'].notna().any():
+            merged['dynamic_market_cap'] = merged['close'] * merged['shares_outstanding']
+        elif 'equity' in merged.columns and 'bps' in merged.columns:
+            calc_shares = merged['equity'] / merged['bps'].replace(0, np.nan)
+            merged['dynamic_market_cap'] = merged['close'] * calc_shares
+        elif 'total_equity' in merged.columns and 'bps' in merged.columns:
+            calc_shares = merged['total_equity'] / merged['bps'].replace(0, np.nan)
+            merged['dynamic_market_cap'] = merged['close'] * calc_shares
+        else:
+            merged['dynamic_market_cap'] = np.nan
+
+        # 5. 기술적 파생 피처 산출
+        returns_1d = merged['close'].pct_change(1).fillna(0.0)
+        merged['returns_1d'] = returns_1d
+        merged['return_1d'] = returns_1d
+        merged['volatility_20d'] = returns_1d.rolling(20, min_periods=1).std().fillna(0.0) * np.sqrt(252)
+
+        close_shifted = merged['close'].shift(1)
+        merged['log_return'] = np.where(
+            (close_shifted > 0) & (merged['close'] > 0),
+            np.log(merged['close'] / close_shifted),
+            0.0
+        )
+        merged['log_return'] = pd.Series(merged['log_return']).fillna(0.0)
+
+        merged['ma_5'] = merged['close'].rolling(5, min_periods=1).mean()
+        merged['ma_20'] = merged['close'].rolling(20, min_periods=1).mean()
+        merged['ma_60'] = merged['close'].rolling(60, min_periods=1).mean()
+
+        # 6. 교차 검증 상태 플래그 결정
+        if 'validation_status' in merged.columns:
+            merged['is_cross_verified'] = merged['validation_status'].isin([
+                ValidationStatus.PASSED.value if hasattr(ValidationStatus.PASSED, 'value') else 'PASSED',
+                ValidationStatus.WARNING.value if hasattr(ValidationStatus.WARNING, 'value') else 'WARNING',
+                'PASSED', 'WARNING'
+            ])
+        else:
+            merged['is_cross_verified'] = True
+
+        # 7. 결측치 및 경계조건 경고 플래그 생성
+        min_announcement = f_df['announcement_date'].min()
+        warning_list: List[str] = []
+
+        for _, row in merged.iterrows():
+            flags: List[str] = []
+            ann_date = row.get('announcement_date')
+            if pd.isna(ann_date) or (pd.notna(min_announcement) and row['date'] < min_announcement):
+                flags.append('PRE_ANNOUNCEMENT_PERIOD')
+
+            eps_val = row.get('eps')
+            if pd.notna(eps_val) and float(eps_val) <= 0:
+                flags.append('NEGATIVE_EPS')
+
+            op_val = row.get('operating_income') or row.get('operating_profit')
+            if pd.notna(op_val) and float(op_val) < 0:
+                flags.append('OPERATING_LOSS')
+
+            if row.get('is_trading_halt', False):
+                flags.append('TRADING_HALT')
+
+            warning_list.append('|'.join(flags) if flags else 'NORMAL')
+
+        merged['warning_flags'] = warning_list
+
+        return merged
+
+    @staticmethod
+    def save_to_parquet(
+        df: pd.DataFrame,
+        filepath: Optional[Union[str, pathlib.Path]] = None,
+        symbol: Optional[str] = None,
+        compression: str = 'ZSTD',
+        compression_level: int = 3
+    ) -> pathlib.Path:
+        """
+        PyArrow 테이블 변환 및 ZSTD 압축 저장.
+
+        Args:
+            df: 저장할 통합 DataFrame
+            filepath: 저장할 파일 절대/상대 경로 (None일 경우 기본 경로 data/raw/{symbol}_consolidated.parquet)
+            symbol: 종목코드 (filepath가 None일 때 사용)
+            compression: 압축 알고리즘 (기본: 'ZSTD')
+            compression_level: 압축 레벨 (기본: 3)
+
+        Returns:
+            pathlib.Path: 저장된 파일 경로
+        """
+        if filepath is None:
+            sym = symbol
+            if not sym and 'symbol' in df.columns and not df.empty:
+                sym = str(df['symbol'].iloc[0])
+            if not sym:
+                sym = 'UNKNOWN'
+            sym_clean = str(sym).strip().zfill(6) if str(sym).isdigit() else str(sym).strip()
+
+            # 프로젝트 루트 기준 data/raw 디렉토리
+            base_dir = pathlib.Path(__file__).resolve().parent.parent.parent
+            target_dir = base_dir / "data" / "raw"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / f"{sym_clean}_consolidated.parquet"
+        else:
+            target_path = pathlib.Path(filepath)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # PyArrow Table 변환 및 Parquet 저장
+        table = pa.Table.from_pandas(df, preserve_index=False)
+        comp_upper = str(compression).upper()
+        comp_lvl = compression_level if comp_upper not in ('NONE', 'UNCOMPRESSED') else None
+
+        pq.write_table(
+            table,
+            str(target_path),
+            compression=compression,
+            compression_level=comp_lvl,
+            use_dictionary=True,
+            write_statistics=True
+        )
+        logger.info(f"Successfully saved {len(df)} rows to Parquet: {target_path}")
+        return target_path
+
+    @staticmethod
+    def load_from_parquet(filepath: Union[str, pathlib.Path]) -> pd.DataFrame:
+        """
+        Parquet 파일 로드 및 타입 복원.
+
+        Args:
+            filepath: 로드할 Parquet 파일 경로
+
+        Returns:
+            pd.DataFrame: 복원된 DataFrame
+        """
+        path = pathlib.Path(filepath)
+        if not path.exists():
+            raise FileNotFoundError(f"Parquet file does not exist: {filepath}")
+
+        table = pq.read_table(str(path))
+        df = table.to_pandas()
+
+        # Datetime 타입 복원
+        if 'date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['date']):
+            df['date'] = pd.to_datetime(df['date'])
+        if 'announcement_date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['announcement_date']):
+            df['announcement_date'] = pd.to_datetime(df['announcement_date'])
+
+        logger.info(f"Successfully loaded {len(df)} rows from Parquet: {filepath}")
+        return df

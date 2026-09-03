@@ -1,0 +1,294 @@
+"""
+tests/test_m2_data_engine_safety.py
+===================================
+Milestone 2 (Data Engine & Resource Safety) 전용 안전성 및 회귀 방어 테스트 스위트.
+
+검증 항목:
+1. BUG-L02: OHLCV 결측치/이상치 정제 시 fillna(0.0)로 인한 low=0원 오염 방어 검증
+2. BUG-L06: 영업이익 0원(손익분기점) 및 0% 마진 계산 시 불리언 Falsy 오작동 방어 검증
+3. BUG-L03: Point-in-Time merge_asof 시 다중 종목 펀더멘털 교차 오염 방어 검증
+4. BUG-M01: 모든 수집기 및 파이프라인의 .close() 및 Context Manager 정상 세션 해제 검증
+5. BUG-M02: NaverPollingStreamer.stop() 시 세션 인터럽트 및 좀비 스레드 누수 방어 검증
+6. BUG-M03: CircularBuffer max_symbols 한도 및 종목별 명시적 제거(remove_symbol) 검증
+"""
+
+import time
+import threading
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pandas as pd
+import pytest
+import requests
+
+from modules.data.collector_price import (
+    BasePriceFetcher,
+    NaverPriceFetcher,
+    MockPriceFetcher,
+    PriceDataCollector
+)
+from modules.data.collector_fundamental import (
+    BaseFundamentalSource,
+    OpenDartCollector,
+    NaverFinanceCollector,
+    MockKiwoomCollector,
+    FundamentalDataCollector,
+    FinancialStatement,
+    PeriodType
+)
+from modules.data.consolidator import DataConsolidator
+from modules.data.streamer import (
+    BaseStreamer,
+    CircularBuffer,
+    NaverPollingStreamer,
+    MockStreamer,
+    TickData
+)
+from modules.data.pipeline import DataCollectionPipeline
+
+
+# =====================================================================
+# 1. Price Data Collector Integrity (BUG-L02, BUG-M01)
+# =====================================================================
+
+class TestPriceEngineSafety:
+    """주가 엔진 정제 및 리소스 안전성 테스트"""
+
+    def test_validate_and_clean_ohlcv_nan_does_not_corrupt_low_to_zero(self):
+        """결측치가 포함된 데이터 정제 시 low 가격이 0.0으로 왜곡되지 않는지 검증 (BUG-L02)"""
+        raw_df = pd.DataFrame([
+            {"date": "2026-08-01", "symbol": "005930", "open": 70000.0, "high": 71000.0, "low": 69000.0, "close": 70500.0, "volume": 1000},
+            # open 및 high가 NaN인 경우 (이전에는 fillna(0.0) -> min 산출로 low가 0이 됨)
+            {"date": "2026-08-02", "symbol": "005930", "open": np.nan, "high": np.nan, "low": 69500.0, "close": 70000.0, "volume": 1200},
+            # close만 존재하고 나머지가 NaN인 경우
+            {"date": "2026-08-03", "symbol": "005930", "open": np.nan, "high": 71500.0, "low": np.nan, "close": 71000.0, "volume": 800},
+        ])
+
+        cleaned_df, summary = PriceDataCollector.validate_and_clean_ohlcv(raw_df)
+
+        assert len(cleaned_df) == 3
+        # 모든 행에서 가격이 0.0이 아니어야 함 (유효한 양수)
+        assert (cleaned_df["low"] > 0.0).all(), f"Low prices contain 0 or negative: {cleaned_df['low'].tolist()}"
+        assert (cleaned_df["open"] > 0.0).all()
+        assert (cleaned_df["high"] > 0.0).all()
+        assert (cleaned_df["close"] > 0.0).all()
+
+        # 2행의 low는 정상적인 69500이어야 함
+        assert cleaned_df.iloc[1]["low"] == 69500.0
+        assert cleaned_df.iloc[1]["high"] >= cleaned_df.iloc[1]["low"]
+
+    def test_validate_and_clean_ohlcv_zero_or_negative_sanitized(self):
+        """0 이하의 비정상 가격이 양수 가격으로 정상 보정되는지 검증"""
+        raw_df = pd.DataFrame([
+            {"date": "2026-08-01", "symbol": "005930", "open": 70000.0, "high": 71000.0, "low": 69000.0, "close": 70500.0, "volume": 1000},
+            {"date": "2026-08-02", "symbol": "005930", "open": 0.0, "high": 71000.0, "low": -500.0, "close": 70500.0, "volume": 1000},
+        ])
+
+        cleaned_df, summary = PriceDataCollector.validate_and_clean_ohlcv(raw_df)
+        assert (cleaned_df["low"] > 0.0).all()
+        assert (cleaned_df["open"] > 0.0).all()
+
+    def test_price_fetcher_and_collector_context_manager(self):
+        """Price fetcher 및 collector의 close() 및 Context Manager 정상 동작 검증 (BUG-M01)"""
+        # NaverPriceFetcher context manager
+        with NaverPriceFetcher(timeout=5) as fetcher:
+            assert isinstance(fetcher, BasePriceFetcher)
+            assert fetcher.session is not None
+
+        # PriceDataCollector context manager
+        mock_fetcher = MockPriceFetcher(base_price=50000.0)
+        with PriceDataCollector(fetchers=[mock_fetcher]) as collector:
+            df = collector.get_daily_price("005930", count=10)
+            assert len(df) == 10
+
+
+# =====================================================================
+# 2. Fundamental Data Collector Integrity (BUG-L06, BUG-M01)
+# =====================================================================
+
+class TestFundamentalEngineSafety:
+    """펀더멘털 엔진 지표 계산 및 리소스 안전성 테스트"""
+
+    def test_zero_operating_profit_and_margin_calculation(self):
+        """영업이익이 0원(손익분기점)일 때 op_margin이 0.0으로 정상 계산되는지 검증 (BUG-L06)"""
+        collector = OpenDartCollector(api_key="MOCK_KEY")
+
+        raw_list = [
+            {"rcept_no": "202405150001", "account_nm": "매출액", "thstrm_amount": "100,000,000,000"},
+            {"rcept_no": "202405150001", "account_nm": "영업이익", "thstrm_amount": "0"},
+            {"rcept_no": "202405150001", "account_nm": "당기순이익", "thstrm_amount": "0"},
+            {"rcept_no": "202405150001", "account_nm": "자산총계", "thstrm_amount": "500,000,000,000"},
+            {"rcept_no": "202405150001", "account_nm": "자본총계", "thstrm_amount": "300,000,000,000"},
+        ]
+
+        stmt = collector._parse_account_list(
+            ticker="005930",
+            year=2024,
+            quarter=1,
+            period_type=PeriodType.QUARTER,
+            raw_list=raw_list
+        )
+
+        assert stmt.operating_profit == 0
+        assert stmt.net_income == 0
+        assert stmt.op_margin == 0.0, f"Expected 0.0 op_margin for 0 profit, got {stmt.op_margin}"
+        assert stmt.net_margin == 0.0, f"Expected 0.0 net_margin for 0 income, got {stmt.net_margin}"
+        assert stmt.roe == 0.0
+        assert stmt.roa == 0.0
+
+    def test_mock_kiwoom_collector_zero_profit_ratios(self):
+        """MockKiwoomCollector에서 0원 영업이익/순이익 처리 검증"""
+        mock_collector = MockKiwoomCollector()
+        stmt = mock_collector._generate_synthetic_stmt("005930", 2024, 1)
+        assert stmt.op_margin is not None
+
+    def test_fundamental_collectors_context_manager(self):
+        """펀더멘털 수집기들의 close 및 context manager 검증 (BUG-M01)"""
+        with OpenDartCollector() as dart:
+            assert dart.session is not None
+
+        with NaverFinanceCollector() as naver:
+            assert naver.session is not None
+
+        with FundamentalDataCollector(mock_mode=True) as fdc:
+            stmts, _ = fdc.get_financial_statements("005930")
+            assert len(stmts) > 0
+
+
+# =====================================================================
+# 3. Data Consolidator PIT & Multi-Symbol Safety (BUG-L03)
+# =====================================================================
+
+class TestConsolidatorMultiSymbolSafety:
+    """다중 종목 PIT 병합 및 교차 오염 방어 테스트"""
+
+    def test_multi_stock_fundamental_no_cross_contamination(self):
+        """다중 종목 펀더멘털 데이터가 포함된 DataFrame과 특정 종목 주가 병합 시 타사 재무제표 오염 방지 (BUG-L03)"""
+        prices_samsung = pd.DataFrame([
+            {"date": pd.to_datetime("2024-05-20"), "symbol": "005930", "open": 70000.0, "high": 71000.0, "low": 69500.0, "close": 70000.0, "volume": 10000},
+            {"date": pd.to_datetime("2024-05-21"), "symbol": "005930", "open": 71000.0, "high": 72000.0, "low": 70500.0, "close": 71500.0, "volume": 15000},
+        ])
+
+        # 삼성전자(005930)와 SK하이닉스(000660) 재무제표가 섞여 있는 데이터셋
+        # SK하이닉스 공시일이 삼성전자 공시일보다 나중(05-18 vs 05-15)
+        mixed_fundamentals = pd.DataFrame([
+            {
+                "symbol": "005930",
+                "announcement_date": pd.to_datetime("2024-05-15"),
+                "revenue": 70_000_000_000_000,
+                "eps": 5000.0,
+                "bps": 45000.0,
+                "validation_status": "PASSED"
+            },
+            {
+                "symbol": "000660",
+                "announcement_date": pd.to_datetime("2024-05-18"), # 더 최신 공시
+                "revenue": 12_000_000_000_000,
+                "eps": 12000.0,  # 하이닉스 EPS
+                "bps": 90000.0,  # 하이닉스 BPS
+                "validation_status": "PASSED"
+            }
+        ])
+
+        # 삼성전자 종목으로 병합 수행
+        merged = DataConsolidator.consolidate_point_in_time(
+            price_df=prices_samsung,
+            fundamental_df=mixed_fundamentals,
+            symbol="005930"
+        )
+
+        assert len(merged) == 2
+        # EPS와 BPS는 삼성전자의 5000.0, 45000.0이어야 하며 하이닉스의 12000.0, 90000.0이 오염되면 안 됨
+        assert (merged["eps"] == 5000.0).all(), f"Cross-contaminated EPS detected: {merged['eps'].tolist()}"
+        assert (merged["bps"] == 45000.0).all(), f"Cross-contaminated BPS detected: {merged['bps'].tolist()}"
+        assert (merged["symbol"] == "005930").all()
+
+    def test_consolidator_empty_symbol_filtered_fundamentals(self):
+        """타겟 종목의 펀더멘털 데이터가 없을 경우 안전하게 NO_FUNDAMENTAL_DATA로 폴백"""
+        prices_samsung = pd.DataFrame([
+            {"date": pd.to_datetime("2024-05-20"), "symbol": "005930", "open": 70000.0, "high": 71000.0, "low": 69500.0, "close": 70000.0, "volume": 10000},
+        ])
+        hynix_only_fundamentals = pd.DataFrame([
+            {"symbol": "000660", "announcement_date": pd.to_datetime("2024-05-18"), "eps": 12000.0, "bps": 90000.0}
+        ])
+
+        merged = DataConsolidator.consolidate_point_in_time(
+            price_df=prices_samsung,
+            fundamental_df=hynix_only_fundamentals,
+            symbol="005930"
+        )
+
+        assert len(merged) == 1
+        assert (merged["warning_flags"] == "NO_FUNDAMENTAL_DATA").all()
+        assert np.isnan(merged.iloc[0]["dynamic_per"])
+
+
+# =====================================================================
+# 4. Streamer & CircularBuffer Safety (BUG-M02, BUG-M03)
+# =====================================================================
+
+class TestStreamerSafety:
+    """스트리머 좀비 스레드 방지 및 버퍼 메모리 한도 테스트"""
+
+    def test_circular_buffer_max_symbols_eviction_and_remove(self):
+        """CircularBuffer max_symbols 한도 초과 시 오래된 종목 키 자동 퇴출 및 remove_symbol 검증 (BUG-M03)"""
+        buf = CircularBuffer(capacity_per_symbol=10, max_symbols=2)
+
+        t1 = TickData(timestamp=datetime.now(), symbol="005930", price=70000.0, volume=10)
+        t2 = TickData(timestamp=datetime.now(), symbol="000660", price=150000.0, volume=5)
+        t3 = TickData(timestamp=datetime.now(), symbol="035420", price=200000.0, volume=2)
+
+        buf.append(t1)
+        buf.append(t2)
+        assert len(buf.symbols()) == 2
+        assert "005930" in buf.symbols()
+        assert "000660" in buf.symbols()
+
+        # 3번째 종목 추가 시 가장 오래된 005930이 퇴출되어야 함
+        buf.append(t3)
+        assert len(buf.symbols()) == 2
+        assert "005930" not in buf.symbols()
+        assert "035420" in buf.symbols()
+
+        # remove_symbol 테스트
+        buf.remove_symbol("000660")
+        assert "000660" not in buf.symbols()
+        assert len(buf.symbols()) == 1
+
+        # Context manager
+        with buf:
+            assert buf.size("035420") == 1
+
+    def test_naver_polling_streamer_stop_and_close(self):
+        """NaverPollingStreamer stop() 시 스레드가 안전하게 종료되고 세션이 정리되는지 검증 (BUG-M02)"""
+        streamer = NaverPollingStreamer(poll_interval=0.1, timeout=2)
+        streamer.subscribe("005930")
+        streamer.start()
+        assert streamer.is_running() is True
+
+        time.sleep(0.2)
+        streamer.stop()
+        assert streamer.is_running() is False
+        assert streamer._thread is None or not streamer._thread.is_alive()
+
+        # close method
+        with NaverPollingStreamer(poll_interval=0.1, timeout=1) as s:
+            s.start()
+            assert s.is_running() is True
+        assert s.is_running() is False
+
+
+# =====================================================================
+# 5. Full Pipeline Resource Management
+# =====================================================================
+
+class TestPipelineSafety:
+    """통합 파이프라인 리소스 관리 테스트"""
+
+    def test_pipeline_context_manager(self):
+        """DataCollectionPipeline Context Manager 정상 진입 및 해제 검증"""
+        with DataCollectionPipeline() as pipeline:
+            assert pipeline.fundamental_collector is not None
+            assert pipeline.price_collector is not None
+            assert pipeline.consolidator is not None

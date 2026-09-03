@@ -21,21 +21,18 @@
 import math
 import random
 from dataclasses import dataclass
+from typing import Dict
 
 # --------------------------------------------------------------------------
 # Physical constants
 # --------------------------------------------------------------------------
 C_LIGHT = 3e8                                              # speed of light (m/s)
-REFRACTIVE_INDEX_FIBER = 1.4682                            # single-mode fiber
-FIBER_PROPAGATION_SPEED = C_LIGHT / REFRACTIVE_INDEX_FIBER # ~2.044e8 m/s
 
-# --------------------------------------------------------------------------
-# Framing / streaming thresholds (unchanged so NetSim fragmentation and
-# streaming behaviour is preserved)
-# --------------------------------------------------------------------------
-MAX_FRAME_SIZE   = 8192               # bytes per frame; larger -> fragmented
-FRAG_LIMIT       = 5000              # > this many fragments -> stream instead
-STREAM_THRESHOLD = 1 * 1024 * 1024   # >= 1 MiB payload -> stream instead
+# REFRACTIVE_INDEX_FIBER / FIBER_PROPAGATION_SPEED (fibre backhaul) and
+# MAX_FRAME_SIZE / FRAG_LIMIT / STREAM_THRESHOLD (NetSim fragmentation) were
+# removed 2026-08-31: src/NetSim.py has been retired and a grep over src/,
+# tests/ and run_all.py found zero external references. C_LIGHT stays because
+# `_PL_REF_DB` is computed from it.
 
 # ============================================================================
 # Legacy 802.11ac/fibre backhaul layer -- REMOVED 2026-08-30.
@@ -93,10 +90,12 @@ G_RX_DBI            = 9.0            # RSU mast-mounted omni with downtilt
 # pure path-loss + Rayleigh behaviour of the previous model.
 SHADOWING_SIGMA_DB  = 4.0
 
-# Kept for backwards compatibility with src/aoi_env.py's discrete power ladder.
-# The production action space is continuous [10, 23] dBm and is owned by
-# src/rl_interface.py::ActionDecoder -- do not read link budgets from here.
-TX_POWER_LEVELS_DBM = [20.0, 25.0, 30.0]
+# TX_POWER_LEVELS_DBM = [20, 25, 30] was removed 2026-08-31. It existed for
+# src/aoi_env.py's discrete power ladder; that file is gone, it had no remaining
+# referent, and it stated a POWER RANGE THAT NO LONGER EXISTS -- the action space
+# is continuous [P_MIN, P_MAX] = [10, 23] dBm and is owned by
+# src/rl_interface.py::ActionDecoder. A reader who trusted it would have
+# mis-stated the paper's action space by 7 dB.
 
 # --------------------------------------------------------------------------
 # OFDM framing (IEEE 802.11p, 10 MHz channel = half-clocked 802.11a)
@@ -196,8 +195,68 @@ def seed_channel(seed: int) -> None:
     _shadow_rng.seed(int(seed))
 
 
+# ----------------------------------------------------------------------------
+# Spatial correlation of shadowing.
+#
+# Shadowing is caused by objects -- buildings, trucks, foliage -- and a vehicle
+# that is behind one does not leave it within a few metres. 3GPP TR 37.885 Table
+# 6.2.3-1 gives a decorrelation distance of 10-13 m for urban V2X.
+#
+# Drawing an independent sample per step made every retry an independent trial,
+# so ten retries over one second (about 8 m of travel, i.e. well inside one
+# correlation length) behaved like ten fresh channels. That turns a vehicle
+# stuck in a shadow into one that almost always gets through: measured at 300 m
+# and 10 dBm, the final delivery-failure rate was 0.08 % with independent draws
+# against 7.06 % when the shadow persists -- an 88x difference on a quantity the
+# paper reports.
+#
+# The state is a per-link AR(1) process with rho = exp(-d / d_corr), the standard
+# Gudmundson model, so the marginal stays N(0, sigma^2) while successive samples
+# stay correlated over the right distance.
+SHADOWING_DECORR_M = 12.0
+
+_shadow_state: Dict[str, float] = {}
+
+
+def reset_shadowing_state() -> None:
+    """Forget every link's shadowing history. Call on episode reset."""
+    _shadow_state.clear()
+
+
+def draw_shadowing_db_correlated(
+    link_id: str,
+    distance_moved_m: float,
+    sigma_db: float = SHADOWING_SIGMA_DB,
+    decorr_m: float = SHADOWING_DECORR_M,
+) -> float:
+    """Shadowing for one link, correlated with that link's previous sample.
+
+    `distance_moved_m` is how far the vehicle travelled since the last draw on
+    this link. A large move decorrelates (rho -> 0) and the sample is effectively
+    fresh; a retry a few metres later keeps most of the previous value.
+    """
+    if sigma_db <= 0.0:
+        return 0.0
+    prev = _shadow_state.get(link_id)
+    if prev is None or decorr_m <= 0.0:
+        val = _shadow_rng.gauss(0.0, sigma_db)
+        _shadow_state[link_id] = val
+        return val
+    rho = math.exp(-abs(float(distance_moved_m)) / float(decorr_m))
+    # Innovation variance keeps the marginal at sigma^2 rather than letting it
+    # shrink toward zero as rho -> 1.
+    val = rho * prev + math.sqrt(max(0.0, 1.0 - rho * rho)) * _shadow_rng.gauss(0.0, sigma_db)
+    _shadow_state[link_id] = val
+    return val
+
+
 def draw_shadowing_db(sigma_db: float = SHADOWING_SIGMA_DB) -> float:
-    """One zero-mean log-normal shadowing sample, in dB (0.0 when sigma <= 0)."""
+    """One INDEPENDENT zero-mean log-normal shadowing sample, in dB.
+
+    Kept for callers that genuinely want an uncorrelated draw (a fresh link, a
+    one-shot calculation). Anything that re-evaluates the same link over time
+    should use `draw_shadowing_db_correlated` instead.
+    """
     if sigma_db <= 0.0:
         return 0.0
     return _shadow_rng.gauss(0.0, sigma_db)
@@ -289,23 +348,115 @@ def rayleigh_success_prob(signal_mw: float, interferer_mws, noise_mw: float,
 
 def judge_uplink(group, num_subchannels: int = NUM_SUBCHANNELS,
                  shadowing_sigma_db: float = SHADOWING_SIGMA_DB,
-                 sinr_th_db: float = SINR_TH_DB) -> dict:
+                 sinr_th_db: float = SINR_TH_DB,
+                 interferers_of=None,
+                 moved_of=None) -> dict:
     """group: list of (id, tx_dbm, distance_m), ALL on the same subchannel.
     Returns {id: success_probability} with mutual Rayleigh-SINR interference.
 
     One shadowing sample is drawn per link and reused for that link's role as
     both the desired signal and as interference at the RSU, because it is a
     property of the propagation path, not of the receiver's viewpoint.
+
+    `interferers_of` (optional) maps a member id to the ids that actually overlap
+    it in time; members not listed interfere with nobody. When omitted, every
+    other member of the group interferes, which is the legacy behaviour.
+
+    Why the mapping exists. The caller used to enforce the vulnerable-period
+    overlap by calling this function once per tagged vehicle with a freshly drawn
+    interferer list. That broke the guarantee in the paragraph above twice over:
+    the same link got a DIFFERENT shadowing sample in every neighbour's
+    judgement (the propagation path became a function of the receiver's
+    viewpoint, exactly what the contract excludes), and the overlap event was
+    drawn independently per ordered pair, so A's frame could collide with B's
+    while B's did not collide with A's -- physically impossible. Passing a
+    symmetric overlap graph in and resolving the whole group in ONE call fixes
+    both: shadowing is drawn once per link, and the overlap relation is whatever
+    the caller built, symmetric or not, but built once.
     """
     n0 = noise_floor_mw(num_subchannels)
     th = _db_to_lin(sinr_th_db)
-    powers = {
-        gid: rx_power_mw(tx, d, draw_shadowing_db(shadowing_sigma_db))
-        for (gid, tx, d) in group
-    }
+    # `moved_of` maps a member id to how far it travelled since its last draw on
+    # this link. With it the shadowing is spatially correlated, so a vehicle that
+    # is behind an obstruction stays behind it across the retries within one
+    # second -- which is the physical situation and the one that decides whether
+    # an update is eventually delivered. Without it each draw is independent,
+    # which is the legacy behaviour and is kept for callers with no position
+    # history (unit tests, one-shot link-budget calculations).
+    if moved_of is None:
+        powers = {
+            gid: rx_power_mw(tx, d, draw_shadowing_db(shadowing_sigma_db))
+            for (gid, tx, d) in group
+        }
+    else:
+        powers = {
+            gid: rx_power_mw(
+                tx, d,
+                draw_shadowing_db_correlated(
+                    str(gid), moved_of.get(gid, float("inf")), shadowing_sigma_db),
+            )
+            for (gid, tx, d) in group
+        }
     out = {}
     for gid, tx, d in group:
         S = powers[gid]
-        interf = [powers[o] for (o, _, _) in group if o != gid]
+        if interferers_of is None:
+            interf = [powers[o] for (o, _, _) in group if o != gid]
+        else:
+            allowed = set(interferers_of.get(gid, ()))
+            interf = [powers[o] for (o, _, _) in group if o != gid and o in allowed]
         out[gid] = rayleigh_success_prob(S, interf, n0, th)
     return out
+
+
+def overlap_graph_from_start_times(ids, frame_airtime_s: float,
+                                   step_length_s: float) -> dict:
+    """Symmetric co-channel overlap graph, from actual frame start instants.
+
+    WHY THIS EXISTS. The overlap used to be a single probability, 2*T_air/T_step,
+    applied independently to each unordered pair. That is the textbook ALOHA
+    vulnerable-period result, and it is derived for UNCOORDINATED transmitters
+    whose start times are uniform over the period. Our channel is not that: the
+    RSU issues grants, and every granted frame in a step is released at the same
+    instant. Taken literally, simultaneous release means every co-channel pair
+    collides -- probability 1, not the 0.9 % the formula returns. The scalar was
+    therefore describing a system nobody had implemented, and every reported
+    packet-loss number rested on it.
+
+    Drawing an explicit start offset makes the assumption visible and true: the
+    grant names a subchannel and a 100 ms period, and the exact instant within
+    that period is not coordinated -- the same semantics as a C-V2X recommended
+    resource. Two frames then collide exactly when their airtimes overlap, which
+    is symmetric by construction rather than by careful pair-wise bookkeeping,
+    and the marginal collision probability recovers 2*T_air/T_step as it should.
+    """
+    ids = list(ids)
+    if not ids:
+        return {}
+    latest = max(0.0, float(step_length_s) - float(frame_airtime_s))
+    starts = {i: _shadow_rng.uniform(0.0, latest) if latest > 0.0 else 0.0 for i in ids}
+    graph = {i: [] for i in ids}
+    for a in range(len(ids)):
+        for b in range(a + 1, len(ids)):
+            ia, ib = ids[a], ids[b]
+            if abs(starts[ia] - starts[ib]) < float(frame_airtime_s):
+                graph[ia].append(ib)
+                graph[ib].append(ia)
+    return graph
+
+
+def draw_overlap_graph(ids, p_overlap: float) -> dict:
+    """Symmetric co-channel overlap graph over `ids`, one draw per unordered pair.
+
+    Returns {id: [ids that overlap it]}. Drawing per unordered pair is what makes
+    the relation symmetric: if A's frame hits B's, B's hits A's. The previous
+    per-ordered-pair draw produced one-sided collisions.
+    """
+    ids = list(ids)
+    graph = {i: [] for i in ids}
+    for a in range(len(ids)):
+        for b in range(a + 1, len(ids)):
+            if draw_overlap(p_overlap):
+                graph[ids[a]].append(ids[b])
+                graph[ids[b]].append(ids[a])
+    return graph

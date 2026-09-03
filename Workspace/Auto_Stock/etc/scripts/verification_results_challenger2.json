@@ -1,0 +1,58 @@
+{
+  "single_ticker_samsung": {
+    "status": "PASS",
+    "rows": 500,
+    "cols": 40,
+    "uncompressed_bytes": 153705,
+    "disk_bytes": 71990,
+    "compression_ratio": 2.1350882066953742,
+    "max_per_diff": 0.0,
+    "max_pbr_diff": 0.0
+  },
+  "batch_multi_tickers": {
+    "005930": {
+      "status": "SINGLE_SOURCE",
+      "rows": 500,
+      "cols": 40,
+      "file_size": 71990,
+      "compression_ratio": 2.14,
+      "close_min": 49900.0,
+      "close_max": 362500.0,
+      "latest_close": 260000.0,
+      "dynamic_per_mean": 25.305879058502608,
+      "dynamic_pbr_mean": 2.025393863194754
+    },
+    "000660": {
+      "status": "SINGLE_SOURCE",
+      "rows": 500,
+      "cols": 40,
+      "file_size": 73262,
+      "compression_ratio": 2.13,
+      "close_min": 152800.0,
+      "close_max": 2919000.0,
+      "latest_close": 1674000.0,
+      "dynamic_per_mean": 18.659987482896316,
+      "dynamic_pbr_mean": 4.786286136928656
+    },
+    "005380": {
+      "status": "SINGLE_SOURCE",
+      "rows": 500,
+      "cols": 40,
+      "file_size": 70457,
+      "compression_ratio": 2.18,
+      "close_min": 177500.0,
+      "close_max": 750000.0,
+      "latest_close": 403500.0,
+      "dynamic_per_mean": 7.7867956802967715,
+      "dynamic_pbr_mean": 0.7638953152442154
+    }
+  },
+  "stress_and_edge_cases": {
+    "invalid_ticker": "HANDLED_GRACEFULLY",
+    "boundary_days": "PASS",
+    "deficit_masking": "PASS",
+    "date_sorting": "PASS",
+    "empty_handling": "PASS"
+  },
+  "overall_verdict": "APPROVE"
+}

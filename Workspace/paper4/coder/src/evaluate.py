@@ -3,45 +3,51 @@
 # Benchmark Evaluation Harness & Verification for AoI-aware V2I Uplink
 #
 # Implements Milestone 5 (S5 / R5):
-# 1. Loads optimal hyperparameters from `results/hpo/optuna_best_params.csv`.
-# 2. Instantiates all 10 models:
-#    - Heuristic Baseline: HeuristicScheduler
-#    - Category 1 (Basic 3종): HybridPPO, HybridSAC, HybridTD3
-#    - Category 2 (Latest 3종): MAPPO, HyARPPO, MPDQN
-#    - Category 3 (SOTA AoI 3종): PureAoI, DuelingQAoI, SACAoI
-# 3. Executes systematic benchmark matrix across vehicle densities
-#    (15.0, 25.0, 35.0, 45.0, 55.0 veh/km) and random seeds (42, 101, 2024, 777, 999)
+# 1. Loads optimal hyperparameters from `results/hpo/optuna_best_params.csv`
+#    through the SINGLE loader that `run_all.py` also uses, so the training and
+#    the evaluation paths cannot disagree about which keys reach a constructor.
+# 2. Loads the TRAINED weights for every learned model from `checkpoints/`.
+#    A missing checkpoint is a hard error by default: this harness used to
+#    instantiate a freshly initialised network and score random weights, and the
+#    silence of that fallback is why the defect survived to 2026-08-31.
+# 3. Instantiates the rule-based reference plus the nine baselines.
+# 4. Executes a systematic benchmark matrix across vehicle densities
+#    (15.0, 25.0, 35.0, 45.0, 55.0 veh/km) and random seeds
 #    on the genuine SUMO AoiV2IEnv.
-# 4. Accurately computes 6 IEEE TWC standard metrics:
-#    (1) Mean AoI (s)
-#    (2) Peak AoI (s)
-#    (3) Outage / Packet Loss rate
-#    (4) Position Estimation Error (mean, max, low-speed vs high-speed error)
-#    (5) Power Consumption (dBm) & Total RF Energy (Joules)
-#    (6) Jain's Fairness Index for AoI and Tracking Error
-# 5. Generates and exports structured CSV reports:
-#    - `results/eval/eval_raw_runs.csv` (250 runs)
-#    - `results/eval/eval_summary_by_density.csv` (50 aggregated density records)
-#    - `results/eval/eval_leaderboard.csv` (10 model overall leaderboard)
+# 5. Computes the IEEE TWC metric set:
+#    (1) Mean AoI (s) and Peak AoI (s)
+#    (2) Packet loss rate (link-layer frame error) and transmission counters
+#    (3) Position estimation error (mean, max, low-speed vs high-speed)
+#    (4) Power consumption (dBm) & total RF energy (Joules)
+#    (5) Jain's fairness index for AoI and tracking error
+#    (6) `n_observations` / `n_vehicles_seen`, the emptiness signal
+# 6. Generates and exports structured CSV reports:
+#    - `results/eval/eval_raw_runs.csv`
+#    - `results/eval/eval_summary_by_density.csv`
+#    - `results/eval/eval_leaderboard.csv`
 # ============================================================================
 
 from __future__ import annotations
 
 import argparse
-import json
+import gc
+import inspect
 import logging
-import math
 import os
+import random
+import re
+import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import torch
 
+import src.Communications as comm
 from src.baselines import ALL_BASELINES, BASELINE_CATEGORIES, get_baseline
 from src.heuristic_scheduler import HeuristicScheduler
-from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, AoiV2IEnv
-from src.rl_interface import RSU_RANGE, STATE_DIM
+from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, DEFAULT_WARMUP_STEPS, AoiV2IEnv
+from src.rl_interface import P_MAX, P_MIN, RSU_RANGE, STATE_DIM
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -53,6 +59,10 @@ logger = logging.getLogger("EvaluateHarness")
 # file kept naming the discarded ones (HybridPPO, MAPPO, PureAoI, ...), so the
 # benchmark could not instantiate a single real model.
 CANONICAL_EVAL_MODELS = ["HeuristicScheduler"] + list(ALL_BASELINES)
+
+#: The rule-based reference has no learned weights, so it is the one model that
+#: legitimately runs without a checkpoint.
+UNTRAINED_MODELS = frozenset({"HeuristicScheduler"})
 
 _CATEGORY_LABELS = {
     "basic": "Category 1 (Basic)",
@@ -68,8 +78,120 @@ for _group, _names in BASELINE_CATEGORIES.items():
     for _n in _names:
         MODEL_CATEGORIES[_n] = _CATEGORY_LABELS.get(_group, _group)
 
-DEFAULT_DENSITIES = [15.0, 25.0, 35.0, 45.0, 55.0]
-DEFAULT_SEEDS = [42, 101, 2024, 777, 999]
+# RESOLVED 2026-09-02 (user decision). The grid stops at 35 veh/km/lane because
+# that is where the ROAD saturates, not where we lost interest. Measured in-range
+# vehicle counts against requested density: 22.2, 36.7, 68.2, 91.5, 123.0, 138.3,
+# 141.7 for 5..35, then 138.5, 138.9, 134.0 for 40, 45, 50 -- flat, and
+# non-monotone at (35,40) and (45,50). Past saturation a larger requested density
+# does not produce a busier network, so those points would put three
+# indistinguishable columns in the results table and invite the reviewer to ask
+# why 40 and 50 perform the same. The high-density claim is given up deliberately.
+#
+# (Superseded note) The grid is the SAME densities the models train on, so every
+# cell of the table sits inside the
+# training support and the sparse regime is reported rather than skipped. The
+# previous grid topped out at 55 veh/km, one cell outside the training range,
+# and never visited 5 or 10 at all. Override with `--densities`.
+DEFAULT_DENSITIES = [5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0]
+
+# RESOLVED 2026-09-01 (user decision): evaluation, training and tuning seeds are
+# now disjoint. Training consumes `seed + ep` for ep in [0, 100) from a base of
+# 42, i.e. 42..141; HPO tunes on 1001..1003. Evaluating on 5001..5005 means no
+# reported number comes from a traffic realisation the model trained on or that
+# its hyperparameters were selected on. The three ranges are far apart so the
+# next person to widen one does not silently collide with another.
+DEFAULT_SEEDS = [5001, 5002, 5003, 5004, 5005]
+
+DEFAULT_HPARAMS_CSV = "/home/imnyj/Workspace/paper4/coder/results/hpo/optuna_best_params.csv"
+DEFAULT_OUTPUT_DIR = "/home/imnyj/Workspace/paper4/coder/results/eval"
+
+#: Where `run_hot_swap_training` writes `<ClassName>_best.pt` / `<ClassName>_ep###.pt`.
+DEFAULT_CHECKPOINT_DIR = "/home/imnyj/Workspace/paper4/coder/checkpoints"
+
+#: Measurement window for a paper-table run, in environment steps (0.1 s each).
+#: 100 steps is 10 simulated seconds, which is shorter than the 35 s a vehicle
+#: needs to reach the RSU disc, so peak AoI was systematically under-sampled.
+#: 2,000 steps is one training episode, i.e. 200 simulated seconds.
+DEFAULT_EVAL_STEPS = 2000
+
+#: Warmup used for every evaluation episode.
+#:
+#: This is NOT an independent knob. It is re-exported from
+#: `hot_swap_trainer.DEFAULT_WARMUP_STEPS`, which is the single owner of "how
+#: long the network is allowed to fill before anything is measured". It used to
+#: be a hardcoded 350 with a comment claiming it matched the training warmup;
+#: when the trainer went to 1200 the comment silently became false and the
+#: policy was then trained on a 1200-step-filled network but scored on a
+#: 350-step-filled one. Measured at the target RSU, the vehicle count at those
+#: two instants differs by 3-5x (6.5 vs 21.2 vehicles at density 5, 18.2 vs 93.6
+#: at density 20), i.e. the paper table was being produced under traffic the
+#: policy had never trained on. Bind it, do not copy it.
+EVAL_WARMUP_STEPS = DEFAULT_WARMUP_STEPS
+
+# ----------------------------------------------------------------------------
+# Which of the two saved state dicts is the policy under test.
+#
+# `HotSwapTrainer` keeps two copies of the network: `rest_model` is the learner
+# (train mode, receives every gradient step) and `act_model` is the deployed
+# inference copy (eval mode). Weights only ever flow rest -> act, at a hot swap.
+# Every reward this project reports -- including the `best_reward` that decides
+# which episode becomes `_best.pt` -- was produced by acting with `act_model`.
+# So `act_state_dict` is the policy whose measured performance the checkpoint
+# claims, and it is what the benchmark must score. `rest_state_dict` holds
+# strictly newer but never-validated updates and is used only as a fallback for
+# a checkpoint that somehow lacks the act copy.
+# ----------------------------------------------------------------------------
+CHECKPOINT_WEIGHT_KEYS: Tuple[str, ...] = ("act_state_dict", "rest_state_dict")
+
+# ----------------------------------------------------------------------------
+# The composite score. HPO minimises the SAME expression (`src/hpo.py`), which
+# is why the power normalisation lives here as one shared function instead of
+# being written out twice. It used to be written out twice, with different
+# constants: this file mapped [20, 30] dBm -- a window the project had already
+# discarded -- while HPO mapped the real [P_MIN, P_MAX] = [10, 23] dBm. The two
+# objectives therefore ranked policies differently.
+# ----------------------------------------------------------------------------
+COMPOSITE_WEIGHTS: Dict[str, float] = {
+    "error": 1.0,
+    "aoi": 0.5,
+    "outage": 2.0,
+    "power": 0.2,
+}
+
+# ----------------------------------------------------------------------------
+# Outage, as the user defined it on 2026-08-31: COVERAGE outage. A vehicle that
+# is outside the RSU's communication range cannot deliver an AoI update at all
+# (it would fall back to cellular, which this study does not use for updates),
+# so the outage rate is the fraction of vehicle-time spent out of coverage.
+#
+# It is NOT the link-layer frame error rate, and it is NOT the abandoned-update
+# rate. Both of those remain reported, under their own names, because they are
+# genuinely different quantities:
+#   * `packet_loss_rate` -- frames that failed the SINR draw (retries included)
+#   * `tx_abandoned`     -- updates that exhausted MAX_TX_RETRIES
+#
+# THE CONTRACT: `AoiV2IEnv.get_metrics()` must return the key named by
+# `OUTAGE_METRIC_KEY` below. Producing it is the environment's job; this file
+# only carries it into the tables and the composite score.
+# ----------------------------------------------------------------------------
+OUTAGE_METRIC_KEY = "coverage_outage_rate"
+
+#: What the composite scored before the definition was settled. Used only when a
+#: caller explicitly opts out of the strict check, and always recorded in the
+#: output so no table is ambiguous about which definition produced it.
+LEGACY_OUTAGE_METRIC_KEY = "packet_loss_rate"
+
+
+def normalize_power_dbm(power_dbm: Any) -> Any:
+    """Map a transmit power in dBm onto [0, 1] over the decoder's real range.
+
+    Accepts a scalar or a pandas/numpy vector. `P_MIN` / `P_MAX` are owned by
+    `src/rl_interface.py`; no literal window is written here.
+    """
+    span = max(1e-6, float(P_MAX) - float(P_MIN))
+    if isinstance(power_dbm, pd.Series):
+        return ((power_dbm - float(P_MIN)) / span).clip(lower=0.0, upper=1.0)
+    return float(np.clip((float(power_dbm) - float(P_MIN)) / span, 0.0, 1.0))
 
 
 #: Canonical spelling for every baseline, keyed by its punctuation-free lowercase
@@ -91,55 +213,157 @@ def normalize_model_name(name: Any) -> str:
 
 
 def load_optimal_hparams(csv_path: str) -> Dict[str, Dict[str, Any]]:
-    """
-    Loads optimal hyperparameters from the HPO best params CSV file.
-    Parses JSON strings and casts integer hyperparameters appropriately.
-    """
-    hparams_by_model: Dict[str, Dict[str, Any]] = {}
-    if not os.path.exists(csv_path):
-        logger.warning(f"HPO params CSV not found at {csv_path}. Using default hyperparameters.")
-        return hparams_by_model
+    """Load per-model hyperparameters from the HPO best-params CSV.
 
+    This is a thin delegation to `run_all.load_hparams_from_csv`, deliberately.
+    This module used to carry its own second loader whose ignore list was
+    `[model_name, category, best_value, best_trial_number, hparams_json]`, so
+    `w1`..`w4`, `w1_raw`..`w4_raw` and `reward_weights_json` all reached the
+    model constructors on the evaluation path even after the training path was
+    fixed. Reward weights are AoiV2IEnv arguments and belong to the benchmark,
+    never to a model. Two loaders is the defect; one loader is the fix.
+    """
+    # `run_all.py` sits at the repository root next to `src/`, which is not
+    # necessarily on sys.path when this module is imported as `src.evaluate`.
+    coder_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if coder_root not in sys.path:
+        sys.path.insert(0, coder_root)
+    from run_all import load_hparams_from_csv
+
+    return load_hparams_from_csv(csv_path)
+
+
+def constructor_hparams(target: Any, hparams: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """Keep only the keys the target constructor names as real parameters.
+
+    Every baseline ends its `__init__` with `**hparams` and hands the leftovers
+    to `BaseAgent.__init__`, which just stores them on `self.hparams` for the
+    save file. So an unrecognised key has no effect on the model whatsoever: it
+    is swallowed in silence and the run trains at library defaults while the CSV
+    claims it was tuned. A blacklist (`ENV_ONLY_HPARAM_KEYS`) only catches the
+    keys somebody already thought of -- `density`, `warmup_steps` and
+    `rsu_range` would leak exactly the same way the moment such a column appears
+    in the CSV. A whitelist built from the signature catches all of them, and it
+    discards nothing that would have had an effect, precisely because the
+    `**hparams` tail is inert.
+
+    `state_dim` and `num_channels` are dropped too: the caller passes them
+    explicitly, and a duplicate would raise TypeError.
+    """
+    params = dict(hparams or {})
+    if not params:
+        return params
+
+    func = target.__init__ if inspect.isclass(target) else target
     try:
-        df = pd.read_csv(csv_path)
-        for _, row in df.iterrows():
-            raw_name = str(row.get("model_name", "")).strip()
-            canonical_name = normalize_model_name(raw_name)
+        sig = inspect.signature(func)
+    except (TypeError, ValueError):  # pragma: no cover - builtins only
+        return params
 
-            hparams: Dict[str, Any] = {}
-            if "hparams_json" in row and pd.notna(row["hparams_json"]):
-                try:
-                    hparams = json.loads(str(row["hparams_json"]))
-                except Exception:
-                    hparams = {}
+    named = {
+        name
+        for name, p in sig.parameters.items()
+        if p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY)
+        and name not in ("self", "state_dim", "num_channels")
+    }
+    kept = {k: v for k, v in params.items() if k in named}
+    dropped = sorted(set(params) - set(kept))
+    if dropped:
+        logger.warning(
+            "%s: dropping hyperparameter(s) %s -- not a named argument of its "
+            "constructor, so they would vanish into **hparams without effect.",
+            getattr(target, "__name__", str(target)), dropped,
+        )
+    return kept
 
-            # Fallback / merge with individual columns
-            for col in df.columns:
-                if col in ["model_name", "category", "best_value", "best_trial_number", "hparams_json"]:
-                    continue
-                val = row.get(col)
-                if pd.notna(val) and col not in hparams:
-                    hparams[col] = val
 
-            # Type conversions for integer hyperparameters
-            int_keys = ["hidden_dim", "embed_dim", "policy_freq"]
-            for k in int_keys:
-                if k in hparams and hparams[k] is not None:
-                    hparams[k] = int(float(hparams[k]))
+# ----------------------------------------------------------------------------
+# Checkpoint discovery and loading
+# ----------------------------------------------------------------------------
 
-            hparams_by_model[canonical_name] = hparams
-        logger.info(f"Successfully loaded optimal hyperparameters for {len(hparams_by_model)} models from {csv_path}.")
-    except Exception as e:
-        logger.error(f"Error reading HPO params from {csv_path}: {e}. Proceeding with defaults.")
+def checkpoint_stem(canonical_name: str) -> str:
+    """The file-name stem `run_hot_swap_training` writes for this model.
 
-    return hparams_by_model
+    `run_all.py` injects model CLASSES, so `model_name_str` is the Python class
+    name and the files on disk are `IHAMAPPO_best.pt`, `MADDPGMT_ep001.pt`, ...
+    while the registry, the CSV and the paper table spell them `I-HAMAPPO` and
+    `MADDPG-MT`.
+    """
+    if canonical_name in UNTRAINED_MODELS:
+        return canonical_name
+    try:
+        return get_baseline(canonical_name).__name__
+    except Exception:
+        return canonical_name
+
+
+def find_checkpoint(
+    checkpoint_dir: str,
+    model_name: Any,
+    select: str = "best",
+) -> Optional[str]:
+    """Locate the checkpoint for one model, tolerating the naming mismatch.
+
+    `select="best"` prefers `<stem>_best.pt` and falls back to the highest
+    `_ep###.pt`; `select="last"` reverses that preference. Returns None when no
+    file for this model exists -- the caller decides whether that is fatal.
+    """
+    canonical = normalize_model_name(model_name)
+    if not checkpoint_dir or not os.path.isdir(checkpoint_dir):
+        return None
+
+    best_path: Optional[str] = None
+    episodes: List[Tuple[int, str]] = []
+    for fname in sorted(os.listdir(checkpoint_dir)):
+        if not fname.endswith(".pt"):
+            continue
+        stem = fname[:-3]
+        path = os.path.join(checkpoint_dir, fname)
+        if stem.endswith("_best"):
+            if normalize_model_name(stem[: -len("_best")]) == canonical:
+                best_path = path
+            continue
+        m = re.match(r"^(?P<stem>.+)_ep(?P<ep>\d+)$", stem)
+        if m and normalize_model_name(m.group("stem")) == canonical:
+            episodes.append((int(m.group("ep")), path))
+
+    latest = max(episodes, key=lambda c: c[0])[1] if episodes else None
+    if select == "last":
+        return latest or best_path
+    return best_path or latest
+
+
+def _checkpoint_episode(path: Optional[str]) -> int:
+    """Episode number encoded in a checkpoint file name, or -1 for `_best`."""
+    if not path:
+        return -1
+    m = re.search(r"_ep(\d+)\.pt$", os.path.basename(path))
+    return int(m.group(1)) if m else -1
+
+
+def load_checkpoint_bundle(path: str) -> Dict[str, Any]:
+    """Read one checkpoint written by `HotSwapTrainer.save_checkpoint`.
+
+    `weights_only=False` is required: the bundle carries the `hparams` dict and
+    the bookkeeping counters alongside the tensors, and torch >= 2.6 refuses
+    those under the safe unpickler. These files are produced by this repository.
+    """
+    bundle = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(bundle, dict):
+        raise ValueError(f"Checkpoint {path} is not a state dictionary bundle.")
+    if not any(k in bundle for k in CHECKPOINT_WEIGHT_KEYS):
+        raise KeyError(
+            f"Checkpoint {path} carries none of {list(CHECKPOINT_WEIGHT_KEYS)}; "
+            "it was not written by HotSwapTrainer.save_checkpoint."
+        )
+    return bundle
 
 
 def instantiate_model(
     model_name: Union[str, Any],
     hparams: Optional[Dict[str, Any]] = None,
     state_dim: int = STATE_DIM,
-    num_channels: int = 4,
+    num_channels: int = comm.NUM_SUBCHANNELS,
 ) -> Union[torch.nn.Module, HeuristicScheduler]:
     """
     Instantiates an evaluated model (HeuristicScheduler or user-provided instantiated Module/callable)
@@ -149,7 +373,7 @@ def instantiate_model(
         return model_name
 
     if callable(model_name) and not isinstance(model_name, str):
-        params = dict(hparams) if hparams is not None else {}
+        params = constructor_hparams(model_name, hparams)
         return model_name(state_dim=state_dim, num_channels=num_channels, **params)
 
     if not isinstance(model_name, str):
@@ -159,20 +383,133 @@ def instantiate_model(
     params = dict(hparams) if hparams is not None else {}
 
     if canonical_name == "HeuristicScheduler":
-        return HeuristicScheduler(
-            delta_min=params.get("delta_min", 0.5),
-            delta_max=params.get("delta_max", 10.0),
-            delta_cruise_steady=params.get("delta_cruise_steady", 3.5),
-            delta_cruise_accel=params.get("delta_cruise_accel", 1.5),
-            p_high=params.get("p_high", 23.0),
-            p_mid=params.get("p_mid", 20.0),
-            p_low=params.get("p_low", 10.0),
-            num_subchannels=num_channels,
-        )
+        # The action bounds are owned by `src/rl_interface.py` and are read at
+        # call time, not bound at import, because `DELTA_MAX` is resolved from
+        # the SUMO signal plan by `refresh_scenario_constants()`. The literals
+        # that used to sit here (delta_min 0.5, delta_max 10.0) confined the
+        # rule-based reference to roughly a quarter of the interval range every
+        # RL baseline could use, which disabled the red-phase backoff rule that
+        # is this baseline's whole design premise.
+        # Nothing is passed for delta_min / delta_max / p_high / p_low. They
+        # default to None, and HeuristicScheduler then reads them off the same
+        # ActionDecoder every RL baseline gets through BaseRLModel. Naming them
+        # here -- even with the right numbers -- would fork the single source of
+        # truth again and can trip the scheduler's own `action_space_handicapped`
+        # check if this module's module-level DELTA_MAX has not yet been
+        # refreshed from the SUMO signal plan (the model is built before any env
+        # exists). Only an explicit CSV override reaches them now.
+        heuristic_params = constructor_hparams(HeuristicScheduler, params)
+        heuristic_params["num_subchannels"] = num_channels
+        return HeuristicScheduler(**heuristic_params)
 
     # Every other name is a baseline; the registry raises with a listing on a miss.
     model_cls = get_baseline(canonical_name)
-    return model_cls(state_dim=state_dim, num_channels=num_channels, **params)
+    return model_cls(
+        state_dim=state_dim,
+        num_channels=num_channels,
+        **constructor_hparams(model_cls, params),
+    )
+
+
+def build_evaluated_model(
+    model_name: Union[str, Any],
+    hparams: Optional[Dict[str, Any]] = None,
+    checkpoint_dir: Optional[str] = DEFAULT_CHECKPOINT_DIR,
+    checkpoint_select: str = "best",
+    require_checkpoint: bool = True,
+    state_dim: int = STATE_DIM,
+    num_channels: int = comm.NUM_SUBCHANNELS,
+) -> Tuple[Union[torch.nn.Module, HeuristicScheduler], Dict[str, Any]]:
+    """Build a model AND load the weights the training run produced for it.
+
+    Returns `(model, provenance)` where provenance records exactly which file the
+    weights came from so every row of the results CSV can be traced back to a
+    checkpoint. When `require_checkpoint` is True (the default) a learned model
+    with no checkpoint raises `FileNotFoundError` instead of quietly scoring a
+    randomly initialised network -- which is what this harness did until
+    2026-08-31, and the silence of that path is why nobody noticed.
+
+    The hyperparameters stored inside the checkpoint win over the CSV: they are
+    the ones the saved tensors were actually shaped by, so using anything else
+    produces a `load_state_dict` size mismatch or, worse, a silent partial load.
+    """
+    canonical_name = normalize_model_name(model_name)
+    provenance: Dict[str, Any] = {
+        "checkpoint_loaded": False,
+        "checkpoint_file": "",
+        "checkpoint_episode": -1,
+        "checkpoint_training_steps": -1,
+        "checkpoint_weights": "",
+    }
+
+    if canonical_name in UNTRAINED_MODELS:
+        # Rule-based; there are no learned weights to restore.
+        return instantiate_model(canonical_name, hparams, state_dim, num_channels), provenance
+
+    path = find_checkpoint(checkpoint_dir or "", canonical_name, select=checkpoint_select)
+    if path is None:
+        msg = (
+            f"No checkpoint for '{canonical_name}' in '{checkpoint_dir}'. Looked for "
+            f"'{checkpoint_stem(canonical_name)}_best.pt' and '<stem>_ep###.pt'. "
+            "Evaluating an untrained network would put random-weight numbers in the paper table."
+        )
+        if require_checkpoint:
+            raise FileNotFoundError(msg)
+        logger.error("%s Continuing with RANDOM weights; the row is flagged checkpoint_loaded=False.", msg)
+        return instantiate_model(canonical_name, hparams, state_dim, num_channels), provenance
+
+    bundle = load_checkpoint_bundle(path)
+    ckpt_hparams = bundle.get("hparams") or {}
+    if not isinstance(ckpt_hparams, dict):
+        ckpt_hparams = {}
+
+    csv_hparams = dict(hparams or {})
+    if csv_hparams:
+        conflicting = sorted(
+            k for k in set(csv_hparams) & set(ckpt_hparams) if csv_hparams[k] != ckpt_hparams[k]
+        )
+        csv_only = sorted(set(csv_hparams) - set(ckpt_hparams))
+        if conflicting or csv_only:
+            logger.warning(
+                "%s: hyperparameters in %s disagree with the HPO CSV; using the checkpoint's. "
+                "differing=%s csv_only=%s",
+                canonical_name, os.path.basename(path), conflicting, csv_only,
+            )
+
+    model = instantiate_model(canonical_name, ckpt_hparams, state_dim, num_channels)
+
+    weights_key = next((k for k in CHECKPOINT_WEIGHT_KEYS if k in bundle), None)
+    if weights_key is None:  # pragma: no cover - load_checkpoint_bundle already checked
+        raise KeyError(f"Checkpoint {path} has no usable state dict.")
+    # strict=True on purpose. A non-strict load leaves any key the checkpoint
+    # does not carry sitting at its freshly initialised value, which is the same
+    # silent-random-weights failure this function exists to prevent, only harder
+    # to see because most of the network did load.
+    try:
+        model.load_state_dict(bundle[weights_key], strict=True)
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"{canonical_name}: '{os.path.basename(path)}' does not fit the current "
+            f"{type(model).__name__} definition, so it cannot be scored. This normally "
+            "means the checkpoint predates a change to the model class and must be "
+            f"retrained, not loaded loosely.\n  {exc}"
+        ) from exc
+    if hasattr(model, "eval"):
+        model.eval()
+
+    provenance.update(
+        checkpoint_loaded=True,
+        checkpoint_file=os.path.basename(path),
+        checkpoint_episode=_checkpoint_episode(path),
+        checkpoint_training_steps=int(bundle.get("training_steps") or 0),
+        checkpoint_weights=weights_key,
+    )
+    logger.info(
+        "%s: loaded %s from %s (training_steps=%d)",
+        canonical_name, weights_key, provenance["checkpoint_file"],
+        provenance["checkpoint_training_steps"],
+    )
+    return model, provenance
 
 
 def calculate_jains_fairness(values: List[float]) -> float:
@@ -195,10 +532,9 @@ def evaluate_single_run(
     model: Union[torch.nn.Module, HeuristicScheduler, Any],
     density: float,
     seed: int,
-    n_steps: int = 100,
-    dt: float = 1.0,
-    rsu_pos: Tuple[float, float] = (0.0, 0.0),
+    n_steps: int = DEFAULT_EVAL_STEPS,
     rsu_range: float = RSU_RANGE,
+    warmup_steps: int = EVAL_WARMUP_STEPS,
 ) -> Dict[str, Any]:
     """
     Executes a single benchmark evaluation run on the genuine SUMO AoiV2IEnv.
@@ -214,26 +550,32 @@ def evaluate_single_run(
         seed=seed,
         max_steps=n_steps,
         rsu_range=rsu_range,
-        warmup_steps=350,
+        warmup_steps=warmup_steps,
         **{k: float(v) for k, v in DEFAULT_REWARD_WEIGHTS.items()},
     )
     obs, info = env.reset()
 
+    # The uplink success draw is `random.random()` (hot_swap_trainer), i.e. the
+    # PROCESS-WIDE `random` stream, and scenario generation consumes a variable
+    # number of draws from that same stream before we get here -- hundreds when
+    # the SUMO cache misses, zero when it hits. Re-seeding after reset() pins the
+    # simulation stream to (density, seed) regardless of what ran before, which
+    # is the part of the reproducibility gap this file can close on its own.
+    # The remaining part -- freezing the scenario itself -- lives in
+    # `src/sumo/make_sumo_set.py` and `AoiV2IEnv._init_sumo`.
+    random.seed(seed)
+
     def _grant_for(vid: str, s_vec) -> Any:
         """One grant, from whichever policy kind we were handed."""
         if isinstance(model, HeuristicScheduler):
-            veh_pos = env.vehicle_tracks.get(vid, {}).get("pos", (0.0, 0.0))
-            veh_speed = float(getattr(env, "last_speeds", {}).get(vid, 0.0))
-            st_dict = {
-                "vid": vid,
-                "pos": veh_pos,
-                "speed": veh_speed,
-                "dist_to_rsu": math.hypot(
-                    veh_pos[0] - env.target_rsu_pos[0],
-                    veh_pos[1] - env.target_rsu_pos[1],
-                ),
-                "current_time": env.sim_time,
-            }
+            # The environment's own telemetry dict, not a hand-rolled subset.
+            # The subset that used to be built here omitted `accel` and
+            # `tls_features`, so `predict_stop_imminent` always read an
+            # acceleration of exactly 0.0 while every RL baseline received the
+            # real value as state feature [4].
+            st_dict = env._get_vehicle_state_dict(vid)
+            if st_dict is None:
+                st_dict = {"vid": vid, "current_time": env.sim_time}
             return model.decide_grant(vid, st_dict)
         with torch.no_grad():
             grant, _, _ = model.select_action(s_vec, deterministic=True)
@@ -244,7 +586,7 @@ def evaluate_single_run(
     # and would benchmark all nine baselines on an identical transmit schedule.
     action_dict = {vid: _grant_for(vid, s_vec) for vid, s_vec in obs.items()}
 
-    for step in range(n_steps):
+    for _step in range(n_steps):
         next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
         action_dict = {
             vid: _grant_for(vid, next_obs[vid])
@@ -253,10 +595,17 @@ def evaluate_single_run(
         }
         obs = next_obs
 
+    # Close the SMDP intervals still in flight when the step budget ran out.
+    # Without this, `close()` discards them and their accrued dead-reckoning
+    # error never reaches `get_metrics()`. The loss is length-biased -- an
+    # interval is more likely to still be open the longer its Delta -- so the
+    # discarded set is disproportionately the long-Delta decisions carrying the
+    # largest accumulated error. Dropping them flatters exactly the decisions
+    # this paper is about.
+    env.finalize_open_intervals()
+
     metrics = env.get_metrics()
     env.close()
-    del env
-    import gc
     gc.collect()
 
     return {
@@ -266,13 +615,86 @@ def evaluate_single_run(
     }
 
 
+# Columns averaged across the cells of a (model, density) or (model) group.
+MEAN_AGG_COLS = [
+    "mean_aoi",
+    "peak_aoi",
+    OUTAGE_METRIC_KEY,
+    "packet_loss_rate",
+    # Prediction error at the instant each delivered update was valid, which is
+    # the quantity the tracking claim is actually about.
+    "mean_update_error",
+    "mean_error",
+    "max_error",
+    "low_speed_error",
+    "high_speed_error",
+    "avg_tx_power_dbm",
+    "total_energy_joules",
+    "jains_fairness_aoi",
+    "jains_fairness_err",
+]
+
+# Counters. These are summed, not averaged: `n_observations` exists to say that
+# nothing was measured, and a mean would let one healthy cell hide an empty one.
+# `tx_abandoned` is the number of updates that exhausted MAX_TX_RETRIES and never
+# reached the RSU; it is reported next to the frame-level `tx_fails` because the
+# two are different failure notions and the paper must say which one it calls
+# outage.
+SUM_AGG_COLS = [
+    "tx_attempts",
+    "tx_fails",
+    "tx_abandoned",
+    "n_observations",
+    "n_vehicles_seen",
+    "n_updates_delivered",
+    # Numerator and denominator of `coverage_outage_rate`, carried through so a
+    # reader can recompute the pooled rate rather than trusting a mean of means.
+    "outage_vehicle_steps",
+    "total_vehicle_steps",
+]
+
+# Health signals where the worst cell is what matters, not the average.
+# `dynamics_fallbacks` is a cumulative process-wide counter, so summing it across
+# runs would double-count; the maximum is the meaningful reduction.
+MAX_AGG_COLS = [
+    "dynamics_fallbacks",
+]
+
+
+def _aggregate(df: pd.DataFrame, group_cols: List[str]) -> pd.DataFrame:
+    """Group `df`, averaging the metric columns and summing the counters."""
+    spec: Dict[str, str] = {}
+    for c in MEAN_AGG_COLS:
+        if c in df.columns:
+            spec[c] = "mean"
+    for c in SUM_AGG_COLS:
+        if c in df.columns:
+            spec[c] = "sum"
+    for c in MAX_AGG_COLS:
+        if c in df.columns:
+            spec[c] = "max"
+    grouped = df.groupby(group_cols, as_index=False)
+    out = grouped.agg(spec)
+    counts = grouped.size().rename(columns={"size": "n_runs"})
+    out = out.merge(counts, on=group_cols, how="left")
+    for c in MEAN_AGG_COLS:
+        if c in out.columns:
+            out[c] = out[c].round(6 if c == "total_energy_joules" else 4)
+    return out
+
+
 def run_full_benchmark(
     models: Optional[List[str]] = None,
     densities: Optional[List[float]] = None,
     seeds: Optional[List[int]] = None,
-    hparams_csv: str = "/home/imnyj/Workspace/paper4/coder/results/hpo/optuna_best_params.csv",
-    output_dir: str = "/home/imnyj/Workspace/paper4/coder/results/eval",
-    n_steps: int = 100,
+    hparams_csv: str = DEFAULT_HPARAMS_CSV,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    n_steps: int = DEFAULT_EVAL_STEPS,
+    checkpoint_dir: Optional[str] = DEFAULT_CHECKPOINT_DIR,
+    checkpoint_select: str = "best",
+    require_checkpoint: bool = True,
+    require_nonempty_runs: bool = True,
+    require_outage_metric: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Executes the full benchmark evaluation across models, densities, and seeds.
@@ -283,7 +705,11 @@ def run_full_benchmark(
     target_seeds = seeds if seeds is not None else DEFAULT_SEEDS
 
     logger.info(
-        f"Starting Benchmark Matrix: {len(target_models)} models x {len(target_densities)} densities x {len(target_seeds)} seeds = {len(target_models) * len(target_densities) * len(target_seeds)} total runs."
+        "Starting Benchmark Matrix: %d models x %d densities x %d seeds = %d runs of %d steps; "
+        "checkpoints from '%s' (select=%s, required=%s).",
+        len(target_models), len(target_densities), len(target_seeds),
+        len(target_models) * len(target_densities) * len(target_seeds),
+        n_steps, checkpoint_dir, checkpoint_select, require_checkpoint,
     )
 
     # 1. Load optimal hyperparameters
@@ -298,10 +724,21 @@ def run_full_benchmark(
         hparams = hparams_map.get(canonical_name, {})
 
         logger.info(f"Evaluating model: {canonical_name} ({category})...")
-        model = instantiate_model(canonical_name, hparams)
 
         for density in target_densities:
             for seed in target_seeds:
+                # A fresh instance per cell, with its checkpoint reloaded. One
+                # instance reused across all 25 cells carried replay buffers,
+                # exploration counters and observation-normalisation statistics
+                # from one cell into the next, so a cell's result depended on how
+                # many cells had run before it.
+                model, provenance = build_evaluated_model(
+                    canonical_name,
+                    hparams,
+                    checkpoint_dir=checkpoint_dir,
+                    checkpoint_select=checkpoint_select,
+                    require_checkpoint=require_checkpoint,
+                )
                 metrics = evaluate_single_run(
                     model=model,
                     density=density,
@@ -311,53 +748,68 @@ def run_full_benchmark(
                 record = {
                     "model_name": canonical_name,
                     "category": category,
+                    **provenance,
                     **metrics,
                 }
                 raw_records.append(record)
+                del model
+                gc.collect()
 
     df_raw = pd.DataFrame(raw_records)
 
+    # An empty run degrades every other metric into a plausible-looking number
+    # (mean_aoi 0.0, power at the decoder floor, Jain's index 1.0) and used to
+    # disappear entirely from the summary and the leaderboard.
+    if require_nonempty_runs and "n_observations" in df_raw.columns and len(df_raw):
+        empty = df_raw[df_raw["n_observations"] <= 0]
+        if len(empty):
+            raise RuntimeError(
+                "No AoI observation was recorded in "
+                f"{len(empty)} of {len(df_raw)} runs: "
+                f"{empty[['model_name', 'density', 'seed']].to_dict('records')}. "
+                "Those rows measure nothing; raise --n-steps or check the scenario."
+            )
+
+    # Outage is coverage outage (user decision, 2026-08-31). The environment owns
+    # the measurement; if it is not exporting the key yet, the paper table must
+    # not be produced silently under the old frame-error definition.
+    outage_col = OUTAGE_METRIC_KEY
+    if OUTAGE_METRIC_KEY not in df_raw.columns:
+        msg = (
+            f"AoiV2IEnv.get_metrics() did not return '{OUTAGE_METRIC_KEY}'. Outage is defined "
+            "as COVERAGE outage -- the fraction of vehicle-time spent outside the RSU range, "
+            f"where no AoI update can occur. '{LEGACY_OUTAGE_METRIC_KEY}' is the link-layer "
+            "frame error rate and is NOT the same quantity."
+        )
+        if require_outage_metric:
+            raise RuntimeError(msg)
+        outage_col = LEGACY_OUTAGE_METRIC_KEY
+        logger.error("%s Falling back to '%s'; every output row is tagged accordingly.",
+                     msg, outage_col)
+
     # 3. Create summary by density (mean across seeds)
-    agg_cols = [
-        "mean_aoi",
-        "peak_aoi",
-        "packet_loss_rate",
-        "mean_error",
-        "max_error",
-        "low_speed_error",
-        "high_speed_error",
-        "avg_tx_power_dbm",
-        "total_energy_joules",
-        "jains_fairness_aoi",
-        "jains_fairness_err",
-    ]
-    df_summary = df_raw.groupby(["model_name", "category", "density"], as_index=False)[agg_cols].mean()
-    for c in agg_cols:
-        if c == "total_energy_joules":
-            df_summary[c] = df_summary[c].round(6)
-        else:
-            df_summary[c] = df_summary[c].round(4)
+    df_summary = _aggregate(df_raw, ["model_name", "category", "density"])
 
     # 4. Create overall leaderboard (mean across all densities and seeds)
-    df_leaderboard_agg = df_raw.groupby(["model_name", "category"], as_index=False)[agg_cols].mean()
+    df_leaderboard_agg = _aggregate(df_raw, ["model_name", "category"])
 
-    # Calculate composite score: 1.0 * mean_err + 0.5 * mean_aoi + 2.0 * loss + 0.2 * normalized_power
-    p_norm = (df_leaderboard_agg["avg_tx_power_dbm"] - 20.0).clip(lower=0.0) / 10.0
+    # Composite score, identical in form and in constants to the HPO objective.
+    p_norm = normalize_power_dbm(df_leaderboard_agg["avg_tx_power_dbm"])
     composite = (
-        1.0 * df_leaderboard_agg["mean_error"]
-        + 0.5 * df_leaderboard_agg["mean_aoi"]
-        + 2.0 * df_leaderboard_agg["packet_loss_rate"]
-        + 0.2 * p_norm
+        COMPOSITE_WEIGHTS["error"] * df_leaderboard_agg["mean_error"]
+        + COMPOSITE_WEIGHTS["aoi"] * df_leaderboard_agg["mean_aoi"]
+        + COMPOSITE_WEIGHTS["outage"] * df_leaderboard_agg[outage_col]
+        + COMPOSITE_WEIGHTS["power"] * p_norm
     )
+    # Every table says, in its own columns, which outage definition scored it.
+    df_summary["outage_metric"] = outage_col
+    df_leaderboard_agg["outage_metric"] = outage_col
+    df_leaderboard_agg["avg_power_norm"] = p_norm.round(4)
     df_leaderboard_agg["composite_score"] = composite.round(4)
-    df_leaderboard_sorted = df_leaderboard_agg.sort_values(by="composite_score", ascending=True).reset_index(drop=True)
+    df_leaderboard_sorted = df_leaderboard_agg.sort_values(
+        by="composite_score", ascending=True
+    ).reset_index(drop=True)
     df_leaderboard_sorted.insert(0, "rank", range(1, len(df_leaderboard_sorted) + 1))
-
-    for c in agg_cols:
-        if c == "total_energy_joules":
-            df_leaderboard_sorted[c] = df_leaderboard_sorted[c].round(6)
-        else:
-            df_leaderboard_sorted[c] = df_leaderboard_sorted[c].round(4)
 
     # 5. Export to CSV files if output_dir specified
     if output_dir:
@@ -376,19 +828,39 @@ def run_full_benchmark(
     return df_raw, df_summary, df_leaderboard_sorted
 
 
-def main() -> None:
+def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="AoI-aware V2I Uplink RL Benchmark Evaluation Harness")
-    parser.add_argument(
-        "--hparams-csv",
-        type=str,
-        default="/home/imnyj/Workspace/paper4/coder/results/hpo/optuna_best_params.csv",
-    )
-    parser.add_argument("--output-dir", type=str, default="/home/imnyj/Workspace/paper4/coder/results/eval")
+    parser.add_argument("--hparams-csv", type=str, default=DEFAULT_HPARAMS_CSV)
+    parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--densities", type=float, nargs="+", default=DEFAULT_DENSITIES)
     parser.add_argument("--seeds", type=int, nargs="+", default=DEFAULT_SEEDS)
-    parser.add_argument("--n-steps", type=int, default=100)
+    parser.add_argument("--n-steps", type=int, default=DEFAULT_EVAL_STEPS)
     parser.add_argument("--models", type=str, nargs="+", default=None)
-    args = parser.parse_args()
+    parser.add_argument(
+        "--checkpoint-dir", type=str, default=DEFAULT_CHECKPOINT_DIR,
+        help="directory holding <ClassName>_best.pt / <ClassName>_ep###.pt",
+    )
+    parser.add_argument(
+        "--checkpoint-select", choices=["best", "last"], default="best",
+        help="'best' scores <model>_best.pt (highest episode reward); "
+             "'last' scores the final episode checkpoint",
+    )
+    parser.add_argument(
+        "--allow-missing-checkpoint", action="store_true",
+        help="do not abort when a learned model has no checkpoint; the affected "
+             "rows are marked checkpoint_loaded=False and hold RANDOM weights",
+    )
+    parser.add_argument(
+        "--allow-empty-runs", action="store_true",
+        help="do not abort when a run recorded zero AoI observations",
+    )
+    parser.add_argument(
+        "--allow-legacy-outage", action="store_true",
+        help=f"score the composite with '{LEGACY_OUTAGE_METRIC_KEY}' (link-layer frame "
+             f"error rate) when the environment does not export '{OUTAGE_METRIC_KEY}'. "
+             "The two are different quantities; the output is tagged either way.",
+    )
+    args = parser.parse_args(argv)
 
     df_raw, df_summary, df_leaderboard = run_full_benchmark(
         models=args.models,
@@ -397,26 +869,26 @@ def main() -> None:
         hparams_csv=args.hparams_csv,
         output_dir=args.output_dir,
         n_steps=args.n_steps,
+        checkpoint_dir=args.checkpoint_dir,
+        checkpoint_select=args.checkpoint_select,
+        require_checkpoint=not args.allow_missing_checkpoint,
+        require_nonempty_runs=not args.allow_empty_runs,
+        require_outage_metric=not args.allow_legacy_outage,
     )
 
     print("\n" + "=" * 80)
-    print("🏆 IEEE TWC EVALUATION LEADERBOARD (Composite Ranking)")
+    print("IEEE TWC EVALUATION LEADERBOARD (Composite Ranking)")
     print("=" * 80)
-    print(
-        df_leaderboard[
-            [
-                "rank",
-                "model_name",
-                "category",
-                "mean_aoi",
-                "peak_aoi",
-                "packet_loss_rate",
-                "mean_error",
-                "avg_tx_power_dbm",
-                "composite_score",
-            ]
-        ].to_string(index=False)
-    )
+    cols = [
+        c
+        for c in [
+            "rank", "model_name", "category", "mean_aoi", "peak_aoi",
+            OUTAGE_METRIC_KEY, "packet_loss_rate", "mean_error",
+            "avg_tx_power_dbm", "outage_metric", "composite_score",
+        ]
+        if c in df_leaderboard.columns
+    ]
+    print(df_leaderboard[cols].to_string(index=False))
     print("=" * 80 + "\n")
 
 

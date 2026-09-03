@@ -1,0 +1,1355 @@
+"""
+Fundamental Data Collector & Cross-Validation Module
+Auto Stock ML/RL Trader - Phase 1 Data Collection Pipeline (R1 / Milestone 1)
+"""
+
+import os
+import re
+import math
+import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field, asdict
+from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional, Any, Union, Tuple
+import pandas as pd
+import requests
+
+logger = logging.getLogger("AutoStock.Fundamental")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        "[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+# =====================================================================
+# 1. Enums & Data Models
+# =====================================================================
+
+class PeriodType(str, Enum):
+    """재무제표 주기 구분 (연간 / 분기)"""
+    ANNUAL = "annual"
+    QUARTER = "quarter"
+
+
+class ValidationStatus(str, Enum):
+    """교차 검증 상태 코드"""
+    PASSED = "PASSED"
+    WARNING = "WARNING"
+    CRITICAL_DISCREPANCY = "CRITICAL_DISCREPANCY"
+    FALLBACK = "FALLBACK"
+    SINGLE_SOURCE = "SINGLE_SOURCE"
+
+
+@dataclass
+class FinancialStatement:
+    """연간 또는 분기 단위 표준 재무제표 데이터 모델"""
+    ticker: str
+    year: int
+    quarter: Optional[int] = None  # None for annual (4Q), 1/2/3/4 for quarterly
+    period_type: PeriodType = PeriodType.ANNUAL
+    is_consensus: bool = False
+    announcement_date: Optional[str] = None
+    period_end: Optional[str] = None  # YYYY-MM-DD
+
+    # Financial Statements (Unit: KRW / 원)
+    revenue: Optional[int] = None               # 매출액
+    operating_profit: Optional[int] = None      # 영업이익
+    net_income: Optional[int] = None            # 당기순이익
+    total_assets: Optional[int] = None          # 자산총계
+    total_liabilities: Optional[int] = None     # 부채총계
+    total_equity: Optional[int] = None          # 자본총계
+    operating_cash_flow: Optional[int] = None   # 영업활동현금흐름
+    free_cash_flow: Optional[int] = None        # 잉여현금흐름 (FCF)
+
+    # Financial Ratios (Unit: %)
+    roe: Optional[float] = None                 # 자기자본이익률 (%)
+    roa: Optional[float] = None                 # 총자산이익률 (%)
+    debt_ratio: Optional[float] = None          # 부채비율 (%)
+    op_margin: Optional[float] = None           # 영업이익률 (%)
+    net_margin: Optional[float] = None          # 순이익률 (%)
+
+    # Valuation Metrics
+    eps: Optional[float] = None                 # 주당순이익 (원)
+    bps: Optional[float] = None                 # 주당순자산 (원)
+    per: Optional[float] = None                 # 주가수익비율 (배)
+    pbr: Optional[float] = None                 # 주가순자산비율 (배)
+    dps: Optional[float] = None                 # 주당배당금 (원)
+    dividend_yield: Optional[float] = None      # 배당수익률 (%)
+
+    # Metadata
+    source: str = "UNKNOWN"
+    validation_status: ValidationStatus = ValidationStatus.SINGLE_SOURCE
+    collected_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    @property
+    def symbol(self) -> str:
+        return self.ticker
+
+    @property
+    def operating_income(self) -> Optional[int]:
+        return self.operating_profit
+
+    @property
+    def assets(self) -> Optional[int]:
+        return self.total_assets
+
+    @property
+    def liabilities(self) -> Optional[int]:
+        return self.total_liabilities
+
+    @property
+    def equity(self) -> Optional[int]:
+        return self.total_equity
+
+    @property
+    def div_yield(self) -> Optional[float]:
+        return self.dividend_yield
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Interface Contract 호환 딕셔너리 변환"""
+        if self.period_end:
+            p_end = pd.to_datetime(self.period_end)
+        else:
+            month = 12 if self.quarter is None else self.quarter * 3
+            day = 31 if month in (3, 12) else 30
+            p_end = pd.to_datetime(f"{self.year}-{month:02d}-{day:02d}")
+
+        if self.announcement_date:
+            a_date = pd.to_datetime(self.announcement_date)
+        else:
+            is_annual = (self.quarter is None or self.quarter == 4 or self.period_type == PeriodType.ANNUAL or p_end.month == 12)
+            days = 90 if is_annual else 45
+            a_date = p_end + pd.Timedelta(days=days)
+
+        val_status_str = (
+            self.validation_status.value
+            if hasattr(self.validation_status, "value")
+            else str(self.validation_status)
+        )
+
+        return {
+            "symbol": self.ticker,
+            "period_end": p_end,
+            "announcement_date": a_date,
+            "revenue": self.revenue,
+            "operating_income": self.operating_profit,
+            "net_income": self.net_income,
+            "assets": self.total_assets,
+            "liabilities": self.total_liabilities,
+            "equity": self.total_equity,
+            "per": self.per,
+            "pbr": self.pbr,
+            "roe": self.roe,
+            "eps": self.eps,
+            "bps": self.bps,
+            "div_yield": self.dividend_yield,
+            "is_consensus": self.is_consensus,
+            "source": self.source,
+            "validation_status": val_status_str,
+        }
+
+
+@dataclass
+class RealtimeValuation:
+    """실시간/당일 기준 가치평가 및 시장 지표 모델"""
+    ticker: str
+    current_price: int
+    market_cap: int
+    shares_outstanding: int
+    per: Optional[float] = None
+    pbr: Optional[float] = None
+    eps: Optional[float] = None
+    bps: Optional[float] = None
+    dividend_yield: Optional[float] = None
+    foreign_rate: Optional[float] = None
+    high_52w: Optional[int] = None
+    low_52w: Optional[int] = None
+    source: str = "NAVER"
+    collected_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DiscrepancyItem:
+    """개별 지표별 교차 검증 결과"""
+    metric_name: str
+    source_a_name: str
+    source_a_value: Any
+    source_b_name: str
+    source_b_value: Any
+    discrepancy_pct: float
+    is_valid: bool
+    status: ValidationStatus
+    message: str
+
+
+@dataclass
+class ValidationReport:
+    """교차 검증 종합 보고서"""
+    ticker: str
+    target_period: str
+    status: ValidationStatus
+    primary_source: str
+    comparison_source: Optional[str]
+    items: Dict[str, DiscrepancyItem] = field(default_factory=dict)
+    max_discrepancy_pct: float = 0.0
+    warnings: List[str] = field(default_factory=list)
+    errors: List[str] = field(default_factory=list)
+    validated_at: str = field(default_factory=lambda: datetime.now().isoformat())
+
+
+# =====================================================================
+# 2. Base Interface
+# =====================================================================
+
+class BaseFundamentalSource(ABC):
+    """모든 펀더멘털 데이터 수집기가 상속해야 하는 추상 인터페이스"""
+
+    @abstractmethod
+    def get_annual_financials(
+        self, ticker: str, start_year: int = 2021, end_year: int = 2025
+    ) -> List[FinancialStatement]:
+        """연간 재무제표 리스트 수집"""
+        pass
+
+    @abstractmethod
+    def get_quarterly_financials(
+        self, ticker: str, count: int = 8
+    ) -> List[FinancialStatement]:
+        """최근 분기 재무제표 리스트 수집"""
+        pass
+
+    @abstractmethod
+    def get_realtime_valuation(self, ticker: str) -> Optional[RealtimeValuation]:
+        """실시간/당일 시장 가치 지표 수집"""
+        pass
+
+    def close(self) -> None:
+        """수집원 리소스 정리"""
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+# =====================================================================
+# 3. Helper Functions
+# =====================================================================
+
+def clean_numeric_str(val: Any) -> Optional[float]:
+    """문자열에서 숫자 및 부호만 추출하여 float 변환"""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val) if not math.isnan(val) else None
+    
+    val_str = str(val).strip().replace(",", "").replace("%", "").replace("배", "").replace("원", "")
+    if not val_str or val_str in ("-", "N/A", "NaN", "null", "None"):
+        return None
+    try:
+        return float(val_str)
+    except ValueError:
+        return None
+
+
+def parse_korean_money(val_str: str) -> Optional[int]:
+    """
+    한국어 금액 문자열(예: '1,520조 324억', '6조 4,891억', '5,000억')을 원 단위 int로 변환
+    """
+    if not val_str or not isinstance(val_str, str):
+        return None
+    val_str = val_str.strip().replace(",", "")
+    total = 0
+    matched = False
+
+    # 조 단위
+    jo_match = re.search(r"(\d+(?:\.\d+)?)\s*조", val_str)
+    if jo_match:
+        total += int(float(jo_match.group(1)) * 1_000_000_000_000)
+        matched = True
+
+    # 억 단위
+    eok_match = re.search(r"(\d+(?:\.\d+)?)\s*억", val_str)
+    if eok_match:
+        total += int(float(eok_match.group(1)) * 100_000_000)
+        matched = True
+
+    # 만 단위
+    man_match = re.search(r"(\d+(?:\.\d+)?)\s*만", val_str)
+    if man_match:
+        total += int(float(man_match.group(1)) * 10_000)
+        matched = True
+
+    if matched:
+        return total
+
+    # 순수 숫자인 경우
+    clean_val = clean_numeric_str(val_str)
+    return int(clean_val) if clean_val is not None else None
+
+
+# =====================================================================
+# 4. OpenDART Collector
+# =====================================================================
+
+class OpenDartCollector(BaseFundamentalSource):
+    """
+    공식 OpenDART 전자공시 REST API 전용 수집기
+    """
+    BASE_URL = "https://opendart.fss.or.kr/api"
+
+    # 대표 종목 고유번호 캐시
+    DEFAULT_CORP_CODES = {
+        "005930": "00126380",  # 삼성전자
+        "000660": "00164779",  # SK하이닉스
+        "035420": "00266961",  # NAVER
+        "035720": "00258801",  # 카카오
+        "005380": "00164742",  # 현대차
+        "051910": "00356361",  # LG화학
+        "006400": "00149947",  # 삼성SDI
+        "000270": "00106641",  # 기아
+        "068270": "00413046",  # 셀트리온
+        "105560": "00684992",  # KB금융
+    }
+
+    # 계정명 표준화 동의어 사전
+    ACCOUNT_SYNONYMS = {
+        "revenue": ["매출액", "수익(매출액)", "영업수익", "매출", "영업수익(매출액)"],
+        "operating_profit": ["영업이익", "영업이익(손실)", "영업손익"],
+        "net_income": ["당기순이익", "당기순이익(손실)", "연결당기순이익", "연결당기순이익(손실)", "분기순이익", "반기순이익"],
+        "total_assets": ["자산총계", "자산 총계"],
+        "total_liabilities": ["부채총계", "부채 총계"],
+        "total_equity": ["자본총계", "자본 총계", "자기자본"],
+    }
+
+    def __init__(self, api_key: Optional[str] = None, timeout: int = 10):
+        self.api_key = api_key or os.getenv("DART_API_KEY") or os.getenv("OPENDART_API_KEY")
+        self.timeout = timeout
+        self.session = requests.Session()
+        self._corp_code_cache = dict(self.DEFAULT_CORP_CODES)
+
+    def close(self) -> None:
+        """DART HTTP 세션 리소스 정리"""
+        if hasattr(self, "session") and self.session:
+            try:
+                self.session.close()
+            except Exception as e:
+                logger.debug(f"Error closing OpenDartCollector session: {e}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def is_configured(self) -> bool:
+        """API 키 설정 여부 확인"""
+        return bool(self.api_key and self.api_key.strip())
+
+    def get_corp_code(self, ticker: str) -> Optional[str]:
+        """종목코드(6자리)로부터 DART 8자리 고유번호 반환"""
+        return self._corp_code_cache.get(ticker)
+
+    def fetch_single_account(
+        self,
+        corp_code: str,
+        bsns_year: str,
+        reprt_code: str = "11011",
+        fs_div: str = "CFS",
+    ) -> List[Dict[str, Any]]:
+        """
+        OpenDART 단일회사 주요계정(fnlttSinglAcnt.json) 호출
+        reprt_code: 11011(사업보고서), 11012(반기), 11013(1분기), 11014(3분기)
+        fs_div: CFS(연결), OFS(개별)
+        """
+        if not self.is_configured():
+            logger.debug("OpenDART API Key not configured.")
+            return []
+
+        url = f"{self.BASE_URL}/fnlttSinglAcnt.json"
+        params = {
+            "crtfc_key": self.api_key,
+            "corp_code": corp_code,
+            "bsns_year": str(bsns_year),
+            "reprt_code": str(reprt_code),
+        }
+
+        try:
+            resp = self.session.get(url, params=params, timeout=self.timeout)
+            if resp.status_code != 200:
+                logger.warning(f"OpenDART HTTP error: {resp.status_code}")
+                return []
+            
+            data = resp.json()
+            status = data.get("status")
+            message = data.get("message", "")
+
+            if status == "000":
+                # 정상 응답
+                raw_list = data.get("list", [])
+                # fs_div 필터링 (기본 CFS, 없을 경우 OFS 허용)
+                cfs_list = [item for item in raw_list if item.get("fs_div") == fs_div]
+                return cfs_list if cfs_list else raw_list
+            elif status == "013":
+                # 데이터 없음
+                logger.debug(f"OpenDART no data ({bsns_year}, {reprt_code}): {message}")
+                return []
+            elif status in ("010", "011"):
+                # 미등록/사용불가 키
+                logger.warning(f"OpenDART API Key invalid ({status}): {message}")
+                return []
+            elif status == "020":
+                logger.warning(f"OpenDART rate limit exceeded ({status}): {message}")
+                return []
+            else:
+                logger.warning(f"OpenDART returned status {status}: {message}")
+                return []
+
+        except requests.RequestException as e:
+            logger.warning(f"OpenDART request failed: {e}")
+            return []
+
+    def _parse_account_list(
+        self,
+        ticker: str,
+        year: int,
+        quarter: Optional[int],
+        period_type: PeriodType,
+        raw_list: List[Dict[str, Any]],
+    ) -> FinancialStatement:
+        """DART 계정 리스트를 FinancialStatement 모델로 변환"""
+        stmt = FinancialStatement(
+            ticker=ticker,
+            year=year,
+            quarter=quarter,
+            period_type=period_type,
+            source="DART",
+            validation_status=ValidationStatus.SINGLE_SOURCE,
+        )
+
+        if not raw_list:
+            return stmt
+
+        # 공시일자 및 기간 파싱
+        rcept_no = raw_list[0].get("rcept_no", "")
+        if len(rcept_no) >= 8:
+            stmt.announcement_date = f"{rcept_no[:4]}-{rcept_no[4:6]}-{rcept_no[6:8]}"
+
+        month = 12 if quarter is None else quarter * 3
+        day = 31 if month in (3, 12) else 30
+        stmt.period_end = f"{year}-{month:02d}-{day:02d}"
+
+        # 계정명 매핑
+        for item in raw_list:
+            acc_name = item.get("account_nm", "").strip()
+            amount_str = item.get("thstrm_amount")
+            amount = clean_numeric_str(amount_str)
+            if amount is None:
+                continue
+            int_amount = int(amount)
+
+            # 매출액
+            if any(syn in acc_name for syn in self.ACCOUNT_SYNONYMS["revenue"]):
+                if stmt.revenue is None:
+                    stmt.revenue = int_amount
+            # 영업이익
+            elif any(syn in acc_name for syn in self.ACCOUNT_SYNONYMS["operating_profit"]):
+                if stmt.operating_profit is None:
+                    stmt.operating_profit = int_amount
+            # 당기순이익
+            elif any(syn in acc_name for syn in self.ACCOUNT_SYNONYMS["net_income"]):
+                if stmt.net_income is None:
+                    stmt.net_income = int_amount
+            # 자산총계
+            elif any(syn in acc_name for syn in self.ACCOUNT_SYNONYMS["total_assets"]):
+                if stmt.total_assets is None:
+                    stmt.total_assets = int_amount
+            # 부채총계
+            elif any(syn in acc_name for syn in self.ACCOUNT_SYNONYMS["total_liabilities"]):
+                if stmt.total_liabilities is None:
+                    stmt.total_liabilities = int_amount
+            # 자본총계
+            elif any(syn in acc_name for syn in self.ACCOUNT_SYNONYMS["total_equity"]):
+                if stmt.total_equity is None:
+                    stmt.total_equity = int_amount
+
+        # 비율 및 지표 계산 (0원 또는 0% 지표 정상 계산 지원)
+        if stmt.revenue is not None and stmt.operating_profit is not None and stmt.revenue != 0:
+            stmt.op_margin = round((stmt.operating_profit / stmt.revenue) * 100, 2)
+        if stmt.revenue is not None and stmt.net_income is not None and stmt.revenue != 0:
+            stmt.net_margin = round((stmt.net_income / stmt.revenue) * 100, 2)
+        if stmt.total_equity is not None and stmt.net_income is not None and stmt.total_equity != 0:
+            stmt.roe = round((stmt.net_income / stmt.total_equity) * 100, 2)
+        if stmt.total_assets is not None and stmt.net_income is not None and stmt.total_assets != 0:
+            stmt.roa = round((stmt.net_income / stmt.total_assets) * 100, 2)
+        if stmt.total_equity is not None and stmt.total_liabilities is not None and stmt.total_equity != 0:
+            stmt.debt_ratio = round((stmt.total_liabilities / stmt.total_equity) * 100, 2)
+
+        return stmt
+
+    def get_annual_financials(
+        self, ticker: str, start_year: int = 2021, end_year: int = 2025
+    ) -> List[FinancialStatement]:
+        """연간 재무제표 리스트 수집 (DART 사업보고서 11011)"""
+        corp_code = self.get_corp_code(ticker)
+        if not corp_code or not self.is_configured():
+            return []
+
+        results = []
+        for yr in range(start_year, end_year + 1):
+            raw_list = self.fetch_single_account(
+                corp_code=corp_code, bsns_year=str(yr), reprt_code="11011"
+            )
+            if raw_list:
+                stmt = self._parse_account_list(
+                    ticker=ticker,
+                    year=yr,
+                    quarter=None,
+                    period_type=PeriodType.ANNUAL,
+                    raw_list=raw_list,
+                )
+                results.append(stmt)
+        return results
+
+    def get_quarterly_financials(
+        self, ticker: str, count: int = 8
+    ) -> List[FinancialStatement]:
+        """최근 분기 재무제표 리스트 수집"""
+        corp_code = self.get_corp_code(ticker)
+        if not corp_code or not self.is_configured():
+            return []
+
+        # 1Q: 11013, 2Q: 11012, 3Q: 11014, 4Q: 11011
+        q_codes = [(1, "11013"), (2, "11012"), (3, "11014"), (4, "11011")]
+        current_year = datetime.now().year
+        results = []
+
+        for yr in range(current_year - 2, current_year + 1):
+            for q, r_code in q_codes:
+                raw_list = self.fetch_single_account(
+                    corp_code=corp_code, bsns_year=str(yr), reprt_code=r_code
+                )
+                if raw_list:
+                    stmt = self._parse_account_list(
+                        ticker=ticker,
+                        year=yr,
+                        quarter=q,
+                        period_type=PeriodType.QUARTER,
+                        raw_list=raw_list,
+                    )
+                    results.append(stmt)
+
+        return results[-count:] if len(results) > count else results
+
+    def get_realtime_valuation(self, ticker: str) -> Optional[RealtimeValuation]:
+        """DART는 실시간 지표를 제공하지 않으므로 명세에 따라 None 반환"""
+        return None
+
+
+# =====================================================================
+# 5. Naver Finance Collector
+# =====================================================================
+
+class NaverFinanceCollector(BaseFundamentalSource):
+    """
+    네이버 금융 모바일 REST API 및 웹 스크래핑 전용 수집기
+    """
+    MOBILE_BASE_URL = "https://m.stock.naver.com/api/stock"
+    PC_BASE_URL = "https://finance.naver.com/item/main.naver"
+
+    def __init__(self, timeout: int = 5):
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        })
+
+    def close(self) -> None:
+        """네이버 금융 HTTP 세션 리소스 정리"""
+        if hasattr(self, "session") and self.session:
+            try:
+                self.session.close()
+            except Exception as e:
+                logger.debug(f"Error closing NaverFinanceCollector session: {e}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def _parse_table_json(
+        self,
+        ticker: str,
+        data: Dict[str, Any],
+        period_type: PeriodType = PeriodType.ANNUAL,
+    ) -> List[FinancialStatement]:
+        """네이버 모바일 API financeInfo JSON 파싱 및 단위 정규화(억원 -> 원)"""
+        finance_info = data.get("financeInfo", {})
+        tr_titles = finance_info.get("trTitleList", [])
+        row_list = finance_info.get("rowList", [])
+
+        if not tr_titles or not row_list:
+            return []
+
+        # 열별(기간별) 데이터 구조화
+        # trTitle 예시: {'isConsensus': 'N', 'title': '2024.12.', 'key': '202412'}
+        period_map: Dict[str, Dict[str, Any]] = {}
+        for tr in tr_titles:
+            key = tr.get("key")
+            title = tr.get("title", "")
+            is_cns = tr.get("isConsensus") == "Y"
+            if not key:
+                continue
+
+            # 연도/분기 파싱
+            year_match = re.search(r"(\d{4})", title or key)
+            year = int(year_match.group(1)) if year_match else 2024
+            quarter = None
+            if period_type == PeriodType.QUARTER:
+                q_match = re.search(r"\.(\d{2})\.?", title)
+                if q_match:
+                    month = int(q_match.group(1))
+                    quarter = max(1, min(4, math.ceil(month / 3)))
+                else:
+                    month = 12
+                    quarter = 4
+            else:
+                month = 12
+
+            day = 31 if month in (3, 12) else 30
+            p_end = f"{year}-{month:02d}-{day:02d}"
+
+            period_map[key] = {
+                "ticker": ticker,
+                "year": year,
+                "quarter": quarter,
+                "period_type": period_type,
+                "is_consensus": is_cns,
+                "period_end": p_end,
+                "metrics": {},
+            }
+
+        # 각 Row 파싱
+        # 금액 단위(억원): 매출액, 영업이익, 당기순이익, 지배주주순이익, 비지배주주순이익 등
+        # 비율 단위(%): 영업이익률, 순이익률, ROE, 부채비율, 당좌비율, 유보율
+        # 원/배 단위: EPS(원), PER(배), BPS(원), PBR(배), 주당배당금(원)
+        for row in row_list:
+            title = row.get("title", "").strip()
+            cols = row.get("columns", {})
+
+            for key, col_data in cols.items():
+                if key not in period_map:
+                    continue
+                val_raw = col_data.get("value") if isinstance(col_data, dict) else col_data
+                val_num = clean_numeric_str(val_raw)
+                period_map[key]["metrics"][title] = val_num
+
+        results = []
+        for key in sorted(period_map.keys()):
+            p_info = period_map[key]
+            m = p_info["metrics"]
+
+            # 단위 정규화: 억원 -> 원 (* 100,000,000)
+            def to_krw(val: Optional[float]) -> Optional[int]:
+                return int(round(val * 100_000_000)) if val is not None else None
+
+            rev = to_krw(m.get("매출액"))
+            op = to_krw(m.get("영업이익"))
+            net = to_krw(m.get("당기순이익") or m.get("지배주주순이익"))
+
+            roe_val = m.get("ROE")
+            debt_val = m.get("부채비율")
+            op_m = m.get("영업이익률")
+            net_m = m.get("순이익률")
+
+            eps_val = m.get("EPS")
+            bps_val = m.get("BPS")
+            per_val = m.get("PER")
+            pbr_val = m.get("PBR")
+            dps_val = m.get("주당배당금")
+
+            # 배당수익률 추정 (dps / (pbr * bps) 등 또는 실시간 API)
+            div_yield = None
+            if dps_val and per_val and eps_val and (per_val * eps_val) > 0:
+                div_yield = round((dps_val / (per_val * eps_val)) * 100, 2)
+
+            # 자본총계 / 자산총계 추정 (BPS x 주식수 또는 ROE 역산)
+            equity_est = None
+            assets_est = None
+            if roe_val and net and roe_val > 0:
+                equity_est = int(round((net / (roe_val / 100.0))))
+            if equity_est and debt_val is not None:
+                liab_est = int(round(equity_est * (debt_val / 100.0)))
+                assets_est = equity_est + liab_est
+
+            stmt = FinancialStatement(
+                ticker=ticker,
+                year=p_info["year"],
+                quarter=p_info["quarter"],
+                period_type=period_type,
+                is_consensus=p_info["is_consensus"],
+                period_end=p_info["period_end"],
+                revenue=rev,
+                operating_profit=op,
+                net_income=net,
+                total_assets=assets_est,
+                total_liabilities=assets_est - equity_est if assets_est and equity_est else None,
+                total_equity=equity_est,
+                roe=roe_val,
+                debt_ratio=debt_val,
+                op_margin=op_m,
+                net_margin=net_m,
+                eps=eps_val,
+                bps=bps_val,
+                per=per_val,
+                pbr=pbr_val,
+                dps=dps_val,
+                dividend_yield=div_yield,
+                source="NAVER",
+                validation_status=ValidationStatus.SINGLE_SOURCE,
+            )
+            results.append(stmt)
+
+        return results
+
+    def get_annual_financials(
+        self, ticker: str, start_year: int = 2021, end_year: int = 2025
+    ) -> List[FinancialStatement]:
+        """네이버 모바일 finance/annual API 수집"""
+        url = f"{self.MOBILE_BASE_URL}/{ticker}/finance/annual"
+        try:
+            resp = self.session.get(url, timeout=self.timeout)
+            if resp.status_code != 200:
+                logger.warning(f"Naver annual API status: {resp.status_code}")
+                return []
+            data = resp.json()
+            stmts = self._parse_table_json(ticker, data, PeriodType.ANNUAL)
+            # 연도 필터링
+            return [s for s in stmts if start_year <= s.year <= end_year]
+        except Exception as e:
+            logger.warning(f"Naver annual fetch failed: {e}")
+            return []
+
+    def get_quarterly_financials(
+        self, ticker: str, count: int = 8
+    ) -> List[FinancialStatement]:
+        """네이버 모바일 finance/quarter API 수집"""
+        url = f"{self.MOBILE_BASE_URL}/{ticker}/finance/quarter"
+        try:
+            resp = self.session.get(url, timeout=self.timeout)
+            if resp.status_code != 200:
+                logger.warning(f"Naver quarter API status: {resp.status_code}")
+                return []
+            data = resp.json()
+            stmts = self._parse_table_json(ticker, data, PeriodType.QUARTER)
+            return stmts[-count:] if len(stmts) > count else stmts
+        except Exception as e:
+            logger.warning(f"Naver quarter fetch failed: {e}")
+            return []
+
+    def get_realtime_valuation(self, ticker: str) -> Optional[RealtimeValuation]:
+        """네이버 모바일 integration API를 통한 실시간 가치지표 수집"""
+        url = f"{self.MOBILE_BASE_URL}/{ticker}/integration"
+        try:
+            resp = self.session.get(url, timeout=self.timeout)
+            if resp.status_code != 200:
+                logger.warning(f"Naver integration API status: {resp.status_code}")
+                return None
+            data = resp.json()
+
+            total_infos = data.get("totalInfos", [])
+            info_dict = {}
+            for item in total_infos:
+                code = item.get("code")
+                val = item.get("value")
+                if code and val:
+                    info_dict[code] = val
+
+            # 현재가 / 전일종가 파싱
+            deal_trends = data.get("dealTrendInfos", [])
+            current_price = None
+            if deal_trends and len(deal_trends) > 0:
+                current_price = clean_numeric_str(deal_trends[0].get("closePrice"))
+            if current_price is None:
+                current_price = clean_numeric_str(info_dict.get("lastClosePrice") or info_dict.get("openPrice"))
+            current_price_int = int(current_price) if current_price else 0
+
+            # 시가총액 파싱
+            mkt_val_str = info_dict.get("marketValue", "")
+            market_cap = parse_korean_money(mkt_val_str) or 0
+
+            # 상장주식수 계산
+            shares_out = market_cap // current_price_int if (current_price_int > 0 and market_cap > 0) else 0
+
+            # 지표 추출
+            per_val = clean_numeric_str(info_dict.get("per"))
+            pbr_val = clean_numeric_str(info_dict.get("pbr"))
+            eps_val = clean_numeric_str(info_dict.get("eps"))
+            bps_val = clean_numeric_str(info_dict.get("bps"))
+            div_yield = clean_numeric_str(info_dict.get("dividendYieldRatio"))
+            foreign_rate = clean_numeric_str(info_dict.get("foreignRate"))
+            high_52 = clean_numeric_str(info_dict.get("highPriceOf52Weeks"))
+            low_52 = clean_numeric_str(info_dict.get("lowPriceOf52Weeks"))
+
+            return RealtimeValuation(
+                ticker=ticker,
+                current_price=current_price_int,
+                market_cap=market_cap,
+                shares_outstanding=shares_out,
+                per=per_val,
+                pbr=pbr_val,
+                eps=eps_val,
+                bps=bps_val,
+                dividend_yield=div_yield,
+                foreign_rate=foreign_rate,
+                high_52w=int(high_52) if high_52 else None,
+                low_52w=int(low_52) if low_52 else None,
+                source="NAVER",
+            )
+        except Exception as e:
+            logger.warning(f"Naver realtime valuation fetch failed: {e}")
+            return None
+
+
+# =====================================================================
+# 6. Mock Kiwoom Collector (Linux/CI 고충실도 Mock)
+# =====================================================================
+
+class MockKiwoomCollector(BaseFundamentalSource):
+    """
+    Linux / CI 환경 및 오프라인 테스트용 고충실도 Mock 수집기
+    """
+    # 대표 종목 기본 데이터 (삼성전자 005930, SK하이닉스 000660 등)
+    KNOWN_FINANCIALS = {
+        "005930": {
+            2021: {"revenue": 279604800000000, "op": 51633900000000, "net": 39907400000000, "assets": 426621200000000, "equity": 304899900000000, "per": 13.5, "pbr": 1.8, "roe": 13.9, "eps": 5777.0, "bps": 43611.0, "div_yield": 1.8},
+            2022: {"revenue": 302231400000000, "op": 43376600000000, "net": 55654100000000, "assets": 448424500000000, "equity": 354749600000000, "per": 10.2, "pbr": 1.4, "roe": 17.1, "eps": 8057.0, "bps": 50810.0, "div_yield": 2.6},
+            2023: {"revenue": 258935600000000, "op": 6567000000000, "net": 15487100000000, "assets": 455906000000000, "equity": 366059000000000, "per": 34.8, "pbr": 1.5, "roe": 4.1, "eps": 2131.0, "bps": 52002.0, "div_yield": 1.9},
+            2024: {"revenue": 300870900000000, "op": 32726000000000, "net": 34451400000000, "assets": 480000000000000, "equity": 380000000000000, "per": 15.2, "pbr": 1.6, "roe": 9.4, "eps": 4800.0, "bps": 55000.0, "div_yield": 2.1},
+            2025: {"revenue": 333605900000000, "op": 43601100000000, "net": 45206800000000, "assets": 510000000000000, "equity": 410000000000000, "per": 12.8, "pbr": 1.7, "roe": 11.5, "eps": 6200.0, "bps": 59000.0, "div_yield": 2.0},
+        },
+        "000660": {
+            2023: {"revenue": 32765700000000, "op": -7730300000000, "net": -9137500000000, "assets": 90000000000000, "equity": 52000000000000, "per": -15.0, "pbr": 1.9, "roe": -15.6, "eps": -12500.0, "bps": 72000.0, "div_yield": 0.8},
+            2024: {"revenue": 66190000000000, "op": 23460000000000, "net": 19800000000000, "assets": 110000000000000, "equity": 70000000000000, "per": 8.5, "pbr": 2.2, "roe": 31.5, "eps": 27000.0, "bps": 98000.0, "div_yield": 1.2},
+        }
+    }
+
+    def __init__(self, fixture_dir: Optional[str] = None):
+        self.fixture_dir = fixture_dir
+
+    def _generate_synthetic_stmt(
+        self, ticker: str, year: int, quarter: Optional[int] = None
+    ) -> FinancialStatement:
+        """종목코드 해시 기반 결정론적(Deterministic) 재무제표 생성"""
+        # 고정 종목 여부 확인
+        if ticker in self.KNOWN_FINANCIALS and year in self.KNOWN_FINANCIALS[ticker]:
+            kf = self.KNOWN_FINANCIALS[ticker][year]
+            rev = kf["revenue"]
+            op = kf["op"]
+            net = kf["net"]
+            assets = kf["assets"]
+            equity = kf["equity"]
+            per = kf["per"]
+            pbr = kf["pbr"]
+            roe = kf["roe"]
+            eps = kf["eps"]
+            bps = kf["bps"]
+            div_y = kf["div_yield"]
+        else:
+            seed = int(ticker) if ticker.isdigit() else sum(ord(c) for c in ticker)
+            base_rev = (seed % 500 + 50) * 100_000_000_000  # 5조 ~ 55조
+            growth = 1.0 + ((year - 2021) * 0.05) + ((seed % 10) * 0.01)
+            rev = int(base_rev * growth)
+            op = int(rev * 0.12)
+            net = int(op * 0.78)
+            equity = int(rev * 1.5)
+            assets = int(equity * 1.4)
+            roe = round((net / equity) * 100, 2)
+            eps = round(net / 100_000_000, 1)
+            bps = round(equity / 100_000_000, 1)
+            per = round(12.5 + (seed % 5), 2)
+            pbr = round(1.2 + (seed % 10) * 0.1, 2)
+            div_y = round(1.5 + (seed % 3) * 0.5, 2)
+
+        # 분기인 경우 수치 1/4 수준으로 스케일
+        if quarter is not None:
+            rev = rev // 4
+            op = op // 4
+            net = net // 4
+            month = quarter * 3
+            day = 31 if month in (3, 12) else 30
+            p_end = f"{year}-{month:02d}-{day:02d}"
+            p_type = PeriodType.QUARTER
+        else:
+            p_end = f"{year}-12-31"
+            p_type = PeriodType.ANNUAL
+
+        liab = assets - equity if assets and equity else None
+
+        return FinancialStatement(
+            ticker=ticker,
+            year=year,
+            quarter=quarter,
+            period_type=p_type,
+            period_end=p_end,
+            revenue=rev,
+            operating_profit=op,
+            net_income=net,
+            total_assets=assets,
+            total_liabilities=liab,
+            total_equity=equity,
+            roe=roe,
+            debt_ratio=round((liab / equity) * 100, 2) if (liab is not None and equity is not None and equity != 0) else None,
+            op_margin=round((op / rev) * 100, 2) if (rev is not None and op is not None and rev != 0) else None,
+            net_margin=round((net / rev) * 100, 2) if (rev is not None and net is not None and rev != 0) else None,
+            eps=eps,
+            bps=bps,
+            per=per,
+            pbr=pbr,
+            dividend_yield=div_y,
+            source="MOCK_KIWOOM",
+            validation_status=ValidationStatus.SINGLE_SOURCE,
+        )
+
+    def get_annual_financials(
+        self, ticker: str, start_year: int = 2021, end_year: int = 2025
+    ) -> List[FinancialStatement]:
+        results = []
+        for yr in range(start_year, end_year + 1):
+            results.append(self._generate_synthetic_stmt(ticker, yr, None))
+        return results
+
+    def get_quarterly_financials(
+        self, ticker: str, count: int = 8
+    ) -> List[FinancialStatement]:
+        results = []
+        current_year = datetime.now().year
+        for yr in range(current_year - 2, current_year + 1):
+            for q in (1, 2, 3, 4):
+                results.append(self._generate_synthetic_stmt(ticker, yr, q))
+        return results[-count:] if len(results) > count else results
+
+    def get_realtime_valuation(self, ticker: str) -> Optional[RealtimeValuation]:
+        stmt = self._generate_synthetic_stmt(ticker, 2024, None)
+        price = int((stmt.eps or 5000.0) * (stmt.per or 12.0))
+        shares = 5_969_782_550 if ticker == "005930" else 500_000_000
+        mkt_cap = price * shares
+
+        return RealtimeValuation(
+            ticker=ticker,
+            current_price=price,
+            market_cap=mkt_cap,
+            shares_outstanding=shares,
+            per=stmt.per,
+            pbr=stmt.pbr,
+            eps=stmt.eps,
+            bps=stmt.bps,
+            dividend_yield=stmt.dividend_yield,
+            foreign_rate=50.0,
+            high_52w=int(price * 1.3),
+            low_52w=int(price * 0.8),
+            source="MOCK_KIWOOM",
+        )
+
+
+# =====================================================================
+# 7. Cross Validator (FundamentalCrossValidator)
+# =====================================================================
+
+class FundamentalCrossValidator:
+    """
+    다중 소스 데이터 간 정밀 교차 검증기
+    상대 오차율: Delta = (|V1 - V2| / (max(|V1|, |V2|) + epsilon)) * 100
+    - 5% 이하: PASSED
+    - 5% 초과 ~ 10% 미만: WARNING (logger.warning)
+    - 10% 이상: CRITICAL_DISCREPANCY (logger.error)
+    """
+
+    def __init__(
+        self, warning_threshold: float = 5.0, critical_threshold: float = 10.0
+    ):
+        # 0.05 형태로 들어온 경우 5.0으로 정규화
+        self.warning_threshold = (
+            warning_threshold * 100 if 0 < warning_threshold < 1.0 else warning_threshold
+        )
+        self.critical_threshold = (
+            critical_threshold * 100 if 0 < critical_threshold < 1.0 else critical_threshold
+        )
+
+    @staticmethod
+    def calculate_discrepancy(
+        val_a: Union[int, float, None], val_b: Union[int, float, None]
+    ) -> float:
+        """두 값의 상대 오차 백분율(0.0 ~ 100.0) 계산"""
+        if val_a is None and val_b is None:
+            return 0.0
+        if val_a is None or val_b is None:
+            return 100.0
+
+        try:
+            fa = float(val_a)
+            fb = float(val_b)
+        except (ValueError, TypeError):
+            return 100.0
+
+        if math.isnan(fa) and math.isnan(fb):
+            return 0.0
+        if math.isnan(fa) or math.isnan(fb):
+            return 100.0
+
+        if fa == 0.0 and fb == 0.0:
+            return 0.0
+
+        max_val = max(abs(fa), abs(fb))
+        if max_val == 0.0:
+            return 0.0
+
+        eps = 1e-6
+        diff_pct = (abs(fa - fb) / (max_val + eps)) * 100.0
+        return round(diff_pct, 4)
+
+    def validate_statements(
+        self,
+        stmt_primary: FinancialStatement,
+        stmt_secondary: FinancialStatement,
+        metrics_to_compare: Optional[List[str]] = None,
+    ) -> ValidationReport:
+        """
+        두 재무제표 인스턴스를 비교하여 ValidationReport 생성
+        """
+        if metrics_to_compare is None:
+            metrics_to_compare = [
+                "revenue",
+                "operating_profit",
+                "net_income",
+                "total_assets",
+                "total_equity",
+                "roe",
+                "eps",
+                "per",
+                "pbr",
+            ]
+
+        target_period = (
+            f"{stmt_primary.year}Q{stmt_primary.quarter}"
+            if stmt_primary.quarter
+            else f"{stmt_primary.year}Annual"
+        )
+
+        report = ValidationReport(
+            ticker=stmt_primary.ticker,
+            target_period=target_period,
+            status=ValidationStatus.PASSED,
+            primary_source=stmt_primary.source,
+            comparison_source=stmt_secondary.source,
+        )
+
+        max_diff = 0.0
+
+        for metric in metrics_to_compare:
+            val_a = getattr(stmt_primary, metric, None)
+            val_b = getattr(stmt_secondary, metric, None)
+
+            # 한쪽만 None인 경우는 결측 보정 대상이므로 경고 수준으로 기록하거나 스킵
+            if val_a is None or val_b is None:
+                continue
+
+            diff_pct = self.calculate_discrepancy(val_a, val_b)
+            if diff_pct > max_diff:
+                max_diff = diff_pct
+
+            if diff_pct >= self.critical_threshold:
+                item_status = ValidationStatus.CRITICAL_DISCREPANCY
+                msg = (
+                    f"CRITICAL: {metric} discrepancy {diff_pct:.2f}% >= {self.critical_threshold}% "
+                    f"({stmt_primary.source}={val_a} vs {stmt_secondary.source}={val_b})"
+                )
+                logger.error(f"[{stmt_primary.ticker}][{target_period}] {msg}")
+                report.errors.append(msg)
+            elif diff_pct > self.warning_threshold:
+                item_status = ValidationStatus.WARNING
+                msg = (
+                    f"WARNING: {metric} discrepancy {diff_pct:.2f}% > {self.warning_threshold}% "
+                    f"({stmt_primary.source}={val_a} vs {stmt_secondary.source}={val_b})"
+                )
+                logger.warning(f"[{stmt_primary.ticker}][{target_period}] {msg}")
+                report.warnings.append(msg)
+            else:
+                item_status = ValidationStatus.PASSED
+                msg = f"OK: discrepancy {diff_pct:.2f}%"
+
+            report.items[metric] = DiscrepancyItem(
+                metric_name=metric,
+                source_a_name=stmt_primary.source,
+                source_a_value=val_a,
+                source_b_name=stmt_secondary.source,
+                source_b_value=val_b,
+                discrepancy_pct=diff_pct,
+                is_valid=(item_status != ValidationStatus.CRITICAL_DISCREPANCY),
+                status=item_status,
+                message=msg,
+            )
+
+        report.max_discrepancy_pct = max_diff
+
+        if report.errors:
+            report.status = ValidationStatus.CRITICAL_DISCREPANCY
+        elif report.warnings:
+            report.status = ValidationStatus.WARNING
+        else:
+            report.status = ValidationStatus.PASSED
+
+        return report
+
+    @staticmethod
+    def coalesce_statements(
+        stmt_primary: FinancialStatement, stmt_secondary: FinancialStatement
+    ) -> FinancialStatement:
+        """
+        1순위 데이터의 결측치(None) 필드를 2순위 데이터로 채워 넣는 Field-level Coalesce
+        """
+        fields_to_check = [
+            "revenue", "operating_profit", "net_income",
+            "total_assets", "total_liabilities", "total_equity",
+            "operating_cash_flow", "free_cash_flow",
+            "roe", "roa", "debt_ratio", "op_margin", "net_margin",
+            "eps", "bps", "per", "pbr", "dps", "dividend_yield",
+        ]
+        for f_name in fields_to_check:
+            if getattr(stmt_primary, f_name) is None:
+                sec_val = getattr(stmt_secondary, f_name, None)
+                if sec_val is not None:
+                    setattr(stmt_primary, f_name, sec_val)
+        return stmt_primary
+
+
+# =====================================================================
+# 8. Facade Class (FundamentalDataCollector)
+# =====================================================================
+
+class FundamentalDataCollector:
+    """
+    R1 메인 파사드 클래스:
+    다중 소스 수집, 교차 검증, 방어적 Fallback 및 DataFrame 변환을 단일 진입점으로 제공
+    """
+
+    def __init__(
+        self,
+        dart_api_key: Optional[str] = None,
+        enable_cross_validation: bool = True,
+        warning_threshold: float = 5.0,
+        critical_threshold: float = 10.0,
+        mock_mode: bool = False,
+    ):
+        self.enable_cross_validation = enable_cross_validation
+        self.mock_mode = mock_mode
+        self.validator = FundamentalCrossValidator(
+            warning_threshold=warning_threshold,
+            critical_threshold=critical_threshold,
+        )
+
+        # 소스 수집기 인스턴스 초기화
+        self.dart_collector = OpenDartCollector(api_key=dart_api_key)
+        self.naver_collector = NaverFinanceCollector()
+        self.mock_collector = MockKiwoomCollector()
+
+    def close(self) -> None:
+        """하위 모든 펀더멘털 수집기 리소스 정리"""
+        for collector in [self.dart_collector, self.naver_collector, self.mock_collector]:
+            if hasattr(collector, "close") and callable(collector.close):
+                try:
+                    collector.close()
+                except Exception as e:
+                    logger.debug(f"Error closing collector {collector}: {e}")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def get_financial_statements(
+        self,
+        ticker: str,
+        period_type: PeriodType = PeriodType.ANNUAL,
+        start_year: int = 2021,
+        end_year: int = 2025,
+        quarter_count: int = 8,
+    ) -> Tuple[List[FinancialStatement], Optional[ValidationReport]]:
+        """
+        펀더멘털 재무제표 수집 및 교차 검증 수행
+        반환값: (최종 채택된 FinancialStatement 리스트, 마지막 검증 리포트)
+        """
+        if self.mock_mode:
+            if period_type == PeriodType.ANNUAL:
+                res = self.mock_collector.get_annual_financials(ticker, start_year, end_year)
+            else:
+                res = self.mock_collector.get_quarterly_financials(ticker, quarter_count)
+            return res, None
+
+        # 1. DART 및 Naver 수집 시도
+        dart_stmts: List[FinancialStatement] = []
+        naver_stmts: List[FinancialStatement] = []
+
+        if self.dart_collector.is_configured():
+            try:
+                if period_type == PeriodType.ANNUAL:
+                    dart_stmts = self.dart_collector.get_annual_financials(
+                        ticker, start_year, end_year
+                    )
+                else:
+                    dart_stmts = self.dart_collector.get_quarterly_financials(
+                        ticker, quarter_count
+                    )
+            except Exception as e:
+                logger.warning(f"DART collection failed for {ticker}: {e}")
+                dart_stmts = []
+
+        try:
+            if period_type == PeriodType.ANNUAL:
+                naver_stmts = self.naver_collector.get_annual_financials(
+                    ticker, start_year, end_year
+                )
+            else:
+                naver_stmts = self.naver_collector.get_quarterly_financials(
+                    ticker, quarter_count
+                )
+        except Exception as e:
+            logger.warning(f"Naver collection failed for {ticker}: {e}")
+            naver_stmts = []
+
+        # 2. 교차 검증 및 Fallback 로직 결정
+        latest_report: Optional[ValidationReport] = None
+
+        # Case A: DART와 Naver 모두 수집 성공 -> DART 기준 교차 검증 & Naver 결측 보정
+        if dart_stmts and naver_stmts:
+            final_stmts = []
+            naver_dict = {
+                (s.year, s.quarter): s for s in naver_stmts
+            }
+
+            for d_stmt in dart_stmts:
+                key = (d_stmt.year, d_stmt.quarter)
+                if key in naver_dict and self.enable_cross_validation:
+                    n_stmt = naver_dict[key]
+                    report = self.validator.validate_statements(d_stmt, n_stmt)
+                    latest_report = report
+                    d_stmt.validation_status = report.status
+                    # 결측치 보정 (DART에 없는 가치지표 PER/PBR 등 Naver로부터 Coalesce)
+                    merged_stmt = self.validator.coalesce_statements(d_stmt, n_stmt)
+                    final_stmts.append(merged_stmt)
+                else:
+                    final_stmts.append(d_stmt)
+
+            return final_stmts, latest_report
+
+        # Case B: DART 없음, Naver 수집 성공 -> Naver Fallback
+        if naver_stmts:
+            logger.warning(
+                f"[{ticker}] DART unavailable. Falling back to Naver Finance."
+            )
+            for s in naver_stmts:
+                s.validation_status = ValidationStatus.FALLBACK
+            return naver_stmts, None
+
+        # Case C: DART만 성공 (네이버 실패 시)
+        if dart_stmts:
+            for s in dart_stmts:
+                s.validation_status = ValidationStatus.SINGLE_SOURCE
+            return dart_stmts, None
+
+        # Case D: 모든 외부 소스 실패 -> Mock Fallback
+        logger.warning(
+            f"[{ticker}] All external sources failed. Falling back to MockKiwoom."
+        )
+        if period_type == PeriodType.ANNUAL:
+            mock_stmts = self.mock_collector.get_annual_financials(ticker, start_year, end_year)
+        else:
+            mock_stmts = self.mock_collector.get_quarterly_financials(ticker, quarter_count)
+        for s in mock_stmts:
+            s.validation_status = ValidationStatus.FALLBACK
+        return mock_stmts, None
+
+    def get_realtime_valuation(self, ticker: str) -> RealtimeValuation:
+        """
+        실시간/당일 기준 가치평가 지표 수집 (Naver -> Mock 순서)
+        """
+        if self.mock_mode:
+            res = self.mock_collector.get_realtime_valuation(ticker)
+            return res or RealtimeValuation(ticker=ticker, current_price=0, market_cap=0, shares_outstanding=0)
+
+        # Naver 수집 시도
+        realtime = self.naver_collector.get_realtime_valuation(ticker)
+        if realtime and realtime.current_price > 0:
+            return realtime
+
+        # Fallback to Mock
+        logger.warning(
+            f"[{ticker}] Naver realtime valuation unavailable. Falling back to MockKiwoom."
+        )
+        mock_val = self.mock_collector.get_realtime_valuation(ticker)
+        return mock_val or RealtimeValuation(
+            ticker=ticker,
+            current_price=70000,
+            market_cap=400_000_000_000_000,
+            shares_outstanding=5_969_782_550,
+            source="MOCK_FALLBACK",
+        )
+
+    def get_as_dataframe(
+        self,
+        ticker: str,
+        period_type: PeriodType = PeriodType.ANNUAL,
+        start_year: int = 2021,
+        end_year: int = 2025,
+        quarter_count: int = 8,
+    ) -> pd.DataFrame:
+        """
+        ML/RL 피처 결합용 표준 Pandas DataFrame 반환 (Interface Contract 준수)
+        반환 컬럼:
+        ['symbol', 'period_end', 'announcement_date', 'revenue', 'operating_income',
+         'net_income', 'assets', 'liabilities', 'equity', 'per', 'pbr', 'roe',
+         'eps', 'bps', 'div_yield', 'is_consensus', 'source', 'validation_status']
+        """
+        stmts, _ = self.get_financial_statements(
+            ticker=ticker,
+            period_type=period_type,
+            start_year=start_year,
+            end_year=end_year,
+            quarter_count=quarter_count,
+        )
+
+        if not stmts:
+            # 빈 DataFrame 반환 시에도 스키마 유지
+            cols = [
+                "symbol", "period_end", "announcement_date", "revenue",
+                "operating_income", "net_income", "assets", "liabilities",
+                "equity", "per", "pbr", "roe", "eps", "bps", "div_yield",
+                "is_consensus", "source", "validation_status"
+            ]
+            return pd.DataFrame(columns=cols)
+
+        records = [s.to_dict() for s in stmts]
+        df = pd.DataFrame(records)
+
+        # Datetime 및 정렬 처리
+        if "period_end" in df.columns:
+            df["period_end"] = pd.to_datetime(df["period_end"])
+            df = df.sort_values(by="period_end").reset_index(drop=True)
+
+        return df

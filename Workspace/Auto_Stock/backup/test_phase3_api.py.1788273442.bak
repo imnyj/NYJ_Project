@@ -1,0 +1,733 @@
+"""
+tests/test_phase3_api.py
+========================
+Auto Stock ML/RL Trader — Phase 3: 실거래 제어 모듈 4-Tier E2E Mock & 무결성 테스트 스위트
+
+Tier 1: Core Feature Coverage (설정, 시크릿, 토큰 캐싱, 시세, 주문, 잔고, 수동매매)
+Tier 2: Boundary & Exceptions (만료 갱신, 401 재시도, 429 백오프, 500 에러, 타임아웃, 비즈니스 거절, 유효성 검사)
+Tier 3: Configuration & Toggle Scenarios (우선순위 계층, ${VAR:default} 인터폴레이션, Mock/Live 분기)
+Tier 4: E2E Golden Path & Forensic Static Audit (E2E 라운드트립, CLI 실행, 하드코딩 0건 정적 감사)
+"""
+
+import os
+import re
+from datetime import datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from typing import Any, Dict
+from unittest.mock import MagicMock, patch
+
+import pytest
+import requests
+
+from core.config import (
+    AppConfig,
+    KiwoomConfig,
+    SecretStr,
+    TradingConfig,
+    get_config,
+    interpolate_env_vars,
+    load_config,
+)
+from core.kiwoom_api import (
+    AccountBalance,
+    KiwoomAPIError,
+    KiwoomAuthError,
+    KiwoomClient,
+    KiwoomNetworkError,
+    KiwoomOrderError,
+    KiwoomQueryError,
+    KiwoomRateLimitError,
+    OrderResult,
+    OrderSide,
+    OrderType,
+    PositionItem,
+    PriceQuote,
+    TokenManager,
+)
+from modules.engine.manual_trader import ManualTrader, main as manual_trader_main
+
+
+# ==============================================================================
+# Helper Mock Factories
+# ==============================================================================
+
+def create_mock_response(status_code: int, json_data: Dict[str, Any]) -> requests.Response:
+    """Mock requests.Response 헬퍼"""
+    resp = requests.Response()
+    resp.status_code = status_code
+    resp._content = str(json_data).replace("'", '"').encode("utf-8")
+    resp.json = MagicMock(return_value=json_data)
+    return resp
+
+
+@pytest.fixture
+def mock_kiwoom_config() -> KiwoomConfig:
+    """테스트용 표준 KiwoomConfig 픽스처"""
+    return KiwoomConfig(
+        app_key=SecretStr("mock_test_app_key_12345"),
+        app_secret=SecretStr("mock_test_app_secret_67890"),
+        account_no="12345678-01",
+        account_product_code="01",
+        use_mock_server=True,
+        live_base_url="https://openapi.kiwoom.com",
+        mock_base_url="https://openapivts.kiwoom.com",
+        timeout_seconds=5.0,
+        max_retries=3,
+        retry_backoff_factor=0.01,
+    )
+
+
+# ==============================================================================
+# Tier 1: Core Feature Coverage
+# ==============================================================================
+
+class TestTier1FeatureCoverage:
+    """Tier 1: 핵심 기능 및 정상 엔드포인트 동작 검증"""
+
+    def test_secret_str_masking_and_equality(self):
+        """TC-01: SecretStr 평문 은닉 마스킹 및 값 동등성 검증"""
+        secret = SecretStr("my_sensitive_api_key_12345")
+        assert str(secret) == "***"
+        assert repr(secret) == "SecretStr('***')"
+        assert secret.get_secret_value() == "my_sensitive_api_key_12345"
+        assert secret.masked_display() == "my***45"
+        assert secret == "my_sensitive_api_key_12345"
+        assert bool(secret) is True
+        assert len(secret) == len("my_sensitive_api_key_12345")
+
+        empty_secret = SecretStr("")
+        assert bool(empty_secret) is False
+        assert empty_secret.masked_display() == "***"
+
+    def test_kiwoom_config_properties_and_tr_id_mapping(self, mock_kiwoom_config: KiwoomConfig):
+        """TC-02: KiwoomConfig 도메인 및 TR_ID 자동 분기 검증"""
+        assert mock_kiwoom_config.base_url == "https://openapivts.kiwoom.com"
+        assert mock_kiwoom_config.cano == "12345678"
+        assert mock_kiwoom_config.acnt_prdt_cd == "01"
+        assert mock_kiwoom_config.get_tr_id("inquire_price") == "FHKST01010100"
+        assert mock_kiwoom_config.get_tr_id("order", "BUY") == "VTTC0802U"
+        assert mock_kiwoom_config.get_tr_id("order", "SELL") == "VTTC0801U"
+        assert mock_kiwoom_config.get_tr_id("inquire_balance") == "VTTC8434R"
+
+        # 실거래 모드 전환 시
+        mock_kiwoom_config.use_mock_server = False
+        assert mock_kiwoom_config.base_url == "https://openapi.kiwoom.com"
+        assert mock_kiwoom_config.get_tr_id("order", "BUY") == "TTTC0802U"
+        assert mock_kiwoom_config.get_tr_id("order", "SELL") == "TTTC0801U"
+        assert mock_kiwoom_config.get_tr_id("inquire_balance") == "TTTC8434R"
+
+    @patch("requests.Session.post")
+    def test_token_issue_and_memory_caching(self, mock_post, mock_kiwoom_config: KiwoomConfig):
+        """TC-03: OAuth2 토큰 최초 발급 및 메모리 캐싱 재사용 검증"""
+        mock_post.return_value = create_mock_response(
+            200,
+            {
+                "access_token": "mock_bearer_token_abc123",
+                "token_type": "Bearer",
+                "expires_in": 86400,
+            },
+        )
+
+        session = requests.Session()
+        tm = TokenManager(config=mock_kiwoom_config, session=session)
+
+        # 1차 호출: HTTP POST 요청 발생
+        token1 = tm.get_access_token()
+        assert token1 == "mock_bearer_token_abc123"
+        assert mock_post.call_count == 1
+
+        # 2차 호출: 메모리 캐시에서 즉시 반환 (HTTP 호출 0회 추가)
+        token2 = tm.get_access_token()
+        assert token2 == "mock_bearer_token_abc123"
+        assert mock_post.call_count == 1
+
+        # 강제 갱신(force_refresh=True) 시 HTTP POST 재호출
+        token3 = tm.get_access_token(force_refresh=True)
+        assert token3 == "mock_bearer_token_abc123"
+        assert mock_post.call_count == 2
+
+    @patch("requests.Session.post")
+    def test_token_revocation(self, mock_post, mock_kiwoom_config: KiwoomConfig):
+        """TC-04: 접근 토큰 폐기 및 캐시 초기화 검증"""
+        mock_post.return_value = create_mock_response(200, {"code": "200", "message": "성공적으로 폐기되었습니다."})
+
+        session = requests.Session()
+        tm = TokenManager(config=mock_kiwoom_config, session=session)
+        tm._access_token = "valid_token"
+        tm._expires_at = datetime.now() + timedelta(hours=1)
+
+        assert tm.is_expired() is False
+        revoked = tm.revoke_token()
+        assert revoked is True
+        assert tm.is_expired() is True
+        assert tm._access_token is None
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_get_current_price_parsing(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-05: 주식 현재가 조회 API 및 Decimal 파싱 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        mock_req.return_value = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "msg_cd": "MCA00000",
+                "msg1": "정상처리 되었습니다.",
+                "output": {
+                    "iscd": "005930",
+                    "stck_prpr": "75000",
+                    "prdy_vrss": "1000",
+                    "prdy_ctrt": "1.35",
+                    "stck_oprc": "74500",
+                    "stck_hgpr": "75500",
+                    "stck_lwpr": "74200",
+                    "acml_vol": "12345678",
+                    "acml_tr_pbmn": "925925850000",
+                },
+            },
+        )
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        quote = client.get_current_price("005930")
+
+        assert isinstance(quote, PriceQuote)
+        assert quote.symbol == "005930"
+        assert quote.current_price == Decimal("75000")
+        assert quote.price_change == Decimal("1000")
+        assert quote.change_rate == Decimal("1.35")
+        assert quote.open_price == Decimal("74500")
+        assert quote.high_price == Decimal("75500")
+        assert quote.low_price == Decimal("74200")
+        assert quote.volume == 12345678
+        # Dictionary 인터페이스 호환 검증
+        assert quote["current_price"] == Decimal("75000")
+        assert quote.get("volume") == 12345678
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_send_market_buy_and_sell_order(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-06: 시장가 매수 및 매도 주문 전송 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        mock_req.return_value = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "msg_cd": "APBK0013",
+                "msg1": "주문 전송이 완료되었습니다.",
+                "output": {
+                    "KRX_FWDG_ORD_ORGNO": "00000",
+                    "ODNO": "0000117057",
+                    "ORD_TMD": "091530",
+                },
+            },
+        )
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+
+        # 1. 매수 주문
+        buy_res = client.send_order(symbol="005930", side=OrderSide.BUY, quantity=10)
+        assert isinstance(buy_res, OrderResult)
+        assert buy_res.order_id == "0000117057"
+        assert buy_res.side == "BUY"
+        assert buy_res.quantity == 10
+        assert buy_res.order_type == "MARKET"
+        assert buy_res["order_id"] == "0000117057"
+
+        # 2. 매도 주문
+        sell_res = client.send_order(symbol="005930", side="SELL", quantity=5)
+        assert sell_res.side == "SELL"
+        assert sell_res.quantity == 5
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_send_limit_order(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-07: 지정가 주문 전송 파라미터 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        mock_req.return_value = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "msg_cd": "APBK0013",
+                "msg1": "지정가 주문 접수 완료",
+                "output": {"ODNO": "0000117058", "ORD_TMD": "092000"},
+            },
+        )
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        limit_res = client.send_order(
+            symbol="005930",
+            side="BUY",
+            quantity=2,
+            price=74000,
+            order_type=OrderType.LIMIT,
+        )
+        assert limit_res.order_type == "LIMIT"
+        assert limit_res.price == 74000
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_get_account_balance_and_positions(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-08: 계좌 잔고 및 보유 종목 리스트 파싱 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        mock_req.return_value = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "msg_cd": "MCA00000",
+                "msg1": "정상처리 되었습니다.",
+                "output1": [
+                    {
+                        "pdno": "005930",
+                        "prdt_name": "삼성전자",
+                        "hld_qty": "10",
+                        "ord_psbl_qty": "10",
+                        "pchs_avg_pric": "74500.0000",
+                        "pchs_amt": "745000",
+                        "prpr": "75000",
+                        "evlu_amt": "750000",
+                        "evlu_pfls_amt": "5000",
+                        "evlu_pfls_rt": "0.67",
+                    }
+                ],
+                "output2": [
+                    {
+                        "dnca_tot_amt": "10000000",
+                        "nxdy_excc_amt": "9255000",
+                        "tot_evlu_amt": "750000",
+                        "nass_amt": "10005000",
+                        "evlu_pfls_smtl_amt": "5000",
+                    }
+                ],
+            },
+        )
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        balance = client.get_account_balance()
+
+        assert isinstance(balance, AccountBalance)
+        assert balance.deposit_received == Decimal("10000000")
+        assert balance.available_cash == Decimal("9255000")
+        assert balance.total_eval_amount == Decimal("750000")
+        assert balance.total_asset == Decimal("10005000")
+        assert balance.total_eval_pnl == Decimal("5000")
+        assert len(balance.positions) == 1
+
+        pos = balance.positions[0]
+        assert isinstance(pos, PositionItem)
+        assert pos.symbol == "005930"
+        assert pos.name == "삼성전자"
+        assert pos.quantity == 10
+        assert pos.current_price == Decimal("75000")
+
+        # get_account_positions 편의 메서드 검증
+        pos_list = client.get_account_positions()
+        assert len(pos_list) == 1
+        assert pos_list[0]["symbol"] == "005930"
+
+
+# ==============================================================================
+# Tier 2: Boundary & Exception Handling
+# ==============================================================================
+
+class TestTier2BoundaryAndExceptions:
+    """Tier 2: 토큰 만료, 401 재시도, 429 백오프, 에러 응답 및 유효성 검사"""
+
+    @patch("requests.Session.post")
+    def test_token_auto_refresh_when_expired(self, mock_post, mock_kiwoom_config: KiwoomConfig):
+        """TC-09: 토큰 만료 시점 초과 시 자동 갱신 검증"""
+        mock_post.return_value = create_mock_response(
+            200, {"access_token": "new_refreshed_token", "expires_in": 3600}
+        )
+
+        session = requests.Session()
+        tm = TokenManager(config=mock_kiwoom_config, session=session)
+        # 만료된 상태 주입
+        tm._access_token = "old_expired_token"
+        tm._expires_at = datetime.now() - timedelta(seconds=100)
+
+        assert tm.is_expired() is True
+        token = tm.get_access_token()
+        assert token == "new_refreshed_token"
+        assert mock_post.call_count == 1
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_http_401_auto_retry_token_refresh(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-10: HTTP 401 수신 시 토큰 강제 재발급 및 1회 자동 재시도 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "renewed_token", "expires_in": 86400}
+        )
+
+        # 1번째 호출은 401 Unauthorized, 2번째 호출은 200 OK
+        resp_401 = requests.Response()
+        resp_401.status_code = 401
+        resp_401._content = b'{"message": "Invalid Token"}'
+        resp_401.json = MagicMock(return_value={"message": "Invalid Token"})
+
+        resp_200 = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "output": {"stck_prpr": "70000", "prdy_vrss": "0", "acml_vol": "100"},
+            },
+        )
+
+        mock_req.side_effect = [resp_401, resp_200]
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        client.token_manager._access_token = "expired_token"
+        client.token_manager._expires_at = datetime.now() + timedelta(hours=1)
+
+        quote = client.get_current_price("005930")
+        assert quote.current_price == Decimal("70000")
+        assert mock_req.call_count == 2
+        assert mock_token_post.call_count == 1
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_http_429_rate_limit_error(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-11: HTTP 429 한도 초과 시 백오프 후 KiwoomRateLimitError 발생 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        resp_429 = requests.Response()
+        resp_429.status_code = 429
+        resp_429._content = b"Too Many Requests"
+        mock_req.return_value = resp_429
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        with pytest.raises(KiwoomRateLimitError) as exc_info:
+            client.get_current_price("005930")
+        assert "429" in str(exc_info.value)
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_http_500_server_error(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-12: HTTP 500 서버 에러 시 KiwoomAPIError 발생 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        resp_500 = requests.Response()
+        resp_500.status_code = 500
+        resp_500._content = b"Internal Server Error"
+        mock_req.return_value = resp_500
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        with pytest.raises(KiwoomAPIError) as exc_info:
+            client.get_current_price("005930")
+        assert "500" in str(exc_info.value)
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_network_timeout_error(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-13: 네트워크 타임아웃 발생 시 KiwoomNetworkError 발생 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        mock_req.side_effect = requests.exceptions.Timeout("Connection timed out")
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        with pytest.raises(KiwoomNetworkError) as exc_info:
+            client.get_current_price("005930")
+        assert "타임아웃" in str(exc_info.value)
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_business_rejection_rt_cd_nonzero(self, mock_token_post, mock_req, mock_kiwoom_config: KiwoomConfig):
+        """TC-14: 증권사 비즈니스 거절 응답(rt_cd != 0) 예외 핸들링 검증"""
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        # 주문 거절 응답
+        mock_req.return_value = create_mock_response(
+            200,
+            {
+                "rt_cd": "1",
+                "msg_cd": "APBK0010",
+                "msg1": "주문가능금액을 초과하였습니다 (예수금 부족)",
+            },
+        )
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        with pytest.raises(KiwoomOrderError) as exc_info:
+            client.send_order(symbol="005930", side="BUY", quantity=100)
+        assert "예수금 부족" in str(exc_info.value)
+        assert exc_info.value.code == "APBK0010"
+
+    def test_client_side_validation_errors(self, mock_kiwoom_config: KiwoomConfig):
+        """TC-15: 클라이언트 단 종목코드, 수량, 주문방향 유효성 검사 실패 방어"""
+        client = KiwoomClient(config=mock_kiwoom_config)
+
+        # 1. 잘못된 종목코드 (5자리 또는 문자)
+        with pytest.raises(ValueError, match="유효하지 않은 6자리"):
+            client.get_current_price("12345")
+
+        with pytest.raises(ValueError, match="유효하지 않은 6자리"):
+            client.send_order(symbol="ABCDEF", side="BUY", quantity=1)
+
+        # 2. 음수 또는 0 수량
+        with pytest.raises(ValueError, match="1 이상의 양수"):
+            client.send_order(symbol="005930", side="BUY", quantity=0)
+
+        # 3. 잘못된 매매 방향
+        with pytest.raises(ValueError, match="지원하지 않는 주문 방향"):
+            client.send_order(symbol="005930", side="HOLD", quantity=1)
+
+        # 4. 단가 0 이하의 지정가 주문
+        with pytest.raises(ValueError, match="0원보다 큰 단가"):
+            client.send_order(symbol="005930", side="BUY", quantity=1, price=0, order_type="00")
+
+    def test_missing_credentials_token_error(self):
+        """TC-16: API Key/Secret 누락 시 TokenManager 초기화 에러 검증"""
+        empty_config = KiwoomConfig(app_key=SecretStr(""), app_secret=SecretStr(""))
+        tm = TokenManager(config=empty_config)
+        with pytest.raises(KiwoomAuthError, match="설정되지 않았습니다"):
+            tm.refresh_token()
+
+
+# ==============================================================================
+# Tier 3: Configuration & Toggle Scenarios
+# ==============================================================================
+
+class TestTier3ConfigurationAndToggle:
+    """Tier 3: 4단계 설정 우선순위 및 YAML 환경변수 인터폴레이션 검증"""
+
+    def test_interpolate_env_vars(self):
+        """TC-17: ${VAR:default} 정규식 템플릿 인터폴레이션 검증"""
+        env_map = {"MY_KEY": "secret_key_val", "EMPTY_VAR": ""}
+        text = "key: ${MY_KEY:fallback} | host: ${MY_HOST:localhost} | empty: ${EMPTY_VAR:fallback_for_empty}"
+        result = interpolate_env_vars(text, env_map)
+        assert result == "key: secret_key_val | host: localhost | empty: fallback_for_empty"
+
+    def test_config_loader_os_environ_override(self, monkeypatch):
+        """TC-18: OS 환경변수가 settings.yaml을 오버라이드하는 우선순위 검증"""
+        monkeypatch.setenv("KIWOOM_APP_KEY", "env_override_key_999")
+        monkeypatch.setenv("KIWOOM_APP_SECRET", "env_override_secret_888")
+        monkeypatch.setenv("USE_MOCK_SERVER", "False")
+        monkeypatch.setenv("KIWOOM_TIMEOUT_SECONDS", "25.0")
+
+        app_cfg = load_config()
+        assert app_cfg.kiwoom.app_key.get_secret_value() == "env_override_key_999"
+        assert app_cfg.kiwoom.app_secret.get_secret_value() == "env_override_secret_888"
+        assert app_cfg.kiwoom.use_mock_server is False
+        assert app_cfg.kiwoom.timeout_seconds == 25.0
+        assert app_cfg.kiwoom.base_url == "https://openapi.kiwoom.com"
+
+    def test_mock_and_live_toggle_invariance(self, mock_kiwoom_config: KiwoomConfig):
+        """TC-19: use_mock_server 스위치 변경에 따른 일관된 엔드포인트 분기 검증"""
+        # Mock Mode
+        mock_kiwoom_config.use_mock_server = True
+        assert mock_kiwoom_config.base_url == "https://openapivts.kiwoom.com"
+        assert mock_kiwoom_config.get_tr_id("order", "BUY") == "VTTC0802U"
+        assert mock_kiwoom_config.get_tr_id("order", "SELL") == "VTTC0801U"
+        assert mock_kiwoom_config.get_tr_id("inquire_balance") == "VTTC8434R"
+
+        # Live Mode
+        mock_kiwoom_config.use_mock_server = False
+        assert mock_kiwoom_config.base_url == "https://openapi.kiwoom.com"
+        assert mock_kiwoom_config.get_tr_id("order", "BUY") == "TTTC0802U"
+        assert mock_kiwoom_config.get_tr_id("order", "SELL") == "TTTC0801U"
+        assert mock_kiwoom_config.get_tr_id("inquire_balance") == "TTTC8434R"
+
+
+# ==============================================================================
+# Tier 4: E2E Golden Path & Forensic Static Audit
+# ==============================================================================
+
+class TestTier4E2EAndForensicAudit:
+    """Tier 4: E2E 트레이딩 사이클, ManualTrader CLI 및 하드코딩 0건 정적 감사"""
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_e2e_manual_trader_full_execution(
+        self,
+        mock_token_post,
+        mock_req,
+        mock_kiwoom_config: KiwoomConfig,
+    ):
+        """TC-20: ManualTrader 수동 매매 전체 파이프라인 E2E 검증"""
+        # 1. 토큰 발급 응답
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+
+        # 2. API 순차 응답 정의:
+        #    1) 주문 전 잔고: 현금 10,000,000원, 보유수량 0주
+        #    2) 현재가 조회: 75,000원
+        #    3) 매수 주문: 성공 (주문번호 0000117057)
+        #    4) 주문 후 잔고: 현금 9,250,000원, 보유수량 10주
+        resp_balance_before = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "output1": [],
+                "output2": [{"dnca_tot_amt": "10000000", "nxdy_excc_amt": "10000000"}],
+            },
+        )
+        resp_price = create_mock_response(
+            200,
+            {"rt_cd": "0", "output": {"stck_prpr": "75000", "acml_vol": "1000"}},
+        )
+        resp_order = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "msg1": "주문 전송이 완료되었습니다.",
+                "output": {"ODNO": "0000117057", "ORD_TMD": "091530"},
+            },
+        )
+        resp_balance_after = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "output1": [
+                    {
+                        "pdno": "005930",
+                        "prdt_name": "삼성전자",
+                        "hld_qty": "10",
+                        "pchs_avg_pric": "75000",
+                        "prpr": "75000",
+                    }
+                ],
+                "output2": [{"dnca_tot_amt": "9250000", "nxdy_excc_amt": "9250000"}],
+            },
+        )
+
+        mock_req.side_effect = [
+            resp_balance_before,
+            resp_price,
+            resp_order,
+            resp_balance_after,
+        ]
+
+        client = KiwoomClient(config=mock_kiwoom_config)
+        trader = ManualTrader(client=client, config=mock_kiwoom_config)
+
+        summary = trader.execute_order(
+            symbol="005930",
+            side="BUY",
+            quantity=10,
+            confirm=False,
+        )
+
+        assert summary["status"] == "SUCCESS"
+        assert summary["symbol"] == "005930"
+        assert summary["quantity"] == 10
+        assert summary["cash_diff"] == Decimal("-750000")
+        assert summary["shares_diff"] == 10
+        assert summary["order_result"].order_id == "0000117057"
+
+    @patch("requests.Session.request")
+    @patch("requests.Session.post")
+    def test_manual_trader_cli_main_entrypoint(
+        self,
+        mock_token_post,
+        mock_req,
+        monkeypatch,
+    ):
+        """TC-21: ManualTrader CLI main() 커맨드라인 실행 검증"""
+        monkeypatch.setenv("KIWOOM_APP_KEY", "test_app_key_12345")
+        monkeypatch.setenv("KIWOOM_APP_SECRET", "test_app_secret_67890")
+        monkeypatch.setenv("USE_MOCK_SERVER", "True")
+
+        mock_token_post.return_value = create_mock_response(
+            200, {"access_token": "mock_token", "expires_in": 86400}
+        )
+        resp_balance = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "output1": [],
+                "output2": [{"dnca_tot_amt": "5000000", "nxdy_excc_amt": "5000000"}],
+            },
+        )
+        resp_price = create_mock_response(
+            200,
+            {"rt_cd": "0", "output": {"stck_prpr": "80000", "acml_vol": "500"}},
+        )
+        resp_order = create_mock_response(
+            200,
+            {
+                "rt_cd": "0",
+                "msg1": "주문 접수 완료",
+                "output": {"ODNO": "0000117099", "ORD_TMD": "100000"},
+            },
+        )
+
+        mock_req.side_effect = [
+            resp_balance,
+            resp_price,
+            resp_order,
+            resp_balance,
+        ]
+
+        exit_code = manual_trader_main(
+            ["-s", "005930", "-d", "BUY", "-q", "2", "--mock", "--no-confirm"]
+        )
+        assert exit_code == 0
+
+    def test_forensic_static_audit_zero_hardcoded_secrets(self):
+        """TC-22: [Forensic Audit] 프로젝트 소스코드 전역 민감정보 하드코딩 0건 정적 감사"""
+        project_root = Path(__file__).resolve().parent.parent
+        target_dirs = ["core", "modules", "config"]
+
+        # 허용 더미 토큰 및 템플릿 제외 패턴
+        allowed_dummies = {
+            "mock_test_app_key_12345",
+            "mock_test_app_secret_67890",
+            "mock_bearer_token_abc123",
+            "mock_token",
+            "your_app_key_here",
+            "your_app_secret_here",
+            "${KIWOOM_APP_KEY:}",
+            "${KIWOOM_APP_SECRET:}",
+            "${KIWOOM_ACCOUNT_NO:}",
+            "${KIWOOM_ACCOUNT_PRODUCT_CODE:01}",
+            "dummy_app_key_12345",
+            "dummy_app_secret_67890",
+            "test_app_key_12345",
+            "test_app_secret_67890",
+        }
+
+        # 32자 이상의 영문/숫자 API Key 패턴 검사 (실제 증권사 키 형식)
+        raw_key_pattern = re.compile(r"['\"]([a-zA-Z0-9_-]{32,})['\"]")
+        # 실제 계좌번호 패턴 (8자리 숫자-2자리 상품코드)
+        account_pattern = re.compile(r"\b\d{8}-\d{2}\b")
+
+        violations = []
+
+        for target_dir in target_dirs:
+            dir_path = project_root / target_dir
+            if not dir_path.exists():
+                continue
+            for file_path in dir_path.rglob("*"):
+                if not file_path.is_file() or file_path.suffix not in (".py", ".yaml", ".yml"):
+                    continue
+                # 예시 파일 및 설정 템플릿은 스킵
+                if "example" in file_path.name:
+                    continue
+
+                content = file_path.read_text(encoding="utf-8")
+
+                # 1. 의심스러운 장문 API Key 리터럴 검사
+                for match in raw_key_pattern.finditer(content):
+                    secret_candidate = match.group(1)
+                    if secret_candidate not in allowed_dummies and "openapi" not in secret_candidate:
+                        violations.append(f"{file_path}:{match.start()} -> 의심 키: {secret_candidate[:4]}***")
+
+                # 2. 하드코딩된 실제 계좌번호 검사
+                for match in account_pattern.finditer(content):
+                    acc_candidate = match.group(0)
+                    if acc_candidate not in ("12345678-01", "00000000-01"):
+                        violations.append(f"{file_path}:{match.start()} -> 의심 계좌번호: {acc_candidate}")
+
+        assert len(violations) == 0, f"하드코딩된 민감정보가 발견되었습니다: {violations}"

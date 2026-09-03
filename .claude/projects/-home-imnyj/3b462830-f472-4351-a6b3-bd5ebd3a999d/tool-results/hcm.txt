@@ -1,0 +1,1333 @@
+Highway Capacity Manual - 6th
+Edition Overview
+
+Course No: C03-065
+Credit: 3 PDH
+
+Scott S. Washburn, Ph.D., P.E. and Leslie D. Washburn, P.E.
+
+Continuing Education and Development, Inc.
+P: (877) 322-5800
+info@cedengineering.com
+
+www.cedengineering.com
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+COURSE DESCRIPTION:
+The 6th Edition of the Highway Capacity Manual (HCM) was released in 2016 and is now the
+standard for both the Fundamentals of Engineering (FE) exam and Principles and Practice of
+Engineering (PE) exam. The title of this new HCM is “HCM 6th Edition: A Guide for Multimodal
+Mobility Analysis”. This edition of the HCM provides methods for evaluating multimodal
+operations of freeways, highways, and arterial streets. The focus of this course is on providing a
+general overview of the content and organization of the HCM 6th edition and highlighting
+revisions/updates from the previous edition of the HCM (HCM 2010). The course does not provide
+detailed coverage of analysis methodology elements. Due to the volume of material covered in the
+HCM, some general knowledge of the document(s) may be helpful to completing this course, but
+it is not required.
+
+Figure 1. Highway Capacity Manual 6th Edition Cover
+Source: Transportation Research Board
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+2
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+In this course, you will learn about:
+•
+•
+•
+•
+•
+•
+
+HCM edition history
+Why the HCM title was changed
+Why the need for a new HCM edition
+HCM 6th edition structure – revised chapter layout design to help practitioners use the
+manual
+New HCM analysis methodology capabilities
+Future directions/updates to the HCM
+
+Source of figure is Scott or Leslie Washburn, unless noted otherwise.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+3
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Table of Contents
+INTRODUCTION AND HISTORY ...................................................................................................... 6
+NEED FOR A NEW EDITION .............................................................................................................. 8
+HCM 6TH EDITION ORGANIZATION ............................................................................................ 10
+Overview .......................................................................................................................................... 10
+Structure ........................................................................................................................................... 11
+NEW METHODOLOGY CAPABILITIES: UNINTERRUPTED FLOW .......................................... 16
+Freeway Facilities (Chapters 10/25) ................................................................................................. 16
+Freeway Reliability Analysis (Chapter 11) ...................................................................................... 17
+Freeway and Multilane Highway Segments (Chapters 12/26) ......................................................... 18
+Other Freeway Segments.................................................................................................................. 25
+Two-Lane Highways (Chapter 15/26) .............................................................................................. 28
+NEW METHODOLOGY CAPABILITIES: INTERRUPTED FLOW ................................................ 29
+Urban Street Facilities (Chapters 16/29) .......................................................................................... 29
+Urban Street Reliability and ATDM (Chapter 17/37) ...................................................................... 29
+Urban Street Segments (Chapters 18/30) ......................................................................................... 29
+Signalized Intersections (Chapters 19/31) ........................................................................................ 32
+Two-Way Stop-Controlled Intersections (Chapters 20/32) .............................................................. 33
+All-Way Stop-Controlled Intersections (Chapters 21/32) ................................................................ 33
+Roundabouts (Chapters 22/33) ......................................................................................................... 34
+Ramp Terminals and Alternative Intersections (Chapter 23/34) ...................................................... 35
+Off-Street Pedestrian and Bicycle Facilities (Chapter 24) ............................................................... 38
+Advanced Traffic and Demand Management (ATDM) (Chapter 37) .............................................. 39
+FUTURE UPDATES ............................................................................................................................ 39
+RESOURCES ....................................................................................................................................... 40
+SOFTWARE ......................................................................................................................................... 41
+REFERENCES ..................................................................................................................................... 43
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+4
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+List of Figures
+Figure 1. Highway Capacity Manual 6th Edition Cover.................................................................. 2
+Figure 2. HCM Covers for 1950 and 1965 editions ........................................................................ 7
+Figure 3. HCM Covers for 1985 and 2000 editions ........................................................................ 7
+Figure 4. HCM Cover for 2010 edition........................................................................................... 8
+Figure 5. HCM 6th Edition, Volume 4: Application Guide ........................................................... 15
+Figure 6. Freeway managed lanes and general-purpose lanes interaction .................................... 16
+Figure 7. Freeway ......................................................................................................................... 18
+Figure 8. Unified speed-flow equation ......................................................................................... 20
+Figure 9. Basic Freeway Segment Speed-Flow Curves ................................................................ 22
+Figure 10. Multilane Highway Segment Speed-Flow Curves ...................................................... 23
+Figure 11. Weaving in a Managed Lane Access Segment ............................................................ 26
+Figure 12. Managed Lane Weaving Segment ............................................................................... 26
+Figure 13. Managed Lane Merge Example ................................................................................... 27
+Figure 14. Managed Lane Diverge Example ................................................................................ 27
+Figure 15. Two-Lane Highway Segment ...................................................................................... 28
+Figure 16. Midsegment Lane Blockage Depiction ....................................................................... 30
+Figure 17. Roundabout in both directions ..................................................................................... 30
+Figure 18. Right-turn-on-red vehicles incorporated into volume-balancing method ................... 31
+Figure 19. Signalized Intersection ................................................................................................ 32
+Figure 20. Work zone presence at approach to signalized intersection ........................................ 33
+Figure 21. Roundabout Example .................................................................................................. 35
+Figure 22. Ramp Terminal Forms ................................................................................................. 36
+Figure 23. Intersection Forms ....................................................................................................... 37
+Figure 24. Example of experienced travel time at an RCUT intersection .................................... 38
+
+List of Tables
+Table 1. Travel Speed Threshold by Base Free-Flow Speed (mi/h) ............................................. 29
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+5
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+INTRODUCTION AND HISTORY
+“The Highway Capacity Manual, Sixth Edition: A Guide for Multimodal Mobility Analysis (HCM)
+continues the manual’s evolution from its original objective— providing methods for quantifying
+highway capacity—to its current form as a fundamental reference on concepts, performance
+measures, and analysis techniques for evaluating the multimodal operation of streets, highways,
+freeways, and off-street pathways. The Sixth Edition incorporates the latest research on highway
+capacity, quality of service, and travel time reliability, and improves the HCM’s chapter outlines
+to help practitioners better understand basic concepts, computational steps, and outputs when
+applying HCM methods. These changes are designed to keep the manual in step with its users’
+needs and present times.”
+The Transportation Research Board’s Highway Capacity and Quality of Service (HCQS)
+committee is responsible for development and maintenance of the HCM. The HCQS committee is
+comprised of the following subcommittees:
+• freeways/multilane highways,
+• two-lane highways,
+• signalized intersections,
+• unsignalized intersections,
+• simulation applications,
+• performance measures,
+• user liaison,
+• planning and preliminary engineering, and
+• active transportation and demand management.
+The first HCM was published in 1950. Since that time, new editions of the HCM have been
+published every 10-20 years. Previous HCM editions have had a year in the title, although they
+have also been referred to with an “edition” number. The previous HCM editions are listed in
+Figures 2-4.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+6
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+1950: Only 160 pages long, and focused on 1965: Introduction of the level of service
+capacity related to the U.S. roadway network (LOS) concept and bus transit chapter.
+expansion after World War II.
+Figure 2. HCM Covers for 1950 and 1965 editions
+Starting with the 1985 edition, results of new research on highway capacity and quality of service
+were presented for measuring roadway performance.
+
+1985: Significant research incorporated
+adding pedestrians and bicycles chapters.
+
+2000: Added new research with increase in
+volume and breadth.
+
+Updates to this edition were made in 1992,
+1994, and 1997
+Figure 3. HCM Covers for 1985 and 2000 editions
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+7
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+In order to make the material in the HCM 2000 easier to understand and follow, the HCM 2010
+was reorganized with new material added from research projects. A broader range of performance
+measures were introduced for assessing the performance of transportation facilities and allroadway
+users.
+
+2010: New research added, additional focus on nonautomobile modes, four volumes.
+Reorganized to make it more clear and understandable.
+
+Figure 4. HCM Cover for 2010 edition
+The four volumes of the HCM 2010 include:
+• Volume 1: Concepts,
+• Volume 2: Uninterrupted Flow,
+• Volume 3: Interrupted Flow, and
+• Volume 4, Applications Guide.
+Volume 4 was introduced online to facilitate issuing new and updated chapters.
+NEED FOR A NEW EDITION
+The interim chapters and soon-to-be-completed research needed to be integrated into the HCM in
+an organized manner for users to follow. New methodologies require complicated and rigorous
+calculations, where computer software is needed in order for practitioners to realistically
+implement the new methods. The new methods needed to be outlined and explained in detail in
+order for software developers to replicate the methods in software programs and so practitioners
+understand the calculations.
+The content of the HCM has changed and evolved from simply highway capacity to include many
+facility type performance measures and multimodal analysis. Transportation professionals and
+decision-makers have not always been aware of these additional features. The analysis needs of
+transportation professionals changed, but the HCM title remained the same since 1950. Providing
+mobility for people and goods is transportation’s most essential function. Thus, “A Guide for
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+8
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Multimodal Mobility Analysis” captures the HCM’s ability to quantify roadway performance
+across multiple dimensions and travel modes.
+Also, in order for research to become
+implemented, it needs to be usable by
+practitioners. This now often means that
+methods need to be implemented in software.
+In order for software to be developed, the new
+methods need to be integrated with existing
+material and explained in sufficient detail that
+software developers can accurately replicatethe
+method(s). At the same time, the need existsto
+explain the methods clearly to end users. Asa
+result, a new edition of the HCM was
+necessary.
+
+The new HCM consists of four dimensions:
+▪ Quantity of travel, the magnitude of use of
+
+a transportation facility or service;
+▪ Quality of travel, users’ perceptions of
+
+travel on a transportation facility or
+service with respect to their expectations;
+▪ Accessibility, the ease with which
+travelers can engage in desired activities;
+and
+▪ Capacity, the ability of a transportation
+facility or service to meet the quantity of
+travel demanded of it.
+
+HCM 6th Edition revisions includes:
+New title, to reflect how HCM content has expanded
+considerably beyond simply “highway capacity”
+Multiple performance measures
+Many facility types
+Multimodal analysis (autos, trucks, peds, bikes,
+buses)
+Added travel time reliability, and managed lane, work
+zone, and alternative intersection operations.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+9
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Several million dollars in new research has been performed since the HCM 2010 was published.
+Some of these projects introduce new capabilities to the HCM:
+• analyzing managed lane and work zone operations,
+• measuring and predicting travel time reliability,
+• analyzing alternative intersection forms, and
+• evaluating roadway corridors incorporating a series of roundabouts.
+Some projects update previous research to
+account for driver behavior and vehicle
+technology changes:
+• truck analysis,
+• roundabouts, and
+• Active Traffic and Demand
+Management (ATDM).
+Finally, some projects have focused on
+enhancing how all of this new and existing
+information can be effectively communicated to
+HCM users.
+
+▪
+▪
+▪
+▪
+▪
+▪
+▪
+▪
+
+New Research since HCM 2010
+NCFRP 41: Truck analysis
+NCHRP 03-96: Managed lanes
+NCHRP 03-100: Roundabouts in corridors
+NCHRP 03-107: Work zone capacity
+NCHRP 03-115: HCM production
+NCHRP 07-22: Planning guide to HCM
+SHRP2-L08: Travel time reliability
+FHWA: ATDM, roundabouts, alternative
+intersections
+
+HCM 6TH EDITION ORGANIZATION
+Overview
+The HCM 2010 reorganized the manual to better serve its users. Basic information about each
+chapter’s methods was provided in the printed chapters. Depending on the complexity of the
+method, this information could range from full step-by-step instructions to a higher-level overview
+of a method’s inputs and flow of calculations. Supplemental online chapters, provide calculation
+details for the more complex methods and other information primarily of interest to a subset of
+HCM users. For some methods requiring iterative calculations, computational engine code listings
+provided in the online technical reference library offered the greatest level of detail. The online
+library also provides access to many of the research reports that document the development of
+HCM methods.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+10
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+The HCM 6th Edition
+Additional changes made for the HCM 6th Edition
+continues
+the
+▪ Standardized chapter outlines
+evolution of how
+▪ Presentation of the core chapter methodology, followed by
+HCM information is
+extensions
+presented to better
+▪ Summary tables listing data requirements, potential data sources,
+serve the needs of
+suggested default values, and sensitivity of results to inputs
+today’s users. As will
+▪ Example results in many chapters
+be described in detail,
+▪ Example problems moved to Volume 4
+methodological
+chapter outlines have been standardized. Summary tables are provided that list data requirements,
+potential data sources, suggested default values, and the sensitivity of results to particular inputs.
+Many Volume 2 and 3 chapters now provide example results to help analysts determine the
+reasonableness of the results they obtain from software, to highlight a method’s sensitivity to
+particular inputs, and to highlight possible methodological quirks (e.g., step-function behavior).
+They are not intended to substitute for an actual analysis, as the results depend on the assumptions
+used for other inputs, and are therefore deliberately printed at a size large enough to indicate trends
+but too small to pick out specific results.
+Example problems have been moved to the supplemental chapters in online Volume 4 to free up
+space for new material in the printed HCM and allow access to all, including students who do not
+yet own an HCM. The creation of online Volume 4 allows the HCM to be updated more quickly
+after research is completed, compared to the typical multi-year wait for a new edition. Four such
+chapters; Active Traffic and Demand Management (ATDM) update (Chapter 35), Travel time
+reliability (Chapters 36, 37), and Managed lanes (Chapter 38) were released online in 2014. Each
+chapter was stand-alone and could not be used in conjunction with other new material (e.g.,
+reliability of managed lanes).
+Structure
+The HCM is divided into four volumes: three printed and one online, just as for the HCM2010.
+Volume 1 houses concepts material, Volume 2 describes the methodologies for freeways and
+highways, while Volume 3 describes the methodologies for urban streets and off-street pedestrian
+and bicycle facilities. Volume 4 provides additional resources that support the material in the
+printed HCM.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+11
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+General highway capacity and quality of service concepts were addressed in Volume 1. The typical
+Volumes 2 and 3 section layout consists of:
+•
+•
+
+•
+
+•
+
+•
+
+•
+
+Detailed chapter-specific concepts, such as service volume tables, have been added.
+Methodological chapters begin with a short introduction describing the purpose of the
+chapter, the information found within it, and cross-references to related material in other
+chapters.
+The core motorized vehicle methodology (e.g., two-lane highway analysis for motor
+vehicles) is presented next, including the method’s strengths and limitations, circumstances
+when alternative tools might be considered, the method’s required input data (and potential
+sources), and a description of the flow of calculations.
+Mode-specific methodologies (e.g., bicycle travel on two-lane highways), to better
+highlight the existence of these methods, are provided after the motorized vehicle
+methodology
+An applications section provides information about applying the chapter’s method to
+planning and preliminary engineering, operations, and design analyses; often provides
+example results; and discusses the use of the method in conjunction with alternative tools,
+when available.
+A reference section for each chapter is provided.
+
+Volume 1 - Concepts
+Volume 1 introduces concepts that all HCM users should be familiar with before applying the
+manual. The chapter structure of Volume 1 is the same as the HCM 2010. Chapter 36 in online
+Volume 4 provides supplemental information that supports Volume 1; new information in this
+chapter includes guidance on measuring travel time reliability in the field and listings of reliability
+values for selected U.S. facilities.
+Printed Chapters
+1. HCM User’s Guide
+2. Applications
+3. Modal Characteristics
+4. Traffic Operations and Capacity Concepts
+5. Quality-of-Service Concepts
+6. HCM and Alternative Analysis Tools
+7. Interpreting HCM and Alternative Tool Results
+8. HCM Primer
+9. Glossary and Symbols
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+Online Chapters (Volume 4)
+36. Concepts: Supplemental
+
+12
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Volume 2 – Uninterrupted Flow
+HCM Volume 2 provides concepts, performance measures, and analysis methodologies specific
+to uninterrupted-flow facilities such as freeways. Chapter 11 on freeway reliability analysis is new.
+In addition, the HCM 2010 chapters on basic freeway segments and multilane highways have been
+merged into a single chapter (Chapter 12), as these roadways share many similar characteristics.
+Chapters 25-28 in online Volume 4 provide material that supplements the Volume 2 chapters. In
+particular, the example problems for uninterrupted-flow facilities have been moved into the
+Volume 4 chapters.
+Printed Chapters
+10. Freeway Facilities Core Methodology
+11. Freeway Reliability Analysis (New)
+12. Basic Freeway and Multilane Highway
+Segments
+13. Freeway Weaving Segments
+
+Online Chapters (Volume 4)
+25. Freeway Facilities: Supplemental
+26. Freeway and Highway Segments:
+Supplemental
+27. Freeway Weaving: Supplemental
+
+28.Freeway Merges and Diverges:
+Supplemental
+
+14. Freeway Merge and Diverge Segments
+15. Two-Lane Highways
+Volume 3 – Interrupted Flow
+HCM Volume 3 provides concepts, performance measures, and analysis methodologies specific
+to interrupted-flow facilities such as urban streets and the intersections found along them.
+Chapter 17, presenting methods for evaluating travel time reliability on urban streets and
+analyzing the effects of ATDM strategies, is new in the sixth edition. In addition, Chapter 23 has
+been expanded to cover alternative intersection and interchange types, such as diverging diamond
+interchanges and median U-turn intersections. Chapters 29-35 in online Volume 4 provide
+supplemental information, including example problems.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+13
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Printed Chapters
+16. Urban Street Facilities
+17. Urban Street Reliability and ATDM
+18. Urban Street Segments
+19. Signalized Intersections
+20. Two-Way Stop-Controlled Int.
+21. All-Way Stop-Controlled Int.
+22. Roundabouts
+23. Ramp Terminals and Alternative
+Intersections
+24. Off-Street Pedestrian and Bicycle
+Facilities
+
+Online Chapters (Volume 4)
+29. Urban Street Facilities: Supplemental
+30. Urban Street Segments: Supplemental
+31. Signalized Int.: Supplemental
+32. Stop-Controlled Intersections: Supplemental
+33. Roundabouts: Supplemental
+34. Interchange Ramp Terminals: Supplemental
+35. Pedestrian & Bikes: Supplemental
+37. ATDM: Supplemental
+
+Volume 4 (Online) – Concepts Supplemental
+Volume 4 provides more than just access to supplemental chapters. Unlike the 2010 version,
+Volume 4 is open to all, including those who do not have a personal copy of the HCM. A free user
+account is required for access. It is available online at http://www.hcmvolume4.org/.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+14
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 5. HCM 6th Edition, Volume 4: Application Guide
+Source: Transportation Research Board
+TRB’s HCQS Committee periodically issues interpretations and errata for the HCM that result
+from user questions and feedback. These errata are posted in Volume 4. The technical reference
+library provides access to many of the source research reports that form the basis for the HCM
+analysis methods, including:
+• The HCM Applications Guidebook: This is an online tool that demonstrates how the
+HCM can be applied to a project as it evolves from concept to design to implementation.
+• The Planning and Preliminary Engineering Applications Guide: This demonstrates how
+HCM concepts and methods can be incorporated into planning-level evaluations.
+• Discussion Forum: This allows HCM users to ask questions of the broader HCM
+community on proper application of the HCM methodologies, technical interpretations,
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+15
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+provide feedback about the HCM, etc. Committee members monitor and respond to the
+forum.
+NEW METHODOLOGY CAPABILITIES: UNINTERRUPTED FLOW
+Freeway Facilities (Chapters 10/25)
+A number of new capabilities have been added to Chapter 10 as a result of new research, including
+core methods to analyze freeway work zones and managed lanes, including interactions between
+managed lanes and general-purpose lanes. Truck effects are discussed in Chapter 12 in the context
+of freeway segments, but carry over into a facilities analysis. Similarly, ATDM strategy evaluation
+is discussed in Chapter 11 in the context of a reliability analysis, but Chapter 10 provides guidance
+on evaluating the effects of these strategies on typical-day (average) freeway operations.
+Finally, in light of the increasing availability of freeway travel time data from commercial
+providers, Chapter 10 provides guidance on matching those databases’ sections to HCM segments.
+
+Figure 6. Freeway managed lanes and general-purpose lanes interaction
+Chapter 25, Freeway Facilities: Supplemental, provides additional details related to the freeway
+facilities method. It describes how the method can be calibrated to match existing conditions
+through the application of capacity and speed adjustment factors. It also provides a method for
+evaluating truck performance on composite grades—that is, a series of consecutive grades with
+differing gradients. A new planning-level method, compatible with the Chapter 10 operational
+method, is presented. Finally, new example problems have been developed that demonstrate the
+new capabilities.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+16
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Freeway Reliability Analysis (Chapter 11)
+A new Chapter 11, Freeway Reliability Analysis, integrates material from the former interim
+Chapters 36 and 37 with the other enhancements to the freeway facility methodology. Rather than
+evaluating only an ”average” or ”typical” day with good weather and no incidents, a reliability
+analysis looks at the effects of various things (for
+example, severe weather and incidents) that temporarily ▪ Significant extension of
+material on travel time
+reduce a freeway’s performance over the course of year
+reliability and ATDM
+or other long-term timeframe.
+▪ Applies HCM Chapter 10
+method repeatedly with
+Each combination of demand level, weather condition,
+adjusted demands, capacities,
+and incident and work zone effects during a given day is
+lanes, and free-flow speeds to
+called a ”scenario”. A set of scenarios is randomly
+develop a travel time
+generated in software based on the probability of a
+distribution
+particular condition occurring; one scenario is generated
+▪
+Incorporates demand variation,
+for each day within the ”reliability reporting period” (for
+weather, incident, work zone,
+example, each non-holiday weekday throughout the
+and special event effects
+year). The facility travel time is evaluated for each 15minute analysis period within each scenario by repeatedly ▪ Produces a variety of
+reliability-related performance
+applying the Chapter 10 method, resulting in a
+measures
+distribution of travel times that can be used to generate a
+variety of
+measures.
+
+useful
+
+reliability-related
+
+performance
+
+Chapter 11 also describes how the effects of ATDM strategies on freeway reliability can be
+evaluated, including the process for developing reliability “scenarios” and for accounting for
+weather and incident effects, which has been improved. Supplemental Chapter 25 provides
+computational details and describes how the reliability method can be calibrated to existing
+conditions.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+17
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Freeway and Multilane Highway Segments (Chapters 12/26)
+
+Figure 7. Freeway
+Because the basic methods for evaluating freeway and multilane highway segments are very
+similar, they have been merged into one chapter for ease of presentation. Factors that distinguish
+multilane highway operation from freeway operation are still accounted for. To facilitate the
+integration of the new reliability, managed lanes, and work zone methods, a unified speed-flow
+equation has been developed applicable to both freeway and multilane highway segments, but the
+forms of the curves are different.
+Other notable changes in Chapter 12 include updated truck passenger car equivalency tables, based
+on new research. Capacity and free-flow speed adjustment factors (CAFs and SAFs) are now the
+primary way of making adjustments to the speed-flow relationship. Changes to the multilane
+highway methodology include making the density at capacity value no longer dependent on freeflow speed and setting this value consistent with that for basic freeway segments (i.e., 45 pc/mi/ln)
+and providing speed-flow curves for 65 and 70 mi/h free-flow speeds.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+18
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+The performance measure for level of service (i.e., service measure) remains unchanged (i.e.,
+density). Thus, the equation for basic freeway and multilane highway segment remains.
+D=
+
+vp
+S
+
+where:
+D = Density, in pc/mi/ln
+vp = Analysis flow rate in pc/h/ln, and
+S = Average speed, in mi/h.
+Unified speed-flow equation
+Previous editions of the HCM defined separate equations for basic freeway segments and multilane
+highway segments, although they were largely similar. In the 6th edition of the HCM, a single
+equation has been defined for both basic freeway and multilane highway segments, with
+parameters whose values can vary by segment type. This new equation is referred to as the unified
+speed-flow equation, and is as follows:
+vp ≤ BP
+
+S = FFSadj
+
+where:
+FFSadj = Adjusted free-flow speed, in mi/h, and is calculated as follows:
+FFSadj = FFS × SAF
+FFSadj = FFS
+
+for basic freeway segments
+for multilane highway segments
+
+
+
+FFS − cadj  v − BP )
+(
+
+adj
+D  p
+c 
+S = FFS − 
+adj
+
+( c − BP )
+
+a
+
+BP < vp ≤ cadj
+
+a
+
+adj
+
+where:
+cadj = Adjusted capacity, in pc/h/ln, and is calculated as follows:
+cadj = c × CAF
+cadj = c
+
+for basic freeway segments
+for multilane highway segments
+
+vp = 15-min passenger car equivalent flow rate, in pc/h/ln,
+BP = Linear to curvilinear flow rate breakpoint value in pc/h/ln,
+Dc = Density at capacity (45 pc/mi/ln), and
+a = Exponent value.
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+19
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+The unified speed–flow equation defines a region where the speeds are equal to the free-flow
+speed and a region where speeds drop until capacity is reached, which is defined as occurring at
+a density of 45 pc/mi/ln for both freeways and multilane highways. A breakpoint flow rate marks
+the boundary between the two regions. The exponent a, which defines the shape of the curve
+beyond the breakpoint flow rate, is different for freeways and multilane highways. The capacity
+for a given free-flow speed is also different for freeways and multilane highways. Both free-flow
+speeds and capacities can be adjusted to reflect the effects of severe weather, incidents, work
+zones, and special events, or to calibrate the HCM speed-flow curves to local conditions. An
+example illustration of the unified speed-flow equation is shown in Figure 8.
+
+Figure 8. Unified speed-flow equation
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+20
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+The calculation or assignment of the parameter values, specific to each segment type are as
+follows:
+Capacity (c)
+For freeway segments:
+
+c = Min  2200 + 10 ( FFS − 50 ) , 2400
+
+55 ≤ FFS ≤ 75
+
+For multilane highway segments:
+
+c = Min 1900 + 20 ( FFS − 45 ) , 2300
+
+45 ≤ FFS ≤ 70
+
+Breakpoint (BP)
+For freeway segments:
+
+(
+
+)
+
+BP = 1000 + 40 75 − FFS adj   CAF 2
+
+55 ≤ FFS ≤ 75
+
+For multilane highway segments:
+1400 pc/h/ln
+Exponent a
+For freeway segments: 2.0
+For multilane highway segments: 1.31
+Roadway base conditions for a basic freeway segment are defined by the HCM as 12-ft minimum
+lane widths, 6-ft minimum right-shoulder clearance, only passenger cars, 6 miles or greater
+interchange ramp spacing and level terrain (2% grade or less). The following figure shows some
+example speed-flow relationships based on the unified speed-flow equation and the parameter
+values for basic freeway segments.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+21
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 9. Basic Freeway Segment Speed-Flow Curves
+Roadway base conditions for a multilane highway are defined by the HCM as 12-ft minimum lane
+widths, 12-ft minimum total lateral clearance, only passenger cars, no access points, divided
+highway, free-flow speed of 60 mi/h or more and level terrain (2% grade or less). The LOS E–F
+density threshold has been revised to use 45 pc/mi/ln for all free-flow speeds (the same value for
+basic freeway segments), rather than varying by free-flow speed as in the HCM 2010. The unified
+equation parameter calculations also allow speed-flow curves to be developed for free-flow speeds
+up to 70 mi/h, versus a maximum free-flow speed of 60 mi/h for the HCM 2010. The following
+figure shows some example speed-flow relationships based on the new unified speed-flowequation
+and the parameter values for multilane highway segments.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+22
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 10. Multilane Highway Segment Speed-Flow Curves
+The bicycle analysis methodology for multilane highways is identical to the method for two-lane
+highways, and users are referred to Chapter 15 for the details of that method.
+Analysis Flow Rate
+The analysis flow rate equation no longer includes the driver population factor (fp). The impact to
+the traffic stream density due to driver population is now handled by revising the speed-flow
+relationship, by applying adjustments to the free flow speed (through the SAF) and the capacity
+(through the CAF). More information on this topic is provided in Chapter 26, exhibit 26-9.
+vp =
+
+V
+PHF  N  fHV
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+23
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+where:
+vp = 15-min passenger car equivalent flow rate in pc/h/ln,
+V = hourly volume in veh/h,
+PHF = peak-hour factor,
+N = number of lanes, and
+fHV = heavy-vehicle adjustment factor.
+Passenger Car Equivalents (PCE) for Heavy Vehicles (ET)
+The categorization of heavy vehicles changed. In the HCM 2010, heavy vehicles were categorized
+as either large trucks or buses (the “Trucks” category) or as recreational vehicles (the “RV’s”
+category). Likewise, there were separate passenger car equivalent (PCE) values for each category,
+ET and ERV, for the Trucks and RV’s categories respectively. In the HCM 6th edition, the categories
+for heavy vehicles now consist of single-unit trucks (SUTs) and tractor-trailers (TTs). Buses and
+RV’s are considered to be in the SUT category (generally, FHWA classes 4 and 5). Single-unit
+trucks with three or more axles and tractor + semi-trailer combinations are considered to be in the
+TT category (generally, FHWA classes 6 and above). There is no longer separate PCE values for
+the different heavy vehicle categories; thus, the new equation for calculating the heavy vehicle
+adjustment factor only includes an ET parameter, rather than ET and ERV parameters, as follows:
+
+fHV = heavy-vehicle adjustment factor,
+PT = proportion of heavy vehicles in the traffic stream, and
+ET = passenger car equivalent for heavy vehicles.
+Considering the heavy vehicle category, either SUT or TT, in determining a single PCE value (ET)
+depends on the terrain classification used for analysis. If a general terrain classification is used
+(i.e., level or rolling terrain), only the overall percentage of heavy vehicles in the traffic stream is
+considered and not the specific SUT/TT split. The PCE values for a general terrain classification
+(HCM Exhibit 12-25) analysis are as follows:
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+24
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+ET for level terrain is 2.0 (formerly 1.5 in HCM 2010)
+ET for rolling terrain is 3.0 (formerly 2.5 in HCM 2010)
+
+▪
+
+It should also be noted that the “mountainous” general
+terrain classification in the HCM 2010 has been removed.
+For this situation, where trucks are likely to operate at
+crawl speed for significant distances or frequent intervals,
+a new analysis approach is included, referred to as the
+“mixed-flow model”. This approach, detailed in Chapters
+25 and 26, is the recommended approach for analyzing
+such conditions. However, such terrain conditions can be
+analyzed using the specific-terrain component of the
+methodology, albeit with likely less accuracy than the
+mixed-flow model. For terrain that is not considered level
+or rolling, but trucks will operate at speeds higher than
+crawl speed, the specific terrain methodology, described
+as follows, should provide reasonably accurate results.
+
+▪
+
+▪
+▪
+
+▪
+
+Basic freeway segments and
+multilane highways merged
+into one HCM Chapter, 12
+One unified speed–flow
+equation applicable to both
+freeway and multilane highway
+segments, but the forms of the
+curves are different
+Revised truck PCE values
+Increased emphasis on
+calibration through capacity
+and speed adjustment factors
+(CAFs and SAFs)
+Driver population effects now
+handled by CAFs and SAFs
+
+When the analysis segment consists of terrain that cannot be classified as general terrain (i.e., level
+or rolling), it should be analyzed with its specific terrain characteristics, which consider the slope
+and length of segment. Additionally, the percentage split between the SUT and TT categories of
+heavy vehicles in the traffic stream must be considered. PCE tables are provided in the HCM 6th
+edition for three different truck category splits: Exhibit 12.6 for 30% SUTs/70% TTs, Exhibit 12.7
+for 50% SUTs/50 TTs, and Exhibit 12.8 for 70%SUTs/30% TTs. For splits less than 30/70 (e.g.,
+20/80) the values in Exhibit 12.6 should be used. For splits greater than 70/30 (e.g., 75/25), the
+values in Exhibit 12.8 should be used. For other splits (and not 50/50), PCE values should be
+interpolated linearly between the relevant tables.
+Additionally, a new method for estimating capacity from field measurements and updated example
+problems can be found in supplemental Chapter 26.
+Other Freeway Segments
+Weaving (Chapter 13/27)
+The core methodology from the HCM 2010 and HCM 6th Edition (Chapter 13) is unchanged. The
+new edition includes guidance on how to apply the weaving analysis procedure for segments that
+provide access to/from managed lanes adjacent to general purpose lanes, such as illustrated in
+Figure 10. It also includes guidance on how to apply the weaving analysis procedure to a managed
+lane weaving segment, such as illustrated in Figure 11.
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+25
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 11. Weaving in a Managed Lane Access Segment
+
+Figure 12. Managed Lane Weaving Segment
+There is an emphasis on the use of CAFs and SAFs for calibration. Chapter 27 provides new
+example problems demonstrating the new capabilities.
+Merge/Diverge (Chapter 14/28)
+The core methodology from the HCM 2010 and HCM 6th Edition (Chapter 14) is unchanged. The
+chapter provides new formalized guidance for aggregating merge and diverge segment densities
+for segments with three or more lanes The new edition includes guidance on how to apply the
+merge/diverge analysis procedures to merges and diverges on managed lanes, such as illustrated
+in Figures 12 and 13.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+26
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 13. Managed Lane Merge Example
+
+Figure 14. Managed Lane Diverge Example
+Again, emphasis on the use of CAFs and SAFs for calibration is provided. Chapter 28 provides
+new example problems demonstrating the new capabilities.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+27
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Two-Lane Highways (Chapter 15/26)
+
+Figure 15. Two-Lane Highway Segment
+No significant changes have been made to the method. Some calculation steps that previously were
+always skipped (because they were not needed to calculate LOS for a particular two-lane highway
+class) have been made optional, to clarify that they can be applied if the user is interested in
+determining the performance measure calculated by that step. This chapter’s example problems
+now appear in Chapter 26.
+It should be pointed out that NCHRP Project 17-65 (Washburn et al., 2018) developed a new twolane highway analysis methodology. This project was completed in March 2018 and is currently
+going through the review process with the Highway Capacity and Quality of Service Committee
+for potential adoption and inclusion in the HCM.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+28
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+NEW METHODOLOGY CAPABILITIES: INTERRUPTED FLOW
+Urban Street Facilities (Chapters 16/29)
+The service measure has been changed from ’average travel speed as a percent of free-flow speed’
+to just ’average travel speed’. This was done to make the service measure more intuitive to
+practitioners and because the previous service measure resulted in LOS results that were more
+sensitive to rounding effects in the calculations. LOS F, in addition to the average speed thresholds,
+also applies anytime the d/c ratio exceeds 1.0. Table 1 provides the new service measurethresholds.
+Example problems have been moved to Chapter 29.
+Table 1. Travel Speed Threshold by Base Free-Flow Speed (mi/h)
+Travel Speed Threshold by Base Free-Flow Speed (mi/h)
+LOS
+55
+50
+45
+40
+35
+30
+25
+A
+> 44
+> 40
+> 36
+> 32
+> 28
+> 24
+> 20
+B
+> 37
+> 34
+> 30
+> 27
+> 23
+> 20
+> 17
+C
+> 28
+> 25
+> 23
+> 20
+> 18
+> 15
+> 13
+D
+> 22
+> 20
+> 18
+> 16
+> 14
+> 12
+> 10
+E
+> 17
+> 15
+> 14
+> 12
+> 11
+>9
+>8
+F
+≤ 17
+≤ 15
+≤ 14
+≤ 12
+≤ 11
+≤9
+≤8
+Source: HCM
+Urban Street Reliability and ATDM (Chapter 17/37)
+Chapter 17 is a new chapter that integrates the ATDM material previously found in Chapter 35
+and the urban street travel time reliability material previously found in interim HCM Chapters 36
+and 37. Similar to freeway reliability analysis, the urban street reliability method repeatedly applies
+the core Chapter 16 facility method with varying demands, capacities, free-flow speeds, and
+number of lanes that reflect the variations in demand and the effects of severe weather, incidents,
+work zones, and special events over a long timeframe (up to a year). Due to complexity in the
+analysis for the urban street reliability method can only practically be implemented through
+software. New conceptual information for ATDM and techniques for evaluating ATDM strategies
+can be found in Chapter 17.
+Urban Street Segments (Chapters 18/30)
+The urban street segment service measure has been changed to average travel speed, and the LOS
+A/B threshold has been reduced to the equivalent of 80% of free-flow speed, same as urban street
+facilities. New and improved methods include the capability to evaluate segments with
+midsegment lane blockage.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+29
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 16. Midsegment Lane Blockage Depiction
+Urban street segments also includes an improved procedure for predicting segment queue spillback
+time, and a new adjustment factor for parking activity that affects free-flow speed estimation as
+well as procedures for evaluating segments with roundabouts at one or both directions.
+
+Figure 17. Roundabout in both directions
+Supplemental Chapter 30 provides calculation details for estimating segment travel time when
+roundabouts are located at one or both ends of the segment.
+Pedestrian and bicycle LOS scores are now weighted by link travel time instead of link length, to
+reflect the amount of time these modes experience conditions on the link. There are also some
+changes to the bicycle and bus default values.
+The unsignalized conflicts factor term for the bicycle mode has been revised to consider 20 conflict
+points per mile as the base (no-effect) condition, rather than 0 conflict points per mile. Default
+transit vehicle acceleration and deceleration rates have been added.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+30
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Right-turn-on-red vehicles are incorporated into the volume-balancing method for flows into and
+out of a segment.
+
+Figure 18. Right-turn-on-red vehicles incorporated into volume-balancing method
+Supplemental Chapter 30 provides calculation details, a planning method for urban street
+segments, and updated example problems.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+31
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Signalized Intersections (Chapters 19/31)
+
+Figure 19. Signalized Intersection
+The saturation flow adjustment factors for heavy vehicles and grade are now combined into a
+single factor. The delay of unsignalized movements at a signalized intersection are now considered
+when calculating approach and intersection delay where the user must supply these delay values.
+New saturation flow adjustment factors are provided for intersection work zone presence,
+midsegment lane blockage, and downstream spillback.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+32
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+N
+
+Work area length
+Drivew ay
+
+Drivew ay
+
+Figure 20. Work zone presence at approach to signalized intersection
+Source: HCM
+Chapter 31 provides an improved planning method with reduced input data requirements outlined
+in a worksheet. The simplified calculations are demonstrated in example problems.
+Two-Way Stop-Controlled Intersections (Chapters 20/32)
+There are no significant changes in the two-way stop control methods, but
+how the peak hour factor (PHF) should be applied is clarified. Example
+problems have been moved to Chapter 32.
+All-Way Stop-Controlled Intersections (Chapters 21/32)
+There are no significant changes in the all-way stop control methods, but
+how the peak hour factor (PHF) should be applied is clarified. Example
+problems have been moved to Chapter 32.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+33
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Roundabouts (Chapters 22/33)
+Roundabout capacity models have been updated as a result of new research in NCHRP 03-100:
+Roundabouts in corridors as well as a new calibration procedure is provided. Additionally,
+clarification of how the peak hour factor (PHF) should be applied. Example problems have been
+moved to Chapter 33.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+34
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Figure 21. Roundabout Example
+Ramp Terminals and Alternative Intersections (Chapter 23/34)
+The former Interchange Ramp Terminals chapter has been expanded to include a greater variety
+of distributed intersections. Distributed intersections include those with two or more intersections
+with close spacing and displaced or distributed traffic movements that are operationally
+interdependent and are best analyzed as a single unit.
+Chapter 23 now covers both interchange ramp terminals and alternative intersection forms. It is
+divided into three parts: distributed intersection concepts, interchange ramp terminal evaluation,
+and alternative intersection evaluation. The interchange ramp terminal forms addressed in Chapter
+23 are the different varieties of partial cloverleaf, diamond, single point urban, and diverging
+diamond interchanges.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+35
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Partial Cloverleaf
+
+Diamond
+
+Single Point Urban Interchange (SPUI)
+
+Diverging Diamond Interchange (DDI)
+
+Figure 22. Ramp Terminal Forms
+The distributed intersection forms addressed in Chapter 23 are displaced left-turn, restrictedcrossing U-turn, and median U-turn intersections.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+36
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Continuous Flow Intersection/
+Displaced Left Turn
+
+Restricted Crossing U-Turn (RCUT)
+
+Median U-Turn (MUT)
+
+Figure 23. Intersection Forms
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+37
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Both ramp terminals and alternative intersections now use a new service measure, experienced
+travel time (ETT), that is intended to allow these intersections’ performance to be compared on an
+equivalent basis with other intersection forms. ETT includes the sum of average control delays
+experienced by a given movement, plus any extra distance travel time the movement may
+experience as a result of being rerouted.
+
+Figure 24. Example of experienced travel time at an RCUT intersection
+Source: HCM
+New and updated example problems are located in supplemental Chapter 34.
+
+Off-Street Pedestrian and Bicycle Facilities (Chapter 24)
+Some variable names and equations have been changed to improve their understandability without
+affecting results to the off-street pedestrian and bicycle facility calculations found in Chapter 24.
+Additional guidance has been provided on applying the methods and interpreting results such as
+graphs that demonstrates how the bicycle LOS score for a shared off-street path is influenced by
+path width and two-directional path volume. The new Chapter 35 provides example problems.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+38
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+Advanced Traffic and Demand Management (ATDM) (Chapter 37)
+Chapter 37 includes the emerging topics chapter in HCM 2010 that was later updated as a result
+of FHWA research. Most of the material has been integrated into Chapters 11 (freeways) and 17
+(urban streets) but Chapter 37, ATDM: Supplemental provides descriptions of common ATDM
+strategies, guidance on analyzing shoulder lane, median lane, and ramp metering strategies and
+guidance on designing an ATDM program.
+FUTURE UPDATES
+Looking ahead, there are several areas the HCQS committee will be focused on for potential
+additions/revisions to the HCM, such as:
+• Impacts on capacity and operations as a function of advances in connected and
+autonomous vehicles.
+• Capacity measurement: Many default values for capacity, and methods for estimating
+capacity, have been included in the HCM over the years. However, little guidance was
+provided for methods/techniques for measuring capacity from the field. Some
+improvement in this area was made for the HCM 6th edition, but this will continue to be a
+major focus for the committee, so that transportation agencies can determine capacity
+values most appropriate for their region.
+• ATDM adjustment values: Many of the adjustment factor values provided for the ATDM
+methodology are based on minimal research and/or expert opinion. The FHWA is putting
+considerable resources into quantifying the impacts of various ATDM strategies, and the
+HCQS committee will update the HCM with these results as they become available.
+• Planning methods: Many of the operational analysis methods in the HCM have become
+quite complicated and difficult, if not impossible, to solve without software. Many
+transportation agencies, particularly those that include large rural areas, still desire simpleto-apply analysis methods that will give reasonably accurate results for planning purposes.
+The HCQS committee is focused on the continued development of planning methods,
+derived from the full operations methods.
+• Simulation: While the HCM methods are not intended to compete, per se, with simulation
+methods, the increased complexity of the HCM methods over the last 15 years, combined
+with the near ubiquity of simulation, has blurred the line on which approach is most
+applicable for a given analysis situation. Some guidance to help practitioners determine
+when simulation might be a more appropriate approach than the HCM was provided in the
+HCM 2010 and 6th editions, but there is still much more room for improvement in this
+area. This will be a continued area of focus for the HCQS committee.
+• Two-lane highway analysis: If the new two-lane highway analysis methodology,
+developed from the aforementioned NCHRP Project 17-65, is approved by the HCQS
+committee, it should appear in the HCM by the end of 2019.
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+39
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+While previous HCM edition titles included the
+publication year, the new HCM omits this element,
+with the intent that chapters will have their own
+version number, starting with 6.0. Version numbers
+will be incremented as errata are released and as new
+research is incorporated. This approach will allow the
+HCM to continue to present state-of-the-art methods,
+while allowing analysts to tie their analysis to a
+specific version of a methodology.
+
+Examples of future updates include:
+▪ Connected and autonomous vehicles
+▪ Capacity measurement methods
+▪ Planning methods
+▪ Advances in ATDM
+▪ Simulation guidance
+▪ Two-lane highway analysis update
+
+RESOURCES
+The HCM 6th Edition, A Guide for Multimodal Mobility Analysis can be purchased from the
+Transportation Research Board at https://www.mytrb.org/Store/Product.aspx?ID=8313.
+Free Volume 4 Online http://www.hcmvolume4.org/
+Transportation Research Board Highway Capacity and Quality of Service Committee ID:
+AHB40
+https://www.mytrb.org/CommitteeDetails.aspx?CMTID=1526
+https://sites.google.com/site/ahb40hcqs/
+https://www.linkedin.com/groups/8493127/
+Free HCM software is available at http://swashware.com/HCMCalc.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+40
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+SOFTWARE
+Improvements in computing power over time have resulted in increased use of technology to
+control the road system (e.g., more advanced signal systems), the ability to create more
+sophisticated models of roadway capacity and quality of service, and the development of software
+packages to perform HCM analyses. Today, most HCM users apply the HCM methods via
+software.
+Even though the majority of HCM users
+apply HCM methods through software, there Originally, HCM methods could be applied
+is still a need for analysts to understand how with pencil and paper techniques.
+a method works, even though they may not be Today, the HCM is typically applied through
+performing step-by-step calculations. They software
+▪ Faster, reduces computational mistakes
+need to know what inputs are required, how
+▪ Larger study areas
+variations in those inputs may impact the ▪ More complex phenomena being modeled
+results, the research foundation for the ▪ Iterative calculations increasingly
+method, the basic flow of calculations, the
+required
+range of likely results, and resources to turn
+to in case of questions. In addition, a subset of users (including analysts who want to explore the
+reason behind a particular result) still require in-depth information about each method.
+A software program, HCM-CALC, which implements the calculations for the uninterrupted flow
+analysis methodologies described in this document, is available free of charge. The software is not
+required for this course. To the knowledge of the authors, the software provided at the link below
+is the only free software available for the full range of uninterrupted flow analysis methodologies
+of the Highway Capacity Manual. The software runs both the 5th edition (2010) and 6th (2016)
+edition manual calculations. The Highway Capacity and Quality of Service Committee does not
+officially endorse any software implementation of the calculation procedures contained in the
+HCM.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+41
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+For information on how to obtain the HCM-CALC software, please visit
+http://swashware.com/HCMCalc/.
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+42
+
+Highway Capacity Manual - 6th Edition Overview – C03-071
+
+REFERENCES
+Mannering, Fred L. and Washburn, Scott S. Principles of Highway Engineering and Traffic
+Analysis, 7th Edition. John Wiley and Sons, Hoboken, NJ, 2020.
+Washburn, Scott S., Al-Kaisy, Ahmed, Luttinen, Tapio, and Dowling, Richard, Watson, Donald,
+Jafari, Amirhossein, Bian, Zilin, and Elias, Aaron. Improved Analysis of Two-Lane Highway
+Capacity and Operational Performance. NCHRP Project 17-65. Transportation Research
+Board. March 2018. 670 pages. DOI: 10.17226/25179
+Transportation Research Board. Highway Capacity Manual: A Guide for Multimodal Mobility
+Analysis. Washington, DC: National Research Council, 2016.
+www.trb.org/main/blurbs/175169.aspx
+Ozkul, Seckin and Washburn, Scott S. Updated Commercial Truck Speed versus Distance-Grade
+Curves for the Highway Capacity Manual. Transportation Research Record: Journal of the
+Transportation Research Board. No. 2483, Transportation Research Board of the National
+Academies, Washington, D.C., 2015, pp. 91–101. DOI: 10.3141/2483-11
+Ozkul, Seckin, Washburn, Scott S., and McLeod, Douglas S. Revised Version of the Automobile
+Level-of-Service Methodology for Urban Streets in the Highway Capacity Manual 2010.
+Transportation Research Record: Journal of the Transportation Research Board. No. 2395,
+Transportation Research Board of the National Academies, Washington, D.C., 2013, pp. 66–
+72. DOI: 10.3141/2395-08
+Washburn, Scott S. and Kirschner, David S. Rural Freeway Level of Service Based Upon
+Traveler Perceptions. Transportation Research Record: Journal of the Transportation
+Research Board. No. 1998, Transportation Research Board of the National Academies,
+Washington, D.C., 2006, pp. 31-37. DOI: 10.3141/1988-06
+
+© Scott S. Washburn and Leslie D. Washburn, 2022
+
+43
+
+

@@ -19,9 +19,11 @@
 
 from __future__ import annotations
 import argparse
+import gc
 import json
 import logging
 import os
+import random
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -29,7 +31,16 @@ import optuna
 import pandas as pd
 import src.Communications as comm
 from src.baselines import ALL_BASELINES, BASELINE_CATEGORIES, get_baseline
-from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, REWARD_WEIGHT_KEYS, AoiV2IEnv
+# `normalize_power_dbm` is the single definition of the power term shared by the
+# HPO objective and the benchmark leaderboard. They used to normalise over two
+# different dBm windows, so HPO optimised one objective and the leaderboard
+# ranked by another.
+from src.evaluate import (
+    LEGACY_OUTAGE_METRIC_KEY,
+    OUTAGE_METRIC_KEY,
+    normalize_power_dbm,
+)
+from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, DEFAULT_WARMUP_STEPS, REWARD_WEIGHT_KEYS, AoiV2IEnv
 from src.rl_interface import P_MAX, P_MIN, STATE_DIM, RetrospectiveReplayBuffer
 import src.sumo.make_sumo_set as ss
 
@@ -88,6 +99,13 @@ def normalize_model_name(name: Any) -> str:
 # REWARD_WEIGHT_KEYS is owned by `src/hot_swap_trainer.py` and imported above so
 # that the search space, the training env and the evaluation env cannot drift.
 
+# Tuning seeds, disjoint from the training seeds (42..141, i.e. base 42 plus the
+# episode index) and from the evaluation seeds (5001..5005 in `src/evaluate.py`).
+# Selecting hyperparameters on a traffic realisation the models are later scored
+# on is the ordinary form of leakage in this pipeline, and it was present until
+# 2026-09-01: HPO, training and evaluation all shared seed 42.
+HPO_TUNING_SEEDS: Tuple[int, ...] = (1001, 1002, 1003)
+
 REWARD_WEIGHT_RANGES: Dict[str, Tuple[float, float]] = {
     "w1": (0.10, 1.00),   # estimation-error penalty  Norm(e_t^2)
     "w2": (0.02, 0.60),   # transmit-power penalty    Norm(P_tx)
@@ -136,6 +154,14 @@ def sample_hparams(trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
     # --- Basic three: Stable-Baselines3, so SB3's own argument names ---------
     if canonical_name == "PPO":
         params = {
+            # `hidden_dim` maps to SB3's policy_kwargs["net_arch"] via
+            # SB3BaselineModel.apply_hidden_dim. Without it the three SB3 models
+            # keep their per-algorithm default widths ([64,64] PPO, [256,256]
+            # SAC, [400,300] TD3), a 71x parameter-count spread across the nine
+            # baselines that makes "lost because on-policy" indistinguishable
+            # from "lost because it had 10.9k parameters against 773k".
+            # See results/diagnostics/baseline_capacity_parity.csv.
+            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
             "learning_rate": trial.suggest_float("learning_rate", 1e-4, 3e-3, log=True),
             "gamma": trial.suggest_float("gamma", 0.95, 0.999),
             "clip_range": trial.suggest_float("clip_range", 0.1, 0.3),
@@ -145,6 +171,14 @@ def sample_hparams(trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
         }
     elif canonical_name == "SAC":
         params = {
+            # `hidden_dim` maps to SB3's policy_kwargs["net_arch"] via
+            # SB3BaselineModel.apply_hidden_dim. Without it the three SB3 models
+            # keep their per-algorithm default widths ([64,64] PPO, [256,256]
+            # SAC, [400,300] TD3), a 71x parameter-count spread across the nine
+            # baselines that makes "lost because on-policy" indistinguishable
+            # from "lost because it had 10.9k parameters against 773k".
+            # See results/diagnostics/baseline_capacity_parity.csv.
+            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
             "learning_rate": trial.suggest_float("learning_rate", 1e-4, 3e-3, log=True),
             "gamma": trial.suggest_float("gamma", 0.95, 0.999),
             "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
@@ -152,6 +186,14 @@ def sample_hparams(trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
         }
     elif canonical_name == "TD3":
         params = {
+            # `hidden_dim` maps to SB3's policy_kwargs["net_arch"] via
+            # SB3BaselineModel.apply_hidden_dim. Without it the three SB3 models
+            # keep their per-algorithm default widths ([64,64] PPO, [256,256]
+            # SAC, [400,300] TD3), a 71x parameter-count spread across the nine
+            # baselines that makes "lost because on-policy" indistinguishable
+            # from "lost because it had 10.9k parameters against 773k".
+            # See results/diagnostics/baseline_capacity_parity.csv.
+            "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
             "learning_rate": trial.suggest_float("learning_rate", 1e-4, 3e-3, log=True),
             "gamma": trial.suggest_float("gamma", 0.95, 0.999),
             "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
@@ -179,7 +221,10 @@ def sample_hparams(trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
             "lr_critic": trial.suggest_float("lr_critic", 1e-4, 3e-3, log=True),
             "gamma": trial.suggest_float("gamma", 0.95, 0.999),
             "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
-            "n_step": trial.suggest_categorical("n_step", [1, 3, 5]),
+            # `n_step` is deliberately NOT searched. The retrospective SMDP buffer
+            # samples uniformly and cannot assemble an n-step return, so the model
+            # reports `n_step_active=False` and the value would be searched with
+            # no effect on learning.
             "epsilon_decay": trial.suggest_float("epsilon_decay", 0.990, 0.9995),
         }
     elif canonical_name == "I-HAMAPPO":
@@ -208,8 +253,21 @@ def sample_hparams(trial: optuna.Trial, model_name: str) -> Dict[str, Any]:
             "hidden_dim": trial.suggest_categorical("hidden_dim", [64, 128, 256]),
             "lr": trial.suggest_float("lr", 1e-4, 3e-3, log=True),
             "gamma": trial.suggest_float("gamma", 0.95, 0.999),
-            "omega": trial.suggest_float("omega", 0.1, 0.9),
-            "tau": trial.suggest_float("tau", 0.001, 0.02, log=True),
+            # Mellowmax temperature. omega -> 0 makes the backup the mean over
+            # actions, omega -> inf makes it the max; CARLTON's own default is
+            # 10.0, i.e. firmly on the max-like side. The previous range [0.1,
+            # 0.9] could not reach it -- the search was confined to the mean-like
+            # regime and could never reproduce the configuration the baseline was
+            # published with, which is the "crippled baseline" failure a
+            # comparison paper cannot afford. Log scale because omega is a
+            # temperature and its effect is multiplicative.
+            "omega": trial.suggest_float("omega", 0.1, 20.0, log=True),
+            # `tau` is deliberately NOT searched. CARLTON is the DeepMellow-style
+            # learner that removes the target network (`use_target_network=False`
+            # by default), and tau only moves a target network. Searching it would
+            # tune a no-op; searching `use_target_network` instead would let HPO
+            # reintroduce the exact component the published method removes, i.e.
+            # it would stop being this baseline.
         }
     elif canonical_name == "MADDPG-MT":
         params = {
@@ -269,6 +327,36 @@ def _search_space_keys(canonical_name: str) -> List[str]:
     return rec.keys
 
 
+#: Score handed to a trial whose rollout measured nothing at all. It has to be
+#: far above any attainable real score (committed studies sit in 0.887..1.459)
+#: because the study minimises and an unmeasured run scores 0.0 on every term.
+FAILED_RUN_PENALTY: float = 100.0
+
+
+def run_is_empty(metrics: Dict[str, Any]) -> bool:
+    """True when this rollout observed nothing, so its metrics mean nothing.
+
+    `AoiV2IEnv.get_metrics` degrades gracefully when no vehicle was ever in
+    range: mean_aoi 0.0, mean_error 0.0, packet_loss 0/max(1,0) = 0.0 and the
+    power falling back to the decoder floor, which normalises to 0.0. Fed to the
+    composite that is a score of exactly 0.0 -- the global minimum of a
+    minimisation study. Any hyperparameter combination that happens to kill the
+    environment would therefore be selected as "optimal". `n_observations` and
+    `tx_attempts` are the two signals that say the run was empty; both are
+    already produced by `get_metrics` and were simply never read here.
+
+    Keys that are absent are not treated as zero: callers that score a
+    pre-aggregated metric dict are not claiming anything about emptiness.
+    """
+    if metrics.get("run_failed"):
+        return True
+    for key in ("n_observations", "tx_attempts"):
+        val = metrics.get(key, None)
+        if val is not None and float(val) <= 0.0:
+            return True
+    return False
+
+
 def compute_composite_objective(
     metrics: Dict[str, float],
     w_error: float = 1.0,
@@ -282,7 +370,12 @@ def compute_composite_objective(
     2. Age of Information (s)
     3. Outage rate (packet loss ratio in [0, 1])
     4. Normalized transmission power (in [0, 1] mapped from [P_MIN, P_MAX] dBm)
+
+    A run that measured nothing is scored `FAILED_RUN_PENALTY`, never 0.0.
     """
+    if run_is_empty(metrics):
+        return float(FAILED_RUN_PENALTY)
+
     mean_err = metrics.get("mean_error", 0.0)
     mean_aoi = metrics.get("mean_aoi", 0.0)
     outage_rate = metrics.get("outage_rate", metrics.get("packet_loss_rate", 0.0))
@@ -302,8 +395,6 @@ def evaluate_model_in_env(
     seed: int = 42,
     n_steps: int = 35,
     density: float = 25.0,
-    n_vehicles: Optional[int] = None,
-    rsu_pos: Tuple[float, float] = (0.0, 0.0),
     rsu_range: float = DEFAULT_RSU_RANGE,
     train_steps_during_rollout: int = 0,
     reward_weights: Optional[Dict[str, float]] = None,
@@ -315,6 +406,10 @@ def evaluate_model_in_env(
 
     `reward_weights` are the sampled w1..w4 of the design reward; when given they are
     passed to the environment constructor so the trial actually trains under them.
+
+    The vehicle population is set by `density`; the `n_vehicles` and `rsu_pos`
+    arguments this function used to accept were never read, and the tests that
+    passed them believed they were controlling something they were not.
     """
     effective_weights = reward_weights if reward_weights else DEFAULT_REWARD_WEIGHTS
     env_kwargs: Dict[str, Any] = {
@@ -328,11 +423,17 @@ def evaluate_model_in_env(
         seed=seed,
         max_steps=n_steps,
         rsu_range=rsu_range,
-        warmup_steps=350,
+        warmup_steps=DEFAULT_WARMUP_STEPS,
         **env_kwargs,
     )
     obs, info = env.reset()
+    # The uplink success draw uses the process-wide `random` stream, and SUMO
+    # scenario generation consumes a variable number of draws from it before we
+    # get here. Re-seeding after reset() pins the simulation stream to
+    # (density, seed) whatever ran before.
+    random.seed(seed)
     buffer = RetrospectiveReplayBuffer(capacity=1000) if train_steps_during_rollout > 0 else None
+    n_update_failures = 0
 
     # Event-driven SMDP rollout, matching run_hot_swap_training. Granting every
     # vehicle on every step -- what this loop used to do -- makes Delta inert, so
@@ -368,7 +469,18 @@ def evaluate_model_in_env(
                     try:
                         model.update(batch)
                     except Exception:
-                        pass
+                        # This used to be `pass`. A baseline whose update always
+                        # raised (a batch-format mismatch, say) would finish HPO
+                        # normally and report "tuned" hyperparameters for a model
+                        # that never took a single gradient step. The count is
+                        # returned and recorded as a trial user attribute.
+                        n_update_failures += 1
+                        if n_update_failures == 1:
+                            logger.exception(
+                                "%s: model.update() raised on the first training batch; "
+                                "further failures in this rollout are counted, not logged.",
+                                type(model).__name__,
+                            )
 
         for rec in step_info["completed"]:
             open_decision.pop(rec["vid"], None)
@@ -387,19 +499,71 @@ def evaluate_model_in_env(
 
         obs = next_obs
 
+    # Close the SMDP intervals still in flight when the step budget ran out, and
+    # push their transitions like any other completed interval. `close()` used to
+    # discard them: 12.3 % of the decisions made in a 600-step episode never
+    # reached the buffer, and the loss is length-biased (an interval is likelier
+    # to still be open the longer its Delta), so what went missing was
+    # disproportionately the long-Delta decisions carrying the largest accrued
+    # penalty. The buffer therefore saw long-Delta successes but not long-Delta
+    # failures. These records come back with done=False and transmitted=False.
+    for rec in env.finalize_open_intervals():
+        if buffer is None:
+            continue
+        prev = open_decision.pop(rec["vid"], None)
+        if prev is None:
+            continue
+        s2 = obs.get(rec["vid"])
+        if s2 is None:
+            s2 = np.zeros(STATE_DIM, dtype=np.float32)
+        buffer.push(prev["state"], prev["raw_action"], rec["reward"],
+                    np.asarray(s2, dtype=np.float32), bool(rec["done"]), rec["delta_actual"])
+
     metrics = env.get_metrics()
     env.close()
-    del env
-    import gc
     gc.collect()
 
     # Normalise against the ACTUAL decoder power bounds (design range [10, 23] dBm),
-    # not a hardcoded [20, 30] window, so the objective stays correct if the bounds move.
+    # not a hardcoded [20, 30] window. `normalize_power_dbm` is imported from
+    # src/evaluate.py so the HPO objective and the leaderboard that ranks the
+    # tuned models cannot use two different power scales; they used to.
     avg_p = metrics.get("avg_tx_power_dbm", 0.5 * (P_MIN + P_MAX))
-    avg_p_norm = float(np.clip((avg_p - P_MIN) / max(1e-6, P_MAX - P_MIN), 0.0, 1.0))
     metrics["avg_power_dbm"] = avg_p
-    metrics["avg_power_norm"] = round(avg_p_norm, 4)
-    metrics["outage_rate"] = metrics.get("packet_loss_rate", 0.0)
+    metrics["avg_power_norm"] = round(normalize_power_dbm(avg_p), 4)
+    metrics["n_update_failures"] = int(n_update_failures)
+
+    # Outage is COVERAGE outage (user decision, 2026-08-31): the fraction of
+    # vehicle-time spent outside the RSU range, where no AoI update can happen.
+    # `packet_loss_rate` is the link-layer frame error rate and is a different
+    # quantity; this line used to alias one to the other, which is why the two
+    # columns in results/hpo/optuna_trials_*.csv were identical. The environment
+    # owns the measurement and must export `OUTAGE_METRIC_KEY`.
+    if OUTAGE_METRIC_KEY in metrics:
+        metrics["outage_rate"] = metrics[OUTAGE_METRIC_KEY]
+        metrics["outage_metric"] = OUTAGE_METRIC_KEY
+    else:
+        metrics["outage_rate"] = metrics.get(LEGACY_OUTAGE_METRIC_KEY, 0.0)
+        metrics["outage_metric"] = LEGACY_OUTAGE_METRIC_KEY
+        logger.warning(
+            "AoiV2IEnv.get_metrics() did not return '%s'; the HPO objective is scoring "
+            "'%s' (link-layer frame error rate) instead. These are different quantities "
+            "and the tuned hyperparameters inherit the substitution.",
+            OUTAGE_METRIC_KEY, LEGACY_OUTAGE_METRIC_KEY,
+        )
+
+    # Emptiness check, immediately before returning. `n_observations == 0` or
+    # `tx_attempts == 0` means the rollout measured nothing: no AoI sample was
+    # recorded, or the policy never transmitted. Every remaining metric has
+    # degraded to a flattering zero, and `compute_composite_objective` would
+    # score that 0.0 -- the global minimum of a minimisation study.
+    metrics["run_failed"] = bool(run_is_empty(metrics))
+    if metrics["run_failed"]:
+        logger.warning(
+            "Empty rollout (seed=%s, density=%s, n_steps=%s): n_observations=%s, "
+            "tx_attempts=%s. Scoring it %.1f instead of 0.0.",
+            seed, density, n_steps, metrics.get("n_observations"),
+            metrics.get("tx_attempts"), FAILED_RUN_PENALTY,
+        )
 
     return metrics
 
@@ -410,17 +574,28 @@ def evaluate_trial_multiseed(
     seeds: List[int],
     n_steps: int = 35,
     density: float = 25.0,
-    n_vehicles: Optional[int] = None,
     rsu_range: float = DEFAULT_RSU_RANGE,
     reward_weights: Optional[Dict[str, float]] = None,
+    trial: Optional[optuna.Trial] = None,
 ) -> Tuple[float, Dict[str, float]]:
     """
     Evaluates a set of hyperparameters across multiple seeds and returns the mean composite score.
+
+    When `trial` is given, every per-seed diagnostic that the CSV needs in order
+    to tell a healthy trial from a dead one is written as a user attribute:
+    `n_observations_seed<S>`, `tx_attempts_seed<S>`, `n_failed_seeds` (rollouts
+    that raised or measured nothing) and `n_update_failures`. Without them a
+    study where two of three seeds died looked exactly like a healthy one.
+
+    `n_vehicles` used to be an argument here and was never read; the population
+    is set by `density`.
     """
     scores = []
     seed_metrics: List[Dict[str, float]] = []
+    n_failed_seeds = 0
+    n_update_failures = 0
 
-    for seed in seeds:
+    for i, seed in enumerate(seeds):
         try:
             # Instantiate model
             model = model_cls(state_dim=STATE_DIM, num_channels=comm.NUM_SUBCHANNELS, **hparams)
@@ -436,18 +611,44 @@ def evaluate_trial_multiseed(
             score = compute_composite_objective(metrics)
             scores.append(score)
             seed_metrics.append(metrics)
+            n_update_failures += int(metrics.get("n_update_failures", 0) or 0)
+            if metrics.get("run_failed"):
+                n_failed_seeds += 1
+            if trial is not None:
+                trial.set_user_attr(f"n_observations_seed{seed}", int(metrics.get("n_observations", 0) or 0))
+                trial.set_user_attr(f"tx_attempts_seed{seed}", int(metrics.get("tx_attempts", 0) or 0))
         except Exception as e:
-            logger.warning(f"Error during rollout for seed {seed}: {e}")
-            scores.append(100.0)
+            logger.exception(f"Error during rollout for seed {seed}: {e}")
+            scores.append(FAILED_RUN_PENALTY)
+            n_failed_seeds += 1
+            if trial is not None:
+                trial.set_user_attr(f"n_observations_seed{seed}", -1)
+                trial.set_user_attr(f"tx_attempts_seed{seed}", -1)
 
-    mean_score = float(np.mean(scores)) if scores else 100.0
+        if trial is not None and scores:
+            # Report the running mean so a pruner has something to act on. With
+            # the default NopPruner this is inert bookkeeping; it exists so that
+            # configuring a real pruner actually prunes.
+            trial.report(float(np.mean(scores)), step=i)
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+    mean_score = float(np.mean(scores)) if scores else FAILED_RUN_PENALTY
 
     # Average individual metrics across seeds
     avg_metrics: Dict[str, float] = {}
     if seed_metrics:
-        for k in ["mean_error", "mean_aoi", "outage_rate", "packet_loss_rate", "avg_tx_power_dbm", "avg_power_norm"]:
+        for k in ["mean_error", "mean_aoi", "outage_rate", OUTAGE_METRIC_KEY,
+                  "packet_loss_rate", "avg_tx_power_dbm", "avg_power_norm",
+                  "n_observations", "tx_attempts"]:
             if k in seed_metrics[0]:
                 avg_metrics[k] = round(float(np.mean([m.get(k, 0.0) for m in seed_metrics])), 4)
+    avg_metrics["n_failed_seeds"] = int(n_failed_seeds)
+    avg_metrics["n_update_failures"] = int(n_update_failures)
+    if seed_metrics:
+        # Which outage definition the objective actually scored, so the trial CSV
+        # is unambiguous even if the environment changes underneath it.
+        avg_metrics["outage_metric"] = seed_metrics[0].get("outage_metric", "")
 
     return mean_score, avg_metrics
 
@@ -482,12 +683,18 @@ def run_hpo_study(
             model_cls = get_baseline(canonical_name)
     else:
         canonical_name = normalize_model_name(model_name) if isinstance(model_name, str) else getattr(model_cls, "__name__", "CustomModel")
-    eval_seeds = seeds if seeds is not None else [42, 101, 2024]
+    eval_seeds = seeds if seeds is not None else list(HPO_TUNING_SEEDS)
 
     if sampler is None:
         sampler = optuna.samplers.TPESampler(seed=42)
     if pruner is None:
-        pruner = optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=1)
+        # Explicitly no pruning. The previous default was a MedianPruner that
+        # could never fire because nothing in the objective called
+        # `trial.report()`, so the configuration only looked like pruning.
+        # `evaluate_trial_multiseed` now reports the running mean per seed, so
+        # passing a real pruner in works; the default stays off because pruning
+        # on a 3-seed mean would drop trials on one unlucky seed.
+        pruner = optuna.pruners.NopPruner()
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -518,6 +725,7 @@ def run_hpo_study(
             seeds=eval_seeds,
             n_steps=n_steps,
             reward_weights=reward_weights,
+            trial=trial,
         )
         for k, v in avg_metrics.items():
             trial.set_user_attr(k, v)
@@ -593,7 +801,7 @@ def run_all_baselines_hpo(
     """
     os.makedirs(output_dir, exist_ok=True)
     target_models = [normalize_model_name(m) for m in (models or CANONICAL_MODEL_NAMES)]
-    eval_seeds = seeds or [42, 101, 2024]
+    eval_seeds = seeds or list(HPO_TUNING_SEEDS)
 
     best_records: List[Dict[str, Any]] = []
 
@@ -638,10 +846,23 @@ def main() -> None:
     parser.add_argument("--n-trials", type=int, default=15, help="Number of trials per model")
     parser.add_argument("--output-dir", type=str, default="/home/imnyj/Workspace/paper4/coder/results/hpo")
     parser.add_argument("--models", nargs="+", default=CANONICAL_MODEL_NAMES, help="List of models to optimize")
-    parser.add_argument("--seeds", nargs="+", type=int, default=[42, 101, 2024], help="Evaluation seeds")
-    # 35 steps is 3.5 simulated seconds of measurement. A vehicle needs ~35 s from
-    # its spawn edge to reach the RSU disc, so a 35-step window scores almost no
-    # traffic and the search optimises noise. 350 matches the training warmup.
+    parser.add_argument("--seeds", nargs="+", type=int, default=list(HPO_TUNING_SEEDS),
+                        help="Tuning seeds (disjoint from training 42..141 and evaluation 5001..5005)")
+    # This is the MEASUREMENT window, not the warmup; the warmup is
+    # `DEFAULT_WARMUP_STEPS` and is applied identically here, in training and in
+    # evaluation. An earlier comment here read "350 matches the training warmup",
+    # which conflated the two: it was never a warmup and it no longer matches one.
+    #
+    # Why 350 and not 35: 35 steps is 3.5 simulated seconds, and a vehicle needs
+    # ~35 s from its spawn edge to reach the RSU disc, so a 35-step window scores
+    # almost no traffic and the search optimises noise.
+    #
+    # Why 350 and not 2000: a training episode and an evaluation episode are both
+    # 2000 steps, so the HPO objective is measured over a 5.7x shorter window than
+    # the score it is a proxy for. Raising it to 2000 costs ~5.7x the HPO wall
+    # clock on top of the warmup increase and invalidates
+    # `results/hpo/optuna_best_params.csv`, so it is left at 350 pending an
+    # explicit decision rather than changed silently.
     parser.add_argument("--n-steps", type=int, default=350, help="Simulation steps per seed")
     parser.add_argument("--tune-reward-weights", action="store_true",
                         help="search w1..w4 per model instead of pinning them to the "

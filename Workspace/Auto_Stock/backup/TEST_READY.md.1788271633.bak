@@ -1,0 +1,83 @@
+# TEST_READY: Auto Stock Phase 1 Test Infrastructure & Suite
+
+**작성일시**: 2026-08-31T17:08:15+09:00  
+**작성자**: test_writer_e2e (E2E Test Suite Specialist & QA)  
+**상태**: ✅ **READY (모든 4-Tier 테스트 작성 및 100% 통과 완료)**
+
+---
+
+## 1. 개요 및 테스트 스위트 구조
+
+본 문서는 **Auto Stock ML/RL Trader**의 **Phase 1: 데이터 수집 파이프라인** 전체 요구사항에 대한 4-Tier 종합 자동화 테스트 스위트 구축 완료 현황을 보고하고, 실행 방법 및 검증 결과를 명시합니다.
+
+### 1.1 테스트 파일 인벤토리
+
+| 테스트 파일 경로 | 대상 모듈 | 테스트 유형 | 테스트 케이스 수 | 상태 |
+| :--- | :--- | :--- | :---: | :---: |
+| `tests/test_phase1.py` | `modules/data/*` | Phase 1 E2E 4-Tier 통합 스위트 | 28 | ✅ 100% PASS |
+| `tests/test_fundamental.py` | `modules/data/collector_fundamental.py` | M1 펀더멘털 & 교차검증 단위/통합 | 30 | ✅ 100% PASS |
+| `tests/test_price_streamer.py` | `modules/data/collector_price.py`, `streamer.py` | M2 시계열 주가 & 스트리머 단위/통합 | 35 | ✅ 100% PASS |
+| **합계** | **전체 Phase 1 컴포넌트** | **종합 테스트 스위트** | **93** | **✅ 100% PASS (93/93)** |
+
+---
+
+## 2. 4-Tier 테스트 커버리지 매트릭스 (`tests/test_phase1.py`)
+
+| Tier | 분류 | 테스트 명세 및 검증 항목 | 케이스 수 | 통과 여부 |
+| :---: | :--- | :--- | :---: | :---: |
+| **Tier 1** | **기능 단위 (Unit)** | - OpenDART 고유코드/동의어 사전<br>- NaverFinance 억원->원 정규화<br>- MockKiwoom 합성 데이터 생성<br>- CrossValidator 상대 오차율 공식<br>- FundamentalDataCollector DataFrame 18개 스키마<br>- PriceDataCollector 일봉 OHLCV 수집<br>- 1분봉->5분봉 리샘플링 산술 무결성<br>- RealtimeRingBuffer 큐/슬라이싱/DataFrame<br>- WindowBarAggregator 틱 조립 및 윈도우 마감<br>- DataConsolidator Point-in-Time 병합<br>- PyArrow ZSTD Parquet I/O 라운드트립 | 11 | ✅ PASS |
+| **Tier 2** | **경계 및 방어 (Boundary & Error)** | - 교차검증 4.9% 오차 (`PASSED`)<br>- 교차검증 5.1% 오차 (`WARNING` 로깅)<br>- 교차검증 10.1% 오차 (`CRITICAL_DISCREPANCY` 에러)<br>- 영업손실/적자 기업 Dynamic PER NaN 마스킹<br>- DART 결측 지표 Naver Coalesce 병합<br>- DART Key 부재 시 자동 Naver Fallback<br>- 링버퍼 50,000건 초과 오버플로우 방어 (60k 틱 FIFO)<br>- 비정상 가격 교정 및 거래정지일 플래깅<br>- **Look-ahead bias 원천 차단 (공시일 이전 미래 데이터 누출 0건)** | 9 | ✅ PASS |
+| **Tier 3** | **결합 상호작용 (Integration)** | - 수집 -> 교차검증 -> PIT 결합 -> 동적 지표 -> Parquet 복원 라운드트립<br>- 다중 종목 (삼성전자, SK하이닉스, 현대차) 독립 파이프라인 무결성<br>- 멀티스레드 10,000틱 실시간 수신 + 배치 파이프라인 동시 구동 안전성 | 3 | ✅ PASS |
+| **Tier 4** | **실세계 시나리오 (Real-World)** | - **삼성전자('005930') 실데이터 E2E 파이프라인 구동 및 `data/raw/` 저장 검증**<br>- 네트워크 장애 및 키 부재 시 자동 Fallback 복원력<br>- 50,000틱 대규모 스트리밍 부하 방어<br>- 적자 턴어라운드 종목 결합 안전성<br>- `data/raw/` Parquet 메타데이터 및 스키마 무결성 | 5 | ✅ PASS |
+
+---
+
+## 3. 테스트 실행 가이드
+
+### 3.1 가상환경 및 전역 테스트 실행
+
+```bash
+# 1. 전체 테스트 스위트 실행 (93개 테스트)
+/home/imnyj/venv/bin/pytest -v tests/
+
+# 2. Phase 1 E2E 4-Tier 종합 테스트 스위트 단독 실행
+/home/imnyj/venv/bin/pytest -v tests/test_phase1.py
+
+# 3. 코드 커버리지 리포트 확인
+/home/imnyj/venv/bin/pytest --cov=modules.data --cov-report=term-missing tests/
+```
+
+### 3.2 실행 결과 요약
+
+```text
+============================= test session starts ==============================
+platform linux -- Python 3.12.3, pytest-9.0.3, pluggy-1.6.0
+rootdir: /home/imnyj/Workspace/Auto_Stock
+collected 93 items
+
+tests/test_fundamental.py ..........................                    [ 32%]
+tests/test_phase1.py ............................                        [ 62%]
+tests/test_price_streamer.py ...................................         [100%]
+
+============================== 93 passed in 4.07s ==============================
+```
+
+---
+
+## 4. 핵심 검증 완료 기준 (Acceptance Criteria Status)
+
+1. **R1 Fundamental Data Collector**:
+   - DART, Naver Finance, Mock Kiwoom 다중 출처 재무/가치 지표 수집 검증 완료.
+   - 불일치율 5% Warning, 10% Critical 로깅 및 방어 로직 100% 검증.
+2. **R2 Price Data Collector & Streamer**:
+   - 과거 일봉 및 당일 분봉 수집, 1m -> 5m/15m/60m 리샘플링 산술 무결성 검증 완료.
+   - `CircularBuffer` 50,000틱 고정 메모리 링버퍼 및 `WindowBarAggregator` 실시간 캔들 조립 검증 완료.
+3. **R3 Data Consolidation & Parquet Storage**:
+   - DART 공시일 기준 `merge_asof(direction='backward')`를 통한 선행 편향(Look-ahead bias) 원천 차단 검증 완료.
+   - 동적 PER ($Close / EPS$, 음수 시 NaN), 동적 PBR ($Close / BPS$), 1일 수익률, 20일 변동성 계산 검증 완료.
+   - PyArrow ZSTD 압축 Parquet 포맷으로 `data/raw/` 저장 및 복원 라운드트립 무결성 검증 완료.
+4. **R4 Real-World E2E (삼성전자 '005930')**:
+   - 삼성전자 실데이터 수집/검증/병합 후 `data/raw/005930_consolidated.parquet` 정상 생성 및 데이터 로드 검증 완료.
+
+---
+**보고서 발행 승인 완료 — Auto Stock Phase 1 Test Infrastructure READY**

@@ -61,7 +61,7 @@ def test_stop_imminent_approaching_red_light():
         accel=0.0,
         dist_to_stopline=25.0,
         signal_state="r",
-        time_to_switch=10.0,
+        time_to_green=10.0,
     )
     assert i_stop == 1.0
 
@@ -73,7 +73,7 @@ def test_stop_imminent_approaching_yellow_light():
         accel=0.0,
         dist_to_stopline=20.0,
         signal_state="y",
-        time_to_switch=3.0,
+        time_to_green=3.0,
     )
     assert i_stop == 1.0
 
@@ -85,7 +85,7 @@ def test_stop_imminent_hard_braking():
         accel=-2.5,
         dist_to_stopline=200.0,
         signal_state="g",
-        time_to_switch=20.0,
+        time_to_green=20.0,
     )
     assert i_stop == 1.0
 
@@ -97,7 +97,7 @@ def test_stop_imminent_stopped_leader_ahead():
         accel=0.0,
         dist_to_stopline=500.0,
         signal_state="g",
-        time_to_switch=50.0,
+        time_to_green=50.0,
         leader_dist=15.0,
         leader_speed=0.0,
     )
@@ -111,7 +111,7 @@ def test_not_stop_imminent_green_cruising():
         accel=0.0,
         dist_to_stopline=30.0,
         signal_state="g",
-        time_to_switch=15.0,
+        time_to_green=15.0,
     )
     assert i_stop == 0.0
 
@@ -123,7 +123,7 @@ def test_not_stop_imminent_already_stationary():
         accel=0.0,
         dist_to_stopline=5.0,
         signal_state="r",
-        time_to_switch=15.0,
+        time_to_green=15.0,
     )
     assert i_stop == 0.0
 
@@ -138,7 +138,7 @@ def test_start_imminent_green_light_turned():
         accel=0.0,
         dist_to_stopline=5.0,
         signal_state="G",
-        time_to_switch=20.0,
+        time_to_green=20.0,
         waiting_time=10.0,
     )
     assert i_start == 1.0
@@ -151,7 +151,7 @@ def test_start_imminent_red_expiring_soon():
         accel=0.0,
         dist_to_stopline=10.0,
         signal_state="r",
-        time_to_switch=1.5,
+        time_to_green=1.5,
         waiting_time=15.0,
     )
     assert i_start == 1.0
@@ -164,7 +164,7 @@ def test_start_imminent_leader_moving_off():
         accel=0.0,
         dist_to_stopline=300.0,
         signal_state="none",
-        time_to_switch=float("inf"),
+        time_to_green=float("inf"),
         leader_dist=10.0,
         leader_speed=3.0,
     )
@@ -178,7 +178,7 @@ def test_start_imminent_takeoff_acceleration():
         accel=1.2,
         dist_to_stopline=100.0,
         signal_state="none",
-        time_to_switch=float("inf"),
+        time_to_green=float("inf"),
     )
     assert i_start == 1.0
 
@@ -190,7 +190,7 @@ def test_not_start_imminent_long_red():
         accel=0.0,
         dist_to_stopline=10.0,
         signal_state="r",
-        time_to_switch=25.0,
+        time_to_green=25.0,
         waiting_time=5.0,
     )
     assert i_start == 0.0
@@ -203,7 +203,7 @@ def test_not_start_imminent_already_cruising():
         accel=0.2,
         dist_to_stopline=100.0,
         signal_state="g",
-        time_to_switch=10.0,
+        time_to_green=10.0,
     )
     assert i_start == 0.0
 

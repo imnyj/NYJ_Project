@@ -1,0 +1,396 @@
+"""
+tests/test_hybrid_trading_env.py
+================================
+Gymnasium 1.2.0 호환 하이브리드 트레이딩 환경(HybridTradingEnv) 종합 단위 테스트.
+
+테스트 커버리지:
+1. 환경 생성, Action/Observation Space 규격 및 Gymnasium check_env 검증
+2. reset() 동작, Seeding 및 options 파라미터 처리
+3. 다양한 액션 포맷(Tuple, Dict, 1D Array, Continuous Box Signal, Pure Discrete) 파싱 및 step() 실행
+4. 매수(BUY), 매도(SELL), 관망(HOLD) 시 자산 및 수량 변화, 수수료/세금/슬리피지 정밀 회계
+5. 회계 무결성 불변식(verify_accounting_invariant: 0원 오차) 검증
+6. 파산(Bankruptcy: equity < 5%)에 따른 terminated 처리
+7. 시계열 데이터 소진 및 max_steps 도달에 따른 truncated 처리
+8. 결측치(NaN/Inf) 방어 및 set_data() 동적 교체
+9. LiveLearningSimulator 연동 실시간 모드(mode="live") 단위 테스트
+10. ContinuousToHybridActionWrapper 동작 및 check_env 검증
+"""
+
+import math
+from datetime import datetime
+from decimal import Decimal
+from unittest.mock import MagicMock, patch
+
+import gymnasium as gym
+import numpy as np
+import pandas as pd
+import pytest
+from gymnasium import spaces
+from gymnasium.utils.env_checker import check_env
+
+from core.kiwoom_api import PriceQuote
+from modules.engine.hybrid_trading_env import (
+    ContinuousToHybridActionWrapper,
+    HybridTradingEnv,
+)
+from modules.engine.mock_environment import ActionType, FeeConfig, OrderSide
+
+
+# ==============================================================================
+# Fixtures
+# ==============================================================================
+
+@pytest.fixture
+def sample_dataframe() -> pd.DataFrame:
+    """테스트용 30일치 시계열 데이터프레임 fixture (1원 단위 정수 가격)"""
+    np.random.seed(42)
+    length = 30
+    dates = pd.date_range("2026-01-01", periods=length, freq="B")
+    raw_prices = 70000.0 * np.cumprod(1.0 + np.random.normal(0.001, 0.01, size=length))
+    prices = np.round(raw_prices)
+    
+    return pd.DataFrame({
+        "date": dates,
+        "symbol": "005930",
+        "open": np.round(prices * 0.998),
+        "high": np.round(prices * 1.01),
+        "low": np.round(prices * 0.99),
+        "close": prices,
+        "volume": np.random.randint(100000, 500000, length),
+        "returns_1d": np.random.normal(0, 0.01, length),
+        "log_return": np.random.normal(0, 0.01, length),
+        "volatility_20d": np.full(length, 0.015),
+        "ma_5": pd.Series(prices).rolling(5, min_periods=1).mean().values,
+        "ma_20": pd.Series(prices).rolling(20, min_periods=1).mean().values,
+        "ma_60": pd.Series(prices).rolling(60, min_periods=1).mean().values,
+        "dynamic_per": np.full(length, 12.5),
+        "dynamic_pbr": np.full(length, 1.2),
+        "dynamic_market_cap": prices * 6_000_000_000.0,
+    })
+
+
+# ==============================================================================
+# 1. Environment Space & Specification Tests
+# ==============================================================================
+
+def test_hybrid_env_spaces_and_spec(sample_dataframe):
+    """Action space, Observation space 및 spec 속성을 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000)
+    
+    # 1. Tuple Action Space 검증
+    assert isinstance(env.action_space, spaces.Tuple)
+    assert len(env.action_space.spaces) == 2
+    assert isinstance(env.action_space.spaces[0], spaces.Discrete)
+    assert env.action_space.spaces[0].n == 3
+    assert isinstance(env.action_space.spaces[1], spaces.Box)
+    assert env.action_space.spaces[1].shape == (1,)
+    
+    # 2. Observation Space 검증 (14차원)
+    assert isinstance(env.observation_space, spaces.Box)
+    assert env.observation_space.shape == (14,)
+    assert env.observation_space.dtype == np.float32
+    
+    # 3. Dict Action Space 옵션 검증
+    dict_env = HybridTradingEnv(df=sample_dataframe, action_space_type="dict")
+    assert isinstance(dict_env.action_space, spaces.Dict)
+    assert "action_type" in dict_env.action_space.spaces
+    assert "position_size" in dict_env.action_space.spaces
+
+
+def test_gymnasium_check_env_offline(sample_dataframe):
+    """Gymnasium 공식 check_env 적합성 검증 (offline mode)."""
+    env = HybridTradingEnv(df=sample_dataframe, render_mode="ansi")
+    check_env(env)
+
+
+def test_continuous_action_wrapper_check_env(sample_dataframe):
+    """ContinuousToHybridActionWrapper의 Gymnasium check_env 적합성 검증."""
+    base_env = HybridTradingEnv(df=sample_dataframe, render_mode="ansi")
+    wrapped_env = ContinuousToHybridActionWrapper(base_env)
+    assert isinstance(wrapped_env.action_space, spaces.Box)
+    assert wrapped_env.action_space.shape == (2,)
+    check_env(wrapped_env)
+
+
+# ==============================================================================
+# 2. Reset and Seeding Tests
+# ==============================================================================
+
+def test_env_reset(sample_dataframe):
+    """reset() 호출 시 계좌 상태, 관측값 형상 및 options 처리를 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000)
+    obs, info = env.reset(seed=42)
+    
+    assert isinstance(obs, np.ndarray)
+    assert obs.shape == (14,)
+    assert obs.dtype == np.float32
+    assert np.all(np.isfinite(obs))
+    
+    assert info["step"] == 0
+    assert info["cash_balance"] == 10_000_000.0
+    assert info["holding_quantity"] == 0
+    assert info["total_equity"] == 10_000_000.0
+    
+    # options로 initial_cash 동적 변경
+    obs2, info2 = env.reset(options={"initial_cash": 5_000_000})
+    assert info2["cash_balance"] == 5_000_000.0
+    assert info2["total_equity"] == 5_000_000.0
+
+
+# ==============================================================================
+# 3. Action Decoding and Sizing Tests
+# ==============================================================================
+
+def test_action_formats_handling(sample_dataframe):
+    """Tuple, Dict, List, 1D Array, Continuous Box, Pure Discrete 액션 포맷을 모두 테스트합니다."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000)
+    env.reset()
+    
+    # 1. Tuple 액션: (1, [0.3]) -> BUY 30%
+    obs, rew, term, trunc, info = env.step((1, np.array([0.3], dtype=np.float32)))
+    assert info["holding_quantity"] > 0
+    assert info["trade_record"] is not None
+    assert info["trade_record"].side == OrderSide.BUY
+    
+    # 2. Dict 액션: {"action_type": 0, "position_size": [0.0]} -> HOLD
+    obs, rew, term, trunc, info = env.step({"action_type": 0, "position_size": np.array([0.0], dtype=np.float32)})
+    assert info["trade_record"] is None
+    
+    # 3. 1D List 액션: [2, 0.5] -> SELL 50%
+    curr_qty = info["holding_quantity"]
+    obs, rew, term, trunc, info = env.step([2, 0.5])
+    assert info["holding_quantity"] < curr_qty
+    assert info["trade_record"] is not None
+    assert info["trade_record"].side == OrderSide.SELL
+    
+    # 4. Continuous Box Signal: [0.8, 0.5] -> BUY 50%
+    obs, rew, term, trunc, info = env.step(np.array([0.8, 0.5], dtype=np.float32))
+    assert info["trade_record"] is not None
+    assert info["trade_record"].side == OrderSide.BUY
+    
+    # 5. Continuous Box Signal: [-0.8, 1.0] -> SELL 100%
+    obs, rew, term, trunc, info = env.step(np.array([-0.8, 1.0], dtype=np.float32))
+    assert info["holding_quantity"] == 0
+    
+    # 6. Pure Discrete: ActionType.BUY (1) -> default weight 1.0
+    obs, rew, term, trunc, info = env.step(ActionType.BUY)
+    assert info["holding_quantity"] > 0
+    assert info["cash_balance"] < 1_000_000.0  # 거의 전액 매수
+
+
+# ==============================================================================
+# 4. Precision Accounting & Financial Frictions Tests
+# ==============================================================================
+
+def test_accounting_precision_and_frictions(sample_dataframe):
+    """1원 단위 정밀 회계, 수수료, 증권거래세, 슬리피지 및 불변식을 검증합니다."""
+    fee_config = FeeConfig(
+        commission_rate=Decimal("0.00015"),  # 0.015%
+        tax_rate=Decimal("0.0018"),         # 0.18%
+        slippage_rate=Decimal("0.0010")     # 0.1%
+    )
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000, fee_config=fee_config)
+    env.reset()
+    
+    # 1. 매수 체결 검증 (슬리피지 상방 체결 + 위탁수수료 발생)
+    obs, rew, term, trunc, info = env.step((1, np.array([0.5], dtype=np.float32)))
+    trade = info["trade_record"]
+    assert trade is not None
+    assert trade.is_success is True
+    assert trade.commission > 0
+    assert trade.tax == Decimal("0")  # 매수 시 세금 0
+    assert trade.slippage_cost > 0
+    assert trade.executed_price > trade.market_price  # 매수는 상방 불리 체결
+    
+    # 2. 매도 체결 검증 (슬리피지 하방 체결 + 위탁수수료 + 증권거래세 0.18% 발생)
+    obs, rew, term, trunc, info = env.step((2, np.array([1.0], dtype=np.float32)))
+    trade_sell = info["trade_record"]
+    assert trade_sell is not None
+    assert trade_sell.is_success is True
+    assert trade_sell.commission > 0
+    assert trade_sell.tax > 0  # 매도 시 거래세 부과
+    assert trade_sell.slippage_cost > 0
+    assert trade_sell.executed_price < trade_sell.market_price  # 매도는 하방 불리 체결
+    assert info["holding_quantity"] == 0
+    
+    # 3. 회계 불변식 0원 오차 검증
+    assert env.verify_accounting_invariant() is True
+    audit = env.get_accounting_audit()
+    discrepancy = (audit["initial_cash"] + audit["cumulative_market_drift_pnl"]) - (audit["total_equity"] + audit["total_frictions"])
+    assert abs(discrepancy) <= Decimal("1")
+
+
+# ==============================================================================
+# 5. Boundary & Edge Case Protections
+# ==============================================================================
+
+def test_insufficient_funds_and_shares_protection(sample_dataframe):
+    """현금 부족 및 주식 부족 시 안전 거절 및 에러 방어를 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=100)  # 100원으로 주식 1주 매수 불가
+    env.reset()
+    
+    # 100원으로 매수 시도 -> 0주 계산되어 주문 미실행 (No-op)
+    obs, rew, term, trunc, info = env.step((1, np.array([1.0], dtype=np.float32)))
+    assert info["holding_quantity"] == 0
+    assert info["trade_record"] is None
+    
+    # 주식 0주일 때 매도 시도 -> 주문 미실행 (No-op)
+    obs, rew, term, trunc, info = env.step((2, np.array([1.0], dtype=np.float32)))
+    assert info["holding_quantity"] == 0
+    assert info["trade_record"] is None
+
+
+def test_nan_and_inf_feature_resilience():
+    """데이터프레임에 NaN/Inf가 포함되어 있어도 관측값이 안전하게 정규화되는지 검증합니다."""
+    nan_df = pd.DataFrame({
+        "date": pd.date_range("2026-01-01", periods=10, freq="B"),
+        "symbol": "005930",
+        "close": [70000.0, np.nan, 71000.0, np.inf, -np.inf, 72000.0, 70000.0, 71000.0, 70000.0, 70000.0],
+        "returns_1d": [np.nan] * 10,
+        "dynamic_per": [np.nan, np.inf, -100.0, 15.0, np.nan, 20.0, 10.0, 15.0, 15.0, 15.0],
+        "dynamic_pbr": [np.nan] * 10,
+        "dynamic_market_cap": [np.nan] * 10,
+    })
+    
+    env = HybridTradingEnv(df=nan_df, initial_cash=10_000_000)
+    obs, info = env.reset()
+    assert np.all(np.isfinite(obs))
+    
+    for _ in range(5):
+        obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+        assert np.all(np.isfinite(obs))
+        assert not math.isnan(rew)
+
+
+def test_dynamic_set_data(sample_dataframe):
+    """set_data()를 통해 런타임에 데이터프레임을 교체할 수 있는지 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe.iloc[:10], initial_cash=10_000_000)
+    obs, info = env.reset()
+    assert env._max_steps == 10
+    
+    # 30일치 데이터로 교체
+    env.set_data(sample_dataframe)
+    assert env._max_steps == 30
+    assert env._current_step == 0
+
+
+# ==============================================================================
+# 6. Termination & Truncation Tests
+# ==============================================================================
+
+def test_truncation_on_data_end(sample_dataframe):
+    """시계열 데이터 소진 시 truncated 플래그가 True가 되는지 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe.iloc[:5], initial_cash=10_000_000)
+    env.reset()
+    
+    for i in range(4):
+        obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+        assert trunc is False
+        assert term is False
+    
+    # 5번째 스텝에서 truncated True
+    obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+    assert trunc is True
+
+
+def test_bankruptcy_termination(sample_dataframe):
+    """에쿼티가 초기 자본금의 5% 미만으로 폭락 시 terminated=True가 되는지 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000, bankruptcy_threshold_ratio=0.05)
+    env.reset()
+    
+    # 강제로 현금 잔고를 10만원(1%)으로 설정하여 파산 유발
+    env.account.cash_balance = Decimal("100000")
+    
+    obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+    assert term is True
+    assert info["total_equity"] < 500_000.0
+
+
+# ==============================================================================
+# 7. Live Mode & Render Tests
+# ==============================================================================
+
+@patch("core.kiwoom_api.KiwoomClient.get_current_price")
+def test_live_mode_execution(mock_get_price):
+    """LiveLearningSimulator 연동 실시간 모드(mode='live') 실행을 검증합니다."""
+    mock_get_price.return_value = PriceQuote(
+        symbol="005930",
+        current_price=Decimal("80000"),
+        price_change=Decimal("0"),
+        change_rate=Decimal("0"),
+        open_price=Decimal("80000"),
+        high_price=Decimal("80000"),
+        low_price=Decimal("80000"),
+        volume=1000,
+        trade_amount=Decimal("0"),
+        timestamp=datetime.now(),
+    )
+    
+    env = HybridTradingEnv(mode="live", initial_cash=1_000_000, max_steps=10)
+    obs, info = env.reset()
+    assert obs.shape == (14,)
+    assert info["cash_balance"] == 1_000_000.0
+    
+    # Live BUY 50%
+    obs, rew, term, trunc, info = env.step((1, np.array([0.5], dtype=np.float32)))
+    assert info["holding_quantity"] > 0
+    assert info["cash_balance"] < 1_000_000.0
+    
+    # Live SELL 100%
+    obs, rew, term, trunc, info = env.step((2, np.array([1.0], dtype=np.float32)))
+    assert info["holding_quantity"] == 0
+
+
+def test_render_and_close(sample_dataframe, capsys):
+    """render()와 close() 메서드의 정상 동작을 검증합니다."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000, render_mode="human")
+    env.reset()
+    
+    env.render()
+    captured = capsys.readouterr()
+    assert "HybridTradingEnv" in captured.out
+    assert "005930" in captured.out
+    
+    # ansi mode
+    env_ansi = HybridTradingEnv(df=sample_dataframe, render_mode="ansi")
+    env_ansi.reset()
+    text = env_ansi.render()
+    assert text is not None
+    assert "Total Equity" in text
+
+    env.close()
+
+
+def test_observation_step_indexing_no_lag_and_no_duplication(sample_dataframe):
+    """[BUG-RL01] reset() 관측값과 step(0) 후 next_obs 관측값이 일치하지 않고 각각 0번, 1번 행 피처를 정확히 반영하는지 검증."""
+    # distinct values in return_1d
+    sample_dataframe["returns_1d"] = [float(i) * 0.01 for i in range(len(sample_dataframe))]
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000)
+    
+    obs_0, info_0 = env.reset()
+    # obs_0[0] should be returns_1d of row 0: 0.0
+    assert pytest.approx(obs_0[0], abs=1e-5) == 0.00
+    
+    obs_1, rew, term, trunc, info_1 = env.step((0, np.array([0.0], dtype=np.float32)))
+    # obs_1[0] should be returns_1d of row 1: 0.01 (NOT row 0 again!)
+    assert pytest.approx(obs_1[0], abs=1e-5) == 0.01
+    assert obs_0[0] != obs_1[0]
+    
+    obs_2, rew, term, trunc, info_2 = env.step((0, np.array([0.0], dtype=np.float32)))
+    assert pytest.approx(obs_2[0], abs=1e-5) == 0.02
+
+
+def test_hold_step_does_not_leak_trade_record(sample_dataframe):
+    """[BUG-RL02 / BUG-L04] BUY 체결 직후 HOLD 스텝 실행 시 info['trade_record']가 None이어야 함을 검증."""
+    env = HybridTradingEnv(df=sample_dataframe, initial_cash=10_000_000)
+    env.reset()
+    
+    # Step 1: BUY -> trade_record exists
+    obs1, rew1, term1, trunc1, info1 = env.step((1, np.array([0.5], dtype=np.float32)))
+    assert info1["trade_record"] is not None
+    assert info1["trade_record"].side == OrderSide.BUY
+    
+    # Step 2: HOLD -> trade_record must be None (not leaked from Step 1)
+    obs2, rew2, term2, trunc2, info2 = env.step((0, np.array([0.0], dtype=np.float32)))
+    assert info2["trade_record"] is None
+

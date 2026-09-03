@@ -1,0 +1,53 @@
+import pytest
+from unittest.mock import patch, MagicMock
+from decimal import Decimal
+from modules.engine.live_learning_simulator import LiveLearningSimulator, get_live_simulator
+from modules.engine.mock_environment import ActionType
+from core.kiwoom_api import PriceQuote
+from datetime import datetime
+
+@patch('core.kiwoom_api.KiwoomClient.get_current_price')
+def test_live_learning_simulator(mock_get_price):
+    # Mocking the KiwoomClient response
+    mock_get_price.return_value = PriceQuote(
+        symbol="005930",
+        current_price=Decimal("80000"),
+        price_change=Decimal("0"),
+        change_rate=Decimal("0"),
+        open_price=Decimal("80000"),
+        high_price=Decimal("80000"),
+        low_price=Decimal("80000"),
+        volume=1000,
+        trade_amount=Decimal("0"),
+        timestamp=datetime.now()
+    )
+
+    # Initialize Simulator
+    sim = LiveLearningSimulator(initial_cash=1000000)
+    
+    # Check initial state
+    state = sim.get_state("005930")
+    assert state['cash_balance'] == 1000000.0
+    
+    # 1. Buy action
+    state, reward, done, info = sim.step("005930", ActionType.BUY, quantity=10)
+    
+    assert info['trade'].is_success is True
+    assert info['trade'].quantity == 10
+    assert state['holding_quantity'] == 10
+    assert state['cash_balance'] < 1000000.0
+    
+    # 2. Hold action
+    state, reward, done, info = sim.step("005930", ActionType.HOLD)
+    assert info['trade'] is None
+    
+    # 3. Sell action
+    state, reward, done, info = sim.step("005930", ActionType.SELL, quantity=5)
+    assert info['trade'].is_success is True
+    assert state['holding_quantity'] == 5
+
+def test_global_singleton():
+    sim1 = get_live_simulator(initial_cash=500000)
+    sim2 = get_live_simulator()
+    assert sim1 is sim2
+    assert sim1.initial_cash == Decimal("500000")

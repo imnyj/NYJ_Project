@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Write the scheduled progress report for the main training run.
+
+This runs from cron at 06, 12, 18 and 24, costs no model tokens, and produces one
+Markdown file per report plus a rolling `latest.md`. The point of a scheduled
+report is not to say "it is running" -- `ps` says that -- but to answer the
+question a running job cannot answer for itself: is it running CORRECTLY, or is
+it burning hours producing something that will have to be thrown away?
+
+So each section is chosen to catch a specific silent failure this pipeline has
+actually had:
+
+  * episodes/hour and ETA          -> a run that has quietly stalled
+  * zero-update episodes           -> the buffer never filling at low density,
+                                      i.e. environment steps with no learning
+  * gradient updates by density    -> the training mix skewing toward the dense
+                                      end, which under-fits the sparse regime
+  * reward trend over the last N   -> divergence, or a flat line meaning the
+                                      policy stopped changing
+  * NaN / non-finite scan          -> the failure that keeps running and poisons
+                                      every later episode
+  * checkpoint freshness           -> resume would lose everything since this
+  * outage / AoI / error levels     -> metrics drifting outside plausible ranges
+
+Usage:
+    python report_progress.py                    # write a timestamped report
+    python report_progress.py --stdout           # print instead of writing
+"""
+from __future__ import annotations
+
+import argparse
+import glob
+import json
+import math
+import os
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
+
+CODER_DIR = "/home/imnyj/Workspace/paper4/coder"
+RUNS_DIR = os.path.join(CODER_DIR, "runs")
+REPORT_DIR = "/home/imnyj/Workspace/paper4/review/training_reports"
+
+# How many recent episodes the trend lines look at. Short enough to notice a
+# change within one reporting interval, long enough not to read noise.
+TREND_WINDOW = 10
+
+# Plausibility bounds. Outside these the report says so rather than leaving the
+# reader to eyeball a number whose normal range they may not remember.
+PLAUSIBLE = {
+    "mean_aoi": (0.0, 60.0),
+    "coverage_outage_rate": (0.0, 0.75),
+    "mean_error": (0.0, 200.0),
+}
+
+
+def _fmt(x: Any, nd: int = 4) -> str:
+    if x is None:
+        return "n/a"
+    if isinstance(x, float):
+        if math.isnan(x) or math.isinf(x):
+            return f"**{x}**"
+        return f"{x:.{nd}f}"
+    return str(x)
+
+
+def _age(path: str) -> Optional[float]:
+    try:
+        return (datetime.now().timestamp() - os.path.getmtime(path)) / 60.0
+    except OSError:
+        return None
+
+
+def scan_run(run_dir: str) -> Dict[str, Any]:
+    """Summarise one (arm, seed) run directory."""
+    name = os.path.basename(run_dir.rstrip("/"))
+    out: Dict[str, Any] = {"name": name, "models": [], "problems": []}
+
+    cfg_path = os.path.join(run_dir, "run_config.json")
+    if os.path.isfile(cfg_path):
+        try:
+            out["config"] = json.load(open(cfg_path))
+        except Exception:
+            out["config"] = None
+
+    res_path = os.path.join(run_dir, "run_result.json")
+    if os.path.isfile(res_path):
+        try:
+            out["result"] = json.load(open(res_path))
+        except Exception:
+            out["result"] = None
+
+    target_eps = int((out.get("config") or {}).get("episodes") or 100)
+
+    for csv_path in sorted(glob.glob(os.path.join(run_dir, "lg", "*_progress.csv"))):
+        model = os.path.basename(csv_path).replace("_progress.csv", "")
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as exc:
+            out["problems"].append(f"{model}: progress CSV unreadable ({exc})")
+            continue
+        if df.empty:
+            out["problems"].append(f"{model}: progress CSV is empty")
+            continue
+
+        rec: Dict[str, Any] = {"model": model, "episodes_done": int(len(df)),
+                               "target_episodes": target_eps}
+
+        # Throughput and ETA, from the file's own timestamps rather than a
+        # wall-clock guess, so a stalled run shows a stale age instead of a
+        # plausible-looking rate.
+        age_min = _age(csv_path)
+        rec["csv_age_min"] = age_min
+        if age_min is not None and age_min > 60:
+            out["problems"].append(
+                f"{model}: progress CSV untouched for {age_min:.0f} min -- possible stall")
+
+        for col, key in (("reward_per_sec_selected", "reward_per_sec"),
+                         ("mean_reward", "mean_reward"),
+                         ("mean_loss", "mean_loss"),
+                         ("mean_aoi", "mean_aoi"),
+                         ("mean_error", "mean_error"),
+                         ("coverage_outage_rate", "coverage_outage_rate")):
+            if col in df.columns:
+                tail = pd.to_numeric(df[col], errors="coerce").tail(TREND_WINDOW)
+                rec[key] = float(tail.mean()) if len(tail) else None
+                if len(tail) >= 2:
+                    first, last = tail.iloc[0], tail.iloc[-1]
+                    rec[key + "_delta"] = (float(last - first)
+                                           if pd.notna(first) and pd.notna(last) else None)
+
+        # Non-finite values anywhere are the failure that keeps running.
+        num = df.select_dtypes("number")
+        bad = int((~num.map(lambda v: math.isfinite(v) if isinstance(v, float) else True)).sum().sum()) \
+            if not num.empty else 0
+        rec["nonfinite_cells"] = bad
+        if bad:
+            out["problems"].append(f"{model}: {bad} non-finite value(s) in progress CSV")
+
+        if "grad_updates_this_episode" in df.columns:
+            gu = pd.to_numeric(df["grad_updates_this_episode"], errors="coerce")
+            rec["zero_update_episodes"] = int((gu.fillna(0) <= 0).sum())
+            rec["grad_updates_total"] = int(gu.fillna(0).sum())
+            if rec["zero_update_episodes"]:
+                out["problems"].append(
+                    f"{model}: {rec['zero_update_episodes']} episode(s) with no gradient update")
+        if {"density", "grad_updates_this_episode"} <= set(df.columns):
+            by = df.groupby("density")["grad_updates_this_episode"].sum()
+            rec["updates_by_density"] = {float(k): int(v) for k, v in by.items()}
+            lo, hi = by.min(), by.max()
+            if lo > 0:
+                rec["update_skew"] = float(hi / lo)
+
+        for key, (lo, hi) in PLAUSIBLE.items():
+            val = rec.get(key)
+            if val is not None and not (lo <= val <= hi):
+                out["problems"].append(
+                    f"{model}: {key} = {val:.4f} outside the plausible range [{lo}, {hi}]")
+
+        cks = glob.glob(os.path.join(run_dir, "ck", f"{model}_ep*.pt"))
+        rec["checkpoints"] = len(cks)
+        if cks:
+            newest = max(cks, key=os.path.getmtime)
+            rec["newest_checkpoint"] = os.path.basename(newest)
+            rec["checkpoint_age_min"] = _age(newest)
+
+        out["models"].append(rec)
+
+    return out
+
+
+def render(runs: List[Dict[str, Any]], now: datetime) -> str:
+    L: List[str] = []
+    A = L.append
+    A(f"# 훈련 진행 보고 ({now.strftime('%Y-%m-%d %H:%M')})")
+    A("")
+    if not runs:
+        A("`coder/runs/` 아래에 실행 디렉터리가 없다. 본훈련이 아직 시작되지 않았거나 "
+          "다른 경로로 실행 중이다.")
+        return "\n".join(L)
+
+    all_problems = [(r["name"], p) for r in runs for p in r["problems"]]
+    A("## 요약")
+    A("")
+    if all_problems:
+        A(f"확인이 필요한 항목 {len(all_problems)}건이 있다. 아래 이상 징후 절을 볼 것.")
+    else:
+        A("이상 징후로 잡힌 것은 없다. 아래 수치는 정상 범위 안에 있다.")
+    A("")
+
+    A("| 실행 | 모델 | 에피소드 | 갱신 0회 | 체크포인트 | 최신 갱신(분) |")
+    A("|---|---|---:|---:|---:|---:|")
+    for r in runs:
+        for m in r["models"]:
+            A(f"| {r['name']} | {m['model']} | {m['episodes_done']}/{m['target_episodes']} | "
+              f"{m.get('zero_update_episodes', 0)} | {m.get('checkpoints', 0)} | "
+              f"{_fmt(m.get('checkpoint_age_min'), 1)} |")
+    A("")
+
+    if all_problems:
+        A("## 이상 징후")
+        A("")
+        for run_name, p in all_problems:
+            A(f"- `{run_name}` {p}")
+        A("")
+
+    A("## 학습 추이")
+    A("")
+    A(f"최근 {TREND_WINDOW} 에피소드 평균과, 그 구간의 시작 대비 변화량이다. "
+      "보상은 항상 0 이하이므로 변화량이 양수면 개선이다.")
+    A("")
+    A("| 실행 | 모델 | 초당 보상 | 변화 | 손실 | AoI | 추정오차 | 아웃티지 |")
+    A("|---|---|---:|---:|---:|---:|---:|---:|")
+    for r in runs:
+        for m in r["models"]:
+            A(f"| {r['name']} | {m['model']} | {_fmt(m.get('reward_per_sec'))} | "
+              f"{_fmt(m.get('reward_per_sec_delta'))} | {_fmt(m.get('mean_loss'))} | "
+              f"{_fmt(m.get('mean_aoi'), 3)} | {_fmt(m.get('mean_error'), 3)} | "
+              f"{_fmt(m.get('coverage_outage_rate'), 3)} |")
+    A("")
+
+    A("## 밀도별 학습량")
+    A("")
+    A("훈련 데이터 혼합이 한쪽 밀도로 기울면 반대쪽 영역을 과소적합한다. "
+      "편차(최대/최소)가 크게 벌어지면 `--updates-per-env-step`을 고려할 것.")
+    A("")
+    for r in runs:
+        for m in r["models"]:
+            ubd = m.get("updates_by_density")
+            if not ubd:
+                continue
+            cells = " ".join(f"{int(k)}:{v}" for k, v in sorted(ubd.items()))
+            A(f"- `{r['name']}` **{m['model']}** 편차 {_fmt(m.get('update_skew'), 1)}배 — {cells}")
+    A("")
+
+    A("## 완료 상태")
+    A("")
+    for r in runs:
+        res = r.get("result")
+        if res:
+            verdict = "정상 종료" if res.get("exit_code") == 0 else f"실패 (rc={res.get('exit_code')})"
+            A(f"- `{r['name']}` {verdict}, 시도 {res.get('attempts')}회, {res.get('finished')}")
+        else:
+            done = sum(m["episodes_done"] for m in r["models"])
+            tgt = sum(m["target_episodes"] for m in r["models"])
+            pct = (100.0 * done / tgt) if tgt else 0.0
+            A(f"- `{r['name']}` 진행 중, 전체 {done}/{tgt} 에피소드 ({pct:.1f}%)")
+    A("")
+    A("---")
+    A("")
+    A("이 보고서는 `coder/etc/report_progress.py`가 cron으로 생성한다. "
+      "생성에 모델 토큰이 들지 않는다.")
+    return "\n".join(L)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--stdout", action="store_true", help="print instead of writing files")
+    args = ap.parse_args()
+
+    now = datetime.now()
+    runs = []
+    if os.path.isdir(RUNS_DIR):
+        for d in sorted(glob.glob(os.path.join(RUNS_DIR, "*"))):
+            if os.path.isdir(d):
+                runs.append(scan_run(d))
+
+    text = render(runs, now)
+
+    if args.stdout:
+        print(text)
+        return 0
+
+    os.makedirs(REPORT_DIR, exist_ok=True)
+    stamped = os.path.join(REPORT_DIR, f"report_{now.strftime('%Y%m%d_%H%M')}.md")
+    with open(stamped, "w") as fh:
+        fh.write(text + "\n")
+    with open(os.path.join(REPORT_DIR, "latest.md"), "w") as fh:
+        fh.write(text + "\n")
+    print(f"wrote {stamped}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

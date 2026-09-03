@@ -100,6 +100,7 @@ agy --dangerously-skip-permissions
 /exit : 안티그래비티 종료
 /model : 세션 모델 변경
 
-
+* 한국어 패치
+https://github.com/snflkd/fluent-korean/ 링크 README 읽고, 설치 안내 단락 읽고 어떻게 설치해서 사용할지 설명해줘.
 
 하위 Agent를 coder, critic(글과 코드 읽고 검증), idea(main idea의 변동을 관리), librarian(reference 관리), visualization(coder와 협업하여 그래프 생성), writer로 구성해줘. 그리고 각 에이전트가 어길 수 없는 rules.md를 agent마다 생성해줘.

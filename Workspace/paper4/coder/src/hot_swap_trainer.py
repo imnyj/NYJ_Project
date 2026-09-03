@@ -26,6 +26,7 @@
 from __future__ import annotations
 import gc
 import glob
+import inspect
 import logging
 import math
 import os
@@ -36,7 +37,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from collections import deque
-from typing import Any, Callable, Deque, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Deque, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -55,7 +56,11 @@ except ImportError:
 
 import src.Communications as comm
 import src.sumo.make_sumo_set as ss
-from src.dynamics_predictor import extract_tls_features
+from src.dynamics_predictor import (
+    extract_tls_features,
+    reset_fallback_counts,
+    total_fallbacks,
+)
 from src.rl_interface import (
     RSU_RANGE,
     ActionDecoder,
@@ -65,6 +70,22 @@ from src.rl_interface import (
     norm_sq_error,
     refresh_scenario_constants,
 )
+
+
+# ----------------------------------------------------------------------------
+# This module's integrity guarantees are plain `assert` statements: the four
+# anti-mocking assertions in `AoiV2IEnv.step`, the action-range guard, and the
+# observation-width check in `HotSwapRLScheduler.decide_grant`. `python -O` and
+# PYTHONOPTIMIZE=1 delete every one of them with no warning, which would leave a
+# run that LOOKS audited but is not -- and this project's credibility argument is
+# precisely "the code that runs is the code that was audited". Refuse to import.
+# ----------------------------------------------------------------------------
+if not __debug__:  # pragma: no cover - only reachable under -O / PYTHONOPTIMIZE
+    raise RuntimeError(
+        "src/hot_swap_trainer.py must not run under python -O / PYTHONOPTIMIZE: "
+        "optimisation strips the four anti-mocking assertions and the action-range "
+        "guards, so the executed code would no longer be the audited code."
+    )
 
 
 # ----------------------------------------------------------------------------
@@ -93,25 +114,137 @@ DEFAULT_REWARD_WEIGHTS: Dict[str, float] = {
 # the HPO CSV for provenance and must never be forwarded to a model either.
 RAW_REWARD_WEIGHT_KEYS: Tuple[str, ...] = tuple(f"{k}_raw" for k in REWARD_WEIGHT_KEYS)
 
+
+# ----------------------------------------------------------------------------
+# Congestion-term normalisation reference.
+#
+# The raw per-subchannel CBR this scenario produces is tiny -- an audit measured
+# the weighted congestion term at 0.11 % of the mean penalty, against [0,1] for
+# the other three, so "minimise network congestion", one of the paper's two
+# stated objectives, was effectively absent from the reward.
+#
+# The cause is a scale mismatch, not a modelling error: four subchannels and a
+# short airtime per update keep CBR far below 1 even when every vehicle
+# transmits. Min-Max normalising against the REALISED maximum fixes the scale
+# without touching the physical model, which is why it was chosen over reducing
+# the subchannel count (that would delete the channel-selection dimension of the
+# action space) or raising density (the density grid is a user decision).
+#
+# 0.60 is the realised ceiling, measured 2026-09-02 by saturating a single
+# subchannel -- every vehicle granted every step at 23 dBm on channel 0 -- across
+# the density grid, in a PROCESS-ISOLATED scenario and at the settled warm-up:
+# peak 0.103 (d=5), 0.439 (20), 0.565 (40), 0.591 (50). It is an achievability
+# bound on what a policy can actually cause, so a policy that saturates one
+# channel pays ~1.0 rather than a fraction of it, and the term is commensurate
+# with the other three.
+#
+# CORRECTION. This constant was first set to 0.25 on 2026-09-01 from a
+# measurement that was wrong twice over: it ran at warm-up 350, i.e. on a network
+# still filling and holding roughly half the vehicles it settles at, and it ran
+# while other processes were regenerating the shared scenario files, so some of
+# it described a network it had not asked for. Both errors pushed the ceiling
+# down. At 0.25 the congestion term would have clipped to 1.0 through much of the
+# high-density range -- flat gradient exactly where congestion is the thing being
+# learned.
+CBR_REF: float = 0.60
+
+# ----------------------------------------------------------------------------
+# Warm-up: how long SUMO runs before the episode starts measuring.
+#
+# 350 steps (35 s) was chosen when the only requirement was "some vehicle has
+# reached the RSU disc". It does not get the network anywhere near loaded.
+# Measured 2026-09-02, in-range vehicle count by step: density 25 climbs 26 ->
+# 46 -> 67 -> 87 -> 93, and the second half of a 1200-step window averages 1.70x
+# the first. Density 10 settles around step 800, density 50 around step 1200.
+#
+# Measuring a network that is still filling makes the density axis of the results
+# table mean something other than what it says: at warm-up 350 a "density 25"
+# episode sees 47 vehicles in range where the settled value is 119. Comparisons
+# ACROSS densities would then be partly comparisons of how much transient each
+# one happened to include, which is not a property of the scheduling policy.
+#
+# The cost is real and was measured: the settled network holds ~2.5x the
+# vehicles, so a measured step goes from 7.2 ms to 28 ms, roughly 4x the run
+# time. That is the price of the density axis meaning what it claims.
+DEFAULT_WARMUP_STEPS: int = 1200
+
+# ----------------------------------------------------------------------------
+# How the error term aggregates over an SMDP interval.
+#
+# The two governing documents disagree. `design_spec_v2` D2 defines R_k with the
+# error term ACCUMULATED across the interval (an integral, so a long Delta pays
+# proportionally more), while `Conversation.md` section 3 requires all four terms
+# normalised to [0,1] (which makes it an interval MEAN). Measured split under
+# "accumulate": error 82.1 %, power 9.7 %, redundancy 8.0 %, congestion 0.11 %,
+# with raw r_err reaching 38.35 against 1.0 for the others.
+#
+# Neither is obviously right. Accumulation is the honest SMDP integral and keeps
+# pressure on long silent gaps, which is the paper's core claim; averaging makes
+# the four terms commensurate so the power and redundancy penalties actually
+# steer behaviour. The user's decision was to run BOTH and compare, so this is a
+# switch rather than a fix, and the mode is recorded in every checkpoint and
+# results row so no number is ever ambiguous about which reward produced it.
+ERROR_MODE_ACCUMULATE = "accumulate"   # design_spec_v2 D2: integral over the interval
+ERROR_MODE_MEAN = "mean"               # Conversation.md section 3: interval average, [0,1]
+REWARD_ERROR_MODES: Tuple[str, ...] = (ERROR_MODE_ACCUMULATE, ERROR_MODE_MEAN)
+DEFAULT_ERROR_MODE: str = ERROR_MODE_ACCUMULATE
+
 # Every key here belongs to the environment or the benchmark, never to a model
-# constructor. `HotSwapTrainer` strips them from `hparams` and warns.
+# constructor. Kept as an exported name (`run_all.py` imports it) and as the
+# *reward-weight* subset; the full environment key set is resolved from
+# `AoiV2IEnv.__init__` itself by `env_param_names()` below.
 ENV_ONLY_HPARAM_KEYS: frozenset = frozenset(REWARD_WEIGHT_KEYS + RAW_REWARD_WEIGHT_KEYS)
+
+
+def env_param_names() -> frozenset:
+    """Named parameters of `AoiV2IEnv.__init__`, resolved from the signature.
+
+    This is the POSITIVE half of the hyper-parameter routing. The previous
+    blacklist listed eight literal keys (`w1..w4`, `w1_raw..w4_raw`) and every
+    other environment argument leaked straight into the model constructor, where
+    the `**hparams` tail swallowed it in silence. Measured on the real classes:
+    `density=55.0`, `warmup_steps=9` and even `total_nonsense=1` were accepted
+    without a word by SPAMD3QN, PPO and CARLTON, so a CSV column named `density`
+    would have trained the whole benchmark at the default 25.0 while the log
+    claimed otherwise. Reading the signature means new environment arguments are
+    routed correctly the day they are added.
+    """
+    sig = inspect.signature(AoiV2IEnv.__init__)
+    return frozenset(
+        name for name, prm in sig.parameters.items()
+        if name != "self" and prm.kind in (prm.POSITIONAL_OR_KEYWORD, prm.KEYWORD_ONLY)
+    )
 
 
 def split_env_hparams(hparams: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Split a flat hparams dict into (model kwargs, environment-only kwargs).
 
-    Returns two dicts: the first is safe to hand to a baseline constructor, the
-    second holds the `ENV_ONLY_HPARAM_KEYS` that were pulled out.
+    Routing is by `AoiV2IEnv.__init__`'s own signature plus the raw Optuna
+    provenance columns (`w1_raw`..`w4_raw`), which belong to neither side and are
+    recorded only so a CSV row can be traced back to its trial.
+
+    Anything the environment does not name is handed to the model, and
+    `HotSwapTrainer` then verifies the model actually CONSUMED it (see
+    `_assert_model_consumed_hparams`) rather than swallowing it.
     """
+    env_names = env_param_names() | set(RAW_REWARD_WEIGHT_KEYS)
     model_hparams: Dict[str, Any] = {}
     env_hparams: Dict[str, Any] = {}
     for key, value in (hparams or {}).items():
-        if key in ENV_ONLY_HPARAM_KEYS:
+        if key in env_names:
             env_hparams[key] = value
         else:
             model_hparams[key] = value
     return model_hparams, env_hparams
+
+
+#: Where `run_hot_swap_training` writes its per-episode progress CSV when the
+#: caller names neither `log_csv_path` nor `log_dir`.
+DEFAULT_TRAINING_LOG_DIR: str = "/home/imnyj/Workspace/paper4/coder/logs/training"
+
+
+class CheckpointMismatchError(RuntimeError):
+    """A checkpoint was trained under a configuration different from this one."""
 
 
 def infer_state_dim(vectorizer: Optional[StateVectorizer] = None) -> int:
@@ -193,9 +326,15 @@ class DualModelHotSwapManager:
         rest_device: Optional[Union[str, torch.device]] = None,
         swap_lock: Optional[threading.Lock] = None,
         on_swap_callback: Optional[Callable[[int], None]] = None,
+        update_lock: Optional[threading.Lock] = None,
     ) -> None:
         self.act_model = act_model
         self.rest_model = rest_model
+        # Held while the Rest weights are being mutated, so `hot_swap` can treat
+        # "validate" and "copy" as ONE critical section. `HotSwapTrainer` passes
+        # the same object to `BackgroundTrainer`; a standalone manager makes its
+        # own, which is coherent only if nothing else writes Rest concurrently.
+        self.update_lock = update_lock or threading.Lock()
         self.act_device = (
             torch.device(act_device)
             if act_device is not None
@@ -239,28 +378,41 @@ class DualModelHotSwapManager:
         Returns:
             bool: True if hot-swap succeeded, False if rejected by safety guard.
         """
-        # 1. NaN / Inf Safety Guard
-        if not self.validate_weights():
-            self.failed_swaps += 1
-            return False
-
-        # 2. Atomic In-Place Parameter Transfer under Mutex
+        # The NaN guard is only sound if nothing can write Rest between the
+        # check and the copy. It used to validate OUTSIDE any lock and then take
+        # `swap_lock` to copy, so a gradient step landing in that window put the
+        # NaNs it had just produced straight into the Act model -- past a guard
+        # that had already said "clean". `validate_weights` could also read a
+        # half-written tensor and pass on a value that never existed. Both halves
+        # now run under `update_lock`, which `BackgroundTrainer.train_step` holds
+        # across `rest_model.update()`.
+        #
+        # Lock order is `update_lock` -> `swap_lock` everywhere (here and in
+        # `HotSwapTrainer.save_checkpoint`); `train_step` releases `update_lock`
+        # before it can reach this method, so no inversion is possible.
         t0 = time.perf_counter()
-        with self.swap_lock:
-            with torch.no_grad():
-                # Copy parameters
-                for p_act, p_rest in zip(self.act_model.parameters(), self.rest_model.parameters()):
-                    if p_act.device == p_rest.device:
-                        p_act.data.copy_(p_rest.data)
-                    else:
-                        p_act.data.copy_(p_rest.data.to(p_act.device))
+        with self.update_lock:
+            # 1. NaN / Inf Safety Guard
+            if not self.validate_weights():
+                self.failed_swaps += 1
+                return False
 
-                # Copy named buffers (e.g., running stats)
-                for b_act, b_rest in zip(self.act_model.buffers(), self.rest_model.buffers()):
-                    if b_act.device == b_rest.device:
-                        b_act.data.copy_(b_rest.data)
-                    else:
-                        b_act.data.copy_(b_rest.data.to(b_act.device))
+            # 2. Atomic In-Place Parameter Transfer under Mutex
+            with self.swap_lock:
+                with torch.no_grad():
+                    # Copy parameters
+                    for p_act, p_rest in zip(self.act_model.parameters(), self.rest_model.parameters()):
+                        if p_act.device == p_rest.device:
+                            p_act.data.copy_(p_rest.data)
+                        else:
+                            p_act.data.copy_(p_rest.data.to(p_act.device))
+
+                    # Copy named buffers (e.g., running stats)
+                    for b_act, b_rest in zip(self.act_model.buffers(), self.rest_model.buffers()):
+                        if b_act.device == b_rest.device:
+                            b_act.data.copy_(b_rest.data)
+                        else:
+                            b_act.data.copy_(b_rest.data.to(b_act.device))
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
         self.swap_latencies_ms.append(latency_ms)
@@ -308,9 +460,23 @@ class TransitionStreamer:
         next_state: Union[np.ndarray, List[float]],
         done: bool,
         delta_t: float,
+        action_idx: Optional[int] = None,
     ) -> bool:
         """
         Non-blocking transition push. Drops item if queue is full to preserve simulation speed.
+
+        `action_idx` is the COMBINED DISCRETE ACTION INDEX the policy's discrete
+        head actually selected, when it has one. `RetrospectiveReplayBuffer.push`
+        has accepted it since it was written, but this streamer had no such
+        parameter, `push_to_buffer` pulled six fixed keys out of the item dict,
+        and `HotSwapRLScheduler.decide_grant` threw away the `info` dict that
+        carries it -- so the index never survived the trip from the model to the
+        buffer. Measured consequence: `action_idx` was absent from the sampled
+        batch for all nine baselines, and the five discrete-head models
+        (SPAM-D3QN, CARLTON, MA2HDQN, I-HAMAPPO, RES-MAPDDPG) all fell back to
+        re-deriving the index from the decoded continuous action, which is lossy
+        and lossy by a DIFFERENT amount per model -- so the nine were not being
+        compared under the same conditions.
         """
         item = {
             "state": state,
@@ -319,6 +485,7 @@ class TransitionStreamer:
             "next_state": next_state,
             "done": bool(done),
             "delta_t": float(delta_t),
+            "action_idx": None if action_idx is None else int(action_idx),
         }
         try:
             self.queue.put_nowait(item)
@@ -353,6 +520,7 @@ class TransitionStreamer:
                 next_state=it["next_state"],
                 done=it["done"],
                 delta_t=it["delta_t"],
+                action_idx=it.get("action_idx"),
             )
         return len(items)
 
@@ -392,7 +560,19 @@ class BackgroundTrainer:
         self.streamer = streamer
         self.hot_swap_manager = hot_swap_manager
         self.batch_size = int(batch_size)
-        self.train_frequency = int(train_frequency)
+        # `train_frequency` is the gradient-updates-per-environment-step ratio.
+        # It exists because the background worker otherwise spins as fast as the
+        # wall clock allows, so a cheap model gets many more updates than an
+        # expensive one over the same episode -- measured 18x across the density
+        # schedule. In a comparison paper that is a confound: a baseline could
+        # lose because it was handed less training, not because it is worse.
+        # `updates_allowed()` caps the worker at `train_frequency * env_steps`;
+        # the cap only ever SLOWS the fast models, never speeds up the slow ones,
+        # so no model is ever given less than it would have had.
+        self.train_frequency = float(train_frequency)
+        # Set by the training loop as the environment advances. None disables the
+        # cap entirely, which is the historical (wall-clock) behaviour.
+        self.env_steps_seen: Optional[int] = None
         self.swap_interval_steps = int(swap_interval_steps)
         self.rest_device = rest_device or (
             next(rest_model.parameters()).device if list(rest_model.parameters()) else torch.device("cpu")
@@ -401,6 +581,26 @@ class BackgroundTrainer:
         self.worker_thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
         self.training_steps = 0
+        # A Rest model that diverges to NaN fails `validate_weights()` and the
+        # swap is refused, which FREEZES the Act model on its last good weights.
+        # The simulation keeps running, the metrics stay plausible, and the
+        # reward curve actually looks *more* stable because the policy stopped
+        # changing -- so an 8.8 hour run could burn to completion before anyone
+        # saw `failed_swaps` in the final summary. These two make it observable
+        # while the run is still alive, and `fatal_error` lets the episode loop
+        # abort instead of finishing a run that is training nothing.
+        self.consecutive_failed_swaps = 0
+        self.max_consecutive_failed_swaps = max(10, int(self.swap_interval_steps) * 10)
+        self.fatal_error: Optional[str] = None
+        # Held while the Rest model's weights are being mutated by `update()`, so
+        # a checkpoint writer can obtain a quiescent snapshot. Distinct from
+        # `self.lock` (bookkeeping) and from `swap_lock` (Act <- Rest transfer):
+        # `update()` deliberately runs OUTSIDE `self.lock` to keep the swap
+        # cadence off the gradient path, which left the Rest weights mutating
+        # under any concurrent reader. See HotSwapTrainer.save_checkpoint.
+        # The manager owns this: `hot_swap()` needs the same lock to make its
+        # NaN guard and its copy one critical section.
+        self.update_lock = self.hot_swap_manager.update_lock
         # Bounded ring buffer: over a 200,000-step run an unbounded list would grow
         # without limit while only the last 50 entries are ever read.
         self.loss_history_maxlen = int(loss_history_maxlen)
@@ -417,6 +617,9 @@ class BackgroundTrainer:
         if not self.replay_buffer.is_ready(self.batch_size):
             return None
 
+        if not self.updates_allowed():
+            return None
+
         batch = self.replay_buffer.sample(self.batch_size)
 
         # Move batch tensors to Rest model's device
@@ -424,7 +627,8 @@ class BackgroundTrainer:
             batch = {k: v.to(self.rest_device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
 
         self.rest_model.train()
-        loss_dict = self.rest_model.update(batch)
+        with self.update_lock:
+            loss_dict = self.rest_model.update(batch)
 
         with self.lock:
             self.training_steps += 1
@@ -432,9 +636,37 @@ class BackgroundTrainer:
 
             # Scheduled Hot-swap
             if self.training_steps % self.swap_interval_steps == 0:
-                self.hot_swap_manager.hot_swap()
+                swapped = self.hot_swap_manager.hot_swap()
+                if swapped:
+                    self.consecutive_failed_swaps = 0
+                else:
+                    self.consecutive_failed_swaps += 1
+                    logging.error(
+                        "Hot-swap REFUSED (NaN/Inf in Rest weights). "
+                        "Consecutive failures: %d/%d. The Act model is frozen on its "
+                        "last valid weights and is no longer learning.",
+                        self.consecutive_failed_swaps, self.max_consecutive_failed_swaps,
+                    )
+                    if self.consecutive_failed_swaps >= self.max_consecutive_failed_swaps:
+                        self.fatal_error = (
+                            f"{self.consecutive_failed_swaps} consecutive hot-swaps refused: "
+                            "the Rest model has diverged and the Act model is frozen. "
+                            "Continuing would burn the remaining wall-clock on a policy "
+                            "that cannot change."
+                        )
 
         return loss_dict
+
+    def updates_allowed(self) -> bool:
+        """True while this model is still under its env-step-linked update budget.
+
+        Returns True unconditionally when `env_steps_seen` is None, which is the
+        wall-clock behaviour every result before 2026-09-01 was produced under.
+        """
+        if self.env_steps_seen is None:
+            return True
+        budget = self.train_frequency * float(self.env_steps_seen)
+        return float(self.training_steps) < budget
 
     def _worker_loop(self) -> None:
         """Background thread execution loop."""
@@ -478,6 +710,8 @@ class BackgroundTrainer:
                 "loss_history_len": len(self.loss_history),
                 "loss_history_maxlen": self.loss_history_maxlen,
                 "mean_recent_loss": round(mean_loss, 4),
+                "consecutive_failed_swaps": self.consecutive_failed_swaps,
+                "fatal_error": self.fatal_error,
                 "hot_swap_stats": self.hot_swap_manager.get_stats(),
             }
 
@@ -534,8 +768,14 @@ class HotSwapRLScheduler:
 
         Both now have exactly one owner, the environment (design_spec_v2 P1/P2).
 
-        Returns the decoded grant and the raw action, which the caller stores so
-        the transition can be pushed with the action the policy actually emitted.
+        Returns `(grant, raw_action, action_idx)`. The caller stores the last two
+        so the transition can be pushed with the action the policy actually
+        emitted AND with the discrete index its discrete head actually chose.
+
+        The third element used to be dropped on the floor here: `select_action`
+        returns `(grant, raw_action, info)` and `info["action_idx"]` is where the
+        five discrete-head baselines report their argmax, so discarding it forced
+        every one of them onto a lossy reconstruction path.
         """
         s = np.asarray(state_vec, dtype=np.float32)
         assert s.shape == (self.state_dim,), (
@@ -550,7 +790,16 @@ class HotSwapRLScheduler:
 
         self.inference_latencies_ms.append((time.perf_counter() - t0) * 1000.0)
         self.total_inferences += 1
-        return grant, raw_action
+
+        action_idx: Optional[int] = None
+        if isinstance(info, dict):
+            raw_idx = info.get("action_idx")
+            if raw_idx is not None:
+                try:
+                    action_idx = int(raw_idx)
+                except (TypeError, ValueError):
+                    action_idx = None
+        return grant, raw_action, action_idx
 
     def push_transition(
         self,
@@ -560,6 +809,7 @@ class HotSwapRLScheduler:
         next_state: np.ndarray,
         done: bool,
         delta_t: float,
+        action_idx: Optional[int] = None,
     ) -> None:
         """Stream one closed SMDP interval to the background trainer.
 
@@ -576,6 +826,7 @@ class HotSwapRLScheduler:
             next_state=next_state,
             done=bool(done),
             delta_t=float(delta_t),
+            action_idx=action_idx,
         )
 
 
@@ -641,9 +892,10 @@ class HotSwapTrainer:
         # exactly the failure this split exists to prevent.
         self.hparams, self.env_hparams = split_env_hparams(hparams)
         if self.env_hparams:
-            logging.warning(
-                "%s: dropped environment-only key(s) %s from model hyperparameters; "
-                "reward weights come from DEFAULT_REWARD_WEIGHTS and are not tuned per model.",
+            logging.info(
+                "%s: routed environment key(s) %s away from the model constructor. "
+                "Reward weights come from DEFAULT_REWARD_WEIGHTS and are not tuned "
+                "per model; the rest are handed to AoiV2IEnv by the caller.",
                 self.model_name, sorted(self.env_hparams),
             )
 
@@ -659,6 +911,7 @@ class HotSwapTrainer:
         self.rest_model = model_cls(state_dim=self.state_dim, num_channels=self.num_channels, **self.hparams).to(
             self.rest_device
         )
+        self._assert_model_consumed_hparams(self.act_model)
 
         # Set operational modes
         self.act_model.eval()
@@ -666,18 +919,41 @@ class HotSwapTrainer:
 
         # Shared synchronization & infrastructure
         self.swap_lock = threading.Lock()
+        # Guards the Rest weights against readers while a gradient step mutates
+        # them. Shared by the hot-swap manager and the background trainer so a
+        # swap, a gradient step and a checkpoint write cannot interleave.
+        self.update_lock = threading.Lock()
         self.hot_swap_manager = DualModelHotSwapManager(
             act_model=self.act_model,
             rest_model=self.rest_model,
             act_device=self.act_device,
             rest_device=self.rest_device,
             swap_lock=self.swap_lock,
+            update_lock=self.update_lock,
         )
 
-        # Initial weight sync (Rest -> Act)
+        # Initial weight sync (Rest -> Act). It is a synchronisation, not a
+        # scheduled swap, so it is excluded from the count the paper reports.
         self.hot_swap_manager.hot_swap()
+        self.hot_swap_manager.swap_count = 0
 
-        self.replay_buffer = RetrospectiveReplayBuffer(capacity=self.buffer_capacity)
+        # ------------------------------------------------------------------
+        # SMDP discount: ONE source, the model's own `gamma`.
+        #
+        # `RetrospectiveReplayBuffer` computes `discount = gamma ** delta_t` from
+        # ITS OWN gamma and ships it in every batch. This buffer used to be built
+        # without a gamma argument, so it always used its 0.99 default while the
+        # per-model `gamma` that Optuna searched, recorded in the CSV and reported
+        # as an optimum had no effect on learning in any of the nine baselines.
+        # The buffer now takes the model's gamma, so the column it ships and the
+        # value the model recomputes from `delta_t` are the same number.
+        # ------------------------------------------------------------------
+        self.gamma = float(
+            getattr(self.rest_model, "gamma", self.hparams.get("gamma", 0.99))
+        )
+        self.replay_buffer = RetrospectiveReplayBuffer(
+            capacity=self.buffer_capacity, gamma=self.gamma
+        )
         self.streamer = TransitionStreamer(maxsize=self.buffer_capacity * 2)
 
         self.background_trainer = BackgroundTrainer(
@@ -696,6 +972,36 @@ class HotSwapTrainer:
             streamer=self.streamer,
         )
 
+    def _assert_model_consumed_hparams(self, model: nn.Module) -> None:
+        """Fail loudly when a hyper-parameter reached the model and did nothing.
+
+        Every baseline `__init__` ends in `**hparams` and forwards the remainder
+        up the chain; `BaseAgent.__init__` is the terminus and stores whatever is
+        left on `self.hparams` purely so it can be written into the save file. So
+        "the key is still sitting in `model.hparams`" is an EXACT test for "no
+        constructor in the MRO named it, and it therefore had no effect" -- it
+        covers the `super().__init__(**hparams)` chains and the SB3 wrappers'
+        `**algo_kwargs` forwarding alike, which a signature whitelist on the leaf
+        class cannot do without rejecting legitimate keys.
+
+        This is an exception rather than a warning on purpose. The previous
+        `logging.warning` was correct and useless: nobody reads a warning buried
+        in an 8.8 hour log, and the run it warns about is exactly the run whose
+        numbers must not be trusted.
+        """
+        leftovers = getattr(model, "hparams", None)
+        if not isinstance(leftovers, dict):
+            return
+        unconsumed = sorted(k for k in self.hparams if k in leftovers)
+        if unconsumed:
+            raise ValueError(
+                f"{self.model_name}: hyper-parameter(s) {unconsumed} reached the model "
+                f"constructor but no `__init__` in its MRO names them, so they were "
+                f"absorbed by the `**hparams` tail and had NO effect on training. "
+                f"They are also not arguments of AoiV2IEnv ({sorted(env_param_names())}). "
+                f"Fix the key name, or add it to the model's signature."
+            )
+
     def start(self) -> None:
         """Starts background training worker."""
         self.background_trainer.start()
@@ -708,25 +1014,187 @@ class HotSwapTrainer:
         """Executes a single synchronous training update."""
         return self.background_trainer.train_step()
 
+    @staticmethod
+    def _optimizers_of(model: nn.Module) -> Dict[str, torch.optim.Optimizer]:
+        """Every `torch.optim.Optimizer` a model exposes, keyed by attribute name.
+
+        Discovered by introspection rather than by a per-model hook so all nine
+        baselines are covered without touching any of them. SB3 wrappers publish
+        theirs through `sb3_optimizers()`, which is picked up here too.
+        """
+        found: Dict[str, torch.optim.Optimizer] = {}
+        for name in dir(model):
+            if name.startswith("__"):
+                continue
+            try:
+                val = getattr(model, name)
+            except Exception:
+                continue
+            if isinstance(val, torch.optim.Optimizer):
+                found[name] = val
+        getter = getattr(model, "sb3_optimizers", None)
+        if callable(getter):
+            try:
+                for i, opt in enumerate(getter() or []):
+                    if isinstance(opt, torch.optim.Optimizer):
+                        found.setdefault(f"sb3_optimizer_{i}", opt)
+            except Exception:
+                pass
+        return found
+
     def save_checkpoint(self, filepath: str, best_reward: Optional[float] = None) -> None:
-        """Saves model checkpoint."""
+        """Saves model checkpoint.
+
+        The provenance block (`hparams`, `state_dim`, `num_channels`, `gamma`,
+        `reward_weights`) exists so `load_checkpoint` can REFUSE a checkpoint
+        that was trained under a different configuration. Without it a resume
+        after an HPO refresh silently produced a curve whose first half was
+        trained at one learning rate and second half at another, and there is no
+        way to tell that from the file afterwards.
+        """
         os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+
+        # ------------------------------------------------------------------
+        # Snapshot both models with the background trainer held still.
+        #
+        # The trainer thread mutates the Rest weights in `update()` and copies
+        # them into Act in `hot_swap()`, and this method used to read both
+        # `state_dict()`s with neither lock held. A checkpoint written while a
+        # swap was in flight therefore captured a TORN Act model -- some tensors
+        # from the outgoing policy, some from the incoming one -- i.e. a policy
+        # that never ran and never earned the `best_reward` stored beside it.
+        # `{model}_best.pt` is the artefact the paper's numbers come from and
+        # `evaluate.py` prefers its `act_state_dict` precisely because Act is the
+        # validated copy that produced the reported reward, so a torn snapshot
+        # silently invalidates that premise.
+        #
+        # `update_lock` then `swap_lock` is the only ordering used anywhere:
+        # `train_step` releases `update_lock` before it can reach `hot_swap`
+        # (which takes `swap_lock`), so no inversion is possible. Tensors are
+        # cloned onto the host inside the critical section; serialisation happens
+        # outside it so the trainer stalls for a copy, not for a disk write.
+        # ------------------------------------------------------------------
+        def _snapshot(module: nn.Module) -> Dict[str, torch.Tensor]:
+            return {k: v.detach().to("cpu", copy=True)
+                    for k, v in module.state_dict().items()}
+
+        opt_states: Dict[str, Dict[str, Any]] = {}
+        with self.hot_swap_manager.update_lock:
+            with self.swap_lock:
+                rest_sd = _snapshot(self.rest_model)
+                act_sd = _snapshot(self.act_model)
+            for name, opt in self._optimizers_of(self.rest_model).items():
+                try:
+                    opt_states[name] = opt.state_dict()
+                except Exception:  # pragma: no cover - optimiser-specific failure
+                    logging.warning("Could not serialise optimizer state '%s'", name)
+
         checkpoint = {
             "model_name": self.model_name,
             "hparams": self.hparams,
-            "rest_state_dict": self.rest_model.state_dict(),
-            "act_state_dict": self.act_model.state_dict(),
+            "state_dim": self.state_dim,
+            "num_channels": self.num_channels,
+            "gamma": self.gamma,
+            # The weights the reward was actually computed with. `self.hparams`
+            # no longer carries w1..w4 (they are environment arguments), so
+            # without this copy a checkpoint could not be traced to its reward.
+            "reward_weights": dict(DEFAULT_REWARD_WEIGHTS),
+            # Which reward aggregation produced these weights. The two ablation
+            # arms are not comparable, so a checkpoint that does not say which
+            # arm it belongs to is not usable evidence.
+            "error_mode": getattr(self, "error_mode", DEFAULT_ERROR_MODE),
+            "rest_state_dict": rest_sd,
+            "act_state_dict": act_sd,
+            "rest_optimizer_state": opt_states,
             "training_steps": self.background_trainer.training_steps,
             "swap_count": self.hot_swap_manager.swap_count,
             "best_reward": best_reward,
         }
         torch.save(checkpoint, filepath)
 
-    def load_checkpoint(self, filepath: str) -> Dict[str, Any]:
-        """Loads model checkpoint and restores training/hot-swap counters."""
+    def load_checkpoint(self, filepath: str, strict_hparams: bool = True) -> Dict[str, Any]:
+        """Load a checkpoint, refusing one that does not match this configuration.
+
+        `load_state_dict` alone is not a compatibility check. A changed
+        `hidden_dim` raises a bare `RuntimeError` from deep inside torch, and --
+        far worse -- a changed `lr` or `gamma` raises nothing at all and produces
+        a run whose two halves were trained under different hyper-parameters.
+        `run_all.py` defaults to `resume=True`, so an HPO refresh followed by a
+        restart hits this on the first episode.
+
+        Raises `CheckpointMismatchError`, which `run_hot_swap_training` catches to
+        fall back to a fresh start rather than killing the whole model's run.
+        """
         checkpoint = torch.load(filepath, map_location=self.rest_device)
-        self.rest_model.load_state_dict(checkpoint["rest_state_dict"])
-        self.act_model.load_state_dict(checkpoint["act_state_dict"])
+
+        if strict_hparams:
+            mismatches: List[str] = []
+            stored_hp = checkpoint.get("hparams")
+            if isinstance(stored_hp, dict) and dict(stored_hp) != dict(self.hparams):
+                only_ckpt = {k: v for k, v in stored_hp.items() if self.hparams.get(k) != v}
+                only_now = {k: v for k, v in self.hparams.items() if stored_hp.get(k) != v}
+                mismatches.append(f"hparams (checkpoint={only_ckpt}, current={only_now})")
+            for key, current in (("state_dim", self.state_dim),
+                                 ("num_channels", self.num_channels)):
+                stored = checkpoint.get(key)
+                if stored is not None and int(stored) != int(current):
+                    mismatches.append(f"{key} (checkpoint={stored}, current={current})")
+            stored_w = checkpoint.get("reward_weights")
+            if isinstance(stored_w, dict) and dict(stored_w) != dict(DEFAULT_REWARD_WEIGHTS):
+                mismatches.append(
+                    f"reward_weights (checkpoint={stored_w}, current={dict(DEFAULT_REWARD_WEIGHTS)})"
+                )
+            if mismatches:
+                raise CheckpointMismatchError(
+                    f"Refusing to resume {self.model_name} from '{filepath}': "
+                    + "; ".join(mismatches)
+                    + ". Resuming across a configuration change produces a run whose "
+                      "episodes were trained under different settings."
+                )
+
+        # A shape/key mismatch in the weights themselves is the SAME class of
+        # failure as an hparams mismatch and must reach the same handler. Left as
+        # a bare torch RuntimeError it escaped `run_hot_swap_training`'s resume
+        # guard entirely and killed the whole model's run. Verified against the
+        # six checkpoints in backup/checkpoints_presmoke_20260828_155837/: every
+        # one of them fails today, three with `Missing key(s) in state_dict:
+        # "total_updates"` / `"epsilon"` / `"per_beta"` (buffers the classes have
+        # since grown) and the rest with trunk size mismatches. Resuming from a
+        # stale checkpoint must degrade to a fresh start, not to a dead run.
+        try:
+            self.rest_model.load_state_dict(checkpoint["rest_state_dict"])
+            self.act_model.load_state_dict(checkpoint["act_state_dict"])
+        except (RuntimeError, KeyError) as exc:
+            raise CheckpointMismatchError(
+                f"Refusing to resume {self.model_name} from '{filepath}': the stored "
+                f"weights do not fit the current model definition ({exc})."
+            ) from exc
+
+        # Optimiser moments. Without these a resume restarts Adam from zero
+        # first/second moments, which is a visible transient in the loss curve at
+        # exactly the episode boundary the resume happened on.
+        opt_states = checkpoint.get("rest_optimizer_state") or {}
+        live_opts = self._optimizers_of(self.rest_model)
+        restored, skipped = [], []
+        for name, state in opt_states.items():
+            opt = live_opts.get(name)
+            if opt is None:
+                skipped.append(name)
+                continue
+            try:
+                opt.load_state_dict(state)
+                restored.append(name)
+            except Exception:
+                skipped.append(name)
+        missing = sorted(set(live_opts) - set(opt_states))
+        if skipped or missing:
+            logging.warning(
+                "%s: optimizer state not fully restored (skipped=%s, absent from checkpoint=%s); "
+                "those optimisers restart from zero moments.",
+                self.model_name, sorted(skipped), missing,
+            )
+        checkpoint["_restored_optimizers"] = restored
+
         # Restore counters so a resumed run keeps its hot-swap cadence and stats.
         self.background_trainer.training_steps = int(checkpoint.get("training_steps", 0))
         self.hot_swap_manager.swap_count = int(checkpoint.get("swap_count", 0))
@@ -776,11 +1244,13 @@ class AoiV2IEnv:
         max_steps: int = 2000,
         num_channels: int = comm.NUM_SUBCHANNELS,
         rsu_range: float = RSU_RANGE,
-        warmup_steps: int = 350,
+        warmup_steps: int = DEFAULT_WARMUP_STEPS,
         w1: float = DEFAULT_REWARD_WEIGHTS["w1"],
         w2: float = DEFAULT_REWARD_WEIGHTS["w2"],
         w3: float = DEFAULT_REWARD_WEIGHTS["w3"],
         w4: float = DEFAULT_REWARD_WEIGHTS["w4"],
+        allow_custom_reward_weights: bool = False,
+        error_mode: str = DEFAULT_ERROR_MODE,
     ) -> None:
         self.density = float(density)
         self.seed = int(seed)
@@ -792,6 +1262,56 @@ class AoiV2IEnv:
         self.w2 = float(w2)
         self.w3 = float(w3)
         self.w4 = float(w4)
+        if error_mode not in REWARD_ERROR_MODES:
+            raise ValueError(
+                f"error_mode must be one of {REWARD_ERROR_MODES}, got {error_mode!r}"
+            )
+        self.error_mode = str(error_mode)
+
+        # --------------------------------------------------------------------
+        # Anti-mocking assertion 4 needs an INDEPENDENT statement of what the
+        # weights should be. Re-deriving the reward from `self.w1..w4` -- which
+        # is what it used to do -- is an identity: measured, injecting w1 = -5.0
+        # left `math.isclose` PASSING and only the separate `reward <= 0` clause
+        # fired, and a positive corruption (0.5 -> 5.0) fired neither clause.
+        # `DEFAULT_REWARD_WEIGHTS` is that independent statement; deviating from
+        # it now has to be asked for explicitly at construction, which is exactly
+        # the `hpo.py --tune-reward-weights` path and nothing else.
+        # --------------------------------------------------------------------
+        self.allow_custom_reward_weights = bool(allow_custom_reward_weights)
+        if not self.allow_custom_reward_weights:
+            declared = {"w1": self.w1, "w2": self.w2, "w3": self.w3, "w4": self.w4}
+            drift = {
+                k: (v, DEFAULT_REWARD_WEIGHTS[k])
+                for k, v in declared.items()
+                if not math.isclose(v, DEFAULT_REWARD_WEIGHTS[k], rel_tol=0.0, abs_tol=1e-12)
+            }
+            if drift:
+                raise ValueError(
+                    "Reward weights are a property of the BENCHMARK, not of a run: "
+                    f"{drift} (got, expected). All nine baselines must be scored "
+                    "against one identical reward or the cross-model comparison in "
+                    "the paper is meaningless. Pass allow_custom_reward_weights=True "
+                    "only for a deliberate reward-weight search."
+                )
+        # Frozen copy, used by assertion 4 to detect in-flight mutation of the
+        # weights after construction.
+        self._w_audit: Tuple[float, float, float, float] = (self.w1, self.w2, self.w3, self.w4)
+
+        # --------------------------------------------------------------------
+        # Environment-owned RNG for the Bernoulli uplink-success draw.
+        #
+        # This used to be the `random` module's GLOBAL stream, whose position at
+        # the start of an episode depended on whether `make_sumo_files()` had
+        # regenerated the network (200 `random.uniform` draws) or hit its cache
+        # (zero). Same seed, different channel realisations, purely as a function
+        # of what was on disk: episode 1 regenerated, episode 2 did not, and the
+        # density sweep regenerated on every density. Reproducibility is a
+        # minimum requirement for the paper, so the draw gets its own generator,
+        # reseeded in `reset()` -- the same remedy `Communications._shadow_rng`
+        # already applies to shadowing.
+        # --------------------------------------------------------------------
+        self._rng = random.Random(self.seed)
 
         self.vectorizer = StateVectorizer(rsu_range=self.rsu_range)
         # The decoder is the single source of truth for the hybrid action ranges
@@ -851,16 +1371,24 @@ class AoiV2IEnv:
         self._n_active_cache: int = 0
         self.recorded_cbrs: List[float] = []
 
-        self.target_rsu_pos = (1200.0, 10800.0)
-        self.target_rsu_id = "N11"
+        # Filled by reset() from the generated network. It used to default to
+        # (1200.0, 10800.0), a coordinate from when RSU_RANGE was 800 m; the
+        # current grid only reaches 4500 m, so that point is off the network. If
+        # the nod.xml parse in reset() ever threw, that ghost coordinate survived
+        # and every vehicle was judged out of range -- an empty episode that
+        # looked like a healthy one. `None` makes the failure explicit instead.
+        self.target_rsu_pos: Optional[Tuple[float, float]] = None
+        self.target_rsu_id: Optional[str] = None
+        #: Every RSU (traffic-light node) in the scenario, for the coverage
+        #: outage metric. A vehicle is in outage when it is outside the coverage
+        #: disc of ALL of them.
+        self.rsu_positions: np.ndarray = np.zeros((0, 2), dtype=np.float64)
         self.current_step = 0
         self.sim_time = 0.0
         self.is_running = False
 
         # Telemetry & State tracking
         self.vehicle_tracks: Dict[str, Dict[str, Any]] = {}
-        self.prev_positions: Dict[str, Tuple[float, float]] = {}
-        self.scheduled_tx: Dict[str, Dict[str, Any]] = {}
 
         # --------------------------------------------------------------------
         # SMDP interval state (design_spec_v2 D1/D2). This is what makes Delta a
@@ -891,6 +1419,11 @@ class AoiV2IEnv:
 
         # 6 IEEE TWC Metrics Accumulators
         self.recorded_errors: List[float] = []
+        #: Prediction error measured at the instant each update was valid. Unlike
+        #: `recorded_errors` (every vehicle, every step) this is the error the
+        #: transmission actually corrected, and it is what feeds observation
+        #: feature [0] and the I_redundant decision.
+        self.recorded_update_errors: List[float] = []
         self.low_speed_errors: List[float] = []
         self.high_speed_errors: List[float] = []
         self.recorded_aois: List[float] = []
@@ -900,6 +1433,19 @@ class AoiV2IEnv:
         self.total_tx_fails = 0
         self.per_vehicle_aois: Dict[str, List[float]] = {}
         self.per_vehicle_errors: Dict[str, List[float]] = {}
+
+        # --------------------------------------------------------------------
+        # COVERAGE outage (user decision, 2026-08-31). Outage here is the
+        # `OUTAGE_ZONE` of the scenario geometry: the gap between the coverage
+        # discs of adjacent RSUs, where the vehicle has no RSU link and performs
+        # no AoI update at all. It is NOT the frame error rate (that is
+        # `packet_loss_rate`) and NOT the retry-exhaustion count (that is
+        # `tx_abandoned`). Counted in vehicle-steps over every vehicle in the
+        # network, because the quantity of interest is "what fraction of the time
+        # is a vehicle unable to refresh the RSU's belief at all".
+        # --------------------------------------------------------------------
+        self.total_vehicle_steps = 0
+        self.outage_vehicle_steps = 0
 
         # Last live SUMO speed (m/s) per vehicle, refreshed by _get_vehicle_state_dict().
         self.last_speeds: Dict[str, float] = {}
@@ -944,7 +1490,10 @@ class AoiV2IEnv:
         cmd = [
             "sumo",
             "-c",
-            "src/sumo/generated.sumocfg",
+            # Resolved from the scenario directory this process owns, not from a
+            # fixed relative path, so parallel runs read the network they
+            # themselves generated. See make_sumo_set.BASE_PATH.
+            os.path.join(ss.BASE_PATH, "generated.sumocfg"),
             "--step-length",
             str(self.step_length),
             "--no-step-log",
@@ -976,8 +1525,6 @@ class AoiV2IEnv:
         self.current_step = 0
         self.sim_time = 0.0
         self.vehicle_tracks.clear()
-        self.prev_positions.clear()
-        self.scheduled_tx.clear()
         self.next_update_t.clear()
         self.pending_grant.clear()
         self.interval_accum.clear()
@@ -985,8 +1532,23 @@ class AoiV2IEnv:
         self.total_tx_abandoned = 0
         self._lane_index.clear()
         self._lane_index_at = -1.0
+        self.total_vehicle_steps = 0
+        self.outage_vehicle_steps = 0
+        # The active-id cache is keyed on `sim_time`, which restarts at
+        # `warmup_steps * step_length` on every reset. Two resets on the same env
+        # object therefore produced the same key, the cache was judged valid, and
+        # the PREVIOUS SUMO instance's vehicle ids were served to the new one --
+        # `getPosition` on an id that no longer exists is a libsumo exception.
+        # `_n_active_at` was already reset for exactly this reason; these two were
+        # the missing half of that pair.
+        self._active_ids = set()
+        self._active_ids_at = -1.0
+        # Bernoulli uplink-success draws, independent of the global stream and of
+        # whatever the SUMO file cache did (see __init__).
+        self._rng.seed(self.seed)
 
         self.recorded_errors.clear()
+        self.recorded_update_errors.clear()
         self.low_speed_errors.clear()
         self.high_speed_errors.clear()
         self.recorded_aois.clear()
@@ -997,10 +1559,16 @@ class AoiV2IEnv:
         self.per_vehicle_aois.clear()
         self.per_vehicle_errors.clear()
         self.last_speeds.clear()
+        reset_fallback_counts()
 
         # Reset anti-mocking tracking state (mirrors src/aoi_env.py reset ~L532-533).
         self._prev_sim_time = 0.0
         self._prev_all_positions.clear()
+        # Shadowing is now a per-link AR(1) state, so it has to be forgotten with
+        # the rest of the episode's history; otherwise episode N+1 would start
+        # each vehicle inside episode N's obstruction.
+        if hasattr(comm, "reset_shadowing_state"):
+            comm.reset_shadowing_state()
 
         # Channel state. The shadowing generator is reseeded from the episode
         # seed so a replayed episode replays the same propagation realizations;
@@ -1033,8 +1601,23 @@ class AoiV2IEnv:
             if xs and ys:
                 self.network_max_x = max(xs)
                 self.network_max_y = max(ys)
-        except Exception:
-            pass
+        except Exception as exc:
+            raise RuntimeError(
+                "Could not parse src/sumo/generated.nod.xml for RSU coordinates. "
+                "Swallowing this used to leave the RSU at a coordinate off the "
+                "network, so every vehicle was judged out of range and the episode "
+                "silently measured nothing."
+            ) from exc
+
+        if not rsu_nodes:
+            raise RuntimeError(
+                "generated.nod.xml declares no traffic_light node, so the scenario "
+                "has no RSU to schedule for."
+            )
+        # All RSUs, for the coverage-outage metric.
+        self.rsu_positions = np.array(
+            [(rx, ry) for (_rid, rx, ry) in rsu_nodes], dtype=np.float64
+        )
 
         # Run warmup steps and identify busiest RSU
         rsu_hits = {r[0]: 0 for r in rsu_nodes}
@@ -1054,9 +1637,10 @@ class AoiV2IEnv:
             best_node = [r for r in rsu_nodes if r[0] == best_id][0]
             self.target_rsu_id, rx, ry = best_node
             self.target_rsu_pos = (rx, ry)
-        elif rsu_nodes:
+        else:
             self.target_rsu_id, rx, ry = rsu_nodes[0]
             self.target_rsu_pos = (rx, ry)
+        assert self.target_rsu_pos is not None, "FATAL: no target RSU was selected"
 
         # Anti-Mocking Assertion 1: Verify SUMO simulation time advanced
         assert (
@@ -1076,24 +1660,37 @@ class AoiV2IEnv:
         return obs, info
 
     def _count_active_vehicles(self) -> int:
-        """How many vehicles are inside the RSU's coverage right now.
+        """How many vehicles the RSU BELIEVES are inside its coverage right now.
 
-        This is design feature [11] of the observation: the contention level the
-        scheduler is up against. It was previously never supplied, so the vectorizer
-        fell back to its default of 1 and the feature sat at a constant 0.01 for
-        every vehicle in every step. Cached per simulated instant because the same
-        step asks for it once per vehicle.
+        Observation feature [13]: the contention level the scheduler is up
+        against. It must be something a roadside unit can actually produce, so it
+        is the size of the RSU's own ledger -- `Conversation.md` section 1 defines
+        this variable as "the count of active vehicles in the RSU Table" -- and
+        not a survey of the simulator.
+
+        It used to call `libsumo.vehicle.getIDList()` and then `getPosition()` on
+        every vehicle in the whole network, counting those inside the disc. That
+        included vehicles that had never transmitted and vehicles the RSU had no
+        way of knowing existed, i.e. ground truth the policy is not entitled to.
+        It also flatly contradicted the feature next to it: `_ledger_queue_count`
+        exists, and its docstring says so, precisely because "asking SUMO directly
+        is information no real roadside unit has". Two adjacent features cannot
+        stand on two different information models.
+
+        `vehicle_tracks` is the ledger: an entry is opened in `_register_vehicle`
+        when a vehicle first appears inside the disc and is dropped in step()
+        section 5 when it leaves, so its size is exactly the RSU's belief about
+        its own coverage. Cached per simulated instant, both because the same step
+        asks once per vehicle and because the ledger is mutated while
+        `_get_observations` walks it -- the cache makes every vehicle in a step
+        see one consistent value instead of a count that depends on iteration
+        order.
         """
         if not self.is_running:
             return 0
         if self._n_active_at == self.sim_time:
             return self._n_active_cache
-        rx, ry = self.target_rsu_pos
-        n = 0
-        for other in self._active_vehicle_ids():
-            ox, oy = libsumo.vehicle.getPosition(other)
-            if math.hypot(ox - rx, oy - ry) <= self.rsu_range:
-                n += 1
+        n = len(self.vehicle_tracks)
         self._n_active_at = self.sim_time
         self._n_active_cache = n
         return n
@@ -1137,12 +1734,17 @@ class AoiV2IEnv:
         angle_rad = math.radians(angle_deg)
         vx = spd * math.sin(angle_rad)
         vy = spd * math.cos(angle_rad)
-        self.prev_positions[vid] = (x, y)
         # Cache live SUMO speed so external callers (trainer/eval loops) can use the
         # real per-vehicle speed instead of a hardcoded constant.
         self.last_speeds[vid] = spd
 
-        tls_info = extract_tls_features(libsumo, vid, current_time=self.sim_time)
+        # `with_queue` also gates the SUMO lane walk inside extract_tls_features:
+        # without it that call scanned every vehicle on the lane on all three of
+        # this method's per-vehicle-per-step invocations, which is the O(V^2) cost
+        # the flag was introduced to remove and which it was only half removing.
+        tls_info = extract_tls_features(
+            libsumo, vid, current_time=self.sim_time, with_queue=with_queue
+        )
         last_upd = self.vehicle_tracks.get(vid, {}).get("t_update", self.sim_time)
 
         return {
@@ -1302,6 +1904,7 @@ class AoiV2IEnv:
         channel: Optional[int],
         err_at_update_m: float,
         done: bool,
+        close_t: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Close one SMDP interval and produce its reward (design_spec_v2 D2).
 
@@ -1317,7 +1920,7 @@ class AoiV2IEnv:
         whose interval ends without a transmission (it left the RSU's range) pays
         the accrued error only -- it burnt no power and occupied no airtime.
         """
-        r_err = float(self.interval_accum.get(vid, 0.0))
+        r_err_accum = float(self.interval_accum.get(vid, 0.0))
 
         # `transmitted` means the radio was used, not that the update landed. An
         # abandoned interval passes err = inf so I_redundant evaluates to 0.
@@ -1326,12 +1929,44 @@ class AoiV2IEnv:
             p_hi = float(getattr(self.decoder, "p_max", 23.0))
             r_power = min(1.0, max(0.0, (float(power_dbm) - p_lo) / max(1e-6, p_hi - p_lo)))
             ch_idx = int(channel) if channel is not None else 0
-            r_cong = min(1.0, max(0.0, float(self.subchannel_cbr[ch_idx])))
+            # Normalised against the realised CBR ceiling, not against 1.0. See
+            # CBR_REF: the raw value tops out near 0.25 even when a policy
+            # saturates one subchannel, so scoring it against 1.0 left the
+            # congestion objective contributing ~0.1 % of the penalty.
+            r_cong = min(1.0, max(0.0, float(self.subchannel_cbr[ch_idx]) / CBR_REF))
             r_red = self._is_redundant_update(err_at_update_m)
         else:
             r_power = 0.0
             r_cong = 0.0
             r_red = 0.0
+
+        # `close_t` is when the interval ACTUALLY ended, which is not always
+        # `self.sim_time`. A grant fires in step() section 2, i.e. BEFORE
+        # `libsumo.simulationStep()`, so for a transmission the interval closed at
+        # `sim_time - step_length`; a range exit is detected AFTER the step, so for
+        # that path `sim_time` is right. Using the post-step clock for both made
+        # every interval exactly one step too long: measured, a requested Delta of
+        # 0.101 s was recorded as 0.300 s, and since `delta_actual` is both the
+        # exponent of the SMDP discount `gamma**delta_t` and the denominator of the
+        # time-normalised episode score, the shortest intervals carried up to 200 %
+        # relative error.
+        t_close = float(self.sim_time if close_t is None else close_t)
+        t0 = float(self.interval_start_t.get(vid, t_close))
+        delta_actual = max(self.step_length, t_close - t0)
+        # How many SUMO steps the error term integrated over. Anti-mocking
+        # assertion 4 uses it as an independent upper bound on `r_err`, which it
+        # otherwise cannot check at all: `interval_accum` is popped below.
+        interval_steps = int(round(delta_actual / max(self.step_length, 1e-9)))
+
+        # The reward is formed here, AFTER `delta_actual` exists, because the
+        # mean mode divides by it. Keeping this below the interval-length block
+        # is a correctness requirement, not a style choice.
+        if self.error_mode == ERROR_MODE_MEAN:
+            # Divide by the interval's own duration so the term is a mean of
+            # Norm(e^2) samples and therefore lands in [0,1] like the other three.
+            r_err = r_err_accum / max(delta_actual, self.step_length)
+        else:
+            r_err = r_err_accum
 
         reward_val = -(
             self.w1 * r_err + self.w2 * r_power + self.w3 * r_cong + self.w4 * r_red
@@ -1340,13 +1975,11 @@ class AoiV2IEnv:
             f"Anti-mocking violation: NaN/Inf reward {reward_val}"
         )
 
-        t0 = float(self.interval_start_t.get(vid, self.sim_time))
-        delta_actual = max(self.step_length, self.sim_time - t0)
-
         record = {
             "vid": vid,
             "reward": float(reward_val),
             "delta_actual": float(delta_actual),
+            "interval_steps": interval_steps,
             "done": bool(done),
             "transmitted": bool(transmitted),
             "r_err": float(r_err),
@@ -1416,6 +2049,11 @@ class AoiV2IEnv:
         step_tx_power: Dict[str, float] = {}
         step_channel: Dict[str, int] = {}
 
+        # `t_fire` is the instant these frames are transmitted: BEFORE
+        # `libsumo.simulationStep()` below, so the payload carries the vehicle's
+        # position at this time, not at the post-step time.
+        t_fire = self.sim_time
+
         for vid, grant in list(self.pending_grant.items()):
             if self.sim_time < self.next_update_t.get(vid, math.inf):
                 continue  # still inside its Delta -- stays silent
@@ -1427,6 +2065,25 @@ class AoiV2IEnv:
             self.tx_powers.append(p)
             step_tx_power[vid] = p
             step_channel[vid] = ch
+
+            # How wrong the RSU's dead reckoning was AT THE INSTANT THE REPORT WAS
+            # VALID. This is the quantity the RSU can actually compute -- it holds
+            # the old (pos, vel, t_update) and it has just been handed p(t_fire) --
+            # and it is what feeds observation feature [0] and the I_redundant
+            # decision. It used to be `err_now[vid]`, measured after the SUMO step
+            # against the post-step ground-truth position, i.e. the packet's
+            # position compared against a truth from 0.1 s in its future. That is
+            # information no roadside unit has, and it inflated the value by one
+            # step of vehicle travel.
+            track = self.vehicle_tracks.get(vid)
+            if track is not None:
+                age_at_fire = max(0.0, t_fire - float(track["t_update"]))
+                err_at_tx = estimation_error(
+                    st["pos"], track["pos"], track["vel"], age_at_fire
+                )
+            else:
+                err_at_tx = 0.0
+
             pending_transmissions.setdefault(ch, []).append({
                 "vid": vid,
                 "pos": st["pos"],
@@ -1434,6 +2091,7 @@ class AoiV2IEnv:
                 "tx_dbm": p,
                 "dist": st["dist_to_rsu"],
                 "ch": ch,
+                "err_at_tx": float(err_at_tx),
             })
 
         # ====================================================================
@@ -1469,9 +2127,11 @@ class AoiV2IEnv:
         self._active_ids = active_ids
         self._active_ids_at = self.sim_time
 
+        step_positions: List[Tuple[float, float]] = []
         for vid in raw_vehicle_ids:
             v_pos = libsumo.vehicle.getPosition(vid)
             v_spd = libsumo.vehicle.getSpeed(vid)
+            step_positions.append((float(v_pos[0]), float(v_pos[1])))
 
             assert isinstance(v_pos[0], float) and isinstance(v_pos[1], float), (
                 f"FATAL: Vehicle {vid} position coordinates must be floats, got {v_pos}"
@@ -1491,6 +2151,25 @@ class AoiV2IEnv:
                     f"FATAL: Vehicle {vid} speed is {v_spd} m/s but coordinate did not change from {p_prev}!"
                 )
             self._prev_all_positions[vid] = (float(v_pos[0]), float(v_pos[1]))
+
+        # ====================================================================
+        # COVERAGE OUTAGE (user decision, 2026-08-31): the fraction of
+        # vehicle-steps spent in the scenario's OUTAGE_ZONE -- outside the
+        # coverage disc of every RSU, where there is no RSU link and therefore no
+        # AoI update at all. Distinct from `packet_loss_rate` (frames that failed
+        # the SINR test) and from `tx_abandoned` (retries exhausted). Reuses the
+        # positions the assertion above already fetched, so it costs no extra
+        # libsumo calls; the distance test is one vectorised (V x R) reduction.
+        # ====================================================================
+        if step_positions and self.rsu_positions.size:
+            pts = np.asarray(step_positions, dtype=np.float64)
+            d2 = (
+                (pts[:, 0][:, None] - self.rsu_positions[None, :, 0]) ** 2
+                + (pts[:, 1][:, None] - self.rsu_positions[None, :, 1]) ** 2
+            )
+            nearest2 = d2.min(axis=1)
+            self.total_vehicle_steps += int(pts.shape[0])
+            self.outage_vehicle_steps += int(np.count_nonzero(nearest2 > self.rsu_range ** 2))
 
         # ====================================================================
         # 4. Channel Busy Ratio, measured from real 802.11p airtime.
@@ -1574,7 +2253,15 @@ class AoiV2IEnv:
                 self.high_speed_errors.append(err)
 
             # Interval accrual: the error term of the SMDP reward (D2).
-            if vid in self.interval_accum:
+            #
+            # A vehicle whose grant fired on THIS step is skipped here. Its
+            # interval closed at `t_fire`, before the step advanced, so a sample
+            # taken at the post-step clock lies outside the interval. Billing it
+            # anyway gave a k-step interval k+1 samples -- a 100 % overcharge on
+            # the shortest intervals, which is exactly the region the Delta
+            # trade-off is decided in. If the transmission FAILS, section 6 puts
+            # the sample back, because then the interval really did continue.
+            if vid in self.interval_accum and vid not in step_tx_power:
                 self.interval_accum[vid] += norm_sq_error(err) * (self.step_length / 1.0)
 
             terminateds[vid] = False
@@ -1587,6 +2274,10 @@ class AoiV2IEnv:
         judge_called = False
         n_pending_tx = sum(len(g) for g in pending_transmissions.values())
         n_probs_evaluated = 0
+        #: Grants collected in section 2 whose interval was already closed by the
+        #: range-exit path in section 5 of this same step (M2). They are not
+        #: evaluated, deliberately, and the accounting assertion below must know it.
+        n_grants_already_closed = 0
 
         # Two grants on the same subchannel in the same step do not necessarily
         # collide: a frame is 448 us at 6 Mbps while a step is 100 ms, so a tagged
@@ -1600,21 +2291,56 @@ class AoiV2IEnv:
 
         for ch, group in pending_transmissions.items():
             comm_group = [(item["vid"], item["tx_dbm"], item["dist"]) for item in group]
-            succ_probs = {}
-            for tagged in comm_group:
-                interferers = [
-                    other for other in comm_group
-                    if other[0] != tagged[0] and comm.draw_overlap(p_overlap)
-                ]
-                probs = comm.judge_uplink(
-                    [tagged] + interferers, num_subchannels=self.num_channels
-                )
-                succ_probs[tagged[0]] = probs[tagged[0]]
+            # ONE call per subchannel group, with a SYMMETRIC overlap graph.
+            #
+            # This used to call judge_uplink once per tagged vehicle with a
+            # freshly drawn interferer list, which broke the function's own
+            # documented contract twice: each link got a different shadowing
+            # sample in every neighbour's judgement (making the propagation path a
+            # function of the receiver's viewpoint, which the docstring explicitly
+            # excludes), and `draw_overlap` was drawn per ordered pair, so A's
+            # frame could collide with B's while B's did not collide with A's --
+            # a physically impossible realisation.
+            # Overlap comes from explicit per-frame start instants inside the step,
+            # not from a blanket probability. The scalar form assumed uncoordinated
+            # ALOHA transmitters while this channel is RSU-granted, so it described
+            # a system that was never implemented; drawing the offsets states the
+            # assumption (the grant names a subchannel and a period, the instant
+            # within the period is uncoordinated) and makes the relation symmetric
+            # by construction. The marginal collision rate is unchanged.
+            overlap = comm.overlap_graph_from_start_times(
+                [g[0] for g in comm_group], self.frame_airtime_s, self.step_length
+            )
+            # How far each transmitter moved since the previous step. Shadowing
+            # decorrelates over ~12 m, so a retry one step later (about 0.8 m at
+            # urban speeds) keeps most of the previous obstruction rather than
+            # drawing a fresh channel. Measured, that is the difference between a
+            # 0.08 % and a 7 % final delivery-failure rate at the cell edge.
+            moved = {}
+            for gid, _tx, _d in comm_group:
+                prev = self._prev_all_positions.get(gid)
+                cur = self.vehicle_tracks.get(gid, {}).get("pos")
+                if prev is not None and cur is not None:
+                    moved[gid] = math.hypot(cur[0] - prev[0], cur[1] - prev[1])
+
+            succ_probs = comm.judge_uplink(
+                comm_group, num_subchannels=self.num_channels,
+                interferers_of=overlap, moved_of=moved,
+            )
             judge_called = True
 
             for item in group:
-                self.total_tx_attempts += 1
                 vid = item["vid"]
+                # M2: a vehicle that left the RSU disc on this step already had its
+                # interval closed in section 5, which popped its `pending_grant`.
+                # Processing it again closed a SECOND interval for the same vid on
+                # the same step and, worse, rebuilt its `vehicle_tracks` entry --
+                # resurrecting a ledger record section 5 had just deleted, which
+                # then inflated other vehicles' `n_queue`.
+                if vid not in self.pending_grant:
+                    n_grants_already_closed += 1
+                    continue
+                self.total_tx_attempts += 1
                 assert vid in succ_probs, (
                     f"FATAL: judge_uplink did not evaluate transmitting vehicle {vid}!"
                 )
@@ -1629,29 +2355,49 @@ class AoiV2IEnv:
                     f"FATAL: Uplink success probability {prob} is NaN/Inf!"
                 )
                 n_probs_evaluated += 1
-                is_succ = random.random() < prob
+                # Environment-owned RNG: independent of the global `random` stream
+                # and therefore of whether the SUMO file cache was hit (see
+                # __init__). Same seed now means the same channel realisation.
+                is_succ = self._rng.random() < prob
 
-                last_t = float(self.vehicle_tracks.get(vid, {}).get("t_update", self.sim_time))
-                self.peak_aois.append(max(0.0, self.sim_time - last_t))
+                last_t = float(self.vehicle_tracks.get(vid, {}).get("t_update", t_fire))
+                self.peak_aois.append(max(0.0, t_fire - last_t))
 
                 if is_succ:
-                    e_upd = err_now.get(vid, 0.0)
+                    # The prediction error at the instant the report was valid,
+                    # measured in section 2 from data the RSU actually holds.
+                    e_upd = float(item.get("err_at_tx", 0.0))
+                    self.recorded_update_errors.append(e_upd)
                     rec = self._finalize_interval(
                         vid, transmitted=True, power_dbm=item["tx_dbm"],
                         channel=item["ch"], err_at_update_m=e_upd, done=False,
+                        close_t=t_fire,
                     )
                     completed.append(rec)
                     rewards[vid] = rec["reward"]
                     reward_details[vid] = rec
 
                     # Refresh the ledger with what the vehicle just reported.
+                    #
+                    # (pos, vel, t_update) MUST be one consistent triple. `item`
+                    # holds the pre-step position and velocity, so the timestamp is
+                    # the pre-step clock `t_fire`. Pairing a pre-step position with
+                    # the post-step clock -- which is what this did -- made the
+                    # RSU's constant-velocity extrapolation start one step behind
+                    # the truth for the whole next interval. Measured: with
+                    # Delta = 0.1 s on every vehicle, `mean_error` was 0.8153 m
+                    # against a mean speed of 8.099 m/s, and 8.099 * 0.1 = 0.810 m
+                    # -- 99 % of the paper's headline error metric was this
+                    # bookkeeping offset, not physics. `_register_vehicle` was
+                    # already using the correct convention, which is what showed
+                    # this was an omission rather than a decision.
                     st_after = self._get_vehicle_state_dict(vid)
                     tls_after = (st_after or {}).get("tls_features") or {}
                     self._lane_index_at = -1.0
                     self.vehicle_tracks[vid] = {
                         "pos": item["pos"],
                         "vel": item["vel"],
-                        "t_update": self.sim_time,
+                        "t_update": t_fire,
                         "last_pred_err": float(e_upd),
                         "lane_id": tls_after.get("lane_id"),
                         "lane_position": tls_after.get("lane_position"),
@@ -1684,34 +2430,78 @@ class AoiV2IEnv:
                             channel=item["ch"],
                             err_at_update_m=float("inf"),
                             done=False,
+                            close_t=t_fire,
                         )
                         completed.append(rec)
                         rewards[vid] = rec["reward"]
                         reward_details[vid] = rec
                     else:
+                        # The interval genuinely continues past this step, so the
+                        # error sample section 5 withheld is charged after all.
+                        if vid in self.interval_accum and vid in err_now:
+                            self.interval_accum[vid] += (
+                                norm_sq_error(err_now[vid]) * (self.step_length / 1.0)
+                            )
                         self.next_update_t[vid] = self.sim_time  # due again next step
+
+        # One vid may close at most one interval per step (M2).
+        closed_vids = [r["vid"] for r in completed]
+        assert len(closed_vids) == len(set(closed_vids)), (
+            f"FATAL: a vehicle closed two SMDP intervals on step {self.current_step}: "
+            f"{sorted(v for v in set(closed_vids) if closed_vids.count(v) > 1)}"
+        )
 
         if pending_transmissions:
             assert judge_called, "Anti-mocking violation: Communications.judge_uplink was bypassed"
-            assert n_probs_evaluated == n_pending_tx, (
+            assert n_probs_evaluated + n_grants_already_closed == n_pending_tx, (
                 "FATAL: judge_uplink did not evaluate all transmitting vehicles! "
-                f"({n_probs_evaluated} != {n_pending_tx})"
+                f"({n_probs_evaluated} evaluated + {n_grants_already_closed} already "
+                f"closed by a range exit != {n_pending_tx} granted)"
             )
 
         # ====================================================================
         # ANTI-MOCKING ASSERTION 4: Reward Mathematical Specification Check
-        # Every normalized penalty component must lie in its declared range, the
-        # emitted reward must re-derive exactly from the weighted 4-term formula,
-        # and a penalty-based reward must be <= 0. The congestion term is
-        # re-derived from the raw grant list and the Communications airtime model
-        # rather than trusting the cached subchannel_cbr array.
+        #
+        # The point of this assertion is to catch a reward that is not the reward
+        # the paper claims. It used to do that by recomputing
+        #     expected = -(self.w1*re_ + self.w2*rp_ + self.w3*rc_ + self.w4*ir_)
+        # from the SAME `self.w*` and the SAME four numbers the record was built
+        # from, which is an identity and can only ever pass. Measured: injecting
+        # w1 = -5.0 left `math.isclose` PASSING; only the separate `reward <= 0`
+        # clause fired, and a positive corruption (0.5 -> 5.0) fired neither.
+        #
+        # Every term is now re-derived from a source OUTSIDE the record:
+        #   * the weights, from DEFAULT_REWARD_WEIGHTS (a deviation has to be
+        #     asked for at construction, and __init__ refuses it otherwise);
+        #   * r_power, from `step_tx_power[vid]` and the decoder's own bounds;
+        #   * r_cong, from the raw grant list and Communications' airtime model;
+        #   * i_redundant, from the measured at-update error and the threshold;
+        #   * r_err cannot be recomputed (`interval_accum` is popped when the
+        #     interval closes), so it is bounded by the integral's own definition:
+        #     each of `interval_steps` samples contributes Norm(e^2) in [0,1)
+        #     times `step_length`.
         # ====================================================================
+        assert (self.w1, self.w2, self.w3, self.w4) == self._w_audit, (
+            "FATAL: reward weights were mutated after construction: "
+            f"{(self.w1, self.w2, self.w3, self.w4)} != {self._w_audit}"
+        )
+        if not self.allow_custom_reward_weights:
+            for name, live in (("w1", self.w1), ("w2", self.w2),
+                               ("w3", self.w3), ("w4", self.w4)):
+                assert math.isclose(live, DEFAULT_REWARD_WEIGHTS[name], abs_tol=1e-12), (
+                    f"FATAL: reward weight {name}={live} is not the approved benchmark "
+                    f"constant {DEFAULT_REWARD_WEIGHTS[name]}; the nine baselines would "
+                    "not be scored against one identical reward."
+                )
+
         air = comm.frame_airtime_s(self.payload_bytes)
         assert air > 0.0, f"FATAL: Communications reported non-positive frame airtime {air}"
         re_cbr = [
             min(1.0, len(pending_transmissions.get(c, [])) * air / max(self.step_length, 1e-9))
             for c in range(self.num_channels)
         ]
+        p_lo_ref = float(getattr(self.decoder, "p_min", 10.0))
+        p_hi_ref = float(getattr(self.decoder, "p_max", 23.0))
         for vid, r_info in reward_details.items():
             re_ = r_info["r_err"]
             rp_ = r_info["r_power"]
@@ -1721,13 +2511,55 @@ class AoiV2IEnv:
             assert 0.0 <= rp_ <= 1.0, f"FATAL: power term for {vid} out of [0,1]: {rp_}"
             assert 0.0 <= rc_ <= 1.0, f"FATAL: congestion term for {vid} out of [0,1]: {rc_}"
             assert ir_ in (0.0, 1.0), f"FATAL: I_redundant for {vid} is not binary: {ir_}"
+
+            # r_err is a sum of `interval_steps` samples of Norm(e^2) in [0, 1),
+            # each weighted by step_length.
+            # The ceiling depends on how the interval aggregates. Under
+            # "accumulate" the term is an integral of `interval_steps` samples of
+            # Norm(e^2) in [0,1), each weighted by step_length. Under "mean" that
+            # integral is divided by the interval duration, so the bound collapses
+            # to 1.0 -- which is the whole point of that mode.
+            if self.error_mode == ERROR_MODE_MEAN:
+                err_ceiling = 1.0 + 1e-9
+            else:
+                err_ceiling = float(r_info["interval_steps"]) * self.step_length + 1e-9
+            assert re_ <= err_ceiling, (
+                f"FATAL: accrued error penalty for {vid} is {re_}, above the "
+                f"{self.error_mode}-mode ceiling {err_ceiling} "
+                f"({r_info['interval_steps']} steps)"
+            )
+
             if r_info["transmitted"] and vid in step_channel:
-                exp_cbr = re_cbr[step_channel[vid]]
+                exp_cbr = min(1.0, max(0.0, re_cbr[step_channel[vid]] / CBR_REF))
                 assert math.isclose(rc_, exp_cbr, abs_tol=1e-9), (
                     f"FATAL: CBR term for {vid} does not re-derive from measured airtime: "
                     f"{rc_} != {exp_cbr}"
                 )
-            expected = -(self.w1 * re_ + self.w2 * rp_ + self.w3 * rc_ + self.w4 * ir_)
+            if r_info["transmitted"] and vid in step_tx_power:
+                exp_power = min(1.0, max(0.0, (step_tx_power[vid] - p_lo_ref)
+                                         / max(1e-6, p_hi_ref - p_lo_ref)))
+                assert math.isclose(rp_, exp_power, abs_tol=1e-9), (
+                    f"FATAL: power term for {vid} does not re-derive from the granted "
+                    f"{step_tx_power[vid]} dBm over [{p_lo_ref}, {p_hi_ref}]: {rp_} != {exp_power}"
+                )
+                exp_red = 1.0 if float(r_info["error"]) <= self.REDUNDANT_ERR_EPS_M else 0.0
+                assert ir_ == exp_red, (
+                    f"FATAL: I_redundant for {vid} does not re-derive from the measured "
+                    f"at-update error {r_info['error']} m against "
+                    f"{self.REDUNDANT_ERR_EPS_M} m: {ir_} != {exp_red}"
+                )
+            if not r_info["transmitted"]:
+                assert rp_ == 0.0 and rc_ == 0.0 and ir_ == 0.0, (
+                    f"FATAL: {vid} closed without transmitting but was charged "
+                    f"power/congestion/redundancy: {rp_}, {rc_}, {ir_}"
+                )
+
+            expected = -(
+                DEFAULT_REWARD_WEIGHTS["w1"] * re_ + DEFAULT_REWARD_WEIGHTS["w2"] * rp_
+                + DEFAULT_REWARD_WEIGHTS["w3"] * rc_ + DEFAULT_REWARD_WEIGHTS["w4"] * ir_
+            ) if not self.allow_custom_reward_weights else -(
+                self.w1 * re_ + self.w2 * rp_ + self.w3 * rc_ + self.w4 * ir_
+            )
             assert math.isclose(r_info["reward"], expected, abs_tol=1e-9), (
                 f"FATAL: reward for {vid} does not re-derive from the 4-term formula: "
                 f"{r_info['reward']} != {expected}"
@@ -1764,6 +2596,46 @@ class AoiV2IEnv:
         return next_obs, rewards, terminateds, truncateds, info
 
 
+    def finalize_open_intervals(self) -> List[Dict[str, Any]]:
+        """Close every SMDP interval still open, and return their records.
+
+        WHY THIS EXISTS. An episode ends by the step loop running out of steps.
+        Nothing closed the intervals that were still in flight at that instant, so
+        their transitions never reached the replay buffer at all: `step()` only
+        set `truncateds[vid]`, which no caller ever read, and `close()` simply
+        `clear()`ed the dictionaries. Measured on a 600-step episode: 534 intervals
+        closed, 75 still open -- 12.3 % of every decision the policy made in that
+        episode was thrown away.
+
+        The loss is not uniform, and that is what makes it a correctness problem
+        rather than an efficiency one. The probability that an interval is still
+        open at a cut-off is proportional to its length (length-biased sampling),
+        so what is discarded is disproportionately the LONG Delta decisions --
+        about 63 % of the 75 were Delta >= 10 s -- and, within those, the ones
+        whose `interval_accum` had grown largest, i.e. the ones about to be
+        charged the biggest penalty. The buffer got long-Delta successes and not
+        long-Delta failures, so the agent learned a systematically optimistic cost
+        for exactly the decision variable this paper contributes.
+
+        `transmitted=False` because no radio was used: these intervals pay their
+        accrued dead-reckoning error and nothing else. `done=False` because the
+        vehicle did not disappear -- the observation window ended -- so the value
+        target must still bootstrap, which is what distinguishes this from the
+        genuine range-exit path in step() section 5.
+        """
+        records: List[Dict[str, Any]] = []
+        for vid in list(self.interval_start_t.keys()):
+            records.append(
+                self._finalize_interval(
+                    vid, transmitted=False, power_dbm=0.0, channel=None,
+                    err_at_update_m=0.0, done=False,
+                )
+            )
+        assert not self.interval_start_t, (
+            f"FATAL: {len(self.interval_start_t)} SMDP intervals remain open after "
+            "finalize_open_intervals()"
+        )
+        return records
     def get_metrics(self) -> Dict[str, Any]:
         """Calculates 6 IEEE TWC standard metrics."""
         # design_spec_v2 D8: Peak AoI is the MAXIMUM age reached, over every
@@ -1826,6 +2698,24 @@ class AoiV2IEnv:
             "tx_attempts": self.total_tx_attempts,
             "tx_fails": self.total_tx_fails,
             "tx_abandoned": self.total_tx_abandoned,
+            # COVERAGE outage (user decision, 2026-08-31): the fraction of
+            # vehicle-steps spent outside every RSU's coverage disc, i.e. in the
+            # scenario's OUTAGE_ZONE, where no AoI update can happen at all.
+            # Deliberately NOT the frame error rate -- that is `packet_loss_rate`
+            # -- and not retry exhaustion, which is `tx_abandoned`.
+            "coverage_outage_rate": round(
+                float(self.outage_vehicle_steps) / max(1, self.total_vehicle_steps), 6
+            ),
+            "outage_vehicle_steps": int(self.outage_vehicle_steps),
+            "total_vehicle_steps": int(self.total_vehicle_steps),
+            # Prediction error at the instant each delivered update was valid.
+            "mean_update_error": round(
+                float(np.mean(self.recorded_update_errors)) if self.recorded_update_errors else 0.0, 4
+            ),
+            "n_updates_delivered": len(self.recorded_update_errors),
+            # Silent-fallback pressure in the TraCI feature extraction. A healthy
+            # episode is 0; a large number means the features are defaults.
+            "dynamics_fallbacks": int(total_fallbacks()),
             # Emptiness signal. Every other metric degrades to a plausible-looking
             # number when no vehicle was ever in range (mean_aoi 0.0, power at the
             # decoder floor), and a run like that used to pass as a healthy one --
@@ -1839,7 +2729,19 @@ class AoiV2IEnv:
         }
 
     def close(self) -> None:
-        """Closes SUMO cleanly and releases resources to prevent memory leaks."""
+        """Closes SUMO cleanly and releases resources to prevent memory leaks.
+
+        Discarding open intervals here is a silent transition leak (see
+        `finalize_open_intervals`), so it is reported rather than performed
+        quietly. The caller is expected to have finalised them first.
+        """
+        if self.interval_start_t:
+            logging.warning(
+                "AoiV2IEnv.close(): discarding %d SMDP interval(s) that were still "
+                "open. Call finalize_open_intervals() before close() or those "
+                "transitions never reach the replay buffer.",
+                len(self.interval_start_t),
+            )
         if self.is_running and libsumo is not None:
             try:
                 libsumo.close()
@@ -1848,12 +2750,55 @@ class AoiV2IEnv:
             self.is_running = False
 
         self.vehicle_tracks.clear()
-        self.prev_positions.clear()
-        self.scheduled_tx.clear()
         self.next_update_t.clear()
         self.pending_grant.clear()
         self.interval_accum.clear()
         self.interval_start_t.clear()
+
+
+def prepare_scenario(density: float, max_steps: int, warmup_steps: int, seed: int,
+                     force_regenerate: bool = False) -> Dict[str, float]:
+    """Write the SUMO network for these parameters and refresh the derived constants.
+
+    Must run BEFORE any model is constructed. `ActionDecoder` and `StateVectorizer`
+    read `DELTA_MAX` / `V_MAX_OBS` / `E_REF`, and those describe the network on
+    disk; `AoiV2IEnv._init_sumo` is what writes it and calls
+    `refresh_scenario_constants()`, but the nine models (each carrying its own
+    decoder) are built long before the environment exists. A model built against
+    a stale `DELTA_MAX` emits a Delta the environment's range assert rejects on
+    the very first step -- and in a 4-GPU run each process can have a different
+    net.xml on disk, so it fails irreproducibly.
+    """
+    ss.NUM_BLOCKS = 5
+    ss.DENSITY = float(density)
+    ss.FLOW_END_S = (int(max_steps) + int(warmup_steps) + 100) * ss.STEP_LENGTH
+    ss.MAX_STEPS = ss.FLOW_END_S
+    ss.seed_generation(int(seed))
+    # `force_regenerate=True` makes the network a deterministic function of
+    # `seed`. Without it a cached file set with a matching signature is reused
+    # whatever seed produced it, because the seed is deliberately NOT part of the
+    # generation signature (open design question: does a seed re-roll the road
+    # network, or only the traffic?). Tests that assert on scenario-derived
+    # quantities must force it or they depend on execution order.
+    ss.make_sumo_files(force_regenerate=bool(force_regenerate))
+    return refresh_scenario_constants()
+
+
+def _append_progress_row(csv_path: str, row: Dict[str, Any]) -> None:
+    """Append one episode's record to the progress CSV, flushed to the OS.
+
+    Kept deliberately simple and independent of the in-memory `episodic_records`
+    list so that a crash between episodes leaves a readable file. The header is
+    written only when the file does not yet exist, so a resumed run extends the
+    history rather than restarting it.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(csv_path)), exist_ok=True)
+    write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+    frame = pd.DataFrame([row])
+    with open(csv_path, "a", newline="") as fh:
+        frame.to_csv(fh, header=write_header, index=False)
+        fh.flush()
+        os.fsync(fh.fileno())
 
 
 def run_hot_swap_training(
@@ -1861,7 +2806,7 @@ def run_hot_swap_training(
     model_cls: Optional[Callable] = None,
     total_steps: int = 2000,
     episodes: int = 1,
-    density: float = 25.0,
+    density: Union[float, Sequence[float]] = 25.0,
     batch_size: int = 32,
     swap_interval: int = 20,
     act_device: Optional[Union[str, torch.device]] = None,
@@ -1871,15 +2816,18 @@ def run_hot_swap_training(
     checkpoint_dir: str = "/home/imnyj/Workspace/paper4/coder/checkpoints",
     tensorboard_dir: str = "/home/imnyj/Workspace/paper4/coder/logs/tensorboard",
     log_csv_path: Optional[str] = None,
+    log_dir: Optional[str] = None,
     num_vehicles: Optional[int] = None,
     # 350 steps = 35 simulated seconds. The former 35 (3.5 s) was not long
     # enough for ANY vehicle to reach the RSU disc from its spawn edge, so a run
     # started with it observed nothing at all -- measured: 0 vehicles in range at
     # 3.5 s, 1 at 15 s, 22 at 35 s. Short smoke runs looked healthy anyway
     # because the empty-case metric fallbacks returned plausible numbers.
-    warmup_steps: int = 350,
+    warmup_steps: int = DEFAULT_WARMUP_STEPS,
     resume: bool = False,
     start_episode: int = 0,
+    error_mode: str = DEFAULT_ERROR_MODE,
+    updates_per_env_step: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Full end-to-end hot-swap training loop integrating Act model serving,
@@ -1905,17 +2853,57 @@ def run_hot_swap_training(
 
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(tensorboard_dir, exist_ok=True)
+    # Third and last hardcoded production path. `checkpoint_dir` and
+    # `tensorboard_dir` were already made overridable; this one still wrote to
+    # coder/logs/training/ on every pytest run.
+    #
+    # Resolution order: explicit `log_csv_path`, then the `log_dir` argument, then
+    # PAPER4_TRAINING_LOG_DIR, then the production default. The environment
+    # variable exists for one reason: `tests/test_run_all.py::test_34` launches
+    # run_all.py in a SUBPROCESS, where no monkeypatch can reach, and run_all.py
+    # has no --log-dir flag yet. Delete it once that flag exists.
     if log_csv_path is None:
-        os.makedirs("/home/imnyj/Workspace/paper4/coder/logs/training", exist_ok=True)
-        log_csv_path = f"/home/imnyj/Workspace/paper4/coder/logs/training/{model_name_str}_progress.csv"
+        resolved_log_dir = (
+            log_dir
+            or os.environ.get("PAPER4_TRAINING_LOG_DIR")
+            or DEFAULT_TRAINING_LOG_DIR
+        )
+        os.makedirs(resolved_log_dir, exist_ok=True)
+        log_csv_path = os.path.join(resolved_log_dir, f"{model_name_str}_progress.csv")
 
     # Initialize TensorBoard Writer
     writer = None
-    if SummaryWriter is not None:
+    if SummaryWriter is None:
+        logging.error(
+            "torch.utils.tensorboard is unavailable, so this run produces NO "
+            "convergence curve. The re-entry criterion for the main training run "
+            "is a TensorBoard reading, so this run cannot satisfy it."
+        )
+    else:
         try:
             writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, f"{model_name_str}_seed{seed}_{int(time.time())}"))
-        except Exception:
+        except Exception as exc:
+            # Swallowing this silently used to mean the whole run finished with no
+            # logs at all, which is the one artefact the run exists to produce.
+            logging.error("Could not open a TensorBoard writer in %s: %s", tensorboard_dir, exc)
             writer = None
+
+    # ------------------------------------------------------------------
+    # Training densities. A list is cycled over the episodes, so 100 episodes
+    # across 10 densities gives 10 episodes at each. A bare float behaves exactly
+    # as before.
+    # ------------------------------------------------------------------
+    if isinstance(density, (int, float)):
+        density_schedule: List[float] = [float(density)]
+    else:
+        density_schedule = [float(d) for d in density]
+    if not density_schedule:
+        raise ValueError("`density` must be a positive number or a non-empty sequence.")
+
+    # Write the network and refresh DELTA_MAX / V_MAX_OBS / E_REF BEFORE the
+    # models (and their decoders) are constructed -- see prepare_scenario().
+    steps_per_ep_hint = max(10, total_steps // max(1, episodes))
+    prepare_scenario(density_schedule[0], steps_per_ep_hint, warmup_steps, seed)
 
     trainer = HotSwapTrainer(
         model_name=model_name_str,
@@ -1926,6 +2914,19 @@ def run_hot_swap_training(
         rest_device=rest_device,
         hparams=hparams,
     )
+
+    # The env owns the reward, but the checkpoint is written by the trainer, so
+    # the trainer needs to know which ablation arm it is serving.
+    trainer.error_mode = error_mode
+
+    # Gradient-budget parity. With this set, every model gets the SAME number of
+    # updates per environment step instead of as many as its own speed allowed,
+    # so a baseline cannot lose the comparison merely by being slower to train.
+    # Left as None the worker runs wall-clock-bound, which is what every result
+    # before 2026-09-01 used.
+    if updates_per_env_step is not None:
+        trainer.background_trainer.train_frequency = float(updates_per_env_step)
+        trainer.background_trainer.env_steps_seen = 0
 
     # Steps per episode calculation
     steps_per_ep = max(10, total_steps // max(1, episodes))
@@ -1943,13 +2944,24 @@ def run_hot_swap_training(
             if m:
                 candidates.append((int(m.group(1)), path))
         if candidates:
-            last_ep_1based, resumed_from = max(candidates, key=lambda c: c[0])
-            loaded_ckpt = trainer.load_checkpoint(resumed_from)
-            if "best_reward" in loaded_ckpt and loaded_ckpt["best_reward"] is not None:
-                best_reward = float(loaded_ckpt["best_reward"])
-            # Checkpoints are named with 1-based episode numbers (`_ep010.pt`
-            # is written after episode index 9), so resume at that index.
-            start_ep = min(int(last_ep_1based), int(episodes))
+            last_ep_1based, candidate_path = max(candidates, key=lambda c: c[0])
+            try:
+                loaded_ckpt = trainer.load_checkpoint(candidate_path)
+            except CheckpointMismatchError as exc:
+                # `run_all.py` resumes by default, so an HPO refresh followed by a
+                # restart lands here. Starting fresh loses training time; resuming
+                # produces a curve whose halves were trained under different
+                # hyper-parameters, which cannot go in a paper. Fresh start wins,
+                # loudly.
+                logging.error("%s -- starting this model from scratch instead.", exc)
+                resumed_from = None
+            else:
+                resumed_from = candidate_path
+                if "best_reward" in loaded_ckpt and loaded_ckpt["best_reward"] is not None:
+                    best_reward = float(loaded_ckpt["best_reward"])
+                # Checkpoints are named with 1-based episode numbers (`_ep010.pt`
+                # is written after episode index 9), so resume at that index.
+                start_ep = min(int(last_ep_1based), int(episodes))
 
         best_ckpt_candidate = os.path.join(checkpoint_dir, f"{model_name_str}_best.pt")
         if os.path.exists(best_ckpt_candidate):
@@ -1967,6 +2979,13 @@ def run_hot_swap_training(
     # `total_steps` budget is not spent twice.
     global_step = min(int(start_ep) * steps_per_ep, total_steps)
     episodic_records: List[Dict[str, Any]] = []
+    empty_streak = 0
+    # Baseline for "updates in THIS episode". `training_steps` is restored from the
+    # checkpoint on resume, so starting this at 0 would charge the whole pre-crash
+    # total to the first episode after a restart. That column is the evidence for
+    # per-model budget fairness, so an inflated spike in it is not cosmetic.
+    grad_updates_before_ep = int(trainer.background_trainer.training_steps)
+    zero_update_episodes = 0
 
     # One reward for every baseline. Passed explicitly rather than relying on the
     # AoiV2IEnv defaults so that a reader of this loop can see which reward the
@@ -1974,23 +2993,46 @@ def run_hot_swap_training(
     # constant `src/evaluate.py` and `src/hpo.py` read.
     env_reward_weights = {k: float(v) for k, v in DEFAULT_REWARD_WEIGHTS.items()}
 
+    # Anything the routing sent to the environment that is NOT a reward weight is
+    # a run parameter this function already owns (density, seed, max_steps,
+    # warmup_steps, ...). Silently dropping it is how `density=55.0` in an HPO CSV
+    # trained the whole benchmark at 25.0 while the log said otherwise, so it is
+    # an error, and the message says where to put it instead.
+    stray_env = {
+        k: v for k, v in trainer.env_hparams.items()
+        if k not in REWARD_WEIGHT_KEYS and k not in RAW_REWARD_WEIGHT_KEYS
+    }
+    if stray_env:
+        raise ValueError(
+            f"{model_name_str}: hyper-parameter(s) {sorted(stray_env)} are AoiV2IEnv "
+            "arguments that run_hot_swap_training sets itself. Pass them as explicit "
+            "arguments to run_hot_swap_training / run_all.py instead of smuggling "
+            "them through the hparams CSV, where they would be silently ignored."
+        )
+
     try:
         for ep in range(start_ep, episodes):
             if global_step >= total_steps:
                 break
 
             # Create genuine SUMO environment for this episode
+            ep_density = density_schedule[ep % len(density_schedule)]
             env = AoiV2IEnv(
-                density=density,
+                density=ep_density,
                 seed=seed + ep,
                 max_steps=steps_per_ep,
                 warmup_steps=warmup_steps,
                 **env_reward_weights,
+                error_mode=error_mode,
             )
             obs, info = env.reset()
 
             ep_rewards: List[float] = []
             ep_deltas: List[float] = []
+            #: The MEASURED interval of every closed decision. This is the
+            #: denominator of the episode score (see below), so it must include
+            #: the intervals finalised at the episode boundary.
+            ep_deltas_actual: List[float] = []
 
             # ----------------------------------------------------------------
             # Event-driven SMDP loop (design_spec_v2, "structure").
@@ -2008,9 +3050,10 @@ def run_hot_swap_training(
             # Everyone in range at reset needs an opening decision.
             action_dict: Dict[str, Any] = {}
             for vid, s_vec in obs.items():
-                grant, raw_action = trainer.scheduler.decide_grant(vid, s_vec)
+                grant, raw_action, action_idx = trainer.scheduler.decide_grant(vid, s_vec)
                 open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
-                                      "raw_action": raw_action}
+                                      "raw_action": raw_action,
+                                      "action_idx": action_idx}
                 action_dict[vid] = grant
                 ep_deltas.append(float(grant[0]))
 
@@ -2018,6 +3061,8 @@ def run_hot_swap_training(
                 if global_step >= total_steps:
                     break
                 global_step += 1
+                if updates_per_env_step is not None:
+                    trainer.background_trainer.env_steps_seen = global_step
 
                 next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
 
@@ -2042,8 +3087,10 @@ def run_hot_swap_training(
                         next_state=np.asarray(s2, dtype=np.float32),
                         done=done,
                         delta_t=rec["delta_actual"],
+                        action_idx=prev.get("action_idx"),
                     )
                     ep_rewards.append(float(rec["reward"]))
+                    ep_deltas_actual.append(float(rec["delta_actual"]))
 
                 # 2. Ask the policy for a grant for every vehicle that now holds
                 #    none -- new arrivals and the intervals just closed.
@@ -2051,9 +3098,10 @@ def run_hot_swap_training(
                     s_vec = next_obs.get(vid)
                     if s_vec is None:
                         continue
-                    grant, raw_action = trainer.scheduler.decide_grant(vid, s_vec)
+                    grant, raw_action, action_idx = trainer.scheduler.decide_grant(vid, s_vec)
                     open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
-                                          "raw_action": raw_action}
+                                          "raw_action": raw_action,
+                                          "action_idx": action_idx}
                     action_dict[vid] = grant
                     ep_deltas.append(float(grant[0]))
 
@@ -2069,18 +3117,123 @@ def run_hot_swap_training(
                     if torch.cuda.is_available():
                         torch.cuda.empty_cache()
 
+            # ----------------------------------------------------------------
+            # C1. Close every interval still in flight and stream it, BEFORE the
+            # metrics are read and the environment is destroyed. Without this the
+            # in-flight decisions -- disproportionately the long-Delta ones -- were
+            # dropped on the floor (12.3 % of all decisions, measured).
+            # ----------------------------------------------------------------
+            for rec in env.finalize_open_intervals():
+                vid = rec["vid"]
+                prev = open_decision.pop(vid, None)
+                if prev is None:
+                    continue
+                s2 = obs.get(vid)
+                if s2 is None:
+                    s2 = np.zeros(trainer.scheduler.state_dim, dtype=np.float32)
+                trainer.scheduler.push_transition(
+                    state=prev["state"],
+                    raw_action=prev["raw_action"],
+                    reward=rec["reward"],
+                    # The observation window ended; the vehicle did not. Bootstrap
+                    # must continue, so this is truncation, not termination.
+                    next_state=np.asarray(s2, dtype=np.float32),
+                    done=False,
+                    delta_t=rec["delta_actual"],
+                    action_idx=prev.get("action_idx"),
+                )
+                ep_rewards.append(float(rec["reward"]))
+                ep_deltas_actual.append(float(rec["delta_actual"]))
+
+            assert not env.interval_start_t, (
+                f"FATAL: {len(env.interval_start_t)} SMDP intervals still open at the "
+                "end of episode; their transitions would never reach the buffer."
+            )
+
             # Episode summary
             metrics = env.get_metrics()
             env.close()
             del env
             gc.collect()
 
-            ep_mean_r = float(np.mean(ep_rewards)) if ep_rewards else 0.0
+            # ----------------------------------------------------------------
+            # C2. The episode score is a reward RATE, not a per-decision mean.
+            #
+            # `mean(ep_rewards)` is the average penalty PER CLOSED INTERVAL and is
+            # not normalised by how long the interval lasted, so a policy that
+            # spams short updates always scores better: measured on one episode,
+            # Delta in [0.1, 0.5) averaged -0.200 per decision against -3.199 for
+            # Delta in [10, 45), a 16x gap -- but per simulated second those are
+            # -0.481/s and -0.165/s, and the ranking REVERSES. Since this number
+            # selects `{model}_best.pt` and draws the convergence curve, the old
+            # one pointed the paper's headline model at the opposite of its thesis.
+            #
+            # `sum(rewards) / sum(delta_actual)` is the SMDP-correct aggregate: it
+            # is the average penalty per unit of simulated time, which is the
+            # quantity the discounted return approximates and the only one under
+            # which two policies making different NUMBERS of decisions are
+            # comparable. Both are logged; the rate is the one that selects.
+            # This is computed after C1 so the denominator includes the intervals
+            # that were previously discarded.
+            # ----------------------------------------------------------------
+            total_delta = float(sum(ep_deltas_actual))
+            has_data = bool(ep_rewards) and total_delta > 0.0
+            ep_reward_per_sec = float(sum(ep_rewards) / total_delta) if has_data else float("nan")
+            ep_reward_per_decision = float(np.mean(ep_rewards)) if ep_rewards else float("nan")
             trainer_metrics = trainer.background_trainer.get_metrics()
+            ep_grad_updates = int(trainer_metrics["training_steps"]) - grad_updates_before_ep
+            grad_updates_before_ep = int(trainer_metrics["training_steps"])
+            if ep_grad_updates == 0:
+                zero_update_episodes += 1
+                logging.warning(
+                    "Episode %d (density %.1f) received ZERO gradient updates: the "
+                    "replay buffer never reached batch_size=%d while it ran.",
+                    ep + 1, ep_density, trainer.batch_size,
+                )
 
-            # TensorBoard logging
+            # M4. An empty episode used to be recorded as reward 0.0. Rewards are
+            # penalties and are always <= 0, so 0.0 is BETTER than any real
+            # episode: a dead SUMO or too short a warmup drew an upward spike on
+            # the very curve the convergence check reads. NaN is recorded instead,
+            # and three empty episodes in a row stop the run rather than burning
+            # 8.8 hours measuring nothing.
+            if not has_data or metrics.get("n_observations", 0) == 0:
+                empty_streak += 1
+                logging.error(
+                    "Episode %d observed nothing (n_observations=%s, closed intervals=%d). "
+                    "Empty-episode streak: %d.",
+                    ep + 1, metrics.get("n_observations"), len(ep_rewards), empty_streak,
+                )
+                if empty_streak >= 3:
+                    raise RuntimeError(
+                        f"{model_name_str}: {empty_streak} consecutive episodes measured "
+                        "nothing. Aborting rather than completing a run with no data."
+                    )
+            else:
+                empty_streak = 0
+
+            # M7. A frozen Act model (every hot-swap refused on NaN weights) keeps
+            # producing plausible metrics and an unusually STABLE reward curve.
+            if trainer_metrics.get("fatal_error"):
+                raise RuntimeError(f"{model_name_str}: {trainer_metrics['fatal_error']}")
+
+            # TensorBoard logging. Nothing is written for an empty episode: a
+            # placeholder there is indistinguishable from a real measurement.
+            if writer is not None and has_data:
+                # The checkpoint-selection metric. Named so the curve says which
+                # one it is.
+                writer.add_scalar("Reward/PerSecond", ep_reward_per_sec, global_step)
+                # Kept alongside it, because the two disagree about which policy is
+                # better and a reader needs to see both.
+                writer.add_scalar("Reward/PerDecision", ep_reward_per_decision, global_step)
+                writer.add_scalar("Outage/CoverageRate", metrics["coverage_outage_rate"], global_step)
+                writer.add_scalar("Error/MeanAtUpdate", metrics["mean_update_error"], global_step)
+                writer.add_scalar("Scenario/Density", ep_density, global_step)
+                writer.add_scalar(
+                    "HotSwap/FailedSwaps",
+                    trainer_metrics["hot_swap_stats"]["failed_swaps"], global_step,
+                )
             if writer is not None:
-                writer.add_scalar("Reward/EpisodicMean", ep_mean_r, global_step)
                 writer.add_scalar("Loss/MeanRecent", trainer_metrics["mean_recent_loss"], global_step)
                 writer.add_scalar("AoI/Mean", metrics["mean_aoi"], global_step)
                 writer.add_scalar("AoI/Peak", metrics["peak_aoi"], global_step)
@@ -2088,7 +3241,7 @@ def run_hot_swap_training(
                     writer.add_scalar("Action/MeanDelta", float(np.mean(ep_deltas)), global_step)
                 writer.add_scalar("Error/Mean", metrics["mean_error"], global_step)
                 writer.add_scalar("Error/Max", metrics["max_error"], global_step)
-                writer.add_scalar("Outage/Rate", metrics["packet_loss_rate"], global_step)
+                writer.add_scalar("Outage/PacketLossRate", metrics["packet_loss_rate"], global_step)
                 writer.add_scalar("Power/Avg_dBm", metrics["avg_tx_power_dbm"], global_step)
                 writer.add_scalar("HotSwap/Count", trainer_metrics["hot_swap_stats"]["swap_count"], global_step)
 
@@ -2097,42 +3250,79 @@ def run_hot_swap_training(
                 ckpt_path = os.path.join(checkpoint_dir, f"{model_name_str}_ep{ep+1:03d}.pt")
                 trainer.save_checkpoint(ckpt_path, best_reward=best_reward)
 
-            if ep_rewards and ep_mean_r > best_reward:
-                best_reward = ep_mean_r
+            if has_data and ep_reward_per_sec > best_reward:
+                best_reward = ep_reward_per_sec
                 best_ckpt_path = os.path.join(checkpoint_dir, f"{model_name_str}_best.pt")
                 trainer.save_checkpoint(best_ckpt_path, best_reward=best_reward)
 
             ep_record = {
                 "episode": ep + 1,
                 "global_step": global_step,
-                "mean_reward": round(ep_mean_r, 4),
+                "density": ep_density,
+                # The column name says which one selects the checkpoint.
+                "reward_per_sec_selected": round(ep_reward_per_sec, 6),
+                "reward_per_decision": round(ep_reward_per_decision, 6),
+                # Legacy column name, kept so existing readers do not break; it
+                # now carries the SELECTION metric, not the per-decision mean.
+                "mean_reward": round(ep_reward_per_sec, 6),
                 "mean_loss": trainer_metrics["mean_recent_loss"],
+                # Gradient budget actually spent while this episode ran. The
+                # background trainer is wall-clock driven and gated on
+                # `is_ready(batch_size)`, so a low-density episode can receive far
+                # fewer updates than a high-density one: measured over 300 steps,
+                # 2 updates at density 5 against 36 at density 50. Recording it
+                # per episode is what makes "did the nine models get comparable
+                # budgets, and did every density contribute" answerable after the
+                # fact instead of unanswerable.
+                "grad_updates_total": trainer_metrics["training_steps"],
+                "grad_updates_this_episode": ep_grad_updates,
                 "swap_count": trainer_metrics["hot_swap_stats"]["swap_count"],
                 # The Delta the policy actually asked for. Distinct from
                 # `mean_aoi`, which is the age the RSU actually observed.
                 "mean_delta": round(float(np.mean(ep_deltas)), 4) if ep_deltas else 0.0,
+                "mean_delta_actual": round(float(np.mean(ep_deltas_actual)), 4) if ep_deltas_actual else float("nan"),
                 "n_decisions": len(ep_deltas),
+                "n_intervals_closed": len(ep_deltas_actual),
                 **metrics,
             }
             episodic_records.append(ep_record)
+
+            # Written NOW, not at the end. The whole-file write below runs after
+            # the loop, so a SIGKILL -- a reboot, an OOM, the supervisor's own
+            # restart path -- destroyed every episode of that model's history.
+            # Measured: a 25-episode run killed at episode 10 and resumed came
+            # back reporting success while episodes 1..10 were simply gone.
+            # An unattended run is exactly the case where that happens, so the
+            # history has to survive the process, not the loop.
+            try:
+                _append_progress_row(log_csv_path, ep_record)
+            except Exception as exc:  # noqa: BLE001
+                logging.warning("could not append progress row for episode %d: %s",
+                                ep + 1, exc)
 
     finally:
         trainer.stop()
         if writer is not None:
             writer.close()
 
-    # Save episodic progress CSV
-    df_progress = pd.DataFrame(episodic_records)
-    if resumed_from is not None and os.path.exists(log_csv_path):
-        # Preserve the pre-resume history instead of truncating the log.
+    # The progress CSV was already written row by row inside the loop, so there is
+    # nothing to save here. What is left is a tidy-up: if an interrupted earlier
+    # attempt wrote rows for episodes this attempt has now redone, the file holds
+    # both. Keep the last occurrence of each episode -- the completed one -- so
+    # the history reads as one continuous run rather than showing the seam.
+    if os.path.exists(log_csv_path):
         try:
-            df_prev = pd.read_csv(log_csv_path)
-            if "episode" in df_prev.columns:
-                df_prev = df_prev[df_prev["episode"] <= start_ep]
-            df_progress = pd.concat([df_prev, df_progress], ignore_index=True)
-        except Exception:
-            pass
-    df_progress.to_csv(log_csv_path, index=False)
+            df_progress = pd.read_csv(log_csv_path)
+            if "episode" in df_progress.columns and len(df_progress):
+                deduped = df_progress.drop_duplicates(subset=["episode"], keep="last")
+                deduped = deduped.sort_values("episode")
+                if len(deduped) != len(df_progress):
+                    logging.info("progress CSV: collapsed %d duplicate episode row(s) from a "
+                                 "previous attempt", len(df_progress) - len(deduped))
+                    deduped.to_csv(log_csv_path, index=False)
+                df_progress = deduped
+        except Exception as exc:  # noqa: BLE001
+            logging.warning("could not tidy progress CSV %s: %s", log_csv_path, exc)
 
     elapsed_s = max(1e-4, time.perf_counter() - t_start)
     latency_stats = trainer.scheduler.get_latency_stats()
@@ -2145,9 +3335,29 @@ def run_hot_swap_training(
         "episodes": episodes,
         "elapsed_seconds": round(elapsed_s, 4),
         "throughput_steps_per_sec": round(global_step / elapsed_s, 2),
-        "mean_step_reward": round(float(np.mean([r["mean_reward"] for r in episodic_records])), 4)
+        # Mean over episodes of the SELECTION metric (reward per simulated
+        # second). The old name and the old per-decision quantity are both kept so
+        # nothing downstream breaks silently.
+        "mean_reward_per_second": round(float(np.nanmean([r["reward_per_sec_selected"] for r in episodic_records])), 6)
+        if episodic_records
+        else float("nan"),
+        "mean_reward_per_decision": round(float(np.nanmean([r["reward_per_decision"] for r in episodic_records])), 6)
+        if episodic_records
+        else float("nan"),
+        "mean_step_reward": round(float(np.nanmean([r["reward_per_sec_selected"] for r in episodic_records])), 6)
         if episodic_records
         else 0.0,
+        "densities": list(density_schedule),
+        # Gradient budget, for the cross-model fairness argument. `training_steps`
+        # alone cannot say whether every density contributed to it.
+        "zero_update_episodes": zero_update_episodes,
+        "grad_updates_by_density": {
+            float(d): int(sum(
+                r["grad_updates_this_episode"] for r in episodic_records
+                if float(r["density"]) == float(d)
+            ))
+            for d in density_schedule
+        },
         # Mean AoI actually measured, and the mean Delta the policy actually
         # asked for. These were the same number before: `mean_scheduled_delta`
         # was reading `mean_aoi` while the real Delta was collected and dropped.
@@ -2166,6 +3376,11 @@ def run_hot_swap_training(
         "act_device": str(trainer.act_device),
         "rest_device": str(trainer.rest_device),
         "log_csv_path": log_csv_path,
+        # Which ablation arm this run belongs to. Two arms are being trained and
+        # their rewards are on different scales, so every summary must say which.
+        "error_mode": error_mode,
+        "updates_per_env_step": updates_per_env_step,
+        "cbr_ref": CBR_REF,
         "start_episode": start_ep,
         "resumed_from_checkpoint": resumed_from,
     }

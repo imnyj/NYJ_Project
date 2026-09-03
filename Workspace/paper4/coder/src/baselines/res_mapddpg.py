@@ -318,10 +318,8 @@ class RESMAPDDPG(BaseRLModel):
         dones = batch["done"]
         device = states.device
 
-        if "discount" in batch:
-            discounts = batch["discount"]
-        else:
-            discounts = torch.pow(self.gamma, batch.get("delta_t", torch.ones_like(rewards)))
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
 
         neighbour_states = batch.get("neighbour_state", batch.get("neighbor_state"))
         neighbour_mask = batch.get("neighbour_mask", batch.get("neighbor_mask"))

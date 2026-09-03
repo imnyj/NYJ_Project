@@ -10,6 +10,7 @@
 # ============================================================================
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, Optional, Tuple
 
 try:
@@ -29,7 +30,7 @@ def predict_stop_imminent(
     accel: float,
     dist_to_stopline: float = float("inf"),
     signal_state: str = "none",
-    time_to_switch: float = float("inf"),
+    time_to_green: float = float("inf"),
     leader_dist: Optional[float] = None,
     leader_speed: Optional[float] = None,
 ) -> float:
@@ -40,7 +41,7 @@ def predict_stop_imminent(
     1. Active strong deceleration / braking: vehicle speed > 0.5 m/s and
        braking time to stop is within 3.0 seconds (or speed + accel * 2.0 <= 0.5).
     2. Approaching red ('r') or yellow ('y') traffic signal within braking
-       distance and signal will remain red/yellow upon arrival (time_to_switch > 1.5s).
+       distance and signal will remain red/yellow upon arrival (time_to_green > 1.5s).
     3. Approaching a stopped / slow leader vehicle (leader_dist <= max(12.0, speed * 2.5)
        and leader_speed <= 1.0 m/s).
     
@@ -64,8 +65,10 @@ def predict_stop_imminent(
         # Assuming comfortable deceleration b ~ 2.5 m/s^2, reaction 1.5s, margin 5.0m
         d_brake_thresh = max(15.0, (speed ** 2) / (2.0 * 2.5) + speed * 2.0 + 5.0)
         if dist_to_stopline <= d_brake_thresh:
-            # If the light is turning green very soon (<= 1.0s), vehicle might not need to stop
-            if time_to_switch > 1.0:
+            # If the light is turning green very soon (<= 1.0s), vehicle might not need to stop.
+            # `time_to_green` is time until THIS link shows green, not until the
+            # program's next phase change -- see `compute_time_to_green`.
+            if time_to_green > 1.0:
                 return 1.0
 
     # 3. Leader vehicle stopped/stopping ahead
@@ -82,7 +85,7 @@ def predict_start_imminent(
     accel: float,
     dist_to_stopline: float = float("inf"),
     signal_state: str = "none",
-    time_to_switch: float = float("inf"),
+    time_to_green: float = float("inf"),
     leader_dist: Optional[float] = None,
     leader_speed: Optional[float] = None,
     waiting_time: float = 0.0,
@@ -110,8 +113,21 @@ def predict_start_imminent(
             if dist_to_stopline <= 40.0 or waiting_time > 0.0:
                 return 1.0
 
-        # Case B: Signal is currently red but will turn green imminently (<= 2.0s)
-        if sig == "r" and time_to_switch <= 2.0 and dist_to_stopline <= 35.0:
+        # Case B: Signal is currently red but will turn green imminently (<= 2.0s).
+        #
+        # `time_to_green` MUST be the time until this link shows green, which is
+        # what `compute_time_to_green` returns. Feeding
+        # `trafficlight.getNextSwitch()` in here -- as this module did until
+        # 2026-09-02 -- is wrong: getNextSwitch is the next phase change of the
+        # PROGRAM, and one link's red spans two phases (the cross direction's
+        # 42 s green plus its 3 s yellow). During the first 42 s of a 45 s red the
+        # next switch is the cross yellow, so the value understated time-to-green
+        # by 3 s and this branch fired 2 s before the cross green ended, i.e. 5 s
+        # before our own green. Measured on N10 over 3 cycles at 0.1 s
+        # resolution: 2016 link-steps satisfied the branch, only 800 were
+        # actually green 2 s later -- a 60.3 % false-positive rate on the single
+        # feature the predictive-scheduling claim rests on.
+        if sig == "r" and time_to_green <= 2.0 and dist_to_stopline <= 35.0:
             return 1.0
 
         # Case C: Leader vehicle ahead begins moving off
@@ -134,6 +150,206 @@ def predict_start_imminent(
 # and TraCI docs): speed below 0.1 m/s. Reused here so `n_queue` is consistent with
 # SUMO's built-in halting statistics.
 HALTING_SPEED_THRESHOLD: float = 0.1
+
+# ----------------------------------------------------------------------------
+# Fallback bookkeeping.
+#
+# Every `except` in this module returns a safe default. That is the right defence
+# for one vehicle's transient lookup failure, but if the TraCI connection itself
+# degrades, `n_queue`, `leader_*` and `time_to_switch` freeze at 0/inf and the
+# episode still reports plausible numbers -- this project has already been bitten
+# twice by a fallback that turned a defect into a healthy-looking run. Counting
+# the fallbacks lets the caller tell "one vehicle blinked" from "nothing is being
+# measured".
+# ----------------------------------------------------------------------------
+FALLBACK_COUNTS: Dict[str, int] = {}
+
+
+def _note_fallback(where: str, vid: str, exc: BaseException) -> None:
+    FALLBACK_COUNTS[where] = FALLBACK_COUNTS.get(where, 0) + 1
+    logging.debug("dynamics_predictor fallback in %s for %s: %s", where, vid, exc)
+
+
+def reset_fallback_counts() -> None:
+    """Zero the fallback counters. Called once per episode by AoiV2IEnv.reset().
+
+    Also drops the cached traffic-light programs. The scenario is regenerated per
+    episode, so a cache entry keyed by (tls_id, program_id) can otherwise survive
+    into a network whose phases differ while the ids happen to match.
+    """
+    FALLBACK_COUNTS.clear()
+    _TLS_PROGRAM_CACHE.clear()
+
+
+# ----------------------------------------------------------------------------
+# Time until a specific link turns green.
+#
+# `trafficlight.getNextSwitch(tls_id)` answers a different question than the one
+# the transition predictors ask. It returns when the PROGRAM changes phase, not
+# when a given link goes green, and in this scenario one link's 45 s red spans
+# two phases: the cross direction's 42 s green and its 3 s yellow. For the first
+# 42 s of that red the next switch is the cross yellow, so getNextSwitch reports
+# 3 s at a moment when green is 45 s away.
+#
+# The fix reads the program definition and walks phases forward from the current
+# one, accumulating durations until the phase whose state string is green at this
+# link's index. `getNextSwitch` is still used, but only for what it is correct
+# about: how much of the CURRENT phase is left.
+# ----------------------------------------------------------------------------
+
+#: Link-state characters that mean "this link may proceed". 'G' priority green
+#: and 'g' permissive green are SUMO's two greens; 'g'/'s' matches the set
+#: `predict_start_imminent` already treats as green after lower-casing.
+GREEN_STATE_CHARS: frozenset = frozenset("gs")
+
+#: (tls_id, program_id) -> tuple of (phase_duration_s, phase_state_string).
+#: The program is static for the life of an episode, so it is read once per
+#: traffic light instead of once per vehicle per step.
+_TLS_PROGRAM_CACHE: Dict[Tuple[str, str], Tuple[Tuple[float, str], ...]] = {}
+
+
+def _is_green(state_char: str) -> bool:
+    return str(state_char).lower() in GREEN_STATE_CHARS
+
+
+def _get_tls_phases(driver: Any, tls_id: str) -> Tuple[Tuple[float, str], ...]:
+    """Phase (duration, state-string) pairs of `tls_id`'s active program."""
+    try:
+        program_id = str(driver.trafficlight.getProgram(tls_id))
+    except Exception as exc:
+        _note_fallback("getProgram", tls_id, exc)
+        program_id = ""
+
+    key = (str(tls_id), program_id)
+    cached = _TLS_PROGRAM_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    logics = None
+    for getter_name in ("getAllProgramLogics", "getCompleteRedYellowGreenDefinition"):
+        getter = getattr(driver.trafficlight, getter_name, None)
+        if getter is None:
+            continue
+        try:
+            logics = getter(tls_id)
+            break
+        except Exception as exc:
+            _note_fallback(getter_name, tls_id, exc)
+            logics = None
+    if not logics:
+        # Not cached: a transient read failure must not pin an empty program for
+        # the rest of the episode.
+        return ()
+
+    logic = logics[0]
+    for candidate in logics:
+        if str(getattr(candidate, "programID", "")) == program_id:
+            logic = candidate
+            break
+
+    try:
+        phases = tuple(
+            (float(ph.duration), str(ph.state)) for ph in getattr(logic, "phases", ())
+        )
+    except Exception as exc:
+        _note_fallback("tls_phases", tls_id, exc)
+        return ()
+
+    if not phases:
+        return ()
+    _TLS_PROGRAM_CACHE[key] = phases
+    return phases
+
+
+def compute_time_to_green(
+    sumo_conn: Any,
+    tls_id: str,
+    link_index: int,
+    current_time: float,
+) -> float:
+    """Seconds until `link_index` of `tls_id` shows green. 0.0 if it already does.
+
+    Returns `inf` when the answer cannot be established (no connection, unknown
+    program, link never green in the cycle). `inf` is the safe direction for both
+    consumers: `predict_stop_imminent` then still says "stop", and
+    `predict_start_imminent` Case B then never fires.
+    """
+    driver = sumo_conn if sumo_conn is not None else sumo
+    if driver is None or not tls_id:
+        return float("inf")
+    try:
+        idx = int(link_index)
+    except (TypeError, ValueError):
+        return float("inf")
+    if idx < 0:
+        return float("inf")
+
+    phases = _get_tls_phases(driver, tls_id)
+    if not phases:
+        return float("inf")
+
+    try:
+        cur = int(driver.trafficlight.getPhase(tls_id))
+    except Exception as exc:
+        _note_fallback("getPhase", tls_id, exc)
+        return float("inf")
+    n_phases = len(phases)
+    if not (0 <= cur < n_phases):
+        return float("inf")
+
+    cur_state = phases[cur][1]
+    if idx >= len(cur_state):
+        return float("inf")
+    if _is_green(cur_state[idx]):
+        return 0.0
+
+    try:
+        next_switch = float(driver.trafficlight.getNextSwitch(tls_id))
+    except Exception as exc:
+        _note_fallback("getNextSwitch", tls_id, exc)
+        return float("inf")
+
+    elapsed_to_green = max(0.0, next_switch - float(current_time))
+    for step in range(1, n_phases + 1):
+        phase_duration, phase_state = phases[(cur + step) % n_phases]
+        if idx < len(phase_state) and _is_green(phase_state[idx]):
+            return elapsed_to_green
+        elapsed_to_green += float(phase_duration)
+    return float("inf")
+
+
+def total_fallbacks() -> int:
+    return int(sum(FALLBACK_COUNTS.values()))
+
+
+def extract_lane_position(sumo_conn: Any, vid: str) -> Dict[str, Any]:
+    """`lane_id` + `lane_position` only, without walking the lane.
+
+    The ledger update needs these two on every call, but the O(vehicles-on-lane)
+    queue scan below is only needed when an observation vector is being built.
+    Separating them is what makes `with_queue=False` actually cheap: the comment
+    in `AoiV2IEnv._get_vehicle_state_dict` claimed the scan had been removed from
+    the two non-observation calls, but `extract_tls_features` called
+    `extract_queue_features` unconditionally, so all three calls per vehicle per
+    step still walked the lane.
+    """
+    driver = sumo_conn if sumo_conn is not None else sumo
+    res: Dict[str, Any] = {"lane_id": "", "lane_position": 0.0}
+    if driver is None:
+        return res
+    try:
+        lane_id = str(driver.vehicle.getLaneID(vid))
+    except Exception as exc:
+        _note_fallback("getLaneID", vid, exc)
+        return res
+    if not lane_id:
+        return res
+    res["lane_id"] = lane_id
+    try:
+        res["lane_position"] = float(driver.vehicle.getLanePosition(vid))
+    except Exception as exc:
+        _note_fallback("getLanePosition", vid, exc)
+    return res
 
 
 def extract_queue_features(sumo_conn: Any, vid: str) -> Dict[str, Any]:
@@ -170,7 +386,8 @@ def extract_queue_features(sumo_conn: Any, vid: str) -> Dict[str, Any]:
 
     try:
         lane_id = str(driver.vehicle.getLaneID(vid))
-    except Exception:
+    except Exception as exc:
+        _note_fallback("getLaneID", vid, exc)
         return res
     if not lane_id:
         return res
@@ -178,18 +395,20 @@ def extract_queue_features(sumo_conn: Any, vid: str) -> Dict[str, Any]:
 
     try:
         ego_pos = float(driver.vehicle.getLanePosition(vid))
-    except Exception:
+    except Exception as exc:
+        _note_fallback("getLanePosition", vid, exc)
         return res
     res["lane_position"] = ego_pos
 
     try:
         res["n_lane_halting"] = int(driver.lane.getLastStepHaltingNumber(lane_id))
-    except Exception:
-        pass
+    except Exception as exc:
+        _note_fallback("getLastStepHaltingNumber", vid, exc)
 
     try:
         lane_vids = list(driver.lane.getLastStepVehicleIDs(lane_id))
-    except Exception:
+    except Exception as exc:
+        _note_fallback("getLastStepVehicleIDs", vid, exc)
         return res
     res["lane_vehicle_count"] = len(lane_vids)
 
@@ -221,6 +440,7 @@ def extract_tls_features(
     sumo_conn: Any,
     vid: str,
     current_time: Optional[float] = None,
+    with_queue: bool = False,
 ) -> Dict[str, Any]:
     """
     Extracts traffic signal and kinematics features for a vehicle via TraCI / libsumo.
@@ -230,7 +450,8 @@ def extract_tls_features(
         'tls_id': str,
         'dist_to_stopline': float,
         'state': str,             # 'r', 'y', 'g', 'G', or 'none'
-        'time_to_switch': float,
+        'time_to_switch': float,  # next PROGRAM phase change (observation slot [11])
+        'time_to_green': float,   # until THIS link shows green (transition predictors)
         'stop_imminent': float,   # I_stop in [0.0, 1.0]
         'start_imminent': float,  # I_start in [0.0, 1.0]
         'speed': float,
@@ -254,6 +475,7 @@ def extract_tls_features(
         "dist_to_stopline": float("inf"),
         "state": "none",
         "time_to_switch": float("inf"),
+        "time_to_green": float("inf"),
         "stop_imminent": 0.0,
         "start_imminent": 0.0,
         "speed": 0.0,
@@ -277,23 +499,27 @@ def extract_tls_features(
         if current_time is None:
             try:
                 current_time = float(driver.simulation.getTime())
-            except Exception:
+            except Exception as exc:
+                _note_fallback("getTime", vid, exc)
                 current_time = 0.0
 
         # 1. Vehicle kinematics
         try:
             speed = float(driver.vehicle.getSpeed(vid))
-        except Exception:
+        except Exception as exc:
+            _note_fallback("getSpeed", vid, exc)
             speed = 0.0
 
         try:
             accel = float(driver.vehicle.getAcceleration(vid))
-        except Exception:
+        except Exception as exc:
+            _note_fallback("getAcceleration", vid, exc)
             accel = 0.0
 
         try:
             waiting_time = float(driver.vehicle.getWaitingTime(vid))
-        except Exception:
+        except Exception as exc:
+            _note_fallback("getWaitingTime", vid, exc)
             waiting_time = 0.0
 
         # 2. Leader info
@@ -307,13 +533,21 @@ def extract_tls_features(
                 leader_gap = float(leader_info[1])
                 try:
                     leader_speed = float(driver.vehicle.getSpeed(leader_vid))
-                except Exception:
+                except Exception as exc:
+                    _note_fallback("getSpeed(leader)", vid, exc)
                     leader_speed = None
-        except Exception:
-            pass
+        except Exception as exc:
+            _note_fallback("getLeader", vid, exc)
 
-        # 2b. Real queue ahead on the ego vehicle's own lane (n_queue state variable)
-        queue_feats = extract_queue_features(driver, vid)
+        # 2b. Lane bookkeeping, and -- only on the observation path -- the real
+        # per-lane queue measurement. `n_queue` from here is SUMO ground truth and
+        # is NOT what reaches the observation vector: `AoiV2IEnv` overrides it with
+        # its ledger-based reconstruction (design decision D3). It is produced at
+        # all only for the heuristic scheduler and for diagnostics.
+        queue_feats = (
+            extract_queue_features(driver, vid) if with_queue
+            else extract_lane_position(driver, vid)
+        )
 
         # 3. Next TLS info
         tls_id = ""
@@ -321,6 +555,7 @@ def extract_tls_features(
         dist_to_stopline = float("inf")
         state_char = "none"
         time_to_switch = float("inf")
+        time_to_green = float("inf")
 
         try:
             tls_list = driver.vehicle.getNextTLS(vid)
@@ -330,16 +565,25 @@ def extract_tls_features(
                 tls_index = int(first_tls[1])
                 dist_to_stopline = float(first_tls[2])
                 state_char = str(first_tls[3])
-        except Exception:
-            pass
+        except Exception as exc:
+            _note_fallback("getNextTLS", vid, exc)
 
-        # 4. Traffic light switch time
+        # 4a. Remaining time in the current program phase. This is what
+        #     getNextSwitch actually answers, and it is what observation slot
+        #     [11] ("phase remaining time") documents itself as carrying.
         if tls_id:
             try:
                 next_switch_t = float(driver.trafficlight.getNextSwitch(tls_id))
                 time_to_switch = max(0.0, next_switch_t - current_time)
-            except Exception:
+            except Exception as exc:
+                _note_fallback("getNextSwitch", vid, exc)
                 time_to_switch = float("inf")
+
+        # 4b. Time until THIS link goes green. Different quantity, different
+        #     source: the program definition walked forward from the current
+        #     phase. The transition predictors take this one, never 4a.
+        if tls_id:
+            time_to_green = compute_time_to_green(driver, tls_id, tls_index, current_time)
 
         # 5. Calculate transition indicators
         i_stop = predict_stop_imminent(
@@ -347,7 +591,7 @@ def extract_tls_features(
             accel=accel,
             dist_to_stopline=dist_to_stopline,
             signal_state=state_char,
-            time_to_switch=time_to_switch,
+            time_to_green=time_to_green,
             leader_dist=leader_gap,
             leader_speed=leader_speed,
         )
@@ -357,7 +601,7 @@ def extract_tls_features(
             accel=accel,
             dist_to_stopline=dist_to_stopline,
             signal_state=state_char,
-            time_to_switch=time_to_switch,
+            time_to_green=time_to_green,
             leader_dist=leader_gap,
             leader_speed=leader_speed,
             waiting_time=waiting_time,
@@ -369,6 +613,7 @@ def extract_tls_features(
             "dist_to_stopline": dist_to_stopline,
             "state": state_char,
             "time_to_switch": time_to_switch,
+            "time_to_green": time_to_green,
             "stop_imminent": i_stop,
             "start_imminent": i_start,
             "speed": speed,
@@ -381,7 +626,13 @@ def extract_tls_features(
         result.update(queue_feats)
         return result
 
-    except Exception:
+    except Exception as exc:
+        # The widest net in the module: ANY internal failure becomes a plausible
+        # "no signal, not stopped, queue 0" dict. That is precisely how a degraded
+        # TraCI connection turns into believable-looking data, so it is logged at
+        # warning level and counted rather than swallowed.
+        logging.warning("extract_tls_features fell back to defaults for %s: %s", vid, exc)
+        FALLBACK_COUNTS["extract_tls_features"] = FALLBACK_COUNTS.get("extract_tls_features", 0) + 1
         return default_res
 
 

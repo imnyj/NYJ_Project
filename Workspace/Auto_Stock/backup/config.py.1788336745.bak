@@ -1,0 +1,342 @@
+"""
+core/config.py
+==============
+Auto Stock ML/RL Trader — Phase 3: 계층적 설정 관리 및 시크릿 보안 모듈
+
+4단계 우선순위 설정 로딩:
+1. OS 환경 변수 (os.environ) - 최고 우선순위
+2. .env 파일 (python-dotenv)
+3. YAML 설정 파일 (config/settings.yaml, ${VAR:default} 정규식 인터폴레이션 지원)
+4. 코드 내 안전한 기본값 (Non-sensitive defaults)
+
+민감정보(AppKey, AppSecret)는 SecretStr로 캡슐화되어 로깅 및 콘솔 출력 시 평문 노출이 원천 차단됩니다.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Optional, Union
+
+import yaml
+from dotenv import dotenv_values
+
+
+class SecretStr:
+    """
+    민감한 문자열(API Key, Secret 등)을 캡슐화하는 보안 클래스.
+    __repr__ 및 __str__ 호출 시 평문을 은닉(***)하며,
+    명시적인 get_secret_value() 메서드를 통해서만 원본 문자열에 접근할 수 있습니다.
+    """
+
+    def __init__(self, secret_value: Union[str, SecretStr, None] = "") -> None:
+        if isinstance(secret_value, SecretStr):
+            self._secret_value = secret_value.get_secret_value()
+        elif secret_value is None:
+            self._secret_value = ""
+        else:
+            self._secret_value = str(secret_value)
+
+    def get_secret_value(self) -> str:
+        """평문 시크릿 값을 반환합니다."""
+        return self._secret_value
+
+    def masked_display(self) -> str:
+        """디버깅용 부분 마스킹 문자열 (앞 2자리, 뒤 2자리 노출)"""
+        val = self._secret_value
+        if len(val) >= 6:
+            return f"{val[:2]}***{val[-2:]}"
+        return "***"
+
+    def __repr__(self) -> str:
+        return "SecretStr('***')"
+
+    def __str__(self) -> str:
+        return "***"
+
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, SecretStr):
+            return self._secret_value == other._secret_value
+        if isinstance(other, str):
+            return self._secret_value == other
+        return False
+
+    def __hash__(self) -> int:
+        return hash(self._secret_value)
+
+    def __bool__(self) -> bool:
+        return bool(self._secret_value)
+
+    def __len__(self) -> int:
+        return len(self._secret_value)
+
+
+ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z0-9_]+)(?::([^}]*))?\}")
+
+
+def interpolate_env_vars(text: str, env_vars: Optional[Dict[str, str]] = None) -> str:
+    """
+    문자열 내의 ${VAR_NAME:default_value} 또는 ${VAR_NAME} 패턴을
+    환경 변수 딕셔너리 값으로 치환합니다.
+    """
+    if env_vars is None:
+        env_vars = dict(os.environ)
+
+    def _replacer(match: re.Match) -> str:
+        var_name = match.group(1)
+        default_val = match.group(2)
+        if var_name in env_vars and env_vars[var_name] != "":
+            return env_vars[var_name]
+        if default_val is not None:
+            return default_val
+        return ""
+
+    return ENV_VAR_PATTERN.sub(_replacer, text)
+
+
+def _parse_bool(value: Any, default: bool = True) -> bool:
+    """다양한 형태의 입력을 boolean 값으로 정규화합니다."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    val_str = str(value).strip().lower()
+    if val_str in ("true", "1", "t", "yes", "y", "on"):
+        return True
+    if val_str in ("false", "0", "f", "no", "n", "off"):
+        return False
+    return default
+
+
+@dataclass
+class KiwoomConfig:
+    """키움 Open API REST 설정 데이터 모델"""
+    app_key: SecretStr = field(default_factory=SecretStr)
+    app_secret: SecretStr = field(default_factory=SecretStr)
+    account_no: str = ""
+    account_product_code: str = "01"
+    use_mock_server: bool = True
+    live_base_url: str = "https://api.kiwoom.com"
+    mock_base_url: str = "https://mockapi.kiwoom.com"
+    timeout_seconds: float = 10.0
+    max_retries: int = 3
+    retry_backoff_factor: float = 0.5
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.app_key, SecretStr):
+            self.app_key = SecretStr(self.app_key)
+        if not isinstance(self.app_secret, SecretStr):
+            self.app_secret = SecretStr(self.app_secret)
+        self.use_mock_server = _parse_bool(self.use_mock_server, default=True)
+        self.timeout_seconds = float(self.timeout_seconds)
+        self.max_retries = int(self.max_retries)
+        self.retry_backoff_factor = float(self.retry_backoff_factor)
+
+    @property
+    def base_url(self) -> str:
+        """use_mock_server 여부에 따른 Base URL 반환"""
+        return self.mock_base_url if self.use_mock_server else self.live_base_url
+
+    @property
+    def is_mock(self) -> bool:
+        """모의투자 여부 확인"""
+        return self.use_mock_server
+
+    @property
+    def cano(self) -> str:
+        """종합계좌번호 앞 8자리"""
+        clean_no = str(self.account_no).replace("-", "").strip()
+        return clean_no[:8] if clean_no else ""
+
+    @property
+    def acnt_prdt_cd(self) -> str:
+        """계좌상품코드 뒤 2자리 (기본 01)"""
+        clean_no = str(self.account_no).replace("-", "").strip()
+        if len(clean_no) >= 10:
+            return clean_no[8:10]
+        return self.account_product_code or "01"
+
+    @property
+    def account_type(self) -> str:
+        """acnt_prdt_cd의 alias"""
+        return self.acnt_prdt_cd
+
+    def get_tr_id(self, action: str, side: Optional[str] = None) -> str:
+        """
+        요청 동작(action) 및 매매방향(side), 모의/실서버 여부에 따른
+        정확한 TR_ID(Transaction ID)를 반환합니다.
+        """
+        action_norm = action.lower().strip()
+        if action_norm in ("inquire_price", "price", "quotation", "current_price"):
+            return "ka10001"
+
+        if action_norm in ("order", "order_cash", "send_order"):
+            side_norm = str(side).upper().strip() if side else "BUY"
+            is_buy = side_norm in ("BUY", "02", "매수")
+            if self.use_mock_server:
+                return "kt10000" if is_buy else "kt10001"
+            return "kt10000" if is_buy else "kt10001"
+
+        if action_norm in ("inquire_balance", "balance", "account_balance", "positions"):
+            return "kt00018"
+
+        raise ValueError(f"지원하지 않는 TR_ID 액션입니다: {action}")
+
+
+@dataclass
+class TradingConfig:
+    """트레이딩 기본 정책 설정 데이터 모델"""
+    default_order_type: str = "MARKET"
+    default_quantity: int = 1
+    max_order_amount_krw: int = 10000000
+
+    def __post_init__(self) -> None:
+        self.default_quantity = int(self.default_quantity)
+        self.max_order_amount_krw = int(self.max_order_amount_krw)
+
+
+@dataclass
+class AppConfig:
+    """애플리케이션 통합 설정 모델"""
+    name: str = "AutoStockTrader"
+    version: str = "1.0.0"
+    log_level: str = "INFO"
+    kiwoom: KiwoomConfig = field(default_factory=KiwoomConfig)
+    trading: TradingConfig = field(default_factory=TradingConfig)
+
+
+def load_config(
+    yaml_path: Optional[Union[str, Path]] = None,
+    env_path: Optional[Union[str, Path]] = None,
+) -> AppConfig:
+    """
+    4단계 우선순위(OS env > .env > settings.yaml > 기본값)를 적용하여
+    통합 AppConfig 객체를 로드하고 반환합니다.
+    """
+    project_root = Path(__file__).resolve().parent.parent
+
+    # 1. .env 파일 로드 (Level 2)
+    env_file = Path(env_path) if env_path else (project_root / ".env")
+    dotenv_dict: Dict[str, str] = {}
+    if env_file.is_file():
+        dotenv_dict = {
+            k: str(v) for k, v in dotenv_values(str(env_file)).items() if v is not None
+        }
+
+    # 2. Level 2(.env) 위에 Level 1(os.environ)을 오버라이드하여 종합 env_map 생성
+    env_map = dict(dotenv_dict)
+    env_map.update(os.environ)
+
+    # 3. YAML 파일 로드 및 인터폴레이션 (Level 3)
+    yaml_file = Path(yaml_path) if yaml_path else (project_root / "config" / "settings.yaml")
+    yaml_data: Dict[str, Any] = {}
+    if yaml_file.is_file():
+        raw_text = yaml_file.read_text(encoding="utf-8")
+        interpolated_text = interpolate_env_vars(raw_text, env_map)
+        parsed = yaml.safe_load(interpolated_text)
+        if isinstance(parsed, dict):
+            yaml_data = parsed
+
+    app_dict = yaml_data.get("app", {})
+    kiwoom_dict = yaml_data.get("kiwoom", {})
+    trading_dict = yaml_data.get("trading", {})
+
+    # 4. OS env / .env의 명시적 환경변수로 최종 오버라이드
+    app_name = env_map.get("APP_NAME", app_dict.get("name", "AutoStockTrader"))
+    app_version = env_map.get("APP_VERSION", app_dict.get("version", "1.0.0"))
+    log_level = env_map.get("LOG_LEVEL", app_dict.get("log_level", "INFO"))
+
+    kiwoom_app_key = env_map.get("KIWOOM_APP_KEY", kiwoom_dict.get("app_key", ""))
+    kiwoom_app_secret = env_map.get("KIWOOM_APP_SECRET", kiwoom_dict.get("app_secret", ""))
+    kiwoom_account_no = env_map.get("KIWOOM_ACCOUNT_NO", kiwoom_dict.get("account_no", ""))
+    kiwoom_acnt_prdt_cd = env_map.get(
+        "KIWOOM_ACCOUNT_PRODUCT_CODE",
+        env_map.get("KIWOOM_ACCOUNT_TYPE", kiwoom_dict.get("account_product_code", "01")),
+    )
+
+    use_mock_server_raw = env_map.get("USE_MOCK_SERVER", kiwoom_dict.get("use_mock_server", True))
+    use_mock_server = _parse_bool(use_mock_server_raw, default=True)
+
+    live_base_url = env_map.get(
+        "KIWOOM_LIVE_BASE_URL",
+        kiwoom_dict.get("live_base_url", "https://api.kiwoom.com"),
+    )
+    mock_base_url = env_map.get(
+        "KIWOOM_MOCK_BASE_URL",
+        kiwoom_dict.get("mock_base_url", "https://mockapi.kiwoom.com"),
+    )
+    timeout_seconds = float(
+        env_map.get(
+            "KIWOOM_TIMEOUT_SECONDS",
+            kiwoom_dict.get("timeout_seconds", 10.0),
+        )
+    )
+    max_retries = int(
+        env_map.get(
+            "KIWOOM_MAX_RETRIES",
+            kiwoom_dict.get("max_retries", 3),
+        )
+    )
+    retry_backoff_factor = float(
+        env_map.get(
+            "KIWOOM_RETRY_BACKOFF_FACTOR",
+            kiwoom_dict.get("retry_backoff_factor", 0.5),
+        )
+    )
+
+    kiwoom_config = KiwoomConfig(
+        app_key=SecretStr(kiwoom_app_key),
+        app_secret=SecretStr(kiwoom_app_secret),
+        account_no=str(kiwoom_account_no),
+        account_product_code=str(kiwoom_acnt_prdt_cd),
+        use_mock_server=use_mock_server,
+        live_base_url=str(live_base_url),
+        mock_base_url=str(mock_base_url),
+        timeout_seconds=timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_factor=retry_backoff_factor,
+    )
+
+    trading_config = TradingConfig(
+        default_order_type=env_map.get(
+            "DEFAULT_ORDER_TYPE",
+            trading_dict.get("default_order_type", "MARKET"),
+        ),
+        default_quantity=int(
+            env_map.get(
+                "DEFAULT_QUANTITY",
+                trading_dict.get("default_quantity", 1),
+            )
+        ),
+        max_order_amount_krw=int(
+            env_map.get(
+                "MAX_ORDER_AMOUNT_KRW",
+                trading_dict.get("max_order_amount_krw", 10000000),
+            )
+        ),
+    )
+
+    return AppConfig(
+        name=str(app_name),
+        version=str(app_version),
+        log_level=str(log_level),
+        kiwoom=kiwoom_config,
+        trading=trading_config,
+    )
+
+
+_GLOBAL_CONFIG: Optional[AppConfig] = None
+
+
+def get_config(
+    reload: bool = False,
+    yaml_path: Optional[Union[str, Path]] = None,
+    env_path: Optional[Union[str, Path]] = None,
+) -> AppConfig:
+    """전역 캐시된 AppConfig 인스턴스를 반환하거나 필요 시 리로드합니다."""
+    global _GLOBAL_CONFIG
+    if _GLOBAL_CONFIG is None or reload:
+        _GLOBAL_CONFIG = load_config(yaml_path=yaml_path, env_path=env_path)
+    return _GLOBAL_CONFIG

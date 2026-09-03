@@ -1,0 +1,862 @@
+"""
+tests/test_hpo_pipeline.py
+==========================
+Auto Stock ML/RL Trader — Milestone 4: HPO 파이프라인 및 Hybrid SL-RL 종합 인수 테스트 스위트.
+
+Tier 구조:
+- Tier 1: Action Space 하이브리드 구조(Tuple Discrete(3)+Box(1,), Dict) 및 기본 기능 검증 (F1 ~ F8)
+- Tier 2: 경계값 및 예외 처리 검증 (0-분산 방어, NaN/Inf 클리핑, 파산 조건, 경계 비중)
+- Tier 3: 모듈 간 크로스 연동 검증 (Env ↔ Policy ↔ Metrics ↔ Exporter, SB3 Adapter, 시드 재현성/다양성, 동시성 안전)
+- Tier 4: 실전 E2E HPO 파이프라인 및 응용 시나리오 (3-Trial E2E 완주, Agent vs B&H, 급락장 방어, 제로 분산 시장, Dual Mode, CLI 서브프로세스, 10초 타임 버짓)
+- Tier 5: 적대적 이상 주입 및 Pruning 복원력 검증
+"""
+
+import math
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
+
+import gymnasium as gym
+import numpy as np
+import optuna
+import pandas as pd
+import pytest
+import torch
+from gymnasium import spaces
+from gymnasium.utils.env_checker import check_env
+
+from core.kiwoom_api import PriceQuote
+from modules.engine.hybrid_trading_env import (
+    ContinuousToHybridActionWrapper,
+    HybridTradingEnv,
+)
+from modules.engine.mock_environment import ActionType, FeeConfig, OrderSide
+from modules.hpo import (
+    CSV_COLUMNS,
+    calculate_annualized_sharpe_ratio,
+    calculate_max_drawdown_pct,
+    calculate_total_equity,
+    calculate_total_return_pct,
+    calculate_win_rate,
+    create_hpo_study,
+    evaluate_trading_history,
+    export_trial_to_csv,
+    load_hpo_results,
+    objective,
+    run_hpo_optimization,
+)
+from modules.models.feature_extractor import (
+    DualStreamSLFeatureExtractor,
+    SLPretrainer,
+    TabularMLPFeatureExtractor,
+    Temporal1DCNNFeatureExtractor,
+)
+from modules.models.hybrid_policy import (
+    HybridActorCritic,
+    HybridPPO,
+    SB3HybridPolicyAdapter,
+)
+
+
+# ==============================================================================
+# Fixtures
+# ==============================================================================
+
+@pytest.fixture
+def sample_stock_df() -> pd.DataFrame:
+    """테스트용 30영업일 시계열 데이터프레임 fixture (1원 단위 정수 호가)."""
+    np.random.seed(42)
+    length = 30
+    dates = pd.date_range("2026-01-01", periods=length, freq="B")
+    raw_prices = 70000.0 * np.cumprod(1.0 + np.random.normal(0.001, 0.01, size=length))
+    prices = np.round(raw_prices)
+
+    return pd.DataFrame({
+        "date": dates,
+        "symbol": "005930",
+        "open": np.round(prices * 0.998),
+        "high": np.round(prices * 1.01),
+        "low": np.round(prices * 0.99),
+        "close": prices,
+        "volume": np.random.randint(100000, 500000, length),
+        "returns_1d": np.random.normal(0, 0.01, length),
+        "log_return": np.random.normal(0, 0.01, length),
+        "volatility_20d": np.full(length, 0.015),
+        "ma_5": pd.Series(prices).rolling(5, min_periods=1).mean().values,
+        "ma_20": pd.Series(prices).rolling(20, min_periods=1).mean().values,
+        "ma_60": pd.Series(prices).rolling(60, min_periods=1).mean().values,
+        "dynamic_per": np.full(length, 12.5),
+        "dynamic_pbr": np.full(length, 1.2),
+        "dynamic_market_cap": prices * 6_000_000_000.0,
+    })
+
+
+# ==============================================================================
+# Tier 1: Action Space 하이브리드 구조 및 단위 기능 검증 (F1 ~ F8)
+# ==============================================================================
+
+class TestTier1ActionSpaceAndFeatures:
+    """Tier 1: Feature Isolation & Hybrid Action Space Verification (F1 ~ F8)"""
+
+    def test_f1_hybrid_action_space_structure_assertions(self, sample_stock_df):
+        """
+        F1: Action Space 하이브리드 구조 검증
+        - Tuple (Discrete(3), Box(1,)) 구조 입증
+        - Dict {"action_type": Discrete(3), "position_size": Box(1,)} 구조 입증
+        - 샘플링된 액션의 유효성 assert
+        """
+        # 1. Tuple Action Space
+        env_tuple = HybridTradingEnv(df=sample_stock_df, action_space_type="tuple")
+        assert isinstance(env_tuple.action_space, spaces.Tuple), "Action space must be spaces.Tuple"
+        assert len(env_tuple.action_space.spaces) == 2, "Tuple action space must have 2 components"
+
+        discrete_space = env_tuple.action_space.spaces[0]
+        box_space = env_tuple.action_space.spaces[1]
+
+        assert isinstance(discrete_space, spaces.Discrete), "First component must be Discrete"
+        assert discrete_space.n == 3, "Discrete space must have 3 actions (0: HOLD, 1: BUY, 2: SELL)"
+        assert isinstance(box_space, spaces.Box), "Second component must be Box"
+        assert box_space.shape == (1,), "Box shape must be (1,)"
+        assert box_space.low[0] == 0.0 and box_space.high[0] == 1.0, "Box range must be [0.0, 1.0]"
+
+        # 액션 샘플링 검증
+        sample_act = env_tuple.action_space.sample()
+        assert sample_act[0] in (0, 1, 2)
+        assert 0.0 <= sample_act[1][0] <= 1.0
+
+        # 2. Dict Action Space
+        env_dict = HybridTradingEnv(df=sample_stock_df, action_space_type="dict")
+        assert isinstance(env_dict.action_space, spaces.Dict), "Action space must be spaces.Dict"
+        assert "action_type" in env_dict.action_space.spaces
+        assert "position_size" in env_dict.action_space.spaces
+        assert isinstance(env_dict.action_space.spaces["action_type"], spaces.Discrete)
+        assert env_dict.action_space.spaces["action_type"].n == 3
+        assert isinstance(env_dict.action_space.spaces["position_size"], spaces.Box)
+        assert env_dict.action_space.spaces["position_size"].shape == (1,)
+
+    def test_f2_gymnasium_compliance_and_observation_space(self, sample_stock_df):
+        """
+        F2: Gymnasium 1.2.0 규격 준수 및 Observation Space 검증
+        - reset -> (obs, info) 2-tuple 반환
+        - step -> (obs, rew, term, trunc, info) 5-tuple 반환
+        - gymnasium check_env 검증 통과
+        """
+        env = HybridTradingEnv(df=sample_stock_df, initial_cash=10_000_000)
+        assert env.observation_space.shape == (14,)
+        assert env.observation_space.dtype == np.float32
+
+        obs, info = env.reset(seed=42)
+        assert isinstance(obs, np.ndarray)
+        assert obs.shape == (14,)
+        assert obs.dtype == np.float32
+        assert isinstance(info, dict)
+        assert "total_equity" in info
+        assert "cash_balance" in info
+
+        action = (1, np.array([0.5], dtype=np.float32))
+        step_out = env.step(action)
+        assert len(step_out) == 5, "Gymnasium 1.2.0 step() must return 5-tuple"
+        next_obs, rew, term, trunc, next_info = step_out
+
+        assert isinstance(next_obs, np.ndarray) and next_obs.shape == (14,)
+        assert isinstance(rew, (float, np.floating))
+        assert isinstance(term, bool)
+        assert isinstance(trunc, bool)
+        assert isinstance(next_info, dict)
+
+        # Gymnasium 표준 env_checker
+        check_env(env)
+
+    def test_f3_accounting_and_execution_engine(self, sample_stock_df):
+        """
+        F3: 회계 무결성 및 체결 엔진 검증 (1원 단위 정밀 회계, 불변식 오차 0원)
+        """
+        initial_cash = 10_000_000
+        env = HybridTradingEnv(df=sample_stock_df, initial_cash=initial_cash)
+        env.reset(seed=42)
+
+        # 매수(BUY) 50% 비중 실행
+        obs, rew, term, trunc, info = env.step((1, np.array([0.5], dtype=np.float32)))
+        pos = env.account.get_position(env.symbol)
+        assert pos.quantity > 0
+        assert env.account.cash_balance < initial_cash
+        assert env.verify_accounting_invariant()
+
+        # 잔고 + 평가액 == 총자산 불변식
+        cur_price = info["current_price"]
+        expected_portfolio_val = int(pos.quantity * cur_price)
+        assert int(env.account.cash_balance) + expected_portfolio_val == int(env.account.total_equity)
+
+    def test_f4_sl_feature_extractors(self):
+        """
+        F4: SL 특징 추출기 (Tabular MLP, 1D-CNN, DualStream) 형상 및 순전파 검증
+        """
+        batch_size = 4
+        # 1. Tabular MLP
+        mlp = TabularMLPFeatureExtractor(input_dim=14, output_dim=64)
+        x_tab = torch.randn(batch_size, 14)
+        out_mlp = mlp(x_tab)
+        assert out_mlp.shape == (batch_size, 64)
+
+        # 2. Temporal 1D-CNN
+        cnn = Temporal1DCNNFeatureExtractor(in_channels=10, seq_len=20, output_dim=64)
+        x_seq = torch.randn(batch_size, 20, 10)
+        out_cnn = cnn(x_seq)
+        assert out_cnn.shape == (batch_size, 64)
+
+        # 3. Dual Stream
+        dual = DualStreamSLFeatureExtractor(
+            temporal_in_channels=10,
+            temporal_seq_len=20,
+            tabular_dim=14,
+            output_dim=64,
+        )
+        out_dual = dual(x_seq, x_tab)
+        assert out_dual.shape == (batch_size, 64)
+
+    def test_f5_rl_baseline_hybrid_policy(self):
+        """
+        F5: 하이브리드 RL 정책망 (HybridActorCritic, HybridPPO) 검증
+        """
+        actor_critic = HybridActorCritic(obs_dim=14, feature_dim=64, distribution_type="beta")
+        obs_tensor = torch.randn(1, 14)
+
+        # forward 출력 형상 검증
+        disc_logits, cont_alpha, cont_beta, val = actor_critic(obs_tensor)
+        assert disc_logits.shape == (1, 3)
+        assert cont_alpha.shape == (1, 1)
+        assert cont_beta.shape == (1, 1)
+        assert val.shape == (1, 1)
+
+        # sample_action 검증
+        (act_type, weight), log_prob, value = actor_critic.sample_action(obs_tensor)
+        assert act_type in (0, 1, 2)
+        assert 0.0 <= weight <= 1.0
+        assert log_prob.dim() == 1
+        assert value.dim() == 1
+
+        # HybridPPO predict 규격 검증
+        agent = HybridPPO(policy=actor_critic)
+        (pred_act, pred_weight), _ = agent.predict(np.zeros(14, dtype=np.float32), deterministic=True)
+        assert pred_act in (0, 1, 2)
+        assert 0.0 <= pred_weight <= 1.0
+
+    def test_f6_optuna_hpo_study_setup(self):
+        """
+        F6: Optuna HPO Study 생성 및 기본 속성 검증
+        """
+        study = create_hpo_study(seed=42, direction="maximize")
+        assert isinstance(study, optuna.Study)
+        assert isinstance(study.sampler, optuna.samplers.TPESampler)
+        assert isinstance(study.pruner, optuna.pruners.MedianPruner)
+        assert study.direction == optuna.study.StudyDirection.MAXIMIZE
+
+    def test_f7_financial_metrics_core(self):
+        """
+        F7: 성과 지표 산출 모듈 (Total Equity, Return %, Sharpe, MDD, Win Rate) 검증
+        """
+        # 1. Total Equity
+        eq = calculate_total_equity(cash=5_000_000, holdings=100, current_price=70_000)
+        assert eq == 12_000_000.0
+
+        # 2. Return %
+        ret = calculate_total_return_pct(10_000_000, 12_000_000)
+        assert pytest.approx(ret, rel=1e-4) == 20.0
+
+        # 3. Annualized Sharpe Ratio
+        np.random.seed(42)
+        daily_returns = np.random.normal(0.001, 0.01, size=252)
+        sr = calculate_annualized_sharpe_ratio(daily_returns, periods_per_year=252)
+        assert isinstance(sr, float) and not math.isnan(sr)
+
+        # 4. MDD %
+        drawdown_curve = [100, 120, 90, 130, 110]
+        mdd = calculate_max_drawdown_pct(drawdown_curve)
+        assert pytest.approx(mdd, rel=1e-4) == -25.0
+
+        # 5. Win Rate
+        trades = [100_000, -50_000, 200_000, -30_000, 50_000]
+        t_count, win_pct = calculate_win_rate(trades)
+        assert t_count == 5
+        assert win_pct == 60.0
+
+        # 6. evaluate_trading_history
+        res = evaluate_trading_history([10_000_000, 11_000_000], [0.1], [1_000_000], 10_000_000)
+        assert res["total_equity"] == 11_000_000.0
+        assert res["total_return_pct"] == 10.0
+
+    def test_f8_csv_exporter_schema(self):
+        """
+        F8: CSV 내보내기 및 20개 컬럼 스키마 검증
+        """
+        assert len(CSV_COLUMNS) == 20
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "test_schema.csv")
+            export_trial_to_csv({"trial_id": 0, "state": "COMPLETE", "objective_value": 1.23}, csv_path=csv_path)
+
+            df = load_hpo_results(csv_path)
+            assert len(df) == 1
+            assert len(df.columns) == 20
+            assert list(df.columns) == CSV_COLUMNS
+
+
+# ==============================================================================
+# Tier 2: 경계값 및 예외 처리 검증 (Boundary Value Analysis & Exceptions)
+# ==============================================================================
+
+class TestTier2BoundaryAndExceptions:
+    """Tier 2: Boundary Value Analysis & Exception Handling"""
+
+    def test_sharpe_zero_variance_defense(self):
+        """
+        Zero-Variance 및 엣지 케이스 방어:
+        - 무거래(모든 수익률 0.0)
+        - 동일 비영 수익률(표준편차 0.0)
+        - 극미세 변동(std <= 1e-8)
+        - 빈 배열, 단일 원소, None
+        모두 ZeroDivisionError 없이 안전하게 0.0 반환
+        """
+        # 1. 0.0 시계열
+        assert calculate_annualized_sharpe_ratio([0.0] * 100) == 0.0
+
+        # 2. 동일한 비영 수익률 (표준편차 0)
+        assert calculate_annualized_sharpe_ratio([0.005] * 50) == 0.0
+
+        # 3. 극미세 변동 (std <= 1e-8)
+        tiny_var = [0.001 + 1e-9 * (i % 2) for i in range(50)]
+        assert calculate_annualized_sharpe_ratio(tiny_var) == 0.0
+
+        # 4. 빈 시계열 / 단일 값 / None
+        assert calculate_annualized_sharpe_ratio([]) == 0.0
+        assert calculate_annualized_sharpe_ratio([0.05]) == 0.0
+        assert calculate_annualized_sharpe_ratio(None) == 0.0
+
+    def test_nan_inf_metrics_resilience(self):
+        """NaN/Inf 입력 시 결측치 치환 및 유효 float 반환 검증"""
+        nan_returns = [0.01, float("nan"), 0.02, float("inf"), -float("inf"), -0.01]
+        sr = calculate_annualized_sharpe_ratio(nan_returns)
+        assert isinstance(sr, float)
+        assert not math.isnan(sr)
+        assert not math.isinf(sr)
+
+    def test_bankruptcy_termination_condition(self, sample_stock_df):
+        """
+        파산 조건 검증:
+        - 자산이 초기 자본금의 5% 미만으로 하락 시 terminated=True 발생
+        """
+        env = HybridTradingEnv(
+            df=sample_stock_df,
+            initial_cash=10_000_000,
+            bankruptcy_threshold_ratio=0.05,  # 500,000원
+        )
+        env.reset(seed=42)
+
+        # 의도적으로 자산 강제 소진
+        env.account.cash_balance = Decimal("200000")
+        env.account.positions.clear()
+
+        obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+        assert term is True, "Bankruptcy condition (equity < 5%) must trigger terminated=True"
+        assert info["total_equity"] < 500_000
+
+    def test_boundary_order_weights(self, sample_stock_df):
+        """
+        경계 비중(weight=0.0 및 weight=1.0) 처리 검증:
+        - weight=0.0: 매수/매도 시 거래 미발생(수량 0)
+        - weight=1.0: 가용 전액 매수 및 전량 매도
+        """
+        env = HybridTradingEnv(df=sample_stock_df, initial_cash=10_000_000)
+        env.reset(seed=42)
+
+        # weight=0.0 BUY
+        env.step((1, np.array([0.0], dtype=np.float32)))
+        pos = env.account.get_position(env.symbol)
+        assert pos.quantity == 0
+
+        # weight=1.0 BUY
+        obs, rew, term, trunc, info = env.step((1, np.array([1.0], dtype=np.float32)))
+        pos = env.account.get_position(env.symbol)
+        assert pos.quantity > 0
+        cur_price = info["current_price"]
+        assert env.account.cash_balance < cur_price  # 잔여 현금으로 1주도 살 수 없음
+
+        # weight=1.0 SELL (전량 매도)
+        env.step((2, np.array([1.0], dtype=np.float32)))
+        pos = env.account.get_position(env.symbol)
+        assert pos.quantity == 0
+
+    def test_action_parser_out_of_bounds_clipping(self, sample_stock_df):
+        """
+        _parse_action 경계 초과 액션 클리핑 및 NaN 방어 검증
+        """
+        env = HybridTradingEnv(df=sample_stock_df)
+        env.reset(seed=42)
+
+        # discrete > 2 -> clip to 2, weight > 1.0 -> clip to 1.0
+        act_type, weight = env._parse_action((5, 2.5))
+        assert act_type == 2
+        assert weight == 1.0
+
+        # discrete < 0 -> clip to 0, weight < 0.0 -> clip to 0.0
+        act_type, weight = env._parse_action((-3, -0.8))
+        assert act_type == 0
+        assert weight == 0.0
+
+        # NaN / Inf weight -> default to 0.0
+        act_type, weight = env._parse_action((1, float("nan")))
+        assert act_type == 1
+        assert weight == 0.0
+
+    def test_empty_and_negative_cash_metrics(self):
+        """0 이하 초기 자본금 및 빈 히스토리 방어 검증"""
+        assert calculate_total_return_pct(0, 100_000) == 0.0
+        assert calculate_total_return_pct(-100, 100) == 0.0
+        assert calculate_max_drawdown_pct([]) == 0.0
+        t_cnt, win_pct = calculate_win_rate([])
+        assert t_cnt == 0 and win_pct == 0.0
+
+
+# ==============================================================================
+# Tier 3: 모듈 간 크로스 연동 검증 (Cross-Feature Integration)
+# ==============================================================================
+
+class TestTier3CrossFeatureIntegration:
+    """Tier 3: Cross-Feature Combinations & Integration"""
+
+    def test_full_pipeline_env_policy_metrics_export(self, sample_stock_df):
+        """
+        Env ↔ Feature Extractor ↔ Policy ↔ Metrics ↔ Exporter 전주기 통합 연동
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "tier3_pipeline.csv")
+
+            # 1. 환경 및 에이전트 빌드
+            env = HybridTradingEnv(df=sample_stock_df, initial_cash=10_000_000)
+            extractor = TabularMLPFeatureExtractor(input_dim=14, output_dim=64)
+            policy = HybridActorCritic(obs_dim=14, feature_extractor=extractor, feature_dim=64)
+            agent = HybridPPO(policy=policy)
+
+            # 2. 롤아웃 수행
+            obs, info = env.reset(seed=42)
+            equity_hist = [float(info["total_equity"])]
+            returns_hist = []
+
+            for _ in range(20):
+                action, _ = agent.predict(obs, deterministic=True)
+                obs, rew, term, trunc, info = env.step(action)
+                equity_hist.append(float(info["total_equity"]))
+                returns_hist.append(float(rew))
+                if term or trunc:
+                    break
+
+            # 3. 지표 산출
+            metrics = evaluate_trading_history(
+                equity_history=equity_hist,
+                returns_history=returns_hist,
+                trades_history=[],
+                initial_cash=10_000_000,
+            )
+            assert "total_equity" in metrics
+            assert "sharpe_ratio" in metrics
+
+            # 4. CSV 기록
+            record = {
+                "trial_id": 0,
+                "state": "COMPLETE",
+                "objective_value": metrics["sharpe_ratio"],
+                **metrics,
+                "param_sl_lr": 0.001,
+                "param_rl_lr": 0.0003,
+                "duration_seconds": 0.5,
+            }
+            export_trial_to_csv(record, csv_path=csv_path)
+
+            # 5. 로드 및 무결성 검증
+            df = load_hpo_results(csv_path)
+            assert len(df) == 1
+            assert df["trial_id"].iloc[0] == 0
+            assert list(df.columns) == CSV_COLUMNS
+
+    def test_sb3_wrapper_and_continuous_adapter(self, sample_stock_df):
+        """
+        ContinuousToHybridActionWrapper & SB3HybridPolicyAdapter 연동 검증
+        """
+        env = HybridTradingEnv(df=sample_stock_df)
+        wrapped_env = SB3HybridPolicyAdapter.wrap_env(env)
+
+        assert isinstance(wrapped_env.action_space, spaces.Box)
+        assert wrapped_env.action_space.shape == (2,)
+
+        obs, info = wrapped_env.reset(seed=42)
+        # Continuous action: [direction_signal, weight]
+        step_out = wrapped_env.step(np.array([0.8, 0.5], dtype=np.float32))
+        assert len(step_out) == 5
+
+    def test_seed_reproducibility_and_diversity(self):
+        """
+        시드 재현성(Seed 42 vs 42 동일 탐색) 및 다양성(Seed 42 vs 100 상이한 탐색) 검증
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv1 = os.path.join(tmp_dir, "seed42_1.csv")
+            csv2 = os.path.join(tmp_dir, "seed42_2.csv")
+            csv3 = os.path.join(tmp_dir, "seed100.csv")
+
+            study1, _ = run_hpo_optimization(n_trials=2, output_csv=csv1, seed=42, n_timesteps=40, fast_mode=True, verbose=False)
+            study2, _ = run_hpo_optimization(n_trials=2, output_csv=csv2, seed=42, n_timesteps=40, fast_mode=True, verbose=False)
+            study3, _ = run_hpo_optimization(n_trials=2, output_csv=csv3, seed=100, n_timesteps=40, fast_mode=True, verbose=False)
+
+            # 동일 시드 동일 파라미터 확인
+            assert study1.trials[0].params == study2.trials[0].params
+            assert study1.trials[1].params == study2.trials[1].params
+
+            # 상이한 시드 파라미터 다양성 확인
+            assert study1.trials[0].params != study3.trials[0].params
+
+    def test_concurrent_csv_export_thread_safety(self):
+        """
+        스레드 동시성 쓰기 무결성 검증 (Atomic File Lock)
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "concurrent_hpo.csv")
+            n_threads = 8
+
+            def _worker(thread_id):
+                record = {
+                    "trial_id": thread_id,
+                    "state": "COMPLETE",
+                    "objective_value": float(thread_id),
+                    "total_equity": 10_000_000.0 + thread_id * 100_000,
+                    "param_sl_lr": 0.0001 * (thread_id + 1),
+                }
+                export_trial_to_csv(record, csv_path=csv_path)
+
+            threads = [threading.Thread(target=_worker, args=(i,)) for i in range(n_threads)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            df = load_hpo_results(csv_path)
+            assert len(df) == n_threads
+            assert set(df["trial_id"].tolist()) == set(range(n_threads))
+            assert list(df.columns) == CSV_COLUMNS
+
+
+# ==============================================================================
+# Tier 4: 실전 E2E HPO 파이프라인 및 응용 시나리오 (Real-World Workloads)
+# ==============================================================================
+
+class TestTier4RealWorldHPOWorkloads:
+    """Tier 4: Real-World Workload Scenarios & Acceptance Criteria"""
+
+    def test_e2e_hpo_optimization_3_trials_acceptance_criteria(self):
+        """
+        [핵심 승인 기준 Acceptance Criteria]
+        - n_trials=3 완주
+        - etc/hpo_results/baseline_hpo.csv (또는 지정 경로) 생성 및 >= 3개 Trial 기록 입증
+        - 20개 컬럼 스키마 일치 및 Sharpe/Total Equity 산출 무결성
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "baseline_hpo.csv")
+
+            study, best_trial = run_hpo_optimization(
+                n_trials=3,
+                symbol="005930",
+                output_csv=output_csv,
+                seed=42,
+                n_timesteps=80,
+                fast_mode=True,
+                verbose=False,
+            )
+
+            # 1. 3-Trial 완주 입증
+            assert len(study.trials) == 3, f"Expected 3 trials, got {len(study.trials)}"
+
+            # 2. Best Trial 유효성 입증
+            assert best_trial is not None
+            assert isinstance(best_trial.value, float)
+            assert "sl_lr" in best_trial.params
+            assert "rl_lr" in best_trial.params
+
+            # 3. CSV 파일 및 20개 컬럼 스키마 입증
+            assert os.path.exists(output_csv), "Output CSV was not created"
+            df = load_hpo_results(output_csv)
+            assert len(df) >= 3, f"Expected >= 3 rows in CSV, got {len(df)}"
+            assert list(df.columns) == CSV_COLUMNS, "CSV Columns mismatch"
+
+            # 4. 지표 유효 범위 단언
+            assert (df["total_equity"] > 0).all()
+            assert not df["objective_value"].isna().any()
+            assert df["state"].iloc[0] in ("COMPLETE", "PRUNED")
+
+    def test_scenario_agent_vs_buy_and_hold(self, sample_stock_df):
+        """
+        시나리오 2: 에이전트 매매 롤아웃 vs 단순 보유(Buy-and-Hold) 기준선 비교
+        """
+        # B&H 기준 수익률
+        p_start = sample_stock_df["close"].iloc[0]
+        p_end = sample_stock_df["close"].iloc[-1]
+        bh_return_pct = ((p_end - p_start) / p_start) * 100.0
+
+        # 에이전트 매매
+        env = HybridTradingEnv(df=sample_stock_df, initial_cash=10_000_000)
+        policy = HybridActorCritic(obs_dim=14)
+        agent = HybridPPO(policy=policy)
+
+        obs, info = env.reset(seed=42)
+        done = False
+        while not done:
+            action, _ = agent.predict(obs, deterministic=True)
+            obs, rew, term, trunc, info = env.step(action)
+            done = term or trunc
+
+        agent_return_pct = calculate_total_return_pct(10_000_000, info["total_equity"])
+        assert isinstance(agent_return_pct, float)
+        assert isinstance(bh_return_pct, float)
+        assert info["total_equity"] > 0
+
+    def test_scenario_market_crash_drawdown_defense(self):
+        """
+        시나리오 3: 급락장 시뮬레이션 및 파산 방어/MDD 산출 검증
+        """
+        length = 25
+        crash_prices = [70000.0 * (0.85 ** i) for i in range(length)]
+        crash_df = pd.DataFrame({
+            "date": pd.date_range("2026-01-01", periods=length, freq="B"),
+            "symbol": "005930",
+            "open": crash_prices,
+            "high": crash_prices,
+            "low": crash_prices,
+            "close": crash_prices,
+            "volume": [100000] * length,
+            "returns_1d": [-0.15] * length,
+            "log_return": [math.log(0.85)] * length,
+            "volatility_20d": [0.05] * length,
+            "ma_5": crash_prices,
+            "ma_20": crash_prices,
+            "ma_60": crash_prices,
+            "dynamic_per": [10.0] * length,
+            "dynamic_pbr": [1.0] * length,
+            "dynamic_market_cap": [1_000_000_000.0] * length,
+        })
+
+        env = HybridTradingEnv(df=crash_df, initial_cash=10_000_000, bankruptcy_threshold_ratio=0.05)
+        obs, info = env.reset(seed=42)
+        equity_hist = [float(info["total_equity"])]
+
+        # 전량 매수 후 폭락 지속
+        obs, rew, term, trunc, info = env.step((1, np.array([1.0], dtype=np.float32)))
+        equity_hist.append(float(info["total_equity"]))
+
+        while not (term or trunc):
+            obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+            equity_hist.append(float(info["total_equity"]))
+
+        # 파산 도달 또는 MDD 발생 검증
+        mdd = calculate_max_drawdown_pct(equity_hist)
+        assert mdd <= -50.0
+
+    def test_scenario_constant_market_zero_variance(self):
+        """
+        시나리오 4: 횡보장(변동성 0) 시뮬레이션 및 샤프 지수 안전성 검증
+        """
+        length = 20
+        flat_prices = [70000.0] * length
+        flat_df = pd.DataFrame({
+            "date": pd.date_range("2026-01-01", periods=length, freq="B"),
+            "symbol": "005930",
+            "open": flat_prices,
+            "high": flat_prices,
+            "low": flat_prices,
+            "close": flat_prices,
+            "volume": [100000] * length,
+            "returns_1d": [0.0] * length,
+            "log_return": [0.0] * length,
+            "volatility_20d": [0.0] * length,
+            "ma_5": flat_prices,
+            "ma_20": flat_prices,
+            "ma_60": flat_prices,
+            "dynamic_per": [10.0] * length,
+            "dynamic_pbr": [1.0] * length,
+            "dynamic_market_cap": [1_000_000_000.0] * length,
+        })
+
+        env = HybridTradingEnv(df=flat_df, initial_cash=10_000_000)
+        obs, info = env.reset(seed=42)
+        equity_hist = [float(info["total_equity"])]
+        returns_hist = []
+
+        done = False
+        while not done:
+            obs, rew, term, trunc, info = env.step((0, np.array([0.0], dtype=np.float32)))
+            equity_hist.append(float(info["total_equity"]))
+            returns_hist.append(float(rew))
+            done = term or trunc
+
+        metrics = evaluate_trading_history(
+            equity_history=equity_hist,
+            returns_history=returns_hist,
+            trades_history=[],
+            initial_cash=10_000_000,
+        )
+        assert metrics["sharpe_ratio"] == 0.0
+
+    @patch("core.kiwoom_api.KiwoomClient.get_current_price")
+    def test_scenario_dual_mode_offline_and_live(self, mock_get_price, sample_stock_df):
+        """
+        시나리오 5: 오프라인(DataFrame) 및 실시간 모드(LiveLearningSimulator / KiwoomClient mock) 전환 검증
+        """
+        # 1. Offline Mode
+        env_offline = HybridTradingEnv(df=sample_stock_df, mode="offline")
+        obs_off, _ = env_offline.reset(seed=42)
+        assert obs_off.shape == (14,)
+
+        # 2. Live Mode (Mock Kiwoom Stream)
+        mock_get_price.return_value = PriceQuote(
+            symbol="005930",
+            current_price=Decimal("80000"),
+            price_change=Decimal("0"),
+            change_rate=Decimal("0"),
+            open_price=Decimal("80000"),
+            high_price=Decimal("80000"),
+            low_price=Decimal("80000"),
+            volume=1000,
+            trade_amount=Decimal("0"),
+            timestamp=datetime.now(),
+        )
+
+        env_live = HybridTradingEnv(
+            mode="live",
+            symbol="005930",
+            initial_cash=10_000_000,
+            max_steps=10,
+        )
+        obs_live, info_live = env_live.reset(seed=42)
+        assert obs_live.shape == (14,)
+        assert info_live["cash_balance"] == 10_000_000.0
+
+        # Step in live mode
+        obs_next, rew, term, trunc, info_step = env_live.step((1, np.array([0.5], dtype=np.float32)))
+        assert obs_next.shape == (14,)
+        assert info_step["holding_quantity"] > 0
+
+    def test_cli_subprocess_3_trials_e2e(self):
+        """
+        scripts/run_hpo.py CLI 서브프로세스 3-Trial 실행 및 CSV 스키마 검증
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "cli_baseline_hpo.csv")
+            cli_script = os.path.abspath("scripts/run_hpo.py")
+
+            cmd = [
+                sys.executable,
+                cli_script,
+                "--n-trials", "3",
+                "--symbol", "005930",
+                "--output", csv_path,
+                "--timesteps", "64",
+                "--seed", "42",
+                "--fast-mode",
+                "--quiet",
+            ]
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+            assert proc.returncode == 0, f"CLI Failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+            assert os.path.exists(csv_path)
+
+            df = load_hpo_results(csv_path)
+            assert len(df) >= 3
+            assert list(df.columns) == CSV_COLUMNS
+
+    def test_fast_execution_budget(self):
+        """
+        시간 예산 검증: 3-Trial HPO 최적화가 10초 이내에 신속 완주됨을 입증
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "budget_hpo.csv")
+            t0 = time.time()
+
+            study, _ = run_hpo_optimization(
+                n_trials=3,
+                symbol="005930",
+                output_csv=output_csv,
+                seed=42,
+                n_timesteps=60,
+                fast_mode=True,
+                verbose=False,
+            )
+            elapsed = time.time() - t0
+
+            assert len(study.trials) == 3
+            assert elapsed < 10.0, f"HPO took {elapsed:.2f}s (exceeded 10s budget)"
+
+
+# ==============================================================================
+# Tier 5: 적대적 이상 주입 및 Pruning 복원력 (Adversarial Hardening)
+# ==============================================================================
+
+class TestTier5AdversarialHardening:
+    """Tier 5: Adversarial Hardening & Pruning Resilience"""
+
+    def test_objective_fault_injection_resilience(self):
+        """
+        환경 인자 오류 강제 주입 시 Study 중단 없이 state=FAIL, objective_value=-100.0 처리 입증
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "fault_hpo.csv")
+            study = create_hpo_study(seed=42)
+
+            def _faulty_objective(trial):
+                return objective(
+                    trial=trial,
+                    env_kwargs={"mode": "invalid_mode_key"},
+                    output_csv=output_csv,
+                    n_timesteps=32,
+                    fast_mode=True,
+                )
+
+            study.optimize(_faulty_objective, n_trials=2, catch=(Exception,))
+            assert len(study.trials) == 2
+
+            df = load_hpo_results(output_csv)
+            assert len(df) == 2
+            assert (df["state"] == "FAIL").all()
+            assert (df["objective_value"] == -100.0).all()
+
+    def test_trial_pruning_csv_record(self):
+        """
+        TrialPruned 발생 시 state=PRUNED로 CSV에 정상 원자적 기록 입증
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "prune_hpo.csv")
+            study = create_hpo_study(seed=42)
+
+            def _pruning_objective(trial):
+                raise optuna.TrialPruned("Forced pruning test")
+
+            try:
+                study.optimize(_pruning_objective, n_trials=1)
+            except Exception:
+                pass
+
+            # 수동으로 Pruned Trial export 검증
+            record = {
+                "trial_id": 0,
+                "state": "PRUNED",
+                "objective_value": 0.0,
+                "total_equity": 10_000_000.0,
+                "duration_seconds": 0.1,
+            }
+            export_trial_to_csv(record, csv_path=output_csv)
+
+            df = load_hpo_results(output_csv)
+            assert len(df) == 1
+            assert df["state"].iloc[0] == "PRUNED"
+            assert df["objective_value"].iloc[0] == 0.0

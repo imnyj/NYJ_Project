@@ -71,12 +71,15 @@ class TD3(SB3BaselineModel):
         channel_noise_sigma: Optional[float] = None,
         policy: str = "MlpPolicy",
         policy_kwargs: Optional[Dict[str, Any]] = None,
+        hidden_dim: Optional[int] = None,
         device: Union[str, torch.device] = "auto",
         seed: Optional[int] = None,
         **hparams: Any,
     ) -> None:
         super().__init__(state_dim=state_dim, num_channels=num_channels, **hparams)
         self.gamma = float(gamma)
+        #: Requested hidden width; None means "keep SB3's own default net_arch".
+        self.hidden_dim = None if hidden_dim is None else int(hidden_dim)
 
         # buffer_size=1: SB3 allocates its own ReplayBuffer at construction, which we
         # never use -- transitions arrive from RetrospectiveReplayBuffer via update().
@@ -92,7 +95,7 @@ class TD3(SB3BaselineModel):
             policy_delay=int(policy_delay),
             target_policy_noise=float(target_policy_noise),
             target_noise_clip=float(target_noise_clip),
-            policy_kwargs=policy_kwargs,
+            policy_kwargs=self.apply_hidden_dim(policy_kwargs, hidden_dim),
         )
 
         # Exploration noise, per Box dimension. dim 2 gets its own (much larger)
@@ -208,6 +211,10 @@ class TD3(SB3BaselineModel):
             # `policy_delay` steps, so reporting it as 'loss' would be intermittent.
             "loss": float(critic_loss.item()),
             "critic_loss": float(critic_loss.item()),
+            # NaN on the steps where the delayed actor update is skipped. Only
+            # "loss" (the critic loss) is aggregated by the trainer; this key is a
+            # diagnostic, and `actor_updated` says whether it is meaningful.
             "actor_loss": actor_loss_val,
+            "actor_updated": float(sb3._n_updates % sb3.policy_delay == 0),
             "n_updates": float(sb3._n_updates),
         }

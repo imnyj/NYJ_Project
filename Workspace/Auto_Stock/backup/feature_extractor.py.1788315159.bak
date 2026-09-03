@@ -1,0 +1,757 @@
+"""
+modules/models/feature_extractor.py
+===================================
+Auto Stock ML/RL Trader — Milestone 2: 지도학습(SL) 특징 추출기 및 멀티태스크 사전학습 모듈.
+
+주요 컴포넌트:
+1. TabularMLPFeatureExtractor:
+   - 정적 펀더멘털 지표(PER, PBR, Market Cap 등) 및 계좌 상태 피처(현금 비중, 포지션 비중 등) 처리용 MLP 백본.
+2. Temporal1DCNNFeatureExtractor:
+   - 시계열 가격, 수익률, 변동성, 이동평균 이격도 등의 국소 패턴 및 단기 모멘텀 추출용 1D-CNN 백본.
+3. DualStreamSLFeatureExtractor:
+   - 1D-CNN 시계열 스트림과 MLP 정적 스트림을 결합하여 멀티모달 퓨전 표현을 생성하는 통합 특징 추출기.
+4. SLPretrainer:
+   - 익일 수익률 회귀(MSE/Smooth L1) 및 시장 방향성 분류(CrossEntropy)를 동시에 학습하는 멀티태스크 사전학습 클래스.
+   - 학습된 백본 가중치를 RL Actor-Critic 정책망으로 매끄럽게 전이(Transfer) 지원.
+"""
+
+import os
+import math
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader, TensorDataset
+
+
+def get_activation_fn(activation: str) -> nn.Module:
+    """문자열 기반 활성화 함수 인스턴스를 반환합니다."""
+    act = activation.lower()
+    if act == "relu":
+        return nn.ReLU()
+    elif act == "gelu":
+        return nn.GELU()
+    elif act == "tanh":
+        return nn.Tanh()
+    elif act == "elu":
+        return nn.ELU()
+    elif act == "leaky_relu":
+        return nn.LeakyReLU(negative_slope=0.01)
+    elif act == "silu" or act == "swish":
+        return nn.SiLU()
+    else:
+        raise ValueError(f"지원하지 않는 활성화 함수입니다: {activation}")
+
+
+class TabularMLPFeatureExtractor(nn.Module):
+    """
+    정적 펀더멘털 및 계좌 상태 피처 처리용 다층 퍼셉트론 (MLP) 특징 추출기.
+    - 입력 형상: (Batch, input_dim) 또는 (input_dim,)
+    - 출력 형상: (Batch, output_dim)
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dims: Optional[List[int]] = None,
+        output_dim: int = 64,
+        activation: str = "relu",
+        dropout: float = 0.1,
+        use_layer_norm: bool = True,
+        use_residual: bool = False,
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dims = hidden_dims if hidden_dims is not None else [128, 64]
+        self.output_dim = output_dim
+        self.activation_name = activation
+        self.dropout_rate = dropout
+        self.use_layer_norm = use_layer_norm
+        self.use_residual = use_residual
+
+        layers: List[nn.Module] = []
+        prev_dim = input_dim
+
+        for h_dim in self.hidden_dims:
+            layers.append(nn.Linear(prev_dim, h_dim))
+            if use_layer_norm:
+                layers.append(nn.LayerNorm(h_dim))
+            layers.append(get_activation_fn(activation))
+            if dropout > 0.0:
+                layers.append(nn.Dropout(p=dropout))
+            prev_dim = h_dim
+
+        self.mlp_body = nn.Sequential(*layers)
+        self.output_layer = nn.Linear(prev_dim, output_dim)
+        if use_layer_norm:
+            self.final_norm = nn.LayerNorm(output_dim)
+        else:
+            self.final_norm = nn.Identity()
+
+        # 잔차 연결용 프로젝션 레이어 (차원이 다를 경우)
+        if self.use_residual:
+            self.res_proj = (
+                nn.Linear(input_dim, output_dim)
+                if input_dim != output_dim
+                else nn.Identity()
+            )
+        else:
+            self.res_proj = None
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """가중치 직교/카이밍 초기화"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        MLP 순전파.
+        Args:
+            x: Tensor of shape (B, input_dim) or (input_dim,)
+        Returns:
+            Tensor of shape (B, output_dim)
+        """
+        is_unbatched = x.dim() == 1
+        if is_unbatched:
+            x = x.unsqueeze(0)
+
+        # NaN/Inf 안전 방어
+        x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        h = self.mlp_body(x)
+        out = self.output_layer(h)
+        out = self.final_norm(out)
+
+        if self.use_residual and self.res_proj is not None:
+            out = out + self.res_proj(x)
+
+        if is_unbatched:
+            out = out.squeeze(0)
+        return out
+
+
+class Temporal1DCNNFeatureExtractor(nn.Module):
+    """
+    시계열 가격, 수익률, 변동성 등의 국소 패턴 및 단기 모멘텀 추출용 1D-CNN 특징 추출기.
+    - 입력 형상: (Batch, seq_len, in_channels) 또는 (Batch, in_channels, seq_len)
+    - 출력 형상: (Batch, output_dim)
+    """
+
+    def __init__(
+        self,
+        in_channels: int = 10,
+        seq_len: int = 20,
+        num_filters: Optional[List[int]] = None,
+        kernel_sizes: Optional[List[int]] = None,
+        output_dim: int = 64,
+        dropout: float = 0.1,
+        use_batch_norm: bool = True,
+        pooling: str = "adaptive_avg",
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.seq_len = seq_len
+        self.num_filters = num_filters if num_filters is not None else [32, 64]
+        self.kernel_sizes = (
+            kernel_sizes if kernel_sizes is not None else [3] * len(self.num_filters)
+        )
+        self.output_dim = output_dim
+        self.dropout_rate = dropout
+        self.use_batch_norm = use_batch_norm
+        self.pooling_type = pooling.lower()
+
+        if len(self.num_filters) != len(self.kernel_sizes):
+            raise ValueError("num_filters와 kernel_sizes의 길이는 동일해야 합니다.")
+
+        conv_blocks: List[nn.Module] = []
+        prev_c = in_channels
+
+        for f_dim, k_size in zip(self.num_filters, self.kernel_sizes):
+            pad = (k_size - 1) // 2
+            conv_blocks.append(
+                nn.Conv1d(
+                    in_channels=prev_c,
+                    out_channels=f_dim,
+                    kernel_size=k_size,
+                    padding=pad,
+                )
+            )
+            if use_batch_norm:
+                conv_blocks.append(nn.BatchNorm1d(f_dim))
+            conv_blocks.append(nn.ReLU())
+            if dropout > 0.0:
+                conv_blocks.append(nn.Dropout(p=dropout))
+            prev_c = f_dim
+
+        self.conv_net = nn.Sequential(*conv_blocks)
+
+        if self.pooling_type == "adaptive_max":
+            self.pool = nn.AdaptiveMaxPool1d(1)
+        elif self.pooling_type == "adaptive_avg":
+            self.pool = nn.AdaptiveAvgPool1d(1)
+        elif self.pooling_type == "flatten":
+            self.pool = nn.Identity()
+        else:
+            raise ValueError(f"지원하지 않는 풀링 타입: {pooling}")
+
+        if self.pooling_type == "flatten":
+            fc_in_dim = prev_c * seq_len
+        else:
+            fc_in_dim = prev_c
+
+        self.fc_proj = nn.Sequential(
+            nn.Linear(fc_in_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.ReLU(),
+        )
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        """가중치 카이밍 초기화"""
+        for m in self.modules():
+            if isinstance(m, (nn.Conv1d, nn.Linear)):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, (nn.BatchNorm1d, nn.LayerNorm)):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        1D-CNN 순전파.
+        Args:
+            x: Tensor of shape (B, seq_len, in_channels) or (B, in_channels, seq_len)
+               또는 unbatched (seq_len, in_channels) / 2D (B, in_channels)
+        Returns:
+            Tensor of shape (B, output_dim)
+        """
+        is_unbatched = False
+        if x.dim() == 1:
+            # Single flat feature vector -> expand to (1, in_channels, 1)
+            x = x.unsqueeze(0).unsqueeze(-1)
+            is_unbatched = True
+        elif x.dim() == 2:
+            # Shape is (B, in_channels) -> expand sequence dimension to (B, in_channels, 1)
+            # or shape is (seq_len, in_channels)
+            if x.shape[1] == self.in_channels:
+                x = x.unsqueeze(0).transpose(1, 2)  # (1, in_channels, seq_len)
+                is_unbatched = True
+            elif x.shape[0] == self.in_channels:
+                x = x.unsqueeze(0)  # (1, in_channels, seq_len)
+                is_unbatched = True
+            else:
+                x = x.unsqueeze(-1)  # (B, in_channels, 1)
+        elif x.dim() == 3:
+            # (B, seq_len, in_channels) -> transpose to (B, in_channels, seq_len)
+            if x.shape[2] == self.in_channels and x.shape[1] != self.in_channels:
+                x = x.transpose(1, 2)
+
+        x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        h = self.conv_net(x)
+        pooled = self.pool(h)
+        flattened = torch.flatten(pooled, start_dim=1)
+        out = self.fc_proj(flattened)
+
+        if is_unbatched:
+            out = out.squeeze(0)
+        return out
+
+
+class DualStreamSLFeatureExtractor(nn.Module):
+    """
+    1D-CNN(시계열 모멘텀)과 MLP(정적 펀더멘털+계좌 상태)를 결합한 멀티모달 퓨전 백본.
+    """
+
+    def __init__(
+        self,
+        temporal_in_channels: int = 10,
+        temporal_seq_len: int = 20,
+        tabular_dim: int = 4,
+        temporal_hidden_dims: Optional[List[int]] = None,
+        tabular_hidden_dims: Optional[List[int]] = None,
+        temporal_output_dim: int = 64,
+        tabular_output_dim: int = 32,
+        fusion_dim: int = 128,
+        output_dim: int = 64,
+        dropout: float = 0.1,
+        temporal_extractor: Optional[nn.Module] = None,
+        tabular_extractor: Optional[nn.Module] = None,
+    ):
+        super().__init__()
+        self.temporal_in_channels = temporal_in_channels
+        self.temporal_seq_len = temporal_seq_len
+        self.tabular_dim = tabular_dim
+        self.output_dim = output_dim
+
+        # Temporal Stream (1D-CNN)
+        if temporal_extractor is not None:
+            self.temporal_stream = temporal_extractor
+            self.temporal_output_dim = getattr(temporal_extractor, "output_dim", temporal_output_dim)
+        else:
+            self.temporal_stream = Temporal1DCNNFeatureExtractor(
+                in_channels=temporal_in_channels,
+                seq_len=temporal_seq_len,
+                num_filters=temporal_hidden_dims or [32, 64],
+                output_dim=temporal_output_dim,
+                dropout=dropout,
+            )
+            self.temporal_output_dim = temporal_output_dim
+
+        # Tabular Stream (MLP)
+        if tabular_extractor is not None:
+            self.tabular_stream = tabular_extractor
+            self.tabular_output_dim = getattr(tabular_extractor, "output_dim", tabular_output_dim)
+        else:
+            self.tabular_stream = TabularMLPFeatureExtractor(
+                input_dim=tabular_dim,
+                hidden_dims=tabular_hidden_dims or [64, 32],
+                output_dim=tabular_output_dim,
+                dropout=dropout,
+            )
+            self.tabular_output_dim = tabular_output_dim
+
+        # Fusion Stream
+        fused_in_dim = self.temporal_output_dim + self.tabular_output_dim
+        self.fusion_mlp = nn.Sequential(
+            nn.Linear(fused_in_dim, fusion_dim),
+            nn.LayerNorm(fusion_dim),
+            nn.ReLU(),
+            nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity(),
+            nn.Linear(fusion_dim, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.ReLU(),
+        )
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for m in self.fusion_mlp.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.LayerNorm):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def forward(
+        self,
+        temporal_x: Optional[torch.Tensor] = None,
+        tabular_x: Optional[torch.Tensor] = None,
+        x: Optional[Union[torch.Tensor, Dict[str, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]] = None,
+    ) -> torch.Tensor:
+        """
+        멀티모달 퓨전 순전파.
+        Args:
+            temporal_x: 시계열 텐서 (B, seq_len, in_channels) 또는 (B, in_channels, seq_len)
+            tabular_x: 정적/계좌 텐서 (B, tabular_dim)
+            x: 유연한 통합 입력 (Dict, Tuple, 또는 단일 Tensor)
+        Returns:
+            fused_features: Tensor of shape (B, output_dim)
+        """
+        if x is not None:
+            if isinstance(x, dict):
+                temporal_x = x.get("temporal", temporal_x)
+                tabular_x = x.get("tabular", tabular_x)
+            elif isinstance(x, (tuple, list)) and len(x) >= 2:
+                temporal_x = x[0]
+                tabular_x = x[1]
+            elif isinstance(x, torch.Tensor):
+                # 단일 평탄화 관측 벡터가 주어진 경우 분할 처리
+                if x.dim() == 1:
+                    x = x.unsqueeze(0)
+                tot_dim = x.shape[1]
+                if tot_dim >= self.tabular_dim:
+                    temp_dim = tot_dim - self.tabular_dim
+                    if temp_dim > 0:
+                        temporal_x = x[:, :temp_dim]
+                    else:
+                        temporal_x = x
+                    tabular_x = x[:, -self.tabular_dim:]
+                else:
+                    temporal_x = x
+                    tabular_x = x
+
+        # Fallbacks for missing streams
+        batch_size = 1
+        if temporal_x is not None:
+            batch_size = temporal_x.shape[0] if temporal_x.dim() > 1 else 1
+        elif tabular_x is not None:
+            batch_size = tabular_x.shape[0] if tabular_x.dim() > 1 else 1
+
+        device = (
+            temporal_x.device
+            if temporal_x is not None
+            else (tabular_x.device if tabular_x is not None else torch.device("cpu"))
+        )
+
+        if temporal_x is None:
+            temporal_x = torch.zeros(
+                (batch_size, self.temporal_in_channels, self.temporal_seq_len),
+                device=device,
+                dtype=torch.float32,
+            )
+        if tabular_x is None:
+            tabular_x = torch.zeros(
+                (batch_size, self.tabular_dim),
+                device=device,
+                dtype=torch.float32,
+            )
+
+        feat_temp = self.temporal_stream(temporal_x)
+        feat_tab = self.tabular_stream(tabular_x)
+
+        if feat_temp.dim() == 1:
+            feat_temp = feat_temp.unsqueeze(0)
+        if feat_tab.dim() == 1:
+            feat_tab = feat_tab.unsqueeze(0)
+
+        fused_input = torch.cat([feat_temp, feat_tab], dim=-1)
+        out = self.fusion_mlp(fused_input)
+        return out
+
+
+class SLPretrainer(nn.Module):
+    """
+    익일 수익률 회귀(MSE/Smooth L1) 및 시장 방향성 분류(CrossEntropy) 멀티태스크 사전학습 클래스.
+    """
+
+    def __init__(
+        self,
+        backbone: Optional[nn.Module] = None,
+        feature_dim: int = 64,
+        num_classes: int = 3,
+        task_weight_cls: float = 1.0,
+        task_weight_reg: float = 1.0,
+        regression_loss_type: str = "smooth_l1",
+        lr: float = 1e-3,
+        weight_decay: float = 1e-5,
+    ):
+        super().__init__()
+        self.feature_dim = feature_dim
+        self.num_classes = num_classes
+        self.task_weight_cls = float(task_weight_cls)
+        self.task_weight_reg = float(task_weight_reg)
+        self.regression_loss_type = regression_loss_type.lower()
+        self.lr = lr
+        self.weight_decay = weight_decay
+
+        # Backbone
+        if backbone is not None:
+            self.backbone = backbone
+            self.feature_dim = getattr(backbone, "output_dim", feature_dim)
+        else:
+            self.backbone = DualStreamSLFeatureExtractor(output_dim=self.feature_dim)
+
+        # Multi-task Heads
+        self.return_head = nn.Sequential(
+            nn.Linear(self.feature_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+        )
+
+        self.direction_head = nn.Sequential(
+            nn.Linear(self.feature_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, num_classes),
+        )
+
+        # Loss Functions
+        if self.regression_loss_type == "mse":
+            self.reg_criterion = nn.MSELoss()
+        else:
+            self.reg_criterion = nn.SmoothL1Loss()
+        self.cls_criterion = nn.CrossEntropyLoss()
+
+        self._init_heads()
+
+    def _init_heads(self) -> None:
+        for head in [self.return_head, self.direction_head]:
+            for m in head.modules():
+                if isinstance(m, nn.Linear):
+                    nn.init.orthogonal_(m.weight, gain=1.0)
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
+
+    def extract_features(
+        self,
+        temporal_x: Optional[torch.Tensor] = None,
+        tabular_x: Optional[torch.Tensor] = None,
+        x: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """백본 특징 벡터 추출"""
+        if hasattr(self.backbone, "forward"):
+            try:
+                return self.backbone(temporal_x=temporal_x, tabular_x=tabular_x, x=x)
+            except TypeError:
+                inp = x if x is not None else (temporal_x if temporal_x is not None else tabular_x)
+                return self.backbone(inp)
+        raise ValueError("백본 모델의 forward 메서드를 호출할 수 없습니다.")
+
+    def forward(
+        self,
+        temporal_x: Optional[torch.Tensor] = None,
+        tabular_x: Optional[torch.Tensor] = None,
+        x: Optional[Any] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        멀티태스크 순전파.
+        Returns:
+            (pred_return: Tensor (B, 1), pred_direction_logits: Tensor (B, num_classes))
+        """
+        feats = self.extract_features(temporal_x=temporal_x, tabular_x=tabular_x, x=x)
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+        return pred_return, pred_direction
+
+    def compute_loss(
+        self,
+        pred_return: torch.Tensor,
+        pred_direction: torch.Tensor,
+        target_return: torch.Tensor,
+        target_direction: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        멀티태스크 손실 함수 계산: L = lambda_reg * L_reg + lambda_cls * L_cls
+        """
+        if target_return.dim() == 1:
+            target_return = target_return.unsqueeze(-1)
+
+        reg_loss = self.reg_criterion(pred_return, target_return.float())
+        cls_loss = self.cls_criterion(pred_direction, target_direction.long())
+        total_loss = (self.task_weight_reg * reg_loss) + (self.task_weight_cls * cls_loss)
+        return total_loss, reg_loss, cls_loss
+
+    def train_step(
+        self,
+        batch: Union[Tuple, List, Dict],
+        optimizer: Optional[torch.optim.Optimizer] = None,
+        device: Optional[torch.device] = None,
+    ) -> Dict[str, float]:
+        """
+        단일 미니배치 학습 스텝 실행.
+        """
+        self.train()
+        if optimizer is None:
+            optimizer = torch.optim.AdamW(
+                self.parameters(), lr=self.lr, weight_decay=self.weight_decay
+            )
+
+        if isinstance(batch, (tuple, list)):
+            if len(batch) == 4:
+                # (temporal_x, tabular_x, target_return, target_direction)
+                t_x, tab_x, y_ret, y_dir = batch
+                x_inp = None
+            elif len(batch) == 3:
+                # (x, target_return, target_direction)
+                x_inp, y_ret, y_dir = batch
+                t_x, tab_x = None, None
+            else:
+                raise ValueError(f"지원하지 않는 배치 튜플 길이: {len(batch)}")
+        elif isinstance(batch, dict):
+            t_x = batch.get("temporal", None)
+            tab_x = batch.get("tabular", None)
+            x_inp = batch.get("x", None)
+            y_ret = batch["target_return"]
+            y_dir = batch["target_direction"]
+        else:
+            raise TypeError(f"지원하지 않는 배치 형식: {type(batch)}")
+
+        if device is not None:
+            if t_x is not None and isinstance(t_x, torch.Tensor):
+                t_x = t_x.to(device)
+            if tab_x is not None and isinstance(tab_x, torch.Tensor):
+                tab_x = tab_x.to(device)
+            if x_inp is not None and isinstance(x_inp, torch.Tensor):
+                x_inp = x_inp.to(device)
+            y_ret = y_ret.to(device)
+            y_dir = y_dir.to(device)
+
+        optimizer.zero_grad()
+        pred_ret, pred_dir = self.forward(temporal_x=t_x, tabular_x=tab_x, x=x_inp)
+        tot_loss, reg_loss, cls_loss = self.compute_loss(
+            pred_return=pred_ret,
+            pred_direction=pred_dir,
+            target_return=y_ret,
+            target_direction=y_dir,
+        )
+
+        tot_loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=1.0)
+        optimizer.step()
+
+        preds = torch.argmax(pred_dir, dim=-1)
+        acc = (preds == y_dir).float().mean().item()
+
+        return {
+            "total_loss": tot_loss.item(),
+            "reg_loss": reg_loss.item(),
+            "cls_loss": cls_loss.item(),
+            "accuracy": acc,
+        }
+
+    def fit(
+        self,
+        train_data: Union[DataLoader, Tuple[torch.Tensor, ...]],
+        val_data: Optional[Union[DataLoader, Tuple[torch.Tensor, ...]]] = None,
+        epochs: int = 10,
+        batch_size: int = 32,
+        lr: Optional[float] = None,
+        weight_decay: Optional[float] = None,
+        device: str = "cpu",
+        verbose: bool = False,
+    ) -> Dict[str, List[float]]:
+        """
+        전체 에포크에 대해 사전학습을 수행하고 손실 이력을 반환합니다.
+        """
+        target_device = torch.device(device)
+        self.to(target_device)
+
+        optimizer = torch.optim.AdamW(
+            self.parameters(),
+            lr=lr or self.lr,
+            weight_decay=weight_decay or self.weight_decay,
+        )
+
+        if isinstance(train_data, tuple):
+            train_dataset = TensorDataset(*train_data)
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        else:
+            train_loader = train_data
+
+        history: Dict[str, List[float]] = {
+            "train_total_loss": [],
+            "train_reg_loss": [],
+            "train_cls_loss": [],
+            "train_accuracy": [],
+            "val_total_loss": [],
+            "val_accuracy": [],
+        }
+
+        for epoch in range(epochs):
+            self.train()
+            ep_tot_loss, ep_reg_loss, ep_cls_loss, ep_acc = 0.0, 0.0, 0.0, 0.0
+            n_batches = 0
+
+            for batch in train_loader:
+                metrics = self.train_step(batch, optimizer=optimizer, device=target_device)
+                ep_tot_loss += metrics["total_loss"]
+                ep_reg_loss += metrics["reg_loss"]
+                ep_cls_loss += metrics["cls_loss"]
+                ep_acc += metrics["accuracy"]
+                n_batches += 1
+
+            if n_batches > 0:
+                history["train_total_loss"].append(ep_tot_loss / n_batches)
+                history["train_reg_loss"].append(ep_reg_loss / n_batches)
+                history["train_cls_loss"].append(ep_cls_loss / n_batches)
+                history["train_accuracy"].append(ep_acc / n_batches)
+
+            # Validation step
+            if val_data is not None:
+                val_metrics = self.evaluate(val_data, device=target_device)
+                history["val_total_loss"].append(val_metrics["total_loss"])
+                history["val_accuracy"].append(val_metrics["accuracy"])
+
+            if verbose and (epoch + 1) % max(1, epochs // 5) == 0:
+                print(
+                    f"[SLPretrainer] Epoch {epoch+1}/{epochs} - "
+                    f"Loss: {history['train_total_loss'][-1]:.4f} (Reg: {history['train_reg_loss'][-1]:.4f}, "
+                    f"Cls: {history['train_cls_loss'][-1]:.4f}), Acc: {history['train_accuracy'][-1]:.4f}"
+                )
+
+        return history
+
+    def evaluate(
+        self,
+        val_data: Union[DataLoader, Tuple[torch.Tensor, ...]],
+        device: Optional[torch.device] = None,
+    ) -> Dict[str, float]:
+        """검증 데이터셋에 대한 평가 지표 산출"""
+        self.eval()
+        if isinstance(val_data, tuple):
+            val_dataset = TensorDataset(*val_data)
+            val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
+        else:
+            val_loader = val_data
+
+        tot_loss, reg_loss, cls_loss, total_correct, total_samples = 0.0, 0.0, 0.0, 0, 0
+        with torch.no_grad():
+            for batch in val_loader:
+                if len(batch) == 4:
+                    t_x, tab_x, y_ret, y_dir = batch
+                    x_inp = None
+                elif len(batch) == 3:
+                    x_inp, y_ret, y_dir = batch
+                    t_x, tab_x = None, None
+                else:
+                    continue
+
+                if device is not None:
+                    if t_x is not None:
+                        t_x = t_x.to(device)
+                    if tab_x is not None:
+                        tab_x = tab_x.to(device)
+                    if x_inp is not None:
+                        x_inp = x_inp.to(device)
+                    y_ret = y_ret.to(device)
+                    y_dir = y_dir.to(device)
+
+                pred_ret, pred_dir = self.forward(temporal_x=t_x, tabular_x=tab_x, x=x_inp)
+                t_loss, r_loss, c_loss = self.compute_loss(pred_ret, pred_dir, y_ret, y_dir)
+                batch_size = y_dir.shape[0]
+                tot_loss += t_loss.item() * batch_size
+                reg_loss += r_loss.item() * batch_size
+                cls_loss += c_loss.item() * batch_size
+                preds = torch.argmax(pred_dir, dim=-1)
+                total_correct += (preds == y_dir).sum().item()
+                total_samples += batch_size
+
+        if total_samples == 0:
+            return {"total_loss": 0.0, "reg_loss": 0.0, "cls_loss": 0.0, "accuracy": 0.0}
+
+        return {
+            "total_loss": tot_loss / total_samples,
+            "reg_loss": reg_loss / total_samples,
+            "cls_loss": cls_loss / total_samples,
+            "accuracy": total_correct / total_samples,
+        }
+
+    def save_pretrained(self, filepath: str) -> None:
+        """사전학습 가중치 및 백본 저장"""
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+        torch.save(
+            {
+                "state_dict": self.state_dict(),
+                "feature_dim": self.feature_dim,
+                "num_classes": self.num_classes,
+                "task_weight_cls": self.task_weight_cls,
+                "task_weight_reg": self.task_weight_reg,
+            },
+            filepath,
+        )
+
+    def load_pretrained(self, filepath: str, strict: bool = True) -> None:
+        """사전학습 가중치 로드"""
+        checkpoint = torch.load(filepath, map_location="cpu")
+        if "state_dict" in checkpoint:
+            self.load_state_dict(checkpoint["state_dict"], strict=strict)
+        else:
+            self.load_state_dict(checkpoint, strict=strict)
+
+    def get_backbone(self) -> nn.Module:
+        """RL 정책망으로 전달하기 위한 백본 추출"""
+        return self.backbone

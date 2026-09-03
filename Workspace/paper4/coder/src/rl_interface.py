@@ -154,6 +154,65 @@ def get_sumo_max_edge_speed(
 #: Scenario speed limit (m/s), derived from the generated network.
 V_LIMIT: float = get_sumo_max_edge_speed()
 
+
+def get_sumo_max_speed_factor(rou_file: Optional[str] = None,
+                              default_factor: float = 1.0) -> float:
+    """Upper bound of the `speedFactor` distribution declared in the route file.
+
+    SUMO's DEFAULT_VEHTYPE draws `speedFactor` from a truncated normal
+    `normc(1, 0.1, 0.2, 2)`, so vehicles legitimately exceed the lane speed limit.
+    Measured on this scenario: the fastest observed vehicle ran at 14.768 m/s
+    against a lane limit of 13.32 m/s (+11 %), and 8.62 % of all observations were
+    clipped to exactly 1.0 in the normalised speed feature -- i.e. the fastest
+    vehicles, which are precisely the ones whose constant-velocity extrapolation
+    decays quickest, were indistinguishable from each other in the observation.
+
+    `make_sumo_set.py` therefore declares an explicit `<vType>` with a *bounded*
+    speedFactor, and this reads that bound back so the normaliser is a property of
+    the scenario on disk rather than a literal. Falls back to 1.0 (no headroom)
+    when no explicit vType is declared, which reproduces the pre-existing
+    behaviour rather than silently inventing headroom.
+    """
+    if rou_file is None:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        rou_file = os.path.join(base_dir, "sumo", "generated.rou.xml")
+
+    if not os.path.exists(rou_file):
+        return default_factor
+
+    try:
+        tree = ET.parse(rou_file)
+        root = tree.getroot()
+        best = 0.0
+        for vtype in root.findall("vType"):
+            spec = vtype.get("speedFactor")
+            if spec is None:
+                continue
+            text = str(spec).strip()
+            if text.lower().startswith("normc"):
+                # normc(mean, dev, min, max) -- the fourth field is the hard cap.
+                inner = text[text.find("(") + 1: text.rfind(")")]
+                parts = [p.strip() for p in inner.split(",")]
+                if len(parts) >= 4:
+                    best = max(best, float(parts[3]))
+                elif parts:
+                    best = max(best, float(parts[0]))
+            else:
+                best = max(best, float(text))
+        return float(best) if best > 0.0 else default_factor
+    except Exception:
+        return default_factor
+
+
+#: Highest speed a vehicle can actually reach in this scenario (m/s).
+#:
+#: Kept separate from `V_LIMIT` on purpose. `V_LIMIT` is the *road's* declared
+#: limit and is what `E_REF` means ("one second of travel at the scenario speed
+#: limit"), so moving it would silently rescale the reward. `V_MAX_OBS` is the
+#: observable ceiling and is only ever used to normalise the speed/velocity
+#: features, which is where the saturation was.
+V_MAX_OBS: float = V_LIMIT * get_sumo_max_speed_factor()
+
 #: RSU communication range (m). `src/sumo/make_sumo_set.py` owns this value --
 #: it is what actually builds the network geometry (EDGE_LENGTH is derived from
 #: it) -- so every consumer must read it from there instead of restating 300.0.
@@ -181,11 +240,13 @@ def refresh_scenario_constants() -> Dict[str, float]:
     `StateVectorizer` take 0.0 to mean "resolve now"; `norm_sq_error` reads the
     module global on every call.
     """
-    global DELTA_MAX, V_LIMIT, E_REF
+    global DELTA_MAX, V_LIMIT, V_MAX_OBS, E_REF
     DELTA_MAX = get_sumo_max_red_phase_duration()
     V_LIMIT = get_sumo_max_edge_speed()
+    V_MAX_OBS = V_LIMIT * get_sumo_max_speed_factor()
     E_REF = V_LIMIT * 1.0
-    return {"DELTA_MAX": DELTA_MAX, "V_LIMIT": V_LIMIT, "E_REF": E_REF}
+    return {"DELTA_MAX": DELTA_MAX, "V_LIMIT": V_LIMIT,
+            "V_MAX_OBS": V_MAX_OBS, "E_REF": E_REF}
 
 
 #: Estimation-error reference scale (metres), design_spec_v2 D5.
@@ -300,7 +361,13 @@ class StateVectorizer:
         # 0 means "derive from the scenario". The former literal 30.0 m/s was
         # 2.3x the fastest lane in the generated network, so the speed features
         # only ever used the bottom 44 % of their range.
-        self.v_max = float(v_max) if v_max and v_max > 0.0 else V_LIMIT
+        #
+        # V_MAX_OBS, not V_LIMIT: vehicles exceed the lane limit by their
+        # `speedFactor`, and normalising by the limit clipped 8.62 % of all
+        # observations to exactly 1.0 -- the fastest vehicles, the ones this
+        # paper most needs to tell apart. E_REF stays on V_LIMIT so the reward
+        # scale is untouched by this fix.
+        self.v_max = float(v_max) if v_max and v_max > 0.0 else V_MAX_OBS
         self.a_max = float(a_max)
         self.queue_max = max(1.0, float(queue_max))
 
@@ -377,76 +444,58 @@ class StateVectorizer:
         n_active: int = 1,
         n_queue: Optional[float] = None,
     ) -> np.ndarray:
-        """
-        Vectorize node objects into a 17-dim normalized observation vector.
+        """Node-object adapter over `vectorize_from_dict`. Not the production path.
 
-        n_queue: explicit count of vehicles queued ahead in the same lane. When None
-        it is recovered from the TLS/dynamics feature dict (see _extract_queue_count).
+        There used to be two independent implementations of the same 17-dim
+        layout, which violated design principle P1 ("the observation vector is
+        built in exactly one place") and had already drifted apart: this one
+        resolved `n_queue` by looking at the TLS feature dict FIRST, and that
+        dict's `n_queue` is `dynamics_predictor.extract_queue_features`, i.e. a
+        live `lane.getLastStepVehicleIDs` + `vehicle.getSpeed` measurement that no
+        real roadside unit can make. `vectorize_from_dict` looks at the state dict
+        first, and the environment puts its ledger-reconstructed count there (D3),
+        so the production path was safe while this one was a dormant leak.
+
+        It is now a translation layer: it builds a state dict and defers, so there
+        is one implementation of the layout, and `n_queue` is taken from the
+        explicit argument or from the vehicle node itself -- never from the TLS
+        dict, which is privileged information.
         """
         vec = np.zeros(STATE_DIM, dtype=np.float32)
         if vehicle_node is None or rsu_node is None:
             return vec
 
-        # [0] Quality of the RSU's last prediction (see vectorize_from_dict).
-        vec[0] = norm_sq_error(float(getattr(vehicle_node, "last_pred_err", 0.0)))
-
-        # [1-3] Velocities and speed
         vel = getattr(vehicle_node, "vel", (0.0, 0.0))
         if hasattr(vehicle_node, "speed"):
             spd_val = vehicle_node.speed() if callable(vehicle_node.speed) else vehicle_node.speed
         else:
             spd_val = math.hypot(vel[0], vel[1])
-        
-        vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
-        vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
-        vec[3] = np.clip(float(spd_val) / self.v_max, 0.0, 1.0)
 
-        # [4] Acceleration
-        accel = getattr(vehicle_node, "accel", 0.0)
-        vec[4] = np.clip(float(accel) / self.a_max, -1.0, 1.0)
-
-        # [5-7] Relative coordinates and Distance to RSU
-        pos = getattr(vehicle_node, "pos", (0.0, 0.0))
-        rsu_pos = getattr(rsu_node, "pos", (0.0, 0.0))
-        dx = float(pos[0] - rsu_pos[0])
-        dy = float(pos[1] - rsu_pos[1])
-        dist = math.hypot(dx, dy)
-        vec[5] = np.clip(dx / self.rsu_range, -1.0, 1.0)
-        vec[6] = np.clip(dy / self.rsu_range, -1.0, 1.0)
-        vec[7] = np.clip(dist / self.rsu_range, 0.0, 1.0)
-
-        # [8-12] TLS features (TraCI)
         tls = tls_info or {}
         if not tls and hasattr(vehicle_node, "_state_dict"):
-            st = vehicle_node._state_dict()
-            tls = st.get("tls_features", {})
+            tls = (vehicle_node._state_dict() or {}).get("tls_features", {})
 
-        state = str(tls.get("state", "g")).lower()
-        vec[8] = 1.0 if state in ["r", "red"] else 0.0
-        vec[9] = 1.0 if state in ["y", "yellow"] else 0.0
-        vec[10] = 1.0 if state in ["g", "green"] else 0.0
-
-        t_switch = float(tls.get("time_to_switch", 30.0))
-        vec[11] = np.clip(t_switch / 60.0, 0.0, 1.0)
-
-        d_stop = float(tls.get("dist_to_stopline", self.rsu_range))
-        vec[12] = np.clip(d_stop / self.rsu_range, 0.0, 1.0)
-
-        # [13-14] Network contention and measured channel occupancy
-        vec[13] = np.clip(float(n_active) / 100.0, 0.0, 1.0)
-        vec[14] = np.clip(float(cbr), 0.0, 1.0)
-
-        # [15] n_queue: vehicles queued ahead in the same lane (design S1)
         if n_queue is None:
-            q_cnt = self._extract_queue_count(tls, getattr(vehicle_node, "__dict__", None))
+            # Vehicle-owned telemetry only. The TLS dict is deliberately NOT a
+            # source here (see docstring).
+            q_cnt = self._extract_queue_count(getattr(vehicle_node, "__dict__", None))
         else:
             q_cnt = max(0.0, float(n_queue))
-        vec[15] = np.clip(q_cnt / self.queue_max, 0.0, 1.0)
 
-        # [16] heading: signed approach (+) / recede (-) indicator w.r.t. the RSU (design S1)
-        vec[16] = self._compute_heading(float(vel[0]), float(vel[1]), dx, dy)
-
-        return vec
+        rsu_pos = getattr(rsu_node, "pos", (0.0, 0.0))
+        state_dict: Dict[str, Any] = {
+            "pos": getattr(vehicle_node, "pos", (0.0, 0.0)),
+            "vel": vel,
+            "speed": float(spd_val),
+            "accel": float(getattr(vehicle_node, "accel", 0.0)),
+            "current_time": current_time,
+            "last_pred_err": float(getattr(vehicle_node, "last_pred_err", 0.0)),
+            "tls_features": tls,
+            "cbr": cbr,
+            "n_active": n_active,
+            "n_queue": q_cnt,
+        }
+        return self.vectorize_from_dict(state_dict, tuple(rsu_pos))
 
     def vectorize_from_dict(self, state_dict: Dict[str, Any], rsu_pos: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
         """
@@ -545,17 +594,38 @@ class ActionDecoder:
     ) -> None:
         self.num_channels = int(num_channels)
         self.delta_min = float(delta_min)
-        # 0.0 means "resolve from the scenario now". A `= DELTA_MAX` default
-        # would bind the value at import time and ignore any later network.
-        self.delta_max = float(delta_max) if delta_max and delta_max > 0.0 else DELTA_MAX
+        # 0.0 means "resolve from the scenario on every read". A snapshot taken
+        # here is wrong whenever the decoder outlives the network it was built
+        # against: `run_hot_swap_training` constructs the nine models (and their
+        # decoders) BEFORE `AoiV2IEnv._init_sumo` writes the network and calls
+        # `refresh_scenario_constants()`, so a model built at import time held a
+        # stale DELTA_MAX while the environment asserted against the fresh one.
+        # `norm_sq_error` already reads its module global per call; this matches.
+        self._delta_max_fixed: Optional[float] = (
+            float(delta_max) if delta_max and delta_max > 0.0 else None
+        )
         self.p_min = float(p_min)
         self.p_max = float(p_max)
-        # log(delta_max / delta_min): the geometric span used by the Delta mapping.
-        # Guarded so a degenerate delta_min == delta_max decoder still works.
-        if self.delta_min > 0.0 and self.delta_max > self.delta_min:
-            self._log_delta_ratio = math.log(self.delta_max / self.delta_min)
-        else:
-            self._log_delta_ratio = 0.0
+
+    @property
+    def delta_max(self) -> float:
+        """Upper Delta bound: the pinned value, else the live scenario constant."""
+        return self._delta_max_fixed if self._delta_max_fixed is not None else DELTA_MAX
+
+    @delta_max.setter
+    def delta_max(self, value: float) -> None:
+        self._delta_max_fixed = float(value) if value and float(value) > 0.0 else None
+
+    @property
+    def _log_delta_ratio(self) -> float:
+        """log(delta_max / delta_min): the geometric span used by the Delta mapping.
+
+        Guarded so a degenerate delta_min == delta_max decoder still works.
+        """
+        d_max = self.delta_max
+        if self.delta_min > 0.0 and d_max > self.delta_min:
+            return math.log(d_max / self.delta_min)
+        return 0.0
 
     def delta_from_unit(self, u: float) -> float:
         """Geometric map u in [0, 1] -> Delta in [delta_min, delta_max]."""

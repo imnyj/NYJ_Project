@@ -1,0 +1,71 @@
+# Project: Auto_Stock Hybrid SL-RL Baseline & Optuna HPO Pipeline
+
+## Architecture
+- **Environment Core**: `HybridTradingEnv` (Gymnasium 1.2.0 compliant) wrapping `VirtualAccount`, `MockExecutionEngine`, and `LiveLearningSimulator` with dual mode support (Offline Parquet stream / Live Kiwoom stream).
+- **Hybrid Action Space**: `spaces.Tuple((spaces.Discrete(3), spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)))` and `spaces.Dict({"action_type": spaces.Discrete(3), "position_size": spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)})`.
+- **Model Layer**:
+  - `SLFeatureExtractor`: Dual-stream 1D-CNN (temporal momentum) + MLP (tabular PIT fundamentals + account state) with multi-task pretraining (next-step return regression + direction classification).
+  - `HybridActorCritic` / `HybridPPO`: Policy network generating discrete action logits (Categorical) and continuous position weights (Normal/Beta), plus SB3 Continuous Wrapper compatibility.
+- **HPO Layer**:
+  - `metrics.py`: Accurate computation of Total Equity, Total Return %, Annualized Sharpe Ratio (with zero-variance defense), and MDD.
+  - `optuna_pipeline.py`: Optuna Study with TPESampler and MedianPruner for tuning SL/RL hyperparameters.
+  - `exporter.py`: Atomic CSV export to `etc/hpo_results/baseline_hpo.csv` with full 20-column schema.
+  - `scripts/run_hpo.py`: CLI runner for HPO trials.
+
+## Feature Inventory
+| # | Feature | Description | Milestone | Source |
+|---|---------|-------------|-----------|--------|
+| 1 | Hybrid Action Space | Discrete(3) (Hold/Buy/Sell) + Continuous Box(1,) (0.0~1.0 weight) | M1 | R1 (User Request) |
+| 2 | Gymnasium 1.2.0 Compatibility | Full gym.Env compliance (reset, step with 5-tuple, render, close) | M1 | R1 (User Request) |
+| 3 | Simulator Integration | Seamless integration with VirtualAccount & MockExecutionEngine (1-won precision) | M1 | R1, Survey |
+| 4 | Offline & Live Modes | Support both offline Parquet datasets and LiveLearningSimulator | M1 | Survey |
+| 5 | SL Feature Extractor | 1D-CNN (temporal) + MLP (tabular) feature extractors for time-series | M2 | R2 (User Request) |
+| 6 | RL Baseline Policy | Actor-Critic network handling hybrid action space and SL embedding transfer | M2 | R2 (User Request) |
+| 7 | SB3 Compatibility Wrapper | Continuous action space adapter for Stable-Baselines3 PPO compatibility | M2 | R2, Survey |
+| 8 | Performance Metrics Module | Total Equity, Return %, Annualized Sharpe Ratio (with eps guard), MDD | M3 | R3, Survey |
+| 9 | Optuna HPO Pipeline | Optuna objective function, TPESampler, MedianPruner, parameter search | M3 | R3 (User Request) |
+| 10 | Results CSV Exporter | Write trial results & metrics to `etc/hpo_results/baseline_hpo.csv` | M3 | R4 (User Request) |
+| 11 | HPO CLI Script | Command-line script to run HPO with configurable n_trials and output path | M3 | R3, R4 |
+| 12 | Automated Verification Suite | `tests/test_hpo_pipeline.py` with n_trials=3, CSV validation, action space assertions | M4 | Acceptance Criteria |
+| 13 | E2E Integration & Edge Cases | 100% test pass across Tiers 1-4 + Adversarial coverage hardening (Tier 5) | M4 | Project Quality |
+
+## Milestones
+| # | Name | Scope | Dependencies | Status |
+|---|------|-------|-------------|--------|
+| M1 | Hybrid Gymnasium Env | `modules/engine/hybrid_trading_env.py` | None | DONE |
+| M2 | SL Feature & RL Models | `modules/models/feature_extractor.py`, `modules/models/hybrid_policy.py` | M1 | PLANNED |
+| M3 | Optuna HPO & Exporter | `modules/hpo/metrics.py`, `modules/hpo/optuna_pipeline.py`, `modules/hpo/exporter.py`, `scripts/run_hpo.py` | M1, M2 | PLANNED |
+| M4 | E2E Testing & Hardening | `tests/test_hpo_pipeline.py`, E2E test execution, CSV validation | M1, M2, M3 | PLANNED |
+
+## Interface Contracts
+
+### HybridTradingEnv ↔ Models / RL Agents
+- `env.action_space`: `spaces.Tuple((spaces.Discrete(3), spaces.Box(0.0, 1.0, shape=(1,), dtype=np.float32)))`
+- `env.step(action)` -> `(obs, reward, terminated, truncated, info)`
+  - `obs`: `np.ndarray` of shape `(obs_dim,)`, `dtype=np.float32`
+  - `reward`: `float` (log equity change)
+  - `terminated`: `bool` (bankruptcy: equity < 5% initial cash)
+  - `truncated`: `bool` (end of dataset stream)
+  - `info`: `dict` containing `{"total_equity": float, "cash_balance": float, "holding_quantity": int, "current_price": float, "trade_record": Optional[TradeRecord]}`
+
+### SL Feature Extractor ↔ RL Policy
+- `SLFeatureExtractor.forward(x)` -> `torch.Tensor` of shape `(batch_size, latent_dim)`
+- `HybridActorCritic`:
+  - `forward(obs)` -> `(action_logits, weight_mu, weight_std, value)`
+  - `sample_action(obs)` -> `((act_type, weight), log_prob, value)`
+
+### HPO Pipeline ↔ Results Exporter
+- `evaluate_trading_performance(env_history)` -> `dict` containing `{"total_equity": float, "total_return_pct": float, "sharpe_ratio": float, "max_drawdown_pct": float}`
+- `export_trial_to_csv(trial_data, csv_path="etc/hpo_results/baseline_hpo.csv")` -> appends row with atomic file write.
+
+## Code Layout
+- `modules/engine/hybrid_trading_env.py` — Gymnasium 1.2.0 Hybrid Trading Environment [DONE]
+- `modules/models/feature_extractor.py` — SL 1D-CNN and MLP Feature Extractors [M2]
+- `modules/models/hybrid_policy.py` — Hybrid Actor-Critic Policy & SB3 Continuous Adapter [M2]
+- `modules/hpo/__init__.py` — HPO Package [M3]
+- `modules/hpo/metrics.py` — Financial & RL Performance Metrics [M3]
+- `modules/hpo/optuna_pipeline.py` — Optuna Study & Objective Runner [M3]
+- `modules/hpo/exporter.py` — CSV Results Exporter [M3]
+- `scripts/run_hpo.py` — CLI Runner [M3]
+- `tests/test_hpo_pipeline.py` — Comprehensive Test Suite [M4]
+- `etc/hpo_results/` — HPO output CSV and artifact storage [M3]

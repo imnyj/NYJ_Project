@@ -1,0 +1,439 @@
+"""
+tests/test_hpo.py
+=================
+Auto Stock ML/RL Trader — Milestone 3: HPO 및 평가 지표 종합 단위/통합 테스트 스위트.
+
+테스트 커버리지:
+1. TestMetricsModule: Total Equity, Return %, Annualized Sharpe Ratio (0-분산 방어), MDD %, Win Rate %
+2. TestExporterModule: 20개 컬럼 스키마 일치, 디렉토리 자동 생성, 원자적 저장 및 다중 행 추가 무결성
+3. TestOptunaPipeline: create_hpo_study, objective, run_hpo_optimization 3-Trial 완주 및 베스트 결과 검증
+4. TestCLIExecution: scripts/run_hpo.py CLI 인자 파싱 및 서브프로세스 실행 검증
+5. TestFastExecutionBudget: 타임 버짓 이내 신속 완주 검증
+"""
+
+import math
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from decimal import Decimal
+from typing import Any, Dict, List
+from unittest.mock import patch
+
+import numpy as np
+import optuna
+import pandas as pd
+import pytest
+
+from modules.engine.hybrid_trading_env import HybridTradingEnv
+from modules.hpo import (
+    CSV_COLUMNS,
+    calculate_annualized_sharpe_ratio,
+    calculate_max_drawdown_pct,
+    calculate_total_equity,
+    calculate_total_return_pct,
+    calculate_win_rate,
+    create_hpo_study,
+    evaluate_trading_history,
+    export_trial_to_csv,
+    load_hpo_results,
+    objective,
+    run_hpo_optimization,
+)
+
+
+class TestMetricsModule:
+    """1. 성과 평가 지표 산출 모듈 단위 테스트"""
+
+    def test_calculate_total_equity_scalars_and_dicts(self):
+        # 1-1. 스칼라 계산
+        cash = 5_000_000
+        holdings = 100
+        price = 70_000
+        eq = calculate_total_equity(cash, holdings, price)
+        assert eq == 12_000_000.0
+
+        # 1-2. Decimal 입력
+        dec_cash = Decimal("5000000")
+        dec_price = Decimal("70000")
+        eq_dec = calculate_total_equity(dec_cash, holdings, dec_price)
+        assert eq_dec == 12_000_000.0
+
+        # 1-3. 딕셔너리 복수 종목 입력
+        holdings_dict = {"005930": 50, "000660": 20}
+        prices_dict = {"005930": 70_000, "000660": 150_000}
+        eq_dict = calculate_total_equity(1_000_000, holdings_dict, prices_dict)
+        expected = 1_000_000 + (50 * 70_000) + (20 * 150_000)
+        assert eq_dict == float(expected)
+
+    def test_calculate_total_return_pct(self):
+        # 이익 상황
+        ret_pos = calculate_total_return_pct(10_000_000, 11_500_000)
+        assert pytest.approx(ret_pos, rel=1e-4) == 15.0
+
+        # 손실 상황
+        ret_neg = calculate_total_return_pct(10_000_000, 8_500_000)
+        assert pytest.approx(ret_neg, rel=1e-4) == -15.0
+
+        # 변동 없음
+        ret_zero = calculate_total_return_pct(10_000_000, 10_000_000)
+        assert ret_zero == 0.0
+
+        # 초기 자본금 0 이하 방어
+        ret_invalid = calculate_total_return_pct(0, 100_000)
+        assert ret_invalid == 0.0
+
+    def test_calculate_annualized_sharpe_ratio_standard(self):
+        # 일별 수익률 시계열 (평균 0.001, 표준편차 ~0.01)
+        np.random.seed(42)
+        returns = np.random.normal(0.001, 0.01, size=252)
+        sr = calculate_annualized_sharpe_ratio(returns, risk_free_rate=0.0, periods_per_year=252)
+
+        mean_r = np.mean(returns)
+        std_r = np.std(returns, ddof=1)
+        expected_sr = (mean_r / (std_r + 1e-8)) * math.sqrt(252)
+        assert pytest.approx(sr, rel=1e-4) == expected_sr
+        assert isinstance(sr, float)
+
+    def test_calculate_annualized_sharpe_ratio_zero_variance_defense(self):
+        """Zero-Variance 및 엣지 케이스 방어 테스트"""
+        # 1. 모든 수익률이 0인 경우 (무거래)
+        zeros = [0.0] * 100
+        assert calculate_annualized_sharpe_ratio(zeros) == 0.0
+
+        # 2. 모든 수익률이 동일한 비영값 (표준편차 0)
+        identical = [0.005] * 50
+        assert calculate_annualized_sharpe_ratio(identical) == 0.0
+
+        # 3. 표준편차가 1e-8 이하인 극미세 변동
+        tiny_variance = [0.001 + 1e-9 * (i % 2) for i in range(50)]
+        assert calculate_annualized_sharpe_ratio(tiny_variance) == 0.0
+
+        # 4. 길이가 부족한 경우
+        assert calculate_annualized_sharpe_ratio([]) == 0.0
+        assert calculate_annualized_sharpe_ratio([0.01]) == 0.0
+        assert calculate_annualized_sharpe_ratio(None) == 0.0
+
+        # 5. NaN/Inf 포함 시
+        nan_returns = [0.01, float("nan"), 0.02, float("inf"), -0.01]
+        sr_nan = calculate_annualized_sharpe_ratio(nan_returns)
+        assert isinstance(sr_nan, float)
+        assert not math.isnan(sr_nan)
+
+    def test_calculate_max_drawdown_pct(self):
+        # 1. 단조 증가 곡선 -> MDD = 0.0%
+        increasing = [100, 105, 110, 120, 130]
+        assert calculate_max_drawdown_pct(increasing) == 0.0
+
+        # 2. 100 -> 80 하락 -> MDD = -20.0%
+        drop = [100, 90, 80, 85, 95]
+        assert pytest.approx(calculate_max_drawdown_pct(drop), rel=1e-4) == -20.0
+
+        # 3. 다중 고점: 100 -> 120 -> 90 -> 130 -> 110
+        # 첫 낙폭: (90 - 120) / 120 = -25.0%
+        # 둘째 낙폭: (110 - 130) / 130 = -15.38%
+        # MDD = -25.0%
+        multi_peaks = [100, 120, 90, 130, 110]
+        assert pytest.approx(calculate_max_drawdown_pct(multi_peaks), rel=1e-4) == -25.0
+
+        # 4. 빈 시계열 방어
+        assert calculate_max_drawdown_pct([]) == 0.0
+        assert calculate_max_drawdown_pct(None) == 0.0
+
+    def test_calculate_win_rate(self):
+        # 5건 거래 중 3건 수익 (승률 60.0%)
+        pnls = [100_000, -50_000, 200_000, -30_000, 50_000]
+        total_trades, win_rate = calculate_win_rate(pnls)
+        assert total_trades == 5
+        assert win_rate == 60.0
+
+        # 0건 거래
+        t0, w0 = calculate_win_rate([])
+        assert t0 == 0
+        assert w0 == 0.0
+
+    def test_evaluate_trading_history_full_dict(self):
+        eq_curve = [10_000_000, 10_100_000, 10_050_000, 10_200_000]
+        ret_curve = [0.01, -0.00495, 0.014925]
+        trades = [50_000, -20_000, 100_000]
+
+        metrics = evaluate_trading_history(
+            equity_history=eq_curve,
+            returns_history=ret_curve,
+            trades_history=trades,
+            initial_cash=10_000_000,
+        )
+
+        expected_keys = {
+            "total_equity",
+            "total_return_pct",
+            "sharpe_ratio",
+            "max_drawdown_pct",
+            "total_trades",
+            "win_rate",
+        }
+        assert set(metrics.keys()) == expected_keys
+        assert metrics["total_equity"] == 10_200_000.0
+        assert pytest.approx(metrics["total_return_pct"], rel=1e-3) == 2.0
+        assert metrics["total_trades"] == 3
+        assert pytest.approx(metrics["win_rate"], rel=1e-3) == 66.67
+        assert isinstance(metrics["sharpe_ratio"], float)
+        assert isinstance(metrics["max_drawdown_pct"], float)
+
+
+class TestExporterModule:
+    """2. CSV 결과 내보내기 모듈 단위 테스트"""
+
+    def test_export_trial_to_csv_creates_dir_and_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "nested", "sub", "test_hpo.csv")
+            sample_record = {
+                "trial_id": 0,
+                "state": "COMPLETE",
+                "objective_value": 1.5,
+                "total_equity": 10_500_000.0,
+                "total_return_pct": 5.0,
+                "sharpe_ratio": 1.5,
+                "max_drawdown_pct": -1.2,
+                "total_trades": 8,
+                "win_rate": 62.5,
+                "param_sl_lr": 0.001,
+                "param_sl_hidden_dim": 64,
+                "param_sl_batch_size": 32,
+                "param_rl_lr": 0.0003,
+                "param_rl_gamma": 0.99,
+                "param_rl_clip_range": 0.2,
+                "param_rl_ent_coef": 0.01,
+                "param_rl_hidden_dim": 128,
+                "duration_seconds": 1.25,
+            }
+            saved_path = export_trial_to_csv(sample_record, csv_path=csv_path)
+            assert os.path.exists(saved_path)
+
+            # 로드 및 검증
+            df = load_hpo_results(csv_path)
+            assert len(df) == 1
+            assert list(df.columns) == CSV_COLUMNS
+
+    def test_export_trial_to_csv_20_columns_schema(self):
+        assert len(CSV_COLUMNS) == 20
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "schema_test.csv")
+            export_trial_to_csv({}, csv_path=csv_path)
+
+            df = pd.read_csv(csv_path)
+            assert len(df.columns) == 20
+            for col in CSV_COLUMNS:
+                assert col in df.columns
+
+    def test_export_trial_to_csv_multiple_rows_append(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "multi_trial.csv")
+
+            for i in range(3):
+                rec = {
+                    "trial_id": i,
+                    "state": "COMPLETE",
+                    "objective_value": 1.0 + (i * 0.5),
+                    "total_equity": 10_000_000.0 + (i * 200_000),
+                    "param_sl_lr": 0.001 * (i + 1),
+                }
+                export_trial_to_csv(rec, csv_path=csv_path)
+
+            df = load_hpo_results(csv_path)
+            assert len(df) == 3
+            assert df["trial_id"].tolist() == [0, 1, 2]
+            assert df["objective_value"].tolist() == [1.0, 1.5, 2.0]
+
+    def test_load_hpo_results_file_not_found(self):
+        with pytest.raises(FileNotFoundError):
+            load_hpo_results("/invalid/path/to/non_existing_hpo.csv")
+
+
+class TestOptunaPipeline:
+    """3. Optuna HPO 파이프라인 단위 및 E2E 테스트"""
+
+    def test_create_hpo_study_properties(self):
+        study = create_hpo_study(seed=42, direction="maximize")
+        assert isinstance(study, optuna.Study)
+        assert isinstance(study.sampler, optuna.samplers.TPESampler)
+        assert isinstance(study.pruner, optuna.pruners.MedianPruner)
+        assert study.direction == optuna.study.StudyDirection.MAXIMIZE
+
+    def test_objective_single_trial(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            csv_path = os.path.join(tmp_dir, "single_trial_test.csv")
+            study = create_hpo_study(seed=42)
+
+            def _test_obj(trial):
+                return objective(
+                    trial=trial,
+                    symbol="005930",
+                    output_csv=csv_path,
+                    n_timesteps=64,
+                    fast_mode=True,
+                    seed=42,
+                )
+
+            val = study.optimize(_test_obj, n_trials=1)
+            assert len(study.trials) == 1
+            trial = study.trials[0]
+            assert trial.state == optuna.trial.TrialState.COMPLETE
+            assert isinstance(trial.value, float)
+            assert os.path.exists(csv_path)
+
+            df = load_hpo_results(csv_path)
+            assert len(df) == 1
+            assert "param_sl_lr" in df.columns
+            assert "total_equity" in df.columns
+
+    def test_run_hpo_optimization_n_trials_3_acceptance_criteria(self):
+        """
+        Acceptance Criteria 검증:
+        - n_trials=3 완주
+        - baseline_hpo.csv 정상 생성 및 최소 3개 Trial 행 기록
+        - 20개 컬럼 스키마 및 유효 지표 입증
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "baseline_hpo.csv")
+
+            study, best_trial = run_hpo_optimization(
+                n_trials=3,
+                symbol="005930",
+                output_csv=output_csv,
+                seed=42,
+                n_timesteps=80,
+                fast_mode=True,
+                verbose=False,
+            )
+
+            # 1. Trial 수 검증
+            assert len(study.trials) == 3
+
+            # 2. Best Trial 검증
+            assert best_trial is not None
+            assert isinstance(best_trial.value, float)
+            assert "sl_lr" in best_trial.params
+            assert "rl_lr" in best_trial.params
+
+            # 3. CSV 파일 검증
+            assert os.path.exists(output_csv)
+            df = load_hpo_results(output_csv)
+            assert len(df) >= 3
+            assert list(df.columns) == CSV_COLUMNS
+            assert df["state"].iloc[0] in ("COMPLETE", "PRUNED")
+
+    def test_objective_exception_resilience(self):
+        """예외 발생 시 FAIL 기록 및 Study 중단 방지 테스트"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "resilience_hpo.csv")
+            study = create_hpo_study(seed=42)
+
+            def _faulty_obj(trial):
+                # 의도적으로 환경 인자 오류 유발
+                return objective(
+                    trial=trial,
+                    env_kwargs={"mode": "invalid_mode_name"},
+                    output_csv=output_csv,
+                    n_timesteps=32,
+                    fast_mode=True,
+                )
+
+            study.optimize(_faulty_obj, n_trials=2, catch=(Exception,))
+            assert len(study.trials) == 2
+
+            df = load_hpo_results(output_csv)
+            assert len(df) == 2
+            assert df["state"].iloc[0] == "FAIL"
+            assert df["objective_value"].iloc[0] == -100.0
+
+    def test_zero_trade_inactive_policy_reward_penalty_defense(self):
+        """[BUG-RL05] 무거래(total_trades=0) 정책에 대한 -1.0 패널티 부여 및 활성 탐색 유도 검증"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "zero_trade_hpo.csv")
+            study = create_hpo_study(seed=42)
+
+            with patch("modules.hpo.optuna_pipeline.evaluate_trading_history") as mock_eval:
+                mock_eval.return_value = {
+                    "total_equity": 10_000_000.0,
+                    "total_return_pct": 0.0,
+                    "sharpe_ratio": 0.0,
+                    "max_drawdown_pct": 0.0,
+                    "total_trades": 0,
+                    "win_rate": 0.0,
+                }
+
+                def _zero_trade_obj(trial):
+                    return objective(
+                        trial=trial,
+                        symbol="005930",
+                        output_csv=output_csv,
+                        n_timesteps=32,
+                        fast_mode=True,
+                    )
+
+                study.optimize(_zero_trade_obj, n_trials=1)
+                assert study.trials[0].value == -1.0
+
+                df = load_hpo_results(output_csv)
+                assert df["objective_value"].iloc[0] == -1.0
+                assert df["total_trades"].iloc[0] == 0
+
+
+class TestCLIExecution:
+    """4. CLI 스크립트 실행 및 서브프로세스 테스트"""
+
+    def test_cli_subprocess_run(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "cli_test_hpo.csv")
+            cli_path = os.path.abspath("scripts/run_hpo.py")
+
+            cmd = [
+                sys.executable,
+                cli_path,
+                "--n-trials",
+                "3",
+                "--symbol",
+                "005930",
+                "--output",
+                output_csv,
+                "--timesteps",
+                "64",
+                "--seed",
+                "42",
+                "--fast-mode",
+                "--quiet",
+            ]
+
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=os.getcwd())
+            assert res.returncode == 0, f"CLI execution failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}"
+
+            # 결과 CSV 확인
+            assert os.path.exists(output_csv)
+            df = load_hpo_results(output_csv)
+            assert len(df) >= 3
+            assert list(df.columns) == CSV_COLUMNS
+
+
+class TestFastExecutionBudget:
+    """5. 성능 및 시간 예산 검증"""
+
+    def test_fast_execution_within_time_budget(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            output_csv = os.path.join(tmp_dir, "speed_test.csv")
+            t0 = time.time()
+
+            study, _ = run_hpo_optimization(
+                n_trials=3,
+                symbol="005930",
+                output_csv=output_csv,
+                n_timesteps=60,
+                fast_mode=True,
+                verbose=False,
+            )
+            elapsed = time.time() - t0
+
+            assert len(study.trials) == 3
+            # 3회 최적화가 10초 이내 완료되는지 확인
+            assert elapsed < 10.0, f"HPO took too long: {elapsed:.2f}s (budget: 10s)"

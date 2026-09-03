@@ -248,6 +248,32 @@ class SB3BaselineModel(BaseRLModel):
     #: SB3 algorithm class, set by each subclass.
     SB3_ALGO: Any = None
 
+    @staticmethod
+    def apply_hidden_dim(
+        policy_kwargs: Optional[Dict[str, Any]], hidden_dim: Optional[int]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Translate a scalar `hidden_dim` into SB3's `policy_kwargs["net_arch"]`.
+
+        The three SB3 baselines otherwise inherit SB3's per-algorithm default
+        widths ([64, 64] for PPO, [256, 256] for SAC, [400, 300] for TD3), which
+        puts a 71x spread in parameter count across the nine baselines and leaves
+        no way to tell "PPO lost because it is on-policy" apart from "PPO lost
+        because it had 10.9k parameters against TD3's 773k". Exposing the width as
+        a real constructor argument is what lets a capacity-parity study, or an
+        Optuna search over `hidden_dim`, cover all nine models on equal terms.
+
+        An explicit `net_arch` already present in `policy_kwargs` always wins.
+        """
+        if hidden_dim is None:
+            return policy_kwargs
+        h = int(hidden_dim)
+        if h <= 0:
+            raise ValueError(f"hidden_dim must be positive, got {hidden_dim}")
+        kwargs = dict(policy_kwargs) if policy_kwargs else {}
+        kwargs.setdefault("net_arch", [h, h])
+        return kwargs
+
     def __init__(
         self,
         state_dim: int = STATE_DIM,
@@ -347,11 +373,14 @@ class SB3BaselineModel(BaseRLModel):
         Returns (states, actions, rewards, next_states, dones, discounts) with
         shapes (N, state_dim), (N, 3), (N, 1), (N, state_dim), (N, 1), (N, 1).
 
-        `discount` is the SMDP factor gamma**delta_t supplied per transition; it
-        replaces the scalar `self.gamma` in the SB3 update rules. SB3 2.7 already
-        takes exactly this substitution for n-step replay
-        (`discounts = replay_data.discounts if ... else self.gamma`), so the
-        variable-interval discount is applied at the same place SB3 applies its own.
+        The discount is the SMDP factor gamma**delta_t computed per transition by
+        `BaseRLModel.smdp_discounts`; it replaces the scalar `self.gamma` in the
+        SB3 update rules. SB3 2.7 already takes exactly this substitution for
+        n-step replay (`discounts = replay_data.discounts if ... else self.gamma`),
+        so the variable-interval discount is applied at the same place SB3 applies
+        its own. The model's own `gamma` is the single source: the buffer also
+        ships a precomputed "discount" column, but it is built from the buffer's
+        gamma, which the pipeline never sets from the model.
 
         The optional `action_idx` key is emitted only for discrete-action
         baselines; our action head is fully continuous, so it is ignored.
@@ -363,19 +392,7 @@ class SB3BaselineModel(BaseRLModel):
         next_states = batch["next_state"].to(device=device, dtype=torch.float32)
         dones = batch["done"].to(device=device, dtype=torch.float32)
 
-        if "discount" in batch:
-            discounts = batch["discount"].to(device=device, dtype=torch.float32)
-        else:
-            # Buffers that predate the SMDP discount key fall back to gamma**delta_t.
-            gamma = float(getattr(self, "gamma", 0.99))
-            delta_t = batch.get("delta_t")
-            if delta_t is None:
-                discounts = torch.full_like(rewards, gamma)
-            else:
-                discounts = torch.pow(
-                    torch.as_tensor(gamma, device=device),
-                    delta_t.to(device=device, dtype=torch.float32),
-                )
+        discounts = self.smdp_discounts(batch, rewards)
 
         if states.dim() == 1:
             states = states.unsqueeze(0)

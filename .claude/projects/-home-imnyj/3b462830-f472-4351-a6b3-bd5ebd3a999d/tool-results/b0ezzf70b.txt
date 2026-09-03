@@ -1,0 +1,588 @@
+def prepare_scenario(density: float, max_steps: int, warmup_steps: int, seed: int,
+                     force_regenerate: bool = False) -> Dict[str, float]:
+    """Write the SUMO network for these parameters and refresh the derived constants.
+
+    Must run BEFORE any model is constructed. `ActionDecoder` and `StateVectorizer`
+    read `DELTA_MAX` / `V_MAX_OBS` / `E_REF`, and those describe the network on
+    disk; `AoiV2IEnv._init_sumo` is what writes it and calls
+    `refresh_scenario_constants()`, but the nine models (each carrying its own
+    decoder) are built long before the environment exists. A model built against
+    a stale `DELTA_MAX` emits a Delta the environment's range assert rejects on
+    the very first step -- and in a 4-GPU run each process can have a different
+    net.xml on disk, so it fails irreproducibly.
+    """
+    ss.NUM_BLOCKS = 5
+    ss.DENSITY = float(density)
+    ss.FLOW_END_S = (int(max_steps) + int(warmup_steps) + 100) * ss.STEP_LENGTH
+    ss.MAX_STEPS = ss.FLOW_END_S
+    ss.seed_generation(int(seed))
+    # `force_regenerate=True` makes the network a deterministic function of
+    # `seed`. Without it a cached file set with a matching signature is reused
+    # whatever seed produced it, because the seed is deliberately NOT part of the
+    # generation signature (open design question: does a seed re-roll the road
+    # network, or only the traffic?). Tests that assert on scenario-derived
+    # quantities must force it or they depend on execution order.
+    ss.make_sumo_files(force_regenerate=bool(force_regenerate))
+    return refresh_scenario_constants()
+
+
+def run_hot_swap_training(
+    model_name: Union[str, type, Callable] = "GenericPolicy",
+    model_cls: Optional[Callable] = None,
+    total_steps: int = 2000,
+    episodes: int = 1,
+    density: Union[float, Sequence[float]] = 25.0,
+    batch_size: int = 32,
+    swap_interval: int = 20,
+    act_device: Optional[Union[str, torch.device]] = None,
+    rest_device: Optional[Union[str, torch.device]] = None,
+    hparams: Optional[Dict[str, Any]] = None,
+    seed: int = 42,
+    checkpoint_dir: str = "/home/imnyj/Workspace/paper4/coder/checkpoints",
+    tensorboard_dir: str = "/home/imnyj/Workspace/paper4/coder/logs/tensorboard",
+    log_csv_path: Optional[str] = None,
+    log_dir: Optional[str] = None,
+    num_vehicles: Optional[int] = None,
+    # 350 steps = 35 simulated seconds. The former 35 (3.5 s) was not long
+    # enough for ANY vehicle to reach the RSU disc from its spawn edge, so a run
+    # started with it observed nothing at all -- measured: 0 vehicles in range at
+    # 3.5 s, 1 at 15 s, 22 at 35 s. Short smoke runs looked healthy anyway
+    # because the empty-case metric fallbacks returned plausible numbers.
+    warmup_steps: int = 350,
+    resume: bool = False,
+    start_episode: int = 0,
+    error_mode: str = DEFAULT_ERROR_MODE,
+    updates_per_env_step: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Full end-to-end hot-swap training loop integrating Act model serving,
+    asynchronous background training, TensorBoard logging, and periodic checkpoints.
+    Supports 200,000 steps (e.g. 2,000 steps x 100 episodes).
+
+    Args:
+        resume: When True, locate the highest-numbered `{model_name}_ep*.pt`
+            checkpoint in `checkpoint_dir`, load it, and continue the episode
+            loop from the episode after it. Default False preserves the
+            previous fresh-start behaviour exactly.
+        start_episode: Explicit 0-based episode index to start from. Ignored
+            (overridden) when `resume` successfully locates a checkpoint.
+    """
+    model_name_str = model_name if isinstance(model_name, str) else getattr(model_name, "__name__", "CustomModel")
+
+    # Seed configuration
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(tensorboard_dir, exist_ok=True)
+    # Third and last hardcoded production path. `checkpoint_dir` and
+    # `tensorboard_dir` were already made overridable; this one still wrote to
+    # coder/logs/training/ on every pytest run.
+    #
+    # Resolution order: explicit `log_csv_path`, then the `log_dir` argument, then
+    # PAPER4_TRAINING_LOG_DIR, then the production default. The environment
+    # variable exists for one reason: `tests/test_run_all.py::test_34` launches
+    # run_all.py in a SUBPROCESS, where no monkeypatch can reach, and run_all.py
+    # has no --log-dir flag yet. Delete it once that flag exists.
+    if log_csv_path is None:
+        resolved_log_dir = (
+            log_dir
+            or os.environ.get("PAPER4_TRAINING_LOG_DIR")
+            or DEFAULT_TRAINING_LOG_DIR
+        )
+        os.makedirs(resolved_log_dir, exist_ok=True)
+        log_csv_path = os.path.join(resolved_log_dir, f"{model_name_str}_progress.csv")
+
+    # Initialize TensorBoard Writer
+    writer = None
+    if SummaryWriter is None:
+        logging.error(
+            "torch.utils.tensorboard is unavailable, so this run produces NO "
+            "convergence curve. The re-entry criterion for the main training run "
+            "is a TensorBoard reading, so this run cannot satisfy it."
+        )
+    else:
+        try:
+            writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, f"{model_name_str}_seed{seed}_{int(time.time())}"))
+        except Exception as exc:
+            # Swallowing this silently used to mean the whole run finished with no
+            # logs at all, which is the one artefact the run exists to produce.
+            logging.error("Could not open a TensorBoard writer in %s: %s", tensorboard_dir, exc)
+            writer = None
+
+    # ------------------------------------------------------------------
+    # Training densities. A list is cycled over the episodes, so 100 episodes
+    # across 10 densities gives 10 episodes at each. A bare float behaves exactly
+    # as before.
+    # ------------------------------------------------------------------
+    if isinstance(density, (int, float)):
+        density_schedule: List[float] = [float(density)]
+    else:
+        density_schedule = [float(d) for d in density]
+    if not density_schedule:
+        raise ValueError("`density` must be a positive number or a non-empty sequence.")
+
+    # Write the network and refresh DELTA_MAX / V_MAX_OBS / E_REF BEFORE the
+    # models (and their decoders) are constructed -- see prepare_scenario().
+    steps_per_ep_hint = max(10, total_steps // max(1, episodes))
+    prepare_scenario(density_schedule[0], steps_per_ep_hint, warmup_steps, seed)
+
+    trainer = HotSwapTrainer(
+        model_name=model_name_str,
+        model_cls=model_cls if model_cls is not None else (model_name if callable(model_name) and not isinstance(model_name, str) else None),
+        batch_size=batch_size,
+        swap_interval=swap_interval,
+        act_device=act_device,
+        rest_device=rest_device,
+        hparams=hparams,
+    )
+
+    # The env owns the reward, but the checkpoint is written by the trainer, so
+    # the trainer needs to know which ablation arm it is serving.
+    trainer.error_mode = error_mode
+
+    # Gradient-budget parity. With this set, every model gets the SAME number of
+    # updates per environment step instead of as many as its own speed allowed,
+    # so a baseline cannot lose the comparison merely by being slower to train.
+    # Left as None the worker runs wall-clock-bound, which is what every result
+    # before 2026-09-01 used.
+    if updates_per_env_step is not None:
+        trainer.background_trainer.train_frequency = float(updates_per_env_step)
+        trainer.background_trainer.env_steps_seen = 0
+
+    # Steps per episode calculation
+    steps_per_ep = max(10, total_steps // max(1, episodes))
+
+    # --- Resume support -----------------------------------------------------
+    # Default (resume=False, start_episode=0) is byte-for-byte the old behaviour.
+    start_ep = max(0, int(start_episode))
+    resumed_from: Optional[str] = None
+    best_reward = -float("inf")
+    if resume:
+        ckpt_glob = os.path.join(checkpoint_dir, f"{model_name_str}_ep*.pt")
+        candidates: List[Tuple[int, str]] = []
+        for path in glob.glob(ckpt_glob):
+            m = re.search(rf"{re.escape(model_name_str)}_ep(\d+)\.pt$", os.path.basename(path))
+            if m:
+                candidates.append((int(m.group(1)), path))
+        if candidates:
+            last_ep_1based, candidate_path = max(candidates, key=lambda c: c[0])
+            try:
+                loaded_ckpt = trainer.load_checkpoint(candidate_path)
+            except CheckpointMismatchError as exc:
+                # `run_all.py` resumes by default, so an HPO refresh followed by a
+                # restart lands here. Starting fresh loses training time; resuming
+                # produces a curve whose halves were trained under different
+                # hyper-parameters, which cannot go in a paper. Fresh start wins,
+                # loudly.
+                logging.error("%s -- starting this model from scratch instead.", exc)
+                resumed_from = None
+            else:
+                resumed_from = candidate_path
+                if "best_reward" in loaded_ckpt and loaded_ckpt["best_reward"] is not None:
+                    best_reward = float(loaded_ckpt["best_reward"])
+                # Checkpoints are named with 1-based episode numbers (`_ep010.pt`
+                # is written after episode index 9), so resume at that index.
+                start_ep = min(int(last_ep_1based), int(episodes))
+
+        best_ckpt_candidate = os.path.join(checkpoint_dir, f"{model_name_str}_best.pt")
+        if os.path.exists(best_ckpt_candidate):
+            try:
+                best_ckpt_data = torch.load(best_ckpt_candidate, map_location="cpu")
+                if "best_reward" in best_ckpt_data and best_ckpt_data["best_reward"] is not None:
+                    best_reward = max(best_reward, float(best_ckpt_data["best_reward"]))
+            except Exception:
+                pass
+
+    trainer.start()
+
+    t_start = time.perf_counter()
+    # Account for the steps already consumed by the completed episodes so the
+    # `total_steps` budget is not spent twice.
+    global_step = min(int(start_ep) * steps_per_ep, total_steps)
+    episodic_records: List[Dict[str, Any]] = []
+    empty_streak = 0
+    grad_updates_before_ep = 0
+    zero_update_episodes = 0
+
+    # One reward for every baseline. Passed explicitly rather than relying on the
+    # AoiV2IEnv defaults so that a reader of this loop can see which reward the
+    # 200k-step runs were trained against, and so it stays pinned to the same
+    # constant `src/evaluate.py` and `src/hpo.py` read.
+    env_reward_weights = {k: float(v) for k, v in DEFAULT_REWARD_WEIGHTS.items()}
+
+    # Anything the routing sent to the environment that is NOT a reward weight is
+    # a run parameter this function already owns (density, seed, max_steps,
+    # warmup_steps, ...). Silently dropping it is how `density=55.0` in an HPO CSV
+    # trained the whole benchmark at 25.0 while the log said otherwise, so it is
+    # an error, and the message says where to put it instead.
+    stray_env = {
+        k: v for k, v in trainer.env_hparams.items()
+        if k not in REWARD_WEIGHT_KEYS and k not in RAW_REWARD_WEIGHT_KEYS
+    }
+    if stray_env:
+        raise ValueError(
+            f"{model_name_str}: hyper-parameter(s) {sorted(stray_env)} are AoiV2IEnv "
+            "arguments that run_hot_swap_training sets itself. Pass them as explicit "
+            "arguments to run_hot_swap_training / run_all.py instead of smuggling "
+            "them through the hparams CSV, where they would be silently ignored."
+        )
+
+    try:
+        for ep in range(start_ep, episodes):
+            if global_step >= total_steps:
+                break
+
+            # Create genuine SUMO environment for this episode
+            ep_density = density_schedule[ep % len(density_schedule)]
+            env = AoiV2IEnv(
+                density=ep_density,
+                seed=seed + ep,
+                max_steps=steps_per_ep,
+                warmup_steps=warmup_steps,
+                **env_reward_weights,
+                error_mode=error_mode,
+            )
+            obs, info = env.reset()
+
+            ep_rewards: List[float] = []
+            ep_deltas: List[float] = []
+            #: The MEASURED interval of every closed decision. This is the
+            #: denominator of the episode score (see below), so it must include
+            #: the intervals finalised at the episode boundary.
+            ep_deltas_actual: List[float] = []
+
+            # ----------------------------------------------------------------
+            # Event-driven SMDP loop (design_spec_v2, "structure").
+            #
+            # Not a gym rollout: each vehicle has its OWN decision epochs, spaced
+            # by the Delta the policy chose for it, so there is no single global
+            # (s, a, r, s') tick. `open_decision[vid]` holds the observation and
+            # raw action of the interval currently in flight for that vehicle;
+            # when the environment reports that interval closed, the transition
+            # is assembled and the vehicle is asked for its next grant.
+            # ----------------------------------------------------------------
+            trainer.scheduler.reset()
+            open_decision: Dict[str, Dict[str, Any]] = {}
+
+            # Everyone in range at reset needs an opening decision.
+            action_dict: Dict[str, Any] = {}
+            for vid, s_vec in obs.items():
+                grant, raw_action, action_idx = trainer.scheduler.decide_grant(vid, s_vec)
+                open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
+                                      "raw_action": raw_action,
+                                      "action_idx": action_idx}
+                action_dict[vid] = grant
+                ep_deltas.append(float(grant[0]))
+
+            for step in range(steps_per_ep):
+                if global_step >= total_steps:
+                    break
+                global_step += 1
+                if updates_per_env_step is not None:
+                    trainer.background_trainer.env_steps_seen = global_step
+
+                next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
+
+                # 1. Close every interval the environment finished this step.
+                action_dict = {}
+                for rec in step_info["completed"]:
+                    vid = rec["vid"]
+                    prev = open_decision.pop(vid, None)
+                    if prev is None:
+                        continue
+                    s2 = next_obs.get(vid)
+                    if s2 is None:
+                        # Vehicle is gone: terminal transition with a zero next state.
+                        s2 = np.zeros(trainer.scheduler.state_dim, dtype=np.float32)
+                        done = True
+                    else:
+                        done = bool(rec["done"])
+                    trainer.scheduler.push_transition(
+                        state=prev["state"],
+                        raw_action=prev["raw_action"],
+                        reward=rec["reward"],
+                        next_state=np.asarray(s2, dtype=np.float32),
+                        done=done,
+                        delta_t=rec["delta_actual"],
+                        action_idx=prev.get("action_idx"),
+                    )
+                    ep_rewards.append(float(rec["reward"]))
+                    ep_deltas_actual.append(float(rec["delta_actual"]))
+
+                # 2. Ask the policy for a grant for every vehicle that now holds
+                #    none -- new arrivals and the intervals just closed.
+                for vid in step_info["needs_decision"]:
+                    s_vec = next_obs.get(vid)
+                    if s_vec is None:
+                        continue
+                    grant, raw_action, action_idx = trainer.scheduler.decide_grant(vid, s_vec)
+                    open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
+                                          "raw_action": raw_action,
+                                          "action_idx": action_idx}
+                    action_dict[vid] = grant
+                    ep_deltas.append(float(grant[0]))
+
+                # 3. Drop bookkeeping for vehicles that left without closing.
+                for vid in [v for v in open_decision if v not in next_obs]:
+                    open_decision.pop(vid, None)
+
+                obs = next_obs
+
+                # Memory management & background yield
+                if global_step % 100 == 0:
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
+            # ----------------------------------------------------------------
+            # C1. Close every interval still in flight and stream it, BEFORE the
+            # metrics are read and the environment is destroyed. Without this the
+            # in-flight decisions -- disproportionately the long-Delta ones -- were
+            # dropped on the floor (12.3 % of all decisions, measured).
+            # ----------------------------------------------------------------
+            for rec in env.finalize_open_intervals():
+                vid = rec["vid"]
+                prev = open_decision.pop(vid, None)
+                if prev is None:
+                    continue
+                s2 = obs.get(vid)
+                if s2 is None:
+                    s2 = np.zeros(trainer.scheduler.state_dim, dtype=np.float32)
+                trainer.scheduler.push_transition(
+                    state=prev["state"],
+                    raw_action=prev["raw_action"],
+                    reward=rec["reward"],
+                    # The observation window ended; the vehicle did not. Bootstrap
+                    # must continue, so this is truncation, not termination.
+                    next_state=np.asarray(s2, dtype=np.float32),
+                    done=False,
+                    delta_t=rec["delta_actual"],
+                    action_idx=prev.get("action_idx"),
+                )
+                ep_rewards.append(float(rec["reward"]))
+                ep_deltas_actual.append(float(rec["delta_actual"]))
+
+            assert not env.interval_start_t, (
+                f"FATAL: {len(env.interval_start_t)} SMDP intervals still open at the "
+                "end of episode; their transitions would never reach the buffer."
+            )
+
+            # Episode summary
+            metrics = env.get_metrics()
+            env.close()
+            del env
+            gc.collect()
+
+            # ----------------------------------------------------------------
+            # C2. The episode score is a reward RATE, not a per-decision mean.
+            #
+            # `mean(ep_rewards)` is the average penalty PER CLOSED INTERVAL and is
+            # not normalised by how long the interval lasted, so a policy that
+            # spams short updates always scores better: measured on one episode,
+            # Delta in [0.1, 0.5) averaged -0.200 per decision against -3.199 for
+            # Delta in [10, 45), a 16x gap -- but per simulated second those are
+            # -0.481/s and -0.165/s, and the ranking REVERSES. Since this number
+            # selects `{model}_best.pt` and draws the convergence curve, the old
+            # one pointed the paper's headline model at the opposite of its thesis.
+            #
+            # `sum(rewards) / sum(delta_actual)` is the SMDP-correct aggregate: it
+            # is the average penalty per unit of simulated time, which is the
+            # quantity the discounted return approximates and the only one under
+            # which two policies making different NUMBERS of decisions are
+            # comparable. Both are logged; the rate is the one that selects.
+            # This is computed after C1 so the denominator includes the intervals
+            # that were previously discarded.
+            # ----------------------------------------------------------------
+            total_delta = float(sum(ep_deltas_actual))
+            has_data = bool(ep_rewards) and total_delta > 0.0
+            ep_reward_per_sec = float(sum(ep_rewards) / total_delta) if has_data else float("nan")
+            ep_reward_per_decision = float(np.mean(ep_rewards)) if ep_rewards else float("nan")
+            trainer_metrics = trainer.background_trainer.get_metrics()
+            ep_grad_updates = int(trainer_metrics["training_steps"]) - grad_updates_before_ep
+            grad_updates_before_ep = int(trainer_metrics["training_steps"])
+            if ep_grad_updates == 0:
+                zero_update_episodes += 1
+                logging.warning(
+                    "Episode %d (density %.1f) received ZERO gradient updates: the "
+                    "replay buffer never reached batch_size=%d while it ran.",
+                    ep + 1, ep_density, trainer.batch_size,
+                )
+
+            # M4. An empty episode used to be recorded as reward 0.0. Rewards are
+            # penalties and are always <= 0, so 0.0 is BETTER than any real
+            # episode: a dead SUMO or too short a warmup drew an upward spike on
+            # the very curve the convergence check reads. NaN is recorded instead,
+            # and three empty episodes in a row stop the run rather than burning
+            # 8.8 hours measuring nothing.
+            if not has_data or metrics.get("n_observations", 0) == 0:
+                empty_streak += 1
+                logging.error(
+                    "Episode %d observed nothing (n_observations=%s, closed intervals=%d). "
+                    "Empty-episode streak: %d.",
+                    ep + 1, metrics.get("n_observations"), len(ep_rewards), empty_streak,
+                )
+                if empty_streak >= 3:
+                    raise RuntimeError(
+                        f"{model_name_str}: {empty_streak} consecutive episodes measured "
+                        "nothing. Aborting rather than completing a run with no data."
+                    )
+            else:
+                empty_streak = 0
+
+            # M7. A frozen Act model (every hot-swap refused on NaN weights) keeps
+            # producing plausible metrics and an unusually STABLE reward curve.
+            if trainer_metrics.get("fatal_error"):
+                raise RuntimeError(f"{model_name_str}: {trainer_metrics['fatal_error']}")
+
+            # TensorBoard logging. Nothing is written for an empty episode: a
+            # placeholder there is indistinguishable from a real measurement.
+            if writer is not None and has_data:
+                # The checkpoint-selection metric. Named so the curve says which
+                # one it is.
+                writer.add_scalar("Reward/PerSecond", ep_reward_per_sec, global_step)
+                # Kept alongside it, because the two disagree about which policy is
+                # better and a reader needs to see both.
+                writer.add_scalar("Reward/PerDecision", ep_reward_per_decision, global_step)
+                writer.add_scalar("Outage/CoverageRate", metrics["coverage_outage_rate"], global_step)
+                writer.add_scalar("Error/MeanAtUpdate", metrics["mean_update_error"], global_step)
+                writer.add_scalar("Scenario/Density", ep_density, global_step)
+                writer.add_scalar(
+                    "HotSwap/FailedSwaps",
+                    trainer_metrics["hot_swap_stats"]["failed_swaps"], global_step,
+                )
+            if writer is not None:
+                writer.add_scalar("Loss/MeanRecent", trainer_metrics["mean_recent_loss"], global_step)
+                writer.add_scalar("AoI/Mean", metrics["mean_aoi"], global_step)
+                writer.add_scalar("AoI/Peak", metrics["peak_aoi"], global_step)
+                if ep_deltas:
+                    writer.add_scalar("Action/MeanDelta", float(np.mean(ep_deltas)), global_step)
+                writer.add_scalar("Error/Mean", metrics["mean_error"], global_step)
+                writer.add_scalar("Error/Max", metrics["max_error"], global_step)
+                writer.add_scalar("Outage/PacketLossRate", metrics["packet_loss_rate"], global_step)
+                writer.add_scalar("Power/Avg_dBm", metrics["avg_tx_power_dbm"], global_step)
+                writer.add_scalar("HotSwap/Count", trainer_metrics["hot_swap_stats"]["swap_count"], global_step)
+
+            # Periodic and Best Checkpointing
+            if (ep + 1) % 10 == 0 or (ep + 1) == episodes:
+                ckpt_path = os.path.join(checkpoint_dir, f"{model_name_str}_ep{ep+1:03d}.pt")
+                trainer.save_checkpoint(ckpt_path, best_reward=best_reward)
+
+            if has_data and ep_reward_per_sec > best_reward:
+                best_reward = ep_reward_per_sec
+                best_ckpt_path = os.path.join(checkpoint_dir, f"{model_name_str}_best.pt")
+                trainer.save_checkpoint(best_ckpt_path, best_reward=best_reward)
+
+            ep_record = {
+                "episode": ep + 1,
+                "global_step": global_step,
+                "density": ep_density,
+                # The column name says which one selects the checkpoint.
+                "reward_per_sec_selected": round(ep_reward_per_sec, 6),
+                "reward_per_decision": round(ep_reward_per_decision, 6),
+                # Legacy column name, kept so existing readers do not break; it
+                # now carries the SELECTION metric, not the per-decision mean.
+                "mean_reward": round(ep_reward_per_sec, 6),
+                "mean_loss": trainer_metrics["mean_recent_loss"],
+                # Gradient budget actually spent while this episode ran. The
+                # background trainer is wall-clock driven and gated on
+                # `is_ready(batch_size)`, so a low-density episode can receive far
+                # fewer updates than a high-density one: measured over 300 steps,
+                # 2 updates at density 5 against 36 at density 50. Recording it
+                # per episode is what makes "did the nine models get comparable
+                # budgets, and did every density contribute" answerable after the
+                # fact instead of unanswerable.
+                "grad_updates_total": trainer_metrics["training_steps"],
+                "grad_updates_this_episode": ep_grad_updates,
+                "swap_count": trainer_metrics["hot_swap_stats"]["swap_count"],
+                # The Delta the policy actually asked for. Distinct from
+                # `mean_aoi`, which is the age the RSU actually observed.
+                "mean_delta": round(float(np.mean(ep_deltas)), 4) if ep_deltas else 0.0,
+                "mean_delta_actual": round(float(np.mean(ep_deltas_actual)), 4) if ep_deltas_actual else float("nan"),
+                "n_decisions": len(ep_deltas),
+                "n_intervals_closed": len(ep_deltas_actual),
+                **metrics,
+            }
+            episodic_records.append(ep_record)
+
+    finally:
+        trainer.stop()
+        if writer is not None:
+            writer.close()
+
+    # Save episodic progress CSV
+    df_progress = pd.DataFrame(episodic_records)
+    if resumed_from is not None and os.path.exists(log_csv_path):
+        # Preserve the pre-resume history instead of truncating the log.
+        try:
+            df_prev = pd.read_csv(log_csv_path)
+            if "episode" in df_prev.columns:
+                df_prev = df_prev[df_prev["episode"] <= start_ep]
+            df_progress = pd.concat([df_prev, df_progress], ignore_index=True)
+        except Exception:
+            pass
+    df_progress.to_csv(log_csv_path, index=False)
+
+    elapsed_s = max(1e-4, time.perf_counter() - t_start)
+    latency_stats = trainer.scheduler.get_latency_stats()
+    hot_swap_stats = trainer.hot_swap_manager.get_stats()
+    final_metrics = trainer.background_trainer.get_metrics()
+
+    return {
+        "model_name": model_name,
+        "total_steps": global_step,
+        "episodes": episodes,
+        "elapsed_seconds": round(elapsed_s, 4),
+        "throughput_steps_per_sec": round(global_step / elapsed_s, 2),
+        # Mean over episodes of the SELECTION metric (reward per simulated
+        # second). The old name and the old per-decision quantity are both kept so
+        # nothing downstream breaks silently.
+        "mean_reward_per_second": round(float(np.nanmean([r["reward_per_sec_selected"] for r in episodic_records])), 6)
+        if episodic_records
+        else float("nan"),
+        "mean_reward_per_decision": round(float(np.nanmean([r["reward_per_decision"] for r in episodic_records])), 6)
+        if episodic_records
+        else float("nan"),
+        "mean_step_reward": round(float(np.nanmean([r["reward_per_sec_selected"] for r in episodic_records])), 6)
+        if episodic_records
+        else 0.0,
+        "densities": list(density_schedule),
+        # Gradient budget, for the cross-model fairness argument. `training_steps`
+        # alone cannot say whether every density contributed to it.
+        "zero_update_episodes": zero_update_episodes,
+        "grad_updates_by_density": {
+            float(d): int(sum(
+                r["grad_updates_this_episode"] for r in episodic_records
+                if float(r["density"]) == float(d)
+            ))
+            for d in density_schedule
+        },
+        # Mean AoI actually measured, and the mean Delta the policy actually
+        # asked for. These were the same number before: `mean_scheduled_delta`
+        # was reading `mean_aoi` while the real Delta was collected and dropped.
+        "mean_aoi": round(float(np.mean([r["mean_aoi"] for r in episodic_records])), 4)
+        if episodic_records
+        else 0.0,
+        "mean_scheduled_delta": round(float(np.mean([r["mean_delta"] for r in episodic_records])), 4)
+        if episodic_records
+        else 0.0,
+        "training_steps": final_metrics["training_steps"],
+        "mean_recent_loss": final_metrics["mean_recent_loss"],
+        "swap_count": hot_swap_stats["swap_count"],
+        "failed_swaps": hot_swap_stats["failed_swaps"],
+        "mean_swap_latency_ms": hot_swap_stats["mean_swap_latency_ms"],
+        "inference_latency": latency_stats,
+        "act_device": str(trainer.act_device),
+        "rest_device": str(trainer.rest_device),
+        "log_csv_path": log_csv_path,
+        # Which ablation arm this run belongs to. Two arms are being trained and
+        # their rewards are on different scales, so every summary must say which.
+        "error_mode": error_mode,
+        "updates_per_env_step": updates_per_env_step,
+        "cbr_ref": CBR_REF,
+        "start_episode": start_ep,
+        "resumed_from_checkpoint": resumed_from,
+    }

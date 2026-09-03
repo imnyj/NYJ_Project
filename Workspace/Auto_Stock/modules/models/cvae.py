@@ -1,0 +1,532 @@
+"""
+modules/models/cvae.py
+======================
+Auto Stock ML/RL Trader — Phase 6: Milestone 1
+조건부 변분 오토인코더(Conditional Variational Autoencoder, CVAE) 기반 Temporal CVAE 특징 추출기.
+
+주요 컴포넌트:
+1. ConditionEncoder:
+   - 정적 펀더멘털 및 계좌 상태 피처(C)를 조건부 잠재 벡터(c_emb)로 투영.
+2. TemporalCVAEFeatureExtractor:
+   - 인코더 q(z | X, C): 1D-CNN 시계열 인코더와 조건 벡터를 결합하여 평균(mu)과 로그분산(logvar) 산출.
+   - Reparameterization Trick: z = mu + sigma * eps (eps ~ N(0, I)).
+   - 디코더 p(X | z, C): 잠재 변수 z와 조건 c_emb로부터 일봉 및 분봉 시계열을 복원(X_hat).
+   - AnomalyScore: 시계열 재건 오차(MSE/Smooth L1)와 잠재 공간 KL 발산에 기반한 이상치 점수 산출.
+   - 공통 특징 벡터 (B, 64), 익일 수익률 예측 (B, 1), 3클래스 추세 분류 (B, 3), 이상치 점수 (B, 1) 산출.
+"""
+
+import math
+from typing import Any, Dict, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from modules.models.resnet import BaseSLFeatureExtractor, _get_group_norm_groups
+
+
+class TemporalCVAEFeatureExtractor(BaseSLFeatureExtractor):
+    """
+    Phase 6 아키텍처 3: 잠재 공간 이상치 탐지 기반 Temporal CVAE 특징 추출기.
+    - 다중 타임프레임 시계열(일봉, 분봉)과 조건부 피처(계좌/정적)의 결합 인코딩
+    - Reparameterization trick을 통한 잠재 벡터 z 샘플링
+    - 시계열 복원 디코더 및 재건 오차 + KL 발산 기반 Anomaly Score 도출
+    - 정책망 주입용 64차원 융합 특징 벡터 및 멀티태스크 예측 헤드 제공
+    """
+
+    def __init__(
+        self,
+        daily_in_channels: int = 10,
+        daily_seq_len: int = 20,
+        minute_in_channels: int = 10,
+        minute_seq_len: int = 60,
+        tabular_dim: int = 4,
+        latent_dim: int = 16,
+        hidden_dim: int = 64,
+        c_dim: int = 32,
+        output_dim: int = 64,
+        kl_weight: float = 1e-3,
+        dropout: float = 0.1,
+    ):
+        super().__init__(
+            daily_in_channels=daily_in_channels,
+            daily_seq_len=daily_seq_len,
+            minute_in_channels=minute_in_channels,
+            minute_seq_len=minute_seq_len,
+            tabular_dim=tabular_dim,
+            output_dim=output_dim,
+        )
+        self.latent_dim = int(latent_dim)
+        self.hidden_dim = int(hidden_dim)
+        self.c_dim = int(c_dim)
+        self.kl_weight = float(kl_weight)
+        self.dropout_rate = float(dropout)
+
+        # 1. Condition Encoder (Tabular -> c_emb)
+        self.condition_encoder = nn.Sequential(
+            nn.Linear(self.tabular_dim, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Linear(32, self.c_dim),
+            nn.LayerNorm(self.c_dim),
+            nn.GELU(),
+        )
+
+        # 2. Temporal Encoders q(z | X, C)
+        gn_daily = _get_group_norm_groups(32)
+        self.daily_encoder = nn.Sequential(
+            nn.Conv1d(self.daily_in_channels, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(gn_daily, 32),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Conv1d(32, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(gn_daily, 32),
+            nn.GELU(),
+            nn.AdaptiveAvgPool1d(1),
+        )
+
+        gn_min = _get_group_norm_groups(32)
+        self.minute_encoder = nn.Sequential(
+            nn.Conv1d(self.minute_in_channels, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(gn_min, 32),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Conv1d(32, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(gn_min, 32),
+            nn.GELU(),
+            nn.AdaptiveAvgPool1d(1),
+        )
+
+        # 3. Latent Projections (h_daily(32) + h_min(32) + c_emb(c_dim) -> hidden_dim -> mu, logvar)
+        enc_concat_dim = 32 + 32 + self.c_dim
+        self.latent_hidden = nn.Sequential(
+            nn.Linear(enc_concat_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+        )
+        self.fc_mu = nn.Linear(self.hidden_dim, self.latent_dim)
+        self.fc_logvar = nn.Linear(self.hidden_dim, self.latent_dim)
+
+        # 4. Decoders p(X | z, C)
+        dec_in_dim = self.latent_dim + self.c_dim
+
+        # Daily Decoder
+        self.daily_decoder_fc = nn.Sequential(
+            nn.Linear(dec_in_dim, self.hidden_dim),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim, 32 * self.daily_seq_len),
+            nn.GELU(),
+        )
+        self.daily_decoder_conv = nn.Sequential(
+            nn.Conv1d(32, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(gn_daily, 32),
+            nn.GELU(),
+            nn.Conv1d(32, self.daily_in_channels, kernel_size=3, padding=1),
+        )
+
+        # Minute Decoder
+        self.minute_decoder_fc = nn.Sequential(
+            nn.Linear(dec_in_dim, self.hidden_dim),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim, 32 * self.minute_seq_len),
+            nn.GELU(),
+        )
+        self.minute_decoder_conv = nn.Sequential(
+            nn.Conv1d(32, 32, kernel_size=3, padding=1),
+            nn.GroupNorm(gn_min, 32),
+            nn.GELU(),
+            nn.Conv1d(32, self.minute_in_channels, kernel_size=3, padding=1),
+        )
+
+        # 5. Downstream Fusion MLP (h_daily(32) + h_min(32) + mu(latent_dim) + anomaly_score(1) + c_emb(c_dim) -> 64)
+        fused_in_dim = 32 + 32 + self.latent_dim + 1 + self.c_dim
+        self.fusion_mlp = nn.Sequential(
+            nn.Linear(fused_in_dim, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Linear(128, self.output_dim),
+            nn.LayerNorm(self.output_dim),
+            nn.GELU(),
+        )
+
+        # 6. Multi-task Heads
+        self.return_head = nn.Sequential(
+            nn.Linear(self.output_dim, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+        )
+        self.direction_head = nn.Sequential(
+            nn.Linear(self.output_dim, 32),
+            nn.GELU(),
+            nn.Linear(32, 3),
+        )
+
+        # Cache for last auxiliary states
+        self.last_aux: Optional[Dict[str, torch.Tensor]] = None
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, (nn.LayerNorm, nn.GroupNorm)):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def encode(
+        self,
+        daily_x: torch.Tensor,
+        minute_x: torch.Tensor,
+        c_emb: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        인코더 q(z | X, C) 실행.
+        Returns:
+            mu: (B, latent_dim)
+            logvar: (B, latent_dim)
+            z: (B, latent_dim)
+            h_daily: (B, 32)
+            h_min: (B, 32)
+        """
+        d_t = daily_x.transpose(1, 2)
+        m_t = minute_x.transpose(1, 2)
+
+        h_daily = self.daily_encoder(d_t).squeeze(-1)  # (B, 32)
+        h_min = self.minute_encoder(m_t).squeeze(-1)   # (B, 32)
+
+        h_cat = torch.cat([h_daily, h_min, c_emb], dim=-1)
+        h_latent = self.latent_hidden(h_cat)
+        mu = self.fc_mu(h_latent)
+        logvar = self.fc_logvar(h_latent)
+        z = self.reparameterize(mu, logvar)
+
+        return mu, logvar, z, h_daily, h_min
+
+    def reparameterize(
+        self,
+        mu: torch.Tensor,
+        logvar: torch.Tensor,
+        deterministic: bool = False,
+    ) -> torch.Tensor:
+        """
+        Reparameterization trick: z = mu + sigma * eps
+        """
+        if deterministic or not self.training:
+            return mu
+        std = torch.exp(0.5 * torch.clamp(logvar, -10.0, 10.0))
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(
+        self,
+        z: torch.Tensor,
+        c_emb: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        디코더 p(X | z, C) 실행.
+        Returns:
+            rec_daily: (B, daily_seq_len, daily_in_channels)
+            rec_minute: (B, minute_seq_len, minute_in_channels)
+        """
+        batch_size = z.size(0)
+        z_c = torch.cat([z, c_emb], dim=-1)
+
+        # 1. Daily reconstruction
+        d_fc = self.daily_decoder_fc(z_c)
+        d_reshaped = d_fc.view(batch_size, 32, self.daily_seq_len)
+        d_conv = self.daily_decoder_conv(d_reshaped)  # (B, C_d, T_d)
+        rec_daily = d_conv.transpose(1, 2)            # (B, T_d, C_d)
+
+        # 2. Minute reconstruction
+        m_fc = self.minute_decoder_fc(z_c)
+        m_reshaped = m_fc.view(batch_size, 32, self.minute_seq_len)
+        m_conv = self.minute_decoder_conv(m_reshaped)  # (B, C_m, T_m)
+        rec_minute = m_conv.transpose(1, 2)            # (B, T_m, C_m)
+
+        return rec_daily, rec_minute
+
+    def _compute_reconstruction_and_kl(
+        self,
+        daily_x: torch.Tensor,
+        minute_x: torch.Tensor,
+        rec_daily: torch.Tensor,
+        rec_minute: torch.Tensor,
+        mu: torch.Tensor,
+        logvar: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        시계열 재건 오차와 KL 발산 계산.
+        Returns:
+            rec_loss: (B, 1)
+            kl_div: (B, 1)
+            anomaly_score: (B, 1)
+        """
+        rec_err_d = torch.mean((daily_x - rec_daily) ** 2, dim=(1, 2))  # (B,)
+        rec_err_m = torch.mean((minute_x - rec_minute) ** 2, dim=(1, 2))  # (B,)
+        rec_loss = (rec_err_d + rec_err_m).unsqueeze(-1)  # (B, 1)
+
+        kl_div = -0.5 * torch.sum(1.0 + logvar - mu.pow(2) - logvar.exp(), dim=-1, keepdim=True)
+        kl_div = kl_div / self.latent_dim  # (B, 1)
+
+        anomaly_score = torch.clamp(rec_loss + self.kl_weight * kl_div, min=0.0)  # (B, 1)
+        return rec_loss, kl_div, anomaly_score
+
+    def extract_features(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+        return_batched: bool = False,
+    ) -> torch.Tensor:
+        """
+        다중 타임프레임 시계열로부터 64차원 공통 잠재 특징 벡터를 추출합니다.
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        c_emb = self.condition_encoder(tab_x)
+        mu, logvar, z, h_daily, h_min = self.encode(d_x, m_x, c_emb)
+        rec_daily, rec_minute = self.decode(z, c_emb)
+        rec_loss, kl_div, anomaly_score = self._compute_reconstruction_and_kl(
+            d_x, m_x, rec_daily, rec_minute, mu, logvar
+        )
+
+        # Save auxiliary information
+        self.last_aux = {
+            "latent_mu": mu,
+            "latent_logvar": logvar,
+            "latent_z": z,
+            "reconstructed_daily": rec_daily,
+            "reconstructed_minute": rec_minute,
+            "anomaly_score": anomaly_score,
+            "rec_loss": rec_loss,
+            "kl_div": kl_div,
+        }
+
+        # Multimodal fusion
+        fused = torch.cat([h_daily, h_min, mu, anomaly_score, c_emb], dim=-1)
+        features = self.fusion_mlp(fused)
+
+        if is_unbatched and not return_batched:
+            return features.squeeze(0)
+        return features
+
+    def forward(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+        return_aux: bool = False,
+        return_features_only: bool = False,
+    ) -> Union[
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+        Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Dict[str, torch.Tensor]],
+        torch.Tensor,
+    ]:
+        """
+        순전파: (features, pred_return, pred_direction) 반환.
+        return_aux=True일 경우 보조 딕셔너리(aux_dict)를 4번째 원소로 추가 반환.
+        as_backbone_mode이거나 extract_features 컨텍스트에서는 features 텐서 단독 반환.
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        feats = self.extract_features(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            return_batched=True,
+        )
+
+        if self._should_return_features_only(return_features_only):
+            if is_unbatched:
+                return feats.squeeze(0)
+            return feats
+
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+
+        aux = self.last_aux or {}
+
+        if is_unbatched:
+            f_out = feats.squeeze(0)
+            r_out = pred_return.squeeze(0)
+            d_out = pred_direction.squeeze(0)
+            if return_aux:
+                aux_unbatched = {k: v.squeeze(0) if torch.is_tensor(v) else v for k, v in aux.items()}
+                return f_out, r_out, d_out, aux_unbatched
+            return f_out, r_out, d_out
+
+        if return_aux:
+            return feats, pred_return, pred_direction, aux
+        return feats, pred_return, pred_direction
+
+    def predict_targets(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        RL 상태 편입 및 예측 모니터링용 타겟 값 산출:
+        - pred_return: (B, 1) 익일 기대 수익률
+        - trend_probs: (B, 3) 3클래스 추세 소프트맥스 확률
+        - anomaly_score: (B, 1) CVAE 재건 오차 + KL 기반 이상치 점수
+        - latent_mu: (B, latent_dim) 잠재 공간 중심 표현
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        feats = self.extract_features(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            return_batched=True,
+        )
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+        trend_probs = F.softmax(pred_direction, dim=-1)
+
+        aux = self.last_aux or {}
+        anomaly_score = aux.get("anomaly_score", torch.zeros_like(pred_return))
+        latent_mu = aux.get("latent_mu", torch.zeros((feats.size(0), self.latent_dim), device=feats.device))
+
+        if is_unbatched:
+            return {
+                "pred_return": pred_return.squeeze(0),
+                "trend_probs": trend_probs.squeeze(0),
+                "anomaly_score": anomaly_score.squeeze(0),
+                "latent_mu": latent_mu.squeeze(0),
+            }
+        return {
+            "pred_return": pred_return,
+            "trend_probs": trend_probs,
+            "anomaly_score": anomaly_score,
+            "latent_mu": latent_mu,
+        }
+
+    def compute_anomaly_score(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """
+        시계열 재건 오차 및 KL 발산 기반 이상치 점수 산출 메서드.
+        Returns:
+            anomaly_score: (B, 1) 또는 unbatched (1,)
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        c_emb = self.condition_encoder(tab_x)
+        mu, logvar, z, _, _ = self.encode(d_x, m_x, c_emb)
+        rec_daily, rec_minute = self.decode(z, c_emb)
+        _, _, anomaly_score = self._compute_reconstruction_and_kl(
+            d_x, m_x, rec_daily, rec_minute, mu, logvar
+        )
+
+        if is_unbatched:
+            return anomaly_score.squeeze(0)
+        return anomaly_score
+
+    def compute_cvae_loss(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+        target_return: Optional[torch.Tensor] = None,
+        target_direction: Optional[torch.Tensor] = None,
+        task_weight_reg: float = 1.0,
+        task_weight_cls: float = 1.0,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        CVAE 학습을 위한 통합 손실 함수 계산:
+        L = L_rec + beta * L_kl + lambda_reg * L_reg + lambda_cls * L_cls
+        """
+        d_x, m_x, tab_x, _ = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        c_emb = self.condition_encoder(tab_x)
+        mu, logvar, z, h_daily, h_min = self.encode(d_x, m_x, c_emb)
+        rec_daily, rec_minute = self.decode(z, c_emb)
+        rec_loss, kl_div, anomaly_score = self._compute_reconstruction_and_kl(
+            d_x, m_x, rec_daily, rec_minute, mu, logvar
+        )
+
+        mean_rec_loss = torch.mean(rec_loss)
+        mean_kl_loss = torch.mean(kl_div)
+        total_loss = mean_rec_loss + self.kl_weight * mean_kl_loss
+
+        loss_dict = {
+            "total_loss": total_loss,
+            "rec_loss": mean_rec_loss,
+            "kl_loss": mean_kl_loss,
+        }
+
+        # Multi-task supervised loss
+        if target_return is not None or target_direction is not None:
+            fused = torch.cat([h_daily, h_min, mu, anomaly_score, c_emb], dim=-1)
+            feats = self.fusion_mlp(fused)
+
+            if target_return is not None:
+                pred_ret = self.return_head(feats)
+                if target_return.dim() == 1:
+                    target_return = target_return.unsqueeze(-1)
+                reg_loss = F.smooth_l1_loss(pred_ret, target_return.float())
+                total_loss = total_loss + float(task_weight_reg) * reg_loss
+                loss_dict["reg_loss"] = reg_loss
+
+            if target_direction is not None:
+                pred_dir = self.direction_head(feats)
+                cls_loss = F.cross_entropy(pred_dir, target_direction.long())
+                total_loss = total_loss + float(task_weight_cls) * cls_loss
+                loss_dict["cls_loss"] = cls_loss
+
+            loss_dict["total_loss"] = total_loss
+
+        return loss_dict

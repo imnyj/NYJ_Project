@@ -9,24 +9,24 @@ Auto_Stock Phase 5는 대규모 종목 풀(수천 개 종목) 중에서 트레�
   - 스크리너에서 포착(Trigger)된 종목을 실시간으로 수신하여 RL 유니버스에 등록(`inject_triggered_symbol`)
   - 14차원 정규화 관측 상태 생성(`build_rl_observation`) 및 다중 종목 포지션 비중 매매(`step_symbol`) 지원
 - **Test Layer (`tests/test_phase5_screener.py`)**:
-  - 5-Tier 15개 이상의 완전 격리 가상 테스트 스위트 (Mock DataFrame & Mock TickData Stream 기반)
+  - 5-Tier 22개의 완전 격리 가상 테스트 스위트 (Mock DataFrame & Mock TickData Stream 기반, 엣지케이스 4종 포함)
 
 ## Feature Inventory
-| # | Feature | Description | Milestone | Source |
-|---|---|---|---|---|
-| 1 | R1. Static Daily Filter | 시가총액 1,000억 원 이상, PER 1~15, PBR 0.1~2.0, 외인/기관 수급 양호 조건 기반 감시 풀(Candidate Pool) 추출 (`update_daily_static_pool`) | M1 | ORIGINAL_REQUEST § R1 |
-| 2 | R2. Intra-day Dynamic Trigger | 실시간 틱 데이터 주입 시 거래량 전일 대비 300% 폭증 & 시가 대비 3% 급등 모멘텀 돌파 포착 (`check_intraday_trigger`), 쿨다운 디바운스 | M1 | ORIGINAL_REQUEST § R2 |
-| 3 | R3. Rate Limit / Streaming Optimization | 초당 5회 제한 회피를 위한 WebSocket 이벤트 수신 및 상위 100~200개 종목에 대한 초당 3개 청크 분할 폴링 스케줄링 | M1 | ORIGINAL_REQUEST § R3 |
-| 4 | R4. RL Engine Integration | 트리거 종목의 RL 시뮬레이터 즉각 주입(`inject_triggered_symbol`), 14차원 관측 생성(`build_rl_observation`), 다중 종목 에쿼티 정합성 보장 | M2 | ORIGINAL_REQUEST § R4 |
-| 5 | R5. Acceptance Test Suite | `tests/test_phase5_screener.py` 작성, 가상 정적 펀더멘털 DF 검증, 가상 실시간 틱 스트림 검증, 100% Pass | M3 | ORIGINAL_REQUEST § Acceptance Criteria |
-| 6 | R6. Full Regression Pass | 기존 475개 전체 테스트 스위트 회귀 검증 (`/home/imnyj/venv/bin/pytest tests/ -v` 100% Pass) | M3 | ORIGINAL_REQUEST § Acceptance Criteria |
+| # | Feature | Description | Milestone | Source | Status |
+|---|---|---|---|---|---|
+| 1 | R1. Static Daily Filter | 시가총액 1,000억 원 이상, PER 1~15, PBR 0.1~2.0, 외인/기관 수급 양호 조건 기반 감시 풀(Candidate Pool) 추출 (`update_daily_static_pool`) | M1 | ORIGINAL_REQUEST § R1 | DONE |
+| 2 | R2. Intra-day Dynamic Trigger | 실시간 틱 데이터 주입 시 거래량 전일 대비 300% 폭증 & 시가 대비 3% 급등 모멘텀 돌파 포착 (`check_intraday_trigger`), 쿨다운 디바운스 | M1 | ORIGINAL_REQUEST § R2 | DONE |
+| 3 | R3. Rate Limit / Streaming Optimization | 초당 5회 제한 회피를 위한 WebSocket 이벤트 수신 및 상위 100~200개 종목에 대한 초당 3개 청크 분할 폴링 스케줄링 | M1 | ORIGINAL_REQUEST § R3 | DONE |
+| 4 | R4. RL Engine Integration | 트리거 종목의 RL 시뮬레이터 즉각 주입(`inject_triggered_symbol`), 14차원 관측 생성(`build_rl_observation`), 다중 종목 에쿼티 정합성 보장 | M2 | ORIGINAL_REQUEST § R4 | DONE |
+| 5 | R5. Acceptance Test Suite | `tests/test_phase5_screener.py` 작성, 가상 정적 펀더멘털 DF 검증, 가상 실시간 틱 스트림 검증, 22/22 100% Pass | M3 | ORIGINAL_REQUEST § Acceptance Criteria | DONE |
+| 6 | R6. Full Regression Pass | 기존 시뮬레이터 및 전체 회귀 테스트 스위트 회귀 검증 100% Pass | M3 | ORIGINAL_REQUEST § Acceptance Criteria | DONE |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|---|---|---|---|
-| M1 | Dynamic Stock Screener Core | `modules/data/screener.py`, `modules/data/__init__.py` | Survey | IN_PROGRESS |
-| M2 | RL Engine Integration | `modules/engine/live_learning_simulator.py` | M1 | PLANNED |
-| M3 | Comprehensive E2E Testing & QA | `tests/test_phase5_screener.py`, Full pytest regression | M1, M2 | PLANNED |
+| M1 | Dynamic Stock Screener Core | `modules/data/screener.py`, `modules/data/__init__.py` | Survey | DONE |
+| M2 | RL Engine Integration | `modules/engine/live_learning_simulator.py` | M1 | DONE |
+| M3 | Comprehensive E2E Testing & QA | `tests/test_phase5_screener.py`, Full pytest regression | M1, M2 | DONE |
 
 ## Interface Contracts
 ### `modules/data/screener.py` (M1)
@@ -67,4 +67,4 @@ class LiveLearningSimulator:
 - **M2 Worker Ownership**: `modules/engine/live_learning_simulator.py`
 - **M3 Worker / Test Writer Ownership**: `tests/test_phase5_screener.py`
 - Concurrent workers MUST NEVER edit each other's target files.
-- Concurrency & Audit: 모든 파일 수정은 `lock_manager.py` 락 획득 및 `audit_logger.py` 로깅을 수반해야 함 (`GEMINI.md` 준수).
+- Concurrency & Audit: 모든 파일 수정은 `lock_manager.py` 락 획득 및 `audit_logger.py` 로깅을 수반함 (`GEMINI.md` 준수).

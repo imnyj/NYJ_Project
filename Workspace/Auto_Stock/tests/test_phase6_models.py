@@ -1,0 +1,609 @@
+"""
+tests/test_phase6_models.py
+===========================
+Auto Stock Phase 6 Milestone 4: SL 3종 아키텍처 모델 및 Hybrid RL 연동 자동화 검증 테스트 스위트.
+
+검증 항목:
+1. TestPhase6SLModelsOutputs:
+   - 3종 SL 모델(TemporalResNetFeatureExtractor, TemporalTransformerFeatureExtractor, TemporalCVAEFeatureExtractor)
+     동일 텐서 (B=4, seq_len=20, in_channels=10) 입력 시 표준 출력 Shape 및 수학적 불변식 검증:
+     * features shape: (4, 64)
+     * returns shape: (4, 1)
+     * trend_probs shape: (4, 3) 및 softmax 확률 합 1.0 (오차 1e-5 이내)
+     * anomaly_score shape: (4, 1) 및 비음수 (>= 0.0)
+     * extract_features, forward, predict_targets 인터페이스 일관성
+
+2. TestPhase6SLPolymorphicInputs:
+   - 다양한 입력 규격 호환성 검증:
+     * 2D 배치 관측치 (B=4, 14)
+     * Unbatched 단일 샘플 (20, 10) 및 (14,)
+     * NumPy ndarray 입력 (2D 및 3D)
+     * 다중 타임프레임 (일봉 (B, 20, 10), 분봉 (B, 60, 10), 계좌 (B, 4)) kwargs, dict, tuple 입력
+     * 결측치 및 이상치 (NaN / +Inf / -Inf) 차단 및 안정성
+
+3. TestPhase6ModelSpecificMechanisms:
+   - 아키텍처별 전용 메커니즘 검증:
+     * Transformer: get_attention_weights를 통한 XAI 어텐션 가중치 및 시간 축 합 1.0 불변식
+     * CVAE: return_aux=True 잠재 변수 (mu, logvar, z) 및 재건 텐서, compute_cvae_loss 역전파
+     * ResNet: 1D 잔차 블록 역전파 및 그래디언트 흐름
+
+4. TestPhase6RLIntegration:
+   - HybridActorCritic 및 SLEnrichedTradingEnvWrapper 연동 검증:
+     * create_hybrid_agent 팩토리를 통한 3종 백본 결합 에이전트 초기화
+     * get_action_and_value 샘플링(이산 0~2, 연속 [0, 1], 실수 가치) 및 평가 모드
+     * freeze_feature_extractor() autograd 차단 및 unfreeze_feature_extractor() 그래디언트 복구
+     * SLEnrichedTradingEnvWrapper: ResNet/Transformer 결합 시 18차원, CVAE 결합 시 19차원 관측치 확장
+     * 캐시 DataFrame 모드 및 ContinuousToHybridActionWrapper 양방향 체이닝 호환성
+"""
+
+import numpy as np
+import pandas as pd
+import pytest
+import torch
+
+from modules.engine.hybrid_trading_env import (
+    ContinuousToHybridActionWrapper,
+    HybridTradingEnv,
+    SLEnrichedTradingEnvWrapper,
+)
+from modules.models.cvae import TemporalCVAEFeatureExtractor
+from modules.models.hybrid_policy import (
+    HybridActorCritic,
+    create_hybrid_agent,
+)
+from modules.models.resnet import TemporalResNetFeatureExtractor
+from modules.models.transformer import TemporalTransformerFeatureExtractor
+
+
+# ==============================================================================
+# Helper Fixtures & Builders
+# ==============================================================================
+
+@pytest.fixture
+def standard_time_series_tensor():
+    """3종 모델에 공통 주입되는 표준 3D 시계열 텐서 (B=4, seq_len=20, in_channels=10)"""
+    torch.manual_seed(42)
+    return torch.randn(4, 20, 10)
+
+
+@pytest.fixture
+def standard_models():
+    """기본 파라미터로 초기화된 3종 SL 모델 딕셔너리"""
+    torch.manual_seed(100)
+    resnet = TemporalResNetFeatureExtractor(
+        daily_in_channels=10,
+        daily_seq_len=20,
+        minute_in_channels=10,
+        minute_seq_len=60,
+        tabular_dim=4,
+        output_dim=64,
+        num_blocks=2,
+        base_filters=32,
+        kernel_size=3,
+        dropout=0.1,
+    )
+    transformer = TemporalTransformerFeatureExtractor(
+        daily_in_channels=10,
+        daily_seq_len=20,
+        minute_in_channels=10,
+        minute_seq_len=60,
+        tabular_dim=4,
+        d_model=32,
+        nhead=4,
+        num_layers=2,
+        dim_feedforward=64,
+        dropout=0.1,
+        output_dim=64,
+    )
+    cvae = TemporalCVAEFeatureExtractor(
+        daily_in_channels=10,
+        daily_seq_len=20,
+        minute_in_channels=10,
+        minute_seq_len=60,
+        tabular_dim=4,
+        latent_dim=16,
+        hidden_dim=32,
+        c_dim=32,
+        output_dim=64,
+        kl_weight=1e-3,
+        dropout=0.1,
+    )
+    return {
+        "resnet": resnet,
+        "transformer": transformer,
+        "cvae": cvae,
+    }
+
+
+@pytest.fixture
+def dummy_market_dataframe():
+    """환경 래퍼 테스트를 위한 가상 시장 DataFrame (80행)"""
+    np.random.seed(42)
+    n_rows = 80
+    dates = pd.date_range("2024-01-01", periods=n_rows, freq="D")
+    prices = 70000.0 + np.cumsum(np.random.randn(n_rows) * 500)
+    prices = np.clip(prices, 10000.0, 200000.0)
+
+    return pd.DataFrame({
+        "date": dates,
+        "open": prices * 0.99,
+        "high": prices * 1.02,
+        "low": prices * 0.98,
+        "close": prices,
+        "volume": np.random.uniform(100000, 1000000, size=n_rows),
+        "returns_1d": np.random.uniform(-0.05, 0.05, size=n_rows),
+        "volatility_20d": np.random.uniform(0.1, 0.4, size=n_rows),
+        "log_return": np.random.uniform(-0.05, 0.05, size=n_rows),
+        "ma_5_dev": np.random.uniform(-0.03, 0.03, size=n_rows),
+        "ma_20_dev": np.random.uniform(-0.06, 0.06, size=n_rows),
+        "ma_60_dev": np.random.uniform(-0.1, 0.1, size=n_rows),
+        "dynamic_per": np.random.uniform(10.0, 25.0, size=n_rows),
+        "dynamic_pbr": np.random.uniform(1.0, 2.5, size=n_rows),
+        "dynamic_market_cap": np.random.uniform(1e11, 5e12, size=n_rows),
+    })
+
+
+# ==============================================================================
+# 1. 동일 텐서 입력 대비 정상 출력 Shape 검증
+# ==============================================================================
+
+class TestPhase6SLModelsOutputs:
+    """3대 SL 모델이 동일 텐서 입력 (B=4, seq_len=20, in_channels=10)을 받아
+    정상 Shape 및 수치 불변식을 만족하는지 검증하는 테스트 스위트."""
+
+    @pytest.mark.parametrize("model_name", ["resnet", "transformer", "cvae"])
+    def test_same_tensor_input_shape_and_invariants(self, standard_models, standard_time_series_tensor, model_name):
+        """동일 텐서 주입 시 features (4, 64), returns (4, 1), trend_probs (4, 3), anomaly_score (4, 1) 검증"""
+        model = standard_models[model_name]
+        model.eval()
+
+        with torch.no_grad():
+            # 1. extract_features
+            features = model.extract_features(standard_time_series_tensor)
+            assert features.shape == (4, 64), f"[{model_name}] features shape mismatch: expected (4, 64), got {features.shape}"
+            assert not torch.isnan(features).any(), f"[{model_name}] features contain NaN"
+            assert not torch.isinf(features).any(), f"[{model_name}] features contain Inf"
+
+            # 2. forward pass (feats, returns, trend_logits/probs)
+            f_out, ret_out, trend_out = model(standard_time_series_tensor)
+            assert f_out.shape == (4, 64), f"[{model_name}] forward features shape mismatch: {f_out.shape}"
+            assert ret_out.shape == (4, 1), f"[{model_name}] forward returns shape mismatch: {ret_out.shape}"
+            assert trend_out.shape == (4, 3), f"[{model_name}] forward trend shape mismatch: {trend_out.shape}"
+
+            # 3. predict_targets
+            targets = model.predict_targets(standard_time_series_tensor)
+            assert "pred_return" in targets
+            assert "trend_probs" in targets
+            assert "anomaly_score" in targets
+
+            pred_return = targets["pred_return"]
+            trend_probs = targets["trend_probs"]
+            anomaly_score = targets["anomaly_score"]
+
+            assert pred_return.shape == (4, 1), f"[{model_name}] pred_return shape mismatch: {pred_return.shape}"
+            assert trend_probs.shape == (4, 3), f"[{model_name}] trend_probs shape mismatch: {trend_probs.shape}"
+            assert anomaly_score.shape == (4, 1), f"[{model_name}] anomaly_score shape mismatch: {anomaly_score.shape}"
+
+            # Softmax 확률 합 1.0 불변식 검증 (오차 1e-5 이내)
+            prob_sums = trend_probs.sum(dim=-1)
+            expected_ones = torch.ones_like(prob_sums)
+            assert torch.allclose(prob_sums, expected_ones, atol=1e-5), (
+                f"[{model_name}] Softmax trend probabilities do not sum to 1.0: {prob_sums}"
+            )
+            # 모든 확률은 [0, 1] 범위 내 존재
+            assert torch.all(trend_probs >= 0.0) and torch.all(trend_probs <= 1.0)
+
+            # Anomaly score 비음수 검증 (non-negative)
+            assert torch.all(anomaly_score >= 0.0), (
+                f"[{model_name}] Anomaly score contains negative values: {anomaly_score}"
+            )
+
+            # 4. compute_anomaly_score 메서드 직접 호출
+            direct_anomaly = model.compute_anomaly_score(standard_time_series_tensor)
+            assert direct_anomaly.shape == (4, 1)
+            assert torch.all(direct_anomaly >= 0.0)
+
+
+# ==============================================================================
+# 2. 다양한 입력 형태 호환성 검증
+# ==============================================================================
+
+class TestPhase6SLPolymorphicInputs:
+    """2D 관측치, Unbatched 샘플, NumPy ndarray, 다중 타임프레임(kwargs, dict, tuple)
+    및 결측치/이상치 주입 시 안정성 검증."""
+
+    @pytest.mark.parametrize("model_name", ["resnet", "transformer", "cvae"])
+    def test_2d_observation_vector_input(self, standard_models, model_name):
+        """2D 관측치 (B=4, 14) 주입 시 정상 출력 검증"""
+        model = standard_models[model_name]
+        model.eval()
+
+        obs_2d = torch.randn(4, 14)
+        with torch.no_grad():
+            feats, ret, dire = model(obs_2d)
+            assert feats.shape == (4, 64)
+            assert ret.shape == (4, 1)
+            assert dire.shape == (4, 3)
+
+            targets = model.predict_targets(obs_2d)
+            assert targets["pred_return"].shape == (4, 1)
+            assert targets["trend_probs"].shape == (4, 3)
+            assert targets["anomaly_score"].shape == (4, 1)
+
+    @pytest.mark.parametrize("model_name", ["resnet", "transformer", "cvae"])
+    def test_unbatched_single_sample_input(self, standard_models, model_name):
+        """Unbatched 단일 샘플 (20, 10) 및 (14,) 주입 시 shape 보존 및 crash 방지 검증"""
+        model = standard_models[model_name]
+        model.eval()
+
+        with torch.no_grad():
+            # 1D 관측치 (14,)
+            obs_1d = torch.randn(14)
+            f_1d, r_1d, d_1d = model(obs_1d)
+            assert f_1d.shape == (64,)
+            assert r_1d.shape == (1,)
+            assert d_1d.shape == (3,)
+
+            f_ext_1d = model.extract_features(obs_1d)
+            assert f_ext_1d.shape == (64,)
+
+            targets_1d = model.predict_targets(obs_1d)
+            assert targets_1d["pred_return"].shape == (1,)
+            assert targets_1d["trend_probs"].shape == (3,)
+            assert targets_1d["anomaly_score"].shape == (1,)
+
+            # 단일 2D 텐서 (20, 10): 2D 배치를 수용하여 crash 없이 (20, 64) 출력
+            seq_2d = torch.randn(20, 10)
+            f_seq, r_seq, d_seq = model(seq_2d)
+            assert f_seq.shape == (20, 64)
+            assert r_seq.shape == (20, 1)
+            assert d_seq.shape == (20, 3)
+
+            # 단일 시계열 샘플 배치 (1, 20, 10)
+            seq_1b = torch.randn(1, 20, 10)
+            f_1b, r_1b, d_1b = model(seq_1b)
+            assert f_1b.shape == (1, 64)
+            assert r_1b.shape == (1, 1)
+            assert d_1b.shape == (1, 3)
+
+    @pytest.mark.parametrize("model_name", ["resnet", "transformer", "cvae"])
+    def test_numpy_ndarray_input(self, standard_models, model_name):
+        """NumPy ndarray (2D 및 3D) 입력 시 텐서 자동 변환 및 정상 연산 검증"""
+        model = standard_models[model_name]
+        model.eval()
+
+        np_2d = np.random.randn(4, 14).astype(np.float32)
+        np_3d = np.random.randn(4, 20, 10).astype(np.float32)
+
+        with torch.no_grad():
+            f_2d, _, _ = model(np_2d)
+            assert isinstance(f_2d, torch.Tensor)
+            assert f_2d.shape == (4, 64)
+
+            f_3d, _, _ = model(np_3d)
+            assert isinstance(f_3d, torch.Tensor)
+            assert f_3d.shape == (4, 64)
+
+    @pytest.mark.parametrize("model_name", ["resnet", "transformer", "cvae"])
+    def test_multi_timeframe_inputs_formats(self, standard_models, model_name):
+        """다중 타임프레임 (일봉 (B, 20, 10) + 분봉 (B, 60, 10) + 계좌 (B, 4))
+        kwargs, dict, 3-tuple, 2-tuple 다형적 주입 검증."""
+        model = standard_models[model_name]
+        model.eval()
+
+        B = 4
+        d_x = torch.randn(B, 20, 10)
+        m_x = torch.randn(B, 60, 10)
+        tab_x = torch.randn(B, 4)
+
+        with torch.no_grad():
+            # A. 명시적 키워드 인자 (kwargs)
+            f_kw, r_kw, d_kw = model(daily_x=d_x, minute_x=m_x, tabular_x=tab_x)
+            assert f_kw.shape == (B, 64)
+            assert r_kw.shape == (B, 1)
+            assert d_kw.shape == (B, 3)
+
+            # B. 딕셔너리 포맷 (dict)
+            f_dict, r_dict, d_dict = model(x={"daily": d_x, "minute": m_x, "tabular": tab_x})
+            assert f_dict.shape == (B, 64)
+            assert r_dict.shape == (B, 1)
+            assert d_dict.shape == (B, 3)
+
+            # C. 3-튜플 포맷 (daily, minute, tabular)
+            f_tup3, _, _ = model(x=(d_x, m_x, tab_x))
+            assert f_tup3.shape == (B, 64)
+
+            # D. 2-튜플 포맷 (daily, tabular)
+            f_tup2, _, _ = model(x=(d_x, tab_x))
+            assert f_tup2.shape == (B, 64)
+
+    @pytest.mark.parametrize("model_name", ["resnet", "transformer", "cvae"])
+    def test_nan_inf_numerical_robustness(self, standard_models, model_name):
+        """NaN 및 +Inf / -Inf 주입 시 nan_to_num 방어 및 정상 실수 출력 검증"""
+        model = standard_models[model_name]
+        model.eval()
+
+        nan_tensor = torch.randn(4, 20, 10)
+        nan_tensor[0, 0, 0] = float("nan")
+        nan_tensor[1, 5, 2] = float("inf")
+        nan_tensor[2, 10, 5] = float("-inf")
+
+        with torch.no_grad():
+            feats, ret, dire = model(nan_tensor)
+            assert not torch.isnan(feats).any(), f"[{model_name}] NaNs propagated to features!"
+            assert not torch.isinf(feats).any(), f"[{model_name}] Infs propagated to features!"
+            assert not torch.isnan(ret).any(), f"[{model_name}] NaNs in returns"
+            assert not torch.isnan(dire).any(), f"[{model_name}] NaNs in direction"
+
+
+# ==============================================================================
+# 3. 아키텍처별 전용 메커니즘 검증
+# ==============================================================================
+
+class TestPhase6ModelSpecificMechanisms:
+    """Transformer 어텐션 가중치(XAI), CVAE 잠재변수/재건/손실함수, ResNet 잔차 역전파 검증."""
+
+    def test_transformer_xai_attention_weights(self, standard_models):
+        """Transformer 모델의 get_attention_weights 출력 shape 및 합 1.0 검증"""
+        tf_model = standard_models["transformer"]
+        tf_model.eval()
+
+        B = 4
+        d_x = torch.randn(B, 20, 10)
+        m_x = torch.randn(B, 60, 10)
+        tab_x = torch.randn(B, 4)
+
+        with torch.no_grad():
+            attn_dict = tf_model.get_attention_weights(daily_x=d_x, minute_x=m_x, tabular_x=tab_x)
+            assert "daily_weights" in attn_dict
+            assert "minute_weights" in attn_dict
+
+            daily_w = attn_dict["daily_weights"]
+            minute_w = attn_dict["minute_weights"]
+
+            assert daily_w.shape == (B, 20), f"daily_weights shape mismatch: {daily_w.shape}"
+            assert minute_w.shape == (B, 60), f"minute_weights shape mismatch: {minute_w.shape}"
+
+            # 시간 축 합 1.0 (softmax attention distribution)
+            assert torch.allclose(daily_w.sum(dim=-1), torch.ones(B), atol=1e-5)
+            assert torch.allclose(minute_w.sum(dim=-1), torch.ones(B), atol=1e-5)
+
+    def test_cvae_auxiliary_and_loss_backward(self, standard_models):
+        """CVAE return_aux=True 보조 출력 및 compute_cvae_loss 역전파 검증"""
+        cvae_model = standard_models["cvae"]
+
+        B = 4
+        d_x = torch.randn(B, 20, 10)
+        m_x = torch.randn(B, 60, 10)
+        tab_x = torch.randn(B, 4)
+
+        # 1. return_aux=True 보조 출력
+        cvae_model.eval()
+        with torch.no_grad():
+            f_aux, r_aux, d_aux, aux = cvae_model(
+                daily_x=d_x, minute_x=m_x, tabular_x=tab_x, return_aux=True
+            )
+            assert f_aux.shape == (B, 64)
+            assert r_aux.shape == (B, 1)
+            assert d_aux.shape == (B, 3)
+
+            assert "reconstructed_daily" in aux
+            assert "reconstructed_minute" in aux
+            assert "latent_mu" in aux
+            assert "latent_logvar" in aux
+            assert "latent_z" in aux
+            assert "anomaly_score" in aux
+
+            assert aux["reconstructed_daily"].shape == (B, 20, 10)
+            assert aux["reconstructed_minute"].shape == (B, 60, 10)
+            assert aux["latent_mu"].shape == (B, 16)
+            assert aux["latent_logvar"].shape == (B, 16)
+            assert aux["latent_z"].shape == (B, 16)
+            assert aux["anomaly_score"].shape == (B, 1)
+
+        # 2. compute_cvae_loss 및 그래디언트 역전파
+        cvae_model.train()
+        cvae_model.zero_grad()
+        y_ret = torch.randn(B, 1)
+        y_dir = torch.randint(0, 3, (B,))
+
+        losses = cvae_model.compute_cvae_loss(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            target_return=y_ret,
+            target_direction=y_dir,
+        )
+        assert "total_loss" in losses
+        assert "rec_loss" in losses
+        assert "kl_loss" in losses
+        assert "reg_loss" in losses
+        assert "cls_loss" in losses
+
+        losses["total_loss"].backward()
+        grad_norm = sum(p.grad.norm().item() for p in cvae_model.parameters() if p.grad is not None)
+        assert grad_norm > 0.0, "CVAE loss backward failed to propagate gradients!"
+
+    def test_resnet_gradient_flow(self, standard_models):
+        """ResNet 모델의 역전파 및 멀티태스크 헤드 그래디언트 전파 검증"""
+        resnet_model = standard_models["resnet"]
+        resnet_model.train()
+        resnet_model.zero_grad()
+
+        d_x = torch.randn(4, 20, 10)
+        f, r, d = resnet_model(d_x)
+        ano = resnet_model.compute_anomaly_score(d_x)
+
+        loss = f.sum() + r.sum() + d.sum() + ano.sum()
+        loss.backward()
+
+        for name, param in resnet_model.named_parameters():
+            assert param.grad is not None, f"ResNet parameter {name} has None grad"
+
+
+# ==============================================================================
+# 4. Hybrid RL 연동 검증 (HybridActorCritic & SLEnrichedTradingEnvWrapper)
+# ==============================================================================
+
+class TestPhase6RLIntegration:
+    """3종 SL 모델을 백본으로 하는 HybridActorCritic 및 SLEnrichedTradingEnvWrapper 결합 검증."""
+
+    @pytest.mark.parametrize("model_type", ["resnet", "transformer", "cvae"])
+    def test_create_hybrid_agent_factory_and_sampling(self, model_type):
+        """create_hybrid_agent 팩토리 함수로 3종 백본 에이전트 생성 및 get_action_and_value 검증"""
+        agent = create_hybrid_agent(
+            sl_model_type=model_type,
+            obs_dim=18,
+            feature_dim=64,
+            hidden_dims=[64, 64],
+            action_dim=3,
+            distribution_type="beta",
+        )
+        assert isinstance(agent, HybridActorCritic), f"Failed to instantiate agent with {model_type}"
+        assert agent.feature_dim == 64
+
+        # A. Batched 관측치 (B=4, 18) 순전파
+        b_obs = torch.randn(4, 18)
+        logits, alpha, beta, val = agent.forward(b_obs)
+        assert logits.shape == (4, 3)
+        assert alpha.shape == (4, 1) and beta.shape == (4, 1)
+        assert val.shape == (4, 1)
+
+        # B. 롤아웃 샘플링 모드 (action=None)
+        act, log_prob, entropy, val_out = agent.get_action_and_value(b_obs, action=None)
+        disc_act, cont_act = act
+        assert disc_act.shape == (4,)
+        assert cont_act.shape == (4, 1)
+        assert log_prob.shape == (4,)
+        assert entropy.shape == (4,)
+        assert val_out.shape == (4,)
+
+        # 이산 액션 범위 [0, 2] 및 연속 비중 [0.0, 1.0] 검증
+        assert torch.all((disc_act >= 0) & (disc_act <= 2))
+        assert torch.all((cont_act >= 0.0) & (cont_act <= 1.0))
+
+        # C. 정책 평가 모드 (action 주입)
+        eval_act = (
+            torch.tensor([0, 1, 2, 1], dtype=torch.long),
+            torch.tensor([[0.1], [0.5], [0.9], [0.3]], dtype=torch.float32),
+        )
+        _, eval_lp, eval_ent, eval_v = agent.get_action_and_value(b_obs, action=eval_act)
+        assert eval_lp.shape == (4,)
+        assert eval_ent.shape == (4,)
+        assert eval_v.shape == (4,)
+        assert not torch.isnan(eval_lp).any()
+
+    def test_backbone_freeze_and_unfreeze_autograd_isolation(self):
+        """freeze_feature_extractor() autograd 차단 및 unfreeze_feature_extractor() 복원 검증"""
+        agent = create_hybrid_agent(
+            sl_model_type="resnet",
+            obs_dim=18,
+            feature_dim=64,
+            freeze_feature_extractor=True,
+        )
+        assert agent.is_feature_extractor_frozen is True
+
+        # 모든 백본 파라미터의 requires_grad == False 확인
+        for param in agent.feature_extractor.parameters():
+            assert not param.requires_grad
+
+        # 역전파 시 백본 파라미터로 그래디언트 차단 확인
+        obs = torch.randn(4, 18)
+        logits, _, _, val = agent(obs)
+        loss = logits.sum() + val.sum()
+        loss.backward()
+
+        for name, param in agent.feature_extractor.named_parameters():
+            assert param.grad is None, f"Frozen parameter {name} received gradient!"
+
+        # Unfreeze 호출 및 그래디언트 흐름 복구 확인
+        agent.unfreeze_feature_extractor()
+        assert agent.is_feature_extractor_frozen is False
+        agent.zero_grad()
+
+        logits2, _, _, val2 = agent(obs)
+        loss2 = logits2.sum() + val2.sum()
+        loss2.backward()
+
+        backbone_grad_norm = sum(
+            p.grad.norm().item() for p in agent.feature_extractor.parameters() if p.grad is not None
+        )
+        assert backbone_grad_norm > 0.0, "Unfrozen backbone failed to receive gradients!"
+
+    def test_sl_enriched_wrapper_observation_shapes(self, dummy_market_dataframe, standard_models):
+        """SLEnrichedTradingEnvWrapper가 ResNet/Transformer 결합 시 18차원,
+        CVAE 결합 시 19차원 관측치를 정상 반환하는지 검증."""
+        base_env = HybridTradingEnv(df=dummy_market_dataframe, initial_cash=10_000_000, max_steps=40)
+
+        # 1. ResNet 결합 -> 18차원
+        env_resnet = SLEnrichedTradingEnvWrapper(base_env, sl_model=standard_models["resnet"])
+        assert env_resnet.observation_space.shape == (18,)
+        obs_r, info_r = env_resnet.reset(seed=42)
+        assert obs_r.shape == (18,)
+        assert "sl_targets" in info_r and len(info_r["sl_targets"]) == 4
+        assert info_r["sl_augmented_dim"] == 18
+
+        next_obs_r, r_r, term_r, trunc_r, s_info_r = env_resnet.step((1, np.array([0.5], dtype=np.float32)))
+        assert next_obs_r.shape == (18,)
+        assert np.all(np.isfinite(next_obs_r))
+        assert env_resnet.unwrapped.verify_accounting_invariant()
+
+        # 2. Transformer 결합 -> 18차원
+        env_tf = SLEnrichedTradingEnvWrapper(base_env, sl_model=standard_models["transformer"])
+        assert env_tf.observation_space.shape == (18,)
+        obs_tf, _ = env_tf.reset(seed=100)
+        assert obs_tf.shape == (18,)
+
+        # 3. CVAE 결합 -> 19차원 (기본 14 + 예측 4 + 이상치 점수 1)
+        env_cvae = SLEnrichedTradingEnvWrapper(base_env, sl_model=standard_models["cvae"])
+        assert env_cvae.observation_space.shape == (19,)
+        assert env_cvae.sl_feature_dim == 5
+        obs_c, info_c = env_cvae.reset(seed=200)
+        assert obs_c.shape == (19,)
+        assert len(info_c["sl_targets"]) == 5
+        assert info_c["sl_augmented_dim"] == 19
+
+        next_obs_c, _, _, _, _ = env_cvae.step((2, np.array([0.8], dtype=np.float32)))
+        assert next_obs_c.shape == (19,)
+        assert np.all(np.isfinite(next_obs_c))
+
+    def test_sl_enriched_wrapper_cache_and_action_wrapper_chaining(self, dummy_market_dataframe, standard_models):
+        """사전 계산 캐시 DataFrame 모드 및 ContinuousToHybridActionWrapper 양방향 체이닝 검증"""
+        base_env = HybridTradingEnv(df=dummy_market_dataframe, initial_cash=10_000_000, max_steps=40)
+
+        # 1. 사전 계산 캐시 DataFrame 모드
+        cache_df = pd.DataFrame({
+            "pred_return": [0.03] * 40,
+            "prob_up": [0.7] * 40,
+            "prob_neutral": [0.2] * 40,
+            "prob_down": [0.1] * 40,
+            "anomaly_score": [0.01] * 40,
+        })
+        env_cache = SLEnrichedTradingEnvWrapper(base_env, sl_predictions_df=cache_df, include_anomaly_score=True)
+        assert env_cache.observation_space.shape == (19,)
+        _, info_cache = env_cache.reset(seed=1)
+        np.testing.assert_allclose(info_cache["sl_targets"][:4], [0.03, 0.7, 0.2, 0.1], rtol=1e-3)
+        np.testing.assert_allclose(info_cache["sl_targets"][4], 0.01, rtol=1e-3)
+
+        # 2. 체이닝 1: ContinuousToHybridActionWrapper(SLEnriched)
+        c_env1 = ContinuousToHybridActionWrapper(
+            SLEnrichedTradingEnvWrapper(base_env, sl_model=standard_models["resnet"])
+        )
+        assert c_env1.observation_space.shape == (18,)
+        assert c_env1.action_space.shape == (2,)
+        o1, _ = c_env1.reset(seed=10)
+        assert o1.shape == (18,)
+        o1_step, _, _, _, _ = c_env1.step(np.array([0.5, 0.5], dtype=np.float32))
+        assert o1_step.shape == (18,)
+
+        # 3. 체이닝 2: SLEnriched(ContinuousToHybridActionWrapper)
+        c_env2 = SLEnrichedTradingEnvWrapper(
+            ContinuousToHybridActionWrapper(base_env),
+            sl_model=standard_models["cvae"],
+        )
+        assert c_env2.observation_space.shape == (19,)
+        assert c_env2.action_space.shape == (2,)
+        o2, _ = c_env2.reset(seed=20)
+        assert o2.shape == (19,)
+        o2_step, _, _, _, _ = c_env2.step(np.array([-0.5, 0.3], dtype=np.float32))
+        assert o2_step.shape == (19,)

@@ -24,7 +24,8 @@ import json
 import logging
 import os
 import random
-from typing import Any, Dict, List, Optional, Tuple, Union
+from collections import deque
+from typing import Any, Deque, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import optuna
@@ -40,7 +41,29 @@ from src.evaluate import (
     OUTAGE_METRIC_KEY,
     normalize_power_dbm,
 )
-from src.hot_swap_trainer import DEFAULT_REWARD_WEIGHTS, DEFAULT_WARMUP_STEPS, REWARD_WEIGHT_KEYS, AoiV2IEnv
+# The divergence rule is imported, never restated. If HPO judged divergence by
+# its own threshold, a combination HPO passed could still be aborted by the
+# trainer on the same loss trace (or worse, the reverse), and the search would be
+# selecting hyperparameters the training loop refuses to run.
+from src.divergence_guard import (
+    ABORT_DIVERGED,
+    DEFAULT_LOSS_ABS_FLOOR as DG_LOSS_ABS_FLOOR,
+    DEFAULT_LOSS_PATIENCE as DG_LOSS_PATIENCE,
+    DEFAULT_LOSS_RATIO as DG_LOSS_RATIO,
+    DEFAULT_MAX_NONFINITE_LOSS_UPDATES,
+    DEFAULT_MAX_ZERO_UPDATE_EPISODES as DG_MAX_ZERO_UPDATE_EPISODES,
+    DEFAULT_WARMUP_EPISODES as DG_WARMUP_EPISODES,
+    AbortVerdict,
+    DivergenceMonitor,
+    is_finite_number,
+)
+from src.hot_swap_trainer import (
+    DEFAULT_REWARD_WEIGHTS,
+    DEFAULT_WARMUP_STEPS,
+    REWARD_WEIGHT_KEYS,
+    AoiV2IEnv,
+    BackgroundTrainer,
+)
 from src.rl_interface import P_MAX, P_MIN, STATE_DIM, RetrospectiveReplayBuffer
 import src.sumo.make_sumo_set as ss
 
@@ -327,10 +350,168 @@ def _search_space_keys(canonical_name: str) -> List[str]:
     return rec.keys
 
 
-#: Score handed to a trial whose rollout measured nothing at all. It has to be
-#: far above any attainable real score (committed studies sit in 0.887..1.459)
-#: because the study minimises and an unmeasured run scores 0.0 on every term.
+#: Score handed to a trial that measured nothing, or whose loss diverged. It has
+#: to be far above any attainable real score because the study minimises and an
+#: unmeasured run scores 0.0 on every term.
+#:
+#: The range of real scores, read out of the nine committed
+#: `results/hpo/optuna_trials_*.csv` (135 trials, of which 130 produced a score
+#: below the penalty): 0.925 (MADDPG-MT) to 35.815 (PPO). An earlier version of
+#: this comment claimed 0.887..1.459, which was the scale of a superseded
+#: objective and is 24x too small. The difference matters: at the real scale a
+#: per-seed penalty on one seed of three averages to 33.3, which does NOT beat
+#: PPO's worst healthy trial at 35.815, so a single penalised seed is not on its
+#: own enough to put a trial out of contention. That is why
+#: `evaluate_trial_multiseed` applies the penalty at the trial level as well.
 FAILED_RUN_PENALTY: float = 100.0
+
+
+# ----------------------------------------------------------------------------
+# Divergence detection inside an HPO rollout
+#
+# Why this is here at all. On 2026-09-02 four 200,000-step training runs were
+# lost to on-policy divergence, and every one of the four learning rates that
+# caused it had been SELECTED BY THIS FILE (PPO learning_rate 1.08e-3,
+# I-HAMAPPO lr_actor 8.43e-4, against the 3e-4 that is customary for both). HPO
+# could not have known: it scored `mean_error / mean_aoi / outage / power`, and a
+# policy whose loss has run away still produces perfectly ordinary values for all
+# four -- it just stops improving. Nothing in the objective reads the loss.
+#
+# The unit that matters. The four failures are usually quoted in environment
+# steps (8,000 / 22,000 / 32,000 / 34,000), which makes a 350-step rollout look
+# hopelessly short. That comparison is wrong, because training and HPO run
+# gradient updates at completely different rates:
+#
+#     training   `updates_per_env_step` uncapped, wall-clock bound; measured
+#                23..800 updates per 2,000-step episode, i.e. ~0.01..0.4 per step
+#     HPO        `train_steps_during_rollout=2`, i.e. ~2 per step
+#
+# Counted in gradient updates -- which is what actually moves the weights -- the
+# four divergences happened at 631, 1,445, 1,697 and 6,798 cumulative updates
+# (measured from `runs/*/lg/{PPO,IHAMAPPO}_progress.csv`, column
+# `grad_updates_this_episode`, cumulated up to the first episode whose
+# `mean_loss` exceeded the guard floor). At ~2 updates per environment step an
+# HPO rollout reaches that range far sooner than the env-step figures suggest.
+# `DEFAULT_HPO_N_STEPS` below is set from that arithmetic and then confirmed by
+# actually running the two offending configurations; see
+# `results/hpo/divergence_detection_check.csv`.
+# ----------------------------------------------------------------------------
+
+#: Environment steps in one HPO "pseudo-episode" -- the granularity at which
+#: `DivergenceMonitor` is fed, because the monitor is episode-granular and an HPO
+#: rollout is a single continuous episode. At ~2 updates per environment step
+#: this is ~400 gradient updates per pseudo-episode, more evidence than the
+#: 23..800 updates a real 2,000-step training episode contained, so a
+#: pseudo-episode is not a weaker sample than the thing it stands in for.
+HPO_CHECK_INTERVAL_STEPS: int = 200
+
+#: Length of the loss window averaged into the value handed to the monitor.
+#: `BackgroundTrainer.get_metrics` averages `loss_history[-50:]`, so using the
+#: same 50 makes the HPO `mean_loss` the same statistic as the training one.
+HPO_LOSS_WINDOW: int = 50
+
+#: Environment steps per seed for HPO. See the block comment above for how it was
+#: chosen and `results/hpo/divergence_detection_check.csv` for the measurement
+#: that confirms both known-diverging configurations are caught within it.
+DEFAULT_HPO_N_STEPS: int = 4000
+
+
+class RolloutLossTracker:
+    """Loss bookkeeping for one HPO rollout, mirroring `BackgroundTrainer`.
+
+    Two quantities, both of which the trainer already maintains and neither of
+    which HPO used to look at:
+
+      * `mean_recent_loss` -- mean of the `loss` key over the last
+        `HPO_LOSS_WINDOW` updates, the exact statistic `DivergenceMonitor` is
+        fed at the end of every training episode;
+      * a consecutive non-finite-update counter, which is how the trainer catches
+        a NaN at the update that produced it rather than at the end of an
+        episode. An HPO rollout is one episode long, so without this counter a
+        model that went NaN on its second update would not be judged until the
+        next pseudo-episode boundary.
+
+    Finiteness is decided by `BackgroundTrainer._loss_dict_is_finite` rather than
+    by a second copy of the same predicate, for the same reason the thresholds
+    are imported: two definitions drift.
+    """
+
+    def __init__(
+        self,
+        window: int = HPO_LOSS_WINDOW,
+        max_nonfinite_updates: int = DEFAULT_MAX_NONFINITE_LOSS_UPDATES,
+    ) -> None:
+        self.window = max(1, int(window))
+        self.max_nonfinite_updates = max(1, int(max_nonfinite_updates))
+        self.losses: Deque[float] = deque(maxlen=self.window)
+        self.n_updates = 0
+        self.consecutive_nonfinite = 0
+        self.max_seen_nonfinite = 0
+
+    def observe_update(self, loss_dict: Any) -> None:
+        """Record one gradient update's reported scalars."""
+        self.n_updates += 1
+        if isinstance(loss_dict, dict) and "loss" in loss_dict:
+            try:
+                self.losses.append(float(loss_dict["loss"]))
+            except (TypeError, ValueError):
+                pass
+        if BackgroundTrainer._loss_dict_is_finite(loss_dict):
+            self.consecutive_nonfinite = 0
+        else:
+            self.consecutive_nonfinite += 1
+            self.max_seen_nonfinite = max(self.max_seen_nonfinite, self.consecutive_nonfinite)
+
+    @property
+    def mean_recent_loss(self) -> float:
+        """Same aggregation as `BackgroundTrainer.get_metrics()['mean_recent_loss']`."""
+        if not self.losses:
+            return 0.0
+        return round(float(np.mean(list(self.losses))), 4)
+
+    def nonfinite_verdict(self, episode: int) -> Optional[AbortVerdict]:
+        """A verdict once enough consecutive updates have reported NaN/Inf."""
+        if self.consecutive_nonfinite < self.max_nonfinite_updates:
+            return None
+        return AbortVerdict(
+            kind=ABORT_DIVERGED,
+            episode=int(episode),
+            reason=(
+                f"{self.consecutive_nonfinite} consecutive gradient updates produced a "
+                "non-finite loss during the HPO rollout; the weights are already poisoned"
+            ),
+            detail={
+                "consecutive_nonfinite_losses": self.consecutive_nonfinite,
+                "n_updates": self.n_updates,
+                "rule": "non_finite_update_streak",
+            },
+        )
+
+
+def make_divergence_monitor() -> DivergenceMonitor:
+    """A monitor configured exactly as `run_hot_swap_training` configures its own.
+
+    Written as a function so there is one place to look when asking whether HPO
+    and training judge divergence identically.
+    """
+    return DivergenceMonitor(
+        warmup_episodes=DG_WARMUP_EPISODES,
+        loss_ratio=DG_LOSS_RATIO,
+        loss_abs_floor=DG_LOSS_ABS_FLOOR,
+        loss_patience=DG_LOSS_PATIENCE,
+        max_zero_update_episodes=DG_MAX_ZERO_UPDATE_EPISODES,
+    )
+
+
+def run_diverged(metrics: Dict[str, Any]) -> bool:
+    """True when this rollout's loss ran away, so its metrics are not a policy.
+
+    Kept separate from `run_is_empty`: an empty run measured nothing, whereas a
+    diverged run measured a great deal about a model that has stopped learning.
+    Both are scored `FAILED_RUN_PENALTY`, for different reasons that the trial
+    CSV keeps distinct.
+    """
+    return bool(metrics.get("diverged"))
 
 
 def run_is_empty(metrics: Dict[str, Any]) -> bool:
@@ -371,9 +552,13 @@ def compute_composite_objective(
     3. Outage rate (packet loss ratio in [0, 1])
     4. Normalized transmission power (in [0, 1] mapped from [P_MIN, P_MAX] dBm)
 
-    A run that measured nothing is scored `FAILED_RUN_PENALTY`, never 0.0.
+    A run that measured nothing is scored `FAILED_RUN_PENALTY`, never 0.0. So is
+    a run whose loss diverged: the four metrics above stay entirely plausible
+    while the policy behind them has stopped learning, which is precisely how the
+    learning rates that destroyed the 2026-09-02 training runs were selected as
+    optimal here.
     """
-    if run_is_empty(metrics):
+    if run_is_empty(metrics) or run_diverged(metrics):
         return float(FAILED_RUN_PENALTY)
 
     mean_err = metrics.get("mean_error", 0.0)
@@ -398,6 +583,8 @@ def evaluate_model_in_env(
     rsu_range: float = DEFAULT_RSU_RANGE,
     train_steps_during_rollout: int = 0,
     reward_weights: Optional[Dict[str, float]] = None,
+    check_divergence: bool = True,
+    divergence_check_interval: int = HPO_CHECK_INTERVAL_STEPS,
 ) -> Dict[str, float]:
     """
     Evaluates a baseline model in the genuine SUMO AoiV2IEnv for a specific seed.
@@ -410,6 +597,21 @@ def evaluate_model_in_env(
     The vehicle population is set by `density`; the `n_vehicles` and `rsu_pos`
     arguments this function used to accept were never read, and the tests that
     passed them believed they were controlling something they were not.
+
+    With `check_divergence` on (the default) the losses reported by
+    `model.update()` are watched by the same `DivergenceMonitor` the training loop
+    uses. The monitor is episode-granular and an HPO rollout is one continuous
+    episode, so the rollout is divided into pseudo-episodes of
+    `divergence_check_interval` steps and the monitor is fed at each boundary,
+    exactly as `run_hot_swap_training` feeds it at each episode boundary. The
+    first pseudo-episode boundary is only counted once a gradient update has
+    actually happened: the replay buffer needs 16 closed SMDP intervals before
+    the first update, and treating those opening steps as zero-update episodes
+    would trip the stall rule on every healthy rollout.
+
+    A rollout that is condemned stops immediately -- there is nothing left to
+    measure, and stopping is what keeps a longer rollout affordable, since the
+    trials that cost the most time are exactly the ones that have already failed.
     """
     effective_weights = reward_weights if reward_weights else DEFAULT_REWARD_WEIGHTS
     env_kwargs: Dict[str, Any] = {
@@ -435,6 +637,18 @@ def evaluate_model_in_env(
     buffer = RetrospectiveReplayBuffer(capacity=1000) if train_steps_during_rollout > 0 else None
     n_update_failures = 0
 
+    # Divergence bookkeeping. Only meaningful when this rollout trains at all;
+    # a pure-inference rollout has no loss to watch.
+    watch_divergence = bool(check_divergence) and buffer is not None
+    loss_tracker = RolloutLossTracker()
+    monitor = make_divergence_monitor()
+    check_interval = max(1, int(divergence_check_interval))
+    verdict: Optional[AbortVerdict] = None
+    pseudo_episode = 0
+    updates_this_pseudo_episode = 0
+    steps_since_first_update = 0
+    steps_completed = 0
+
     # Event-driven SMDP rollout, matching run_hot_swap_training. Granting every
     # vehicle on every step -- what this loop used to do -- makes Delta inert, so
     # every trial would have measured the same fixed transmit schedule and Optuna
@@ -446,58 +660,124 @@ def evaluate_model_in_env(
         open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
         action_dict[vid] = grant
 
-    for step in range(n_steps):
-        next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
+    # The rollout runs under a try/except because divergence does not always
+    # announce itself as a large loss. It can also arrive as an exception: once
+    # NaN is in the policy weights, SB3's `Normal(loc=nan, ...)` raises out of
+    # `select_action` on the very next step, which is exactly how the PPO
+    # background worker died on 2026-09-02. That exception used to propagate to
+    # `evaluate_trial_multiseed`, which scored the seed FAILED_RUN_PENALTY and
+    # logged it as an unexplained error -- the right score for the wrong reason,
+    # with no record that the cause was divergence. A crash that follows a
+    # non-finite loss is relabelled here; a crash with no non-finite loss behind
+    # it is a real bug and is re-raised untouched.
+    try:
+        for step in range(n_steps):
+            next_obs, rewards, terminateds, truncateds, step_info = env.step(action_dict)
 
-        # Close the intervals that finished, then re-decide for whoever needs it.
-        if buffer is not None:
+            # Close the intervals that finished, then re-decide for whoever needs it.
+            if buffer is not None:
+                for rec in step_info["completed"]:
+                    vid = rec["vid"]
+                    prev = open_decision.get(vid)
+                    if prev is None:
+                        continue
+                    s2 = next_obs.get(vid)
+                    done = rec["done"] if s2 is not None else True
+                    if s2 is None:
+                        s2 = np.zeros(STATE_DIM, dtype=np.float32)
+                    buffer.push(prev["state"], prev["raw_action"], rec["reward"],
+                                np.asarray(s2, dtype=np.float32), bool(done), rec["delta_actual"])
+
+                if len(buffer) >= 16 and train_steps_during_rollout > 0:
+                    for _ in range(train_steps_during_rollout):
+                        batch = buffer.sample(batch_size=16)
+                        try:
+                            loss_dict = model.update(batch)
+                            # The return value used to be discarded. It is the only
+                            # signal in this whole rollout that says whether the
+                            # model is still learning, and the objective does not
+                            # contain it.
+                            if watch_divergence:
+                                loss_tracker.observe_update(loss_dict)
+                                updates_this_pseudo_episode += 1
+                        except Exception:
+                            # This used to be `pass`. A baseline whose update always
+                            # raised (a batch-format mismatch, say) would finish HPO
+                            # normally and report "tuned" hyperparameters for a model
+                            # that never took a single gradient step. The count is
+                            # returned and recorded as a trial user attribute.
+                            n_update_failures += 1
+                            if n_update_failures == 1:
+                                logger.exception(
+                                    "%s: model.update() raised on the first training batch; "
+                                    "further failures in this rollout are counted, not logged.",
+                                    type(model).__name__,
+                                )
+
             for rec in step_info["completed"]:
-                vid = rec["vid"]
-                prev = open_decision.get(vid)
-                if prev is None:
+                open_decision.pop(rec["vid"], None)
+
+            action_dict = {}
+            for vid in step_info["needs_decision"]:
+                s_vec = next_obs.get(vid)
+                if s_vec is None:
                     continue
-                s2 = next_obs.get(vid)
-                done = rec["done"] if s2 is not None else True
-                if s2 is None:
-                    s2 = np.zeros(STATE_DIM, dtype=np.float32)
-                buffer.push(prev["state"], prev["raw_action"], rec["reward"],
-                            np.asarray(s2, dtype=np.float32), bool(done), rec["delta_actual"])
+                grant, raw_action, _ = model.select_action(s_vec, deterministic=False)
+                open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
+                action_dict[vid] = grant
 
-            if len(buffer) >= 16 and train_steps_during_rollout > 0:
-                for _ in range(train_steps_during_rollout):
-                    batch = buffer.sample(batch_size=16)
-                    try:
-                        model.update(batch)
-                    except Exception:
-                        # This used to be `pass`. A baseline whose update always
-                        # raised (a batch-format mismatch, say) would finish HPO
-                        # normally and report "tuned" hyperparameters for a model
-                        # that never took a single gradient step. The count is
-                        # returned and recorded as a trial user attribute.
-                        n_update_failures += 1
-                        if n_update_failures == 1:
-                            logger.exception(
-                                "%s: model.update() raised on the first training batch; "
-                                "further failures in this rollout are counted, not logged.",
-                                type(model).__name__,
-                            )
+            for vid in [v for v in open_decision if v not in next_obs]:
+                open_decision.pop(vid, None)
 
-        for rec in step_info["completed"]:
-            open_decision.pop(rec["vid"], None)
+            obs = next_obs
+            steps_completed = step + 1
 
-        action_dict = {}
-        for vid in step_info["needs_decision"]:
-            s_vec = next_obs.get(vid)
-            if s_vec is None:
-                continue
-            grant, raw_action, _ = model.select_action(s_vec, deterministic=False)
-            open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
-            action_dict[vid] = grant
+            # --- divergence check, at the pseudo-episode boundary ---------------
+            if watch_divergence:
+                # A NaN loss is not a matter of degree, so it is not made to wait for
+                # the boundary: the update that produced it has already written
+                # non-finite values into the weights.
+                verdict = loss_tracker.nonfinite_verdict(episode=pseudo_episode + 1)
 
-        for vid in [v for v in open_decision if v not in next_obs]:
-            open_decision.pop(vid, None)
+                if verdict is None and loss_tracker.n_updates > 0:
+                    steps_since_first_update += 1
+                    if steps_since_first_update % check_interval == 0:
+                        pseudo_episode += 1
+                        verdict = monitor.observe(
+                            episode=pseudo_episode,
+                            mean_loss=loss_tracker.mean_recent_loss,
+                            grad_updates_this_episode=updates_this_pseudo_episode,
+                        )
+                        updates_this_pseudo_episode = 0
 
-        obs = next_obs
+                if verdict is not None:
+                    logger.error(
+                        "Diverging rollout stopped at step %d/%d (seed=%s): %s",
+                        steps_completed, n_steps, seed, verdict,
+                    )
+                    break
+    except Exception as exc:
+        if not watch_divergence or loss_tracker.max_seen_nonfinite == 0:
+            raise
+        verdict = AbortVerdict(
+            kind=ABORT_DIVERGED,
+            episode=pseudo_episode + 1,
+            reason=(
+                f"the rollout raised {type(exc).__name__} at step {steps_completed} "
+                "after a gradient update reported a non-finite loss; the policy "
+                f"weights are NaN/Inf ({exc})"
+            ),
+            detail={
+                "exception": type(exc).__name__,
+                "max_consecutive_nonfinite_losses": loss_tracker.max_seen_nonfinite,
+                "n_updates": loss_tracker.n_updates,
+                "rule": "crash_after_nonfinite_loss",
+            },
+        )
+        logger.error(
+            "Diverging rollout crashed at step %d/%d (seed=%s): %s",
+            steps_completed, n_steps, seed, verdict,
+        )
 
     # Close the SMDP intervals still in flight when the step budget ran out, and
     # push their transitions like any other completed interval. `close()` used to
@@ -531,6 +811,35 @@ def evaluate_model_in_env(
     metrics["avg_power_dbm"] = avg_p
     metrics["avg_power_norm"] = round(normalize_power_dbm(avg_p), 4)
     metrics["n_update_failures"] = int(n_update_failures)
+
+    # Divergence verdict, written into the metrics dict so it reaches
+    # `compute_composite_objective`, the per-seed user attributes and the trial
+    # CSV without any caller having to reach back into the loop's locals.
+    metrics["diverged"] = bool(verdict is not None)
+    metrics["divergence_kind"] = verdict.kind if verdict is not None else ""
+    metrics["divergence_reason"] = verdict.reason if verdict is not None else ""
+    metrics["divergence_rule"] = (
+        str(verdict.detail.get("rule", "")) if verdict is not None else ""
+    )
+    metrics["divergence_episode"] = int(verdict.episode) if verdict is not None else -1
+    metrics["divergence_mean_loss"] = (
+        float(verdict.detail["mean_loss"])
+        if verdict is not None and is_finite_number(verdict.detail.get("mean_loss"))
+        else float("nan")
+    )
+    metrics["steps_completed"] = int(steps_completed)
+    metrics["n_grad_updates"] = int(loss_tracker.n_updates)
+    metrics["mean_recent_loss"] = float(loss_tracker.mean_recent_loss)
+    metrics["max_consecutive_nonfinite_losses"] = int(loss_tracker.max_seen_nonfinite)
+    # The threshold this rollout was actually judged against, and the per-model
+    # baseline it was derived from. A rollout that passed by a hair and one that
+    # passed comfortably are otherwise indistinguishable, and the relative rule
+    # makes that difference large: the threshold is 1000x the model's own early
+    # median, so a model whose loss starts high is judged leniently.
+    monitor_state = monitor.state()
+    metrics["divergence_threshold"] = float(monitor_state["loss_threshold"])
+    metrics["divergence_baseline_loss"] = monitor_state["baseline_loss"]
+    metrics["divergence_pseudo_episodes_seen"] = int(monitor_state["episodes_seen"])
 
     # Outage is COVERAGE outage (user decision, 2026-08-31): the fraction of
     # vehicle-time spent outside the RSU range, where no AoI update can happen.
@@ -577,7 +886,8 @@ def evaluate_trial_multiseed(
     rsu_range: float = DEFAULT_RSU_RANGE,
     reward_weights: Optional[Dict[str, float]] = None,
     trial: Optional[optuna.Trial] = None,
-) -> Tuple[float, Dict[str, float]]:
+    check_divergence: bool = True,
+) -> Tuple[float, Dict[str, Any]]:
     """
     Evaluates a set of hyperparameters across multiple seeds and returns the mean composite score.
 
@@ -587,6 +897,15 @@ def evaluate_trial_multiseed(
     that raised or measured nothing) and `n_update_failures`. Without them a
     study where two of three seeds died looked exactly like a healthy one.
 
+    A seed whose rollout diverged is scored `FAILED_RUN_PENALTY`, in the same
+    place and for the same reason an empty rollout is: its metrics describe a
+    model that has stopped learning. The penalty is applied per seed rather than
+    flattened over the whole trial, so a combination that diverges on one seed of
+    three still ranks above one that diverges on all three, and TPE keeps a
+    gradient to steer by. Either way the trial is out of contention: the worst
+    real committed score is 1.459, and one penalised seed of three already puts
+    the mean above 33.
+
     `n_vehicles` used to be an argument here and was never read; the population
     is set by `density`.
     """
@@ -594,6 +913,8 @@ def evaluate_trial_multiseed(
     seed_metrics: List[Dict[str, float]] = []
     n_failed_seeds = 0
     n_update_failures = 0
+    n_diverged_seeds = 0
+    first_divergence: Optional[Dict[str, Any]] = None
 
     for i, seed in enumerate(seeds):
         try:
@@ -607,6 +928,7 @@ def evaluate_trial_multiseed(
                 rsu_range=rsu_range,
                 train_steps_during_rollout=2,
                 reward_weights=reward_weights,
+                check_divergence=check_divergence,
             )
             score = compute_composite_objective(metrics)
             scores.append(score)
@@ -614,9 +936,25 @@ def evaluate_trial_multiseed(
             n_update_failures += int(metrics.get("n_update_failures", 0) or 0)
             if metrics.get("run_failed"):
                 n_failed_seeds += 1
+            if run_diverged(metrics):
+                n_diverged_seeds += 1
+                if first_divergence is None:
+                    first_divergence = {
+                        "seed": int(seed),
+                        "kind": metrics.get("divergence_kind", ""),
+                        "rule": metrics.get("divergence_rule", ""),
+                        "reason": metrics.get("divergence_reason", ""),
+                        "episode": int(metrics.get("divergence_episode", -1)),
+                        "steps_completed": int(metrics.get("steps_completed", 0)),
+                        "n_grad_updates": int(metrics.get("n_grad_updates", 0)),
+                        "mean_loss": metrics.get("divergence_mean_loss"),
+                    }
             if trial is not None:
                 trial.set_user_attr(f"n_observations_seed{seed}", int(metrics.get("n_observations", 0) or 0))
                 trial.set_user_attr(f"tx_attempts_seed{seed}", int(metrics.get("tx_attempts", 0) or 0))
+                trial.set_user_attr(f"diverged_seed{seed}", bool(run_diverged(metrics)))
+                trial.set_user_attr(f"n_grad_updates_seed{seed}", int(metrics.get("n_grad_updates", 0) or 0))
+                trial.set_user_attr(f"steps_completed_seed{seed}", int(metrics.get("steps_completed", 0) or 0))
         except Exception as e:
             logger.exception(f"Error during rollout for seed {seed}: {e}")
             scores.append(FAILED_RUN_PENALTY)
@@ -624,6 +962,9 @@ def evaluate_trial_multiseed(
             if trial is not None:
                 trial.set_user_attr(f"n_observations_seed{seed}", -1)
                 trial.set_user_attr(f"tx_attempts_seed{seed}", -1)
+                trial.set_user_attr(f"diverged_seed{seed}", False)
+                trial.set_user_attr(f"n_grad_updates_seed{seed}", -1)
+                trial.set_user_attr(f"steps_completed_seed{seed}", -1)
 
         if trial is not None and scores:
             # Report the running mean so a pruner has something to act on. With
@@ -635,8 +976,19 @@ def evaluate_trial_multiseed(
 
     mean_score = float(np.mean(scores)) if scores else FAILED_RUN_PENALTY
 
+    # A trial that diverged on ANY seed is scored the full penalty, not the mean
+    # of a penalised seed and two healthy ones. Measured from the nine committed
+    # studies, real scores reach 35.815 (PPO) while one penalised seed of three
+    # averages to at least 33.3, so the mean does not reliably rank a diverging
+    # combination below a healthy one -- and PPO is precisely the model whose
+    # diverging learning rate this is meant to reject. The per-seed penalty stays
+    # in place underneath; `n_diverged_seeds` keeps 1-of-3 distinguishable from
+    # 3-of-3 in the CSV even though both score the same.
+    if n_diverged_seeds > 0:
+        mean_score = float(FAILED_RUN_PENALTY)
+
     # Average individual metrics across seeds
-    avg_metrics: Dict[str, float] = {}
+    avg_metrics: Dict[str, Any] = {}
     if seed_metrics:
         for k in ["mean_error", "mean_aoi", "outage_rate", OUTAGE_METRIC_KEY,
                   "packet_loss_rate", "avg_tx_power_dbm", "avg_power_norm",
@@ -645,6 +997,25 @@ def evaluate_trial_multiseed(
                 avg_metrics[k] = round(float(np.mean([m.get(k, 0.0) for m in seed_metrics])), 4)
     avg_metrics["n_failed_seeds"] = int(n_failed_seeds)
     avg_metrics["n_update_failures"] = int(n_update_failures)
+
+    # Divergence, aggregated to the trial. `diverged` is the single column a
+    # reader of optuna_trials_<model>.csv can sort on; the rest says why, so the
+    # verdict does not have to be taken on trust.
+    avg_metrics["n_diverged_seeds"] = int(n_diverged_seeds)
+    avg_metrics["diverged"] = bool(n_diverged_seeds > 0)
+    avg_metrics["divergence_kind"] = (first_divergence or {}).get("kind", "")
+    avg_metrics["divergence_rule"] = (first_divergence or {}).get("rule", "")
+    avg_metrics["divergence_reason"] = (first_divergence or {}).get("reason", "")
+    avg_metrics["divergence_seed"] = int((first_divergence or {}).get("seed", -1))
+    avg_metrics["divergence_pseudo_episode"] = int((first_divergence or {}).get("episode", -1))
+    avg_metrics["divergence_at_env_step"] = int((first_divergence or {}).get("steps_completed", -1))
+    avg_metrics["divergence_at_grad_update"] = int((first_divergence or {}).get("n_grad_updates", -1))
+    if first_divergence is not None:
+        logger.error(
+            "Trial diverged on %d/%d seed(s); scoring each diverged seed %.1f. First: %s",
+            n_diverged_seeds, len(seeds), FAILED_RUN_PENALTY, first_divergence,
+        )
+
     if seed_metrics:
         # Which outage definition the objective actually scored, so the trial CSV
         # is unambiguous even if the environment changes underneath it.
@@ -660,10 +1031,11 @@ def run_hpo_study(
     seeds: Optional[List[int]] = None,
     storage: Optional[str] = None,
     study_name: Optional[str] = None,
-    n_steps: int = 350,
+    n_steps: int = DEFAULT_HPO_N_STEPS,
     sampler: Optional[optuna.samplers.BaseSampler] = None,
     pruner: Optional[optuna.pruners.BasePruner] = None,
     tune_reward_weights: bool = False,
+    check_divergence: bool = True,
 ) -> optuna.Study:
     """
     Runs an Optuna study to optimize hyperparameters for a given model.
@@ -726,6 +1098,7 @@ def run_hpo_study(
             n_steps=n_steps,
             reward_weights=reward_weights,
             trial=trial,
+            check_divergence=check_divergence,
         )
         for k, v in avg_metrics.items():
             trial.set_user_attr(k, v)
@@ -776,6 +1149,22 @@ def save_study_results(
     # arguments. They stay in their own `w1`..`w4` / `reward_weights_json`
     # columns, which is where the environment reads them from.
 
+    # The winning trial should never be a diverged one -- a diverged seed costs
+    # FAILED_RUN_PENALTY and no real score comes near it -- but "should never"
+    # is exactly the kind of claim this pipeline has been wrong about before.
+    # If every trial diverged, `study.best_trial` is a diverged trial and the
+    # hyperparameters below would be handed straight to a 200,000-step run.
+    best_diverged = bool(study.best_trial.user_attrs.get("diverged", False))
+    if best_diverged:
+        logger.error(
+            "[%s] the BEST trial (#%d, value %.4f) diverged: %s. Every trial in this "
+            "study must have diverged, because a single diverged seed scores %.1f. "
+            "These hyperparameters must not be trained on.",
+            canonical_name, study.best_trial.number, float(study.best_value),
+            study.best_trial.user_attrs.get("divergence_reason", "(no reason recorded)"),
+            FAILED_RUN_PENALTY,
+        )
+
     best_record = {
         "model_name": canonical_name,
         "category": MODEL_CATEGORIES.get(canonical_name, "Baseline"),
@@ -783,6 +1172,10 @@ def save_study_results(
         "best_trial_number": int(study.best_trial.number),
         "best_params": best_params,
         "best_reward_weights": best_weights,
+        "best_trial_diverged": best_diverged,
+        "n_diverged_trials": sum(
+            1 for t in study.trials if t.user_attrs.get("diverged", False)
+        ),
     }
     return trials_csv_path, best_record
 
@@ -792,8 +1185,9 @@ def run_all_baselines_hpo(
     output_dir: str = "/home/imnyj/Workspace/paper4/coder/results/hpo",
     models: Optional[List[str]] = None,
     seeds: Optional[List[int]] = None,
-    n_steps: int = 350,
+    n_steps: int = DEFAULT_HPO_N_STEPS,
     tune_reward_weights: bool = False,
+    check_divergence: bool = True,
 ) -> Tuple[str, pd.DataFrame]:
     """
     Runs hyperparameter optimization across all baseline models, generates per-model trial CSVs,
@@ -813,6 +1207,7 @@ def run_all_baselines_hpo(
             seeds=eval_seeds,
             n_steps=n_steps,
             tune_reward_weights=tune_reward_weights,
+            check_divergence=check_divergence,
         )
         _, record = save_study_results(study, model_name=model_name, output_dir=output_dir)
 
@@ -831,6 +1226,10 @@ def run_all_baselines_hpo(
             flat_row[k] = record.get("best_reward_weights", {}).get(k)
         flat_row["reward_weights_json"] = json.dumps(record.get("best_reward_weights", {}))
         flat_row["hparams_json"] = json.dumps(record["best_params"])
+        # Read by whoever launches training from this file: a True here means the
+        # row's hyperparameters were the least bad of a set that all diverged.
+        flat_row["best_trial_diverged"] = bool(record.get("best_trial_diverged", False))
+        flat_row["n_diverged_trials"] = int(record.get("n_diverged_trials", 0))
         best_records.append(flat_row)
 
     df_best = pd.DataFrame(best_records)
@@ -857,13 +1256,24 @@ def main() -> None:
     # ~35 s from its spawn edge to reach the RSU disc, so a 35-step window scores
     # almost no traffic and the search optimises noise.
     #
-    # Why 350 and not 2000: a training episode and an evaluation episode are both
-    # 2000 steps, so the HPO objective is measured over a 5.7x shorter window than
-    # the score it is a proxy for. Raising it to 2000 costs ~5.7x the HPO wall
-    # clock on top of the warmup increase and invalidates
-    # `results/hpo/optuna_best_params.csv`, so it is left at 350 pending an
-    # explicit decision rather than changed silently.
-    parser.add_argument("--n-steps", type=int, default=350, help="Simulation steps per seed")
+    # Why it is no longer 350: 350 steps was decided when the objective was the
+    # four end-of-rollout metrics alone. The rollout now also has to be long
+    # enough for a diverging loss to declare itself, and the guard needs
+    # `DEFAULT_LOSS_PATIENCE` consecutive pseudo-episodes of
+    # `HPO_CHECK_INTERVAL_STEPS` steps each, i.e. 600 steps of sustained
+    # over-threshold loss on top of however long the model takes to get there.
+    # 350 could not have produced a verdict at all. `DEFAULT_HPO_N_STEPS` is the
+    # replacement; the block comment above `HPO_CHECK_INTERVAL_STEPS` says where
+    # it comes from. It is also 2x the 2000-step training/evaluation episode, so
+    # the objective is no longer measured over a window shorter than the score it
+    # is a proxy for.
+    parser.add_argument("--n-steps", type=int, default=DEFAULT_HPO_N_STEPS,
+                        help="Simulation steps per seed")
+    parser.add_argument("--no-divergence-guard", action="store_true",
+                        help="score diverging trials on their metrics instead of "
+                             "penalising them (diagnostics only -- this is how the "
+                             "learning rates that destroyed the 2026-09-02 training "
+                             "runs were selected)")
     parser.add_argument("--tune-reward-weights", action="store_true",
                         help="search w1..w4 per model instead of pinning them to the "
                              "benchmark defaults (ablation only -- makes cross-model "
@@ -877,6 +1287,7 @@ def main() -> None:
         seeds=args.seeds,
         n_steps=args.n_steps,
         tune_reward_weights=args.tune_reward_weights,
+        check_divergence=not args.no_divergence_guard,
     )
 
 

@@ -29,6 +29,7 @@ import pandas as pd
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from src.baselines import ALL_BASELINES, get_baseline
+from src.divergence_guard import STATUS_COMPLETED  # noqa: E402
 from src.hot_swap_trainer import (
     DEFAULT_ERROR_MODE,
     ENV_ONLY_HPARAM_KEYS,
@@ -405,6 +406,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 updates_per_env_step=args.updates_per_env_step,
                 **extra_dirs,
             )
+            # A run can finish its function call without having finished its
+            # training. `run_hot_swap_training` stops a model whose loss has
+            # diverged, whose gradient updates have stopped, or whose background
+            # thread has died, and reports it here instead of raising, so that
+            # this loop still moves on to the next model. What must NOT happen is
+            # the 2026-09-02 outcome, where PPO trained for 11 episodes, spent
+            # 8.8 hours doing nothing, and was logged as finished.
+            status = summary.get("status", STATUS_COMPLETED)
+            if status != STATUS_COMPLETED:
+                # Phrased "Failed training <name>:" because that is the string the
+                # scheduled report already greps out of the supervisor log.
+                logging.error(
+                    "Failed training %s: ABORTED (%s) at episode %s of %d -- %s",
+                    canonical_name, status, summary.get("abort_episode"),
+                    args.episodes, summary.get("abort_reason"),
+                )
+                logging.error("Partial summary for %s | %s", canonical_name, summary)
+                failures.append((canonical_name,
+                                 f"{status}: {summary.get('abort_reason')}"))
+                continue
             logging.info("Finished %s | %s", canonical_name, summary)
         except Exception as exc:  # noqa: BLE001
             logging.error("Failed training %s: %s", canonical_name, exc, exc_info=True)

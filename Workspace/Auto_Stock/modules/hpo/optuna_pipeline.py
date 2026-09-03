@@ -22,26 +22,16 @@ import math
 import os
 import random
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import optuna
 import torch
 
 from modules.engine.hybrid_trading_env import HybridTradingEnv
-from modules.hpo.exporter import export_trial_to_csv
-from modules.hpo.metrics import (
-    calculate_annualized_sharpe_ratio,
-    calculate_max_drawdown_pct,
-    calculate_total_equity,
-    calculate_total_return_pct,
-    calculate_win_rate,
-    evaluate_trading_history,
-)
-from modules.models.feature_extractor import (
-    DualStreamSLFeatureExtractor,
-    TabularMLPFeatureExtractor,
-)
+from modules.hpo.exporter import export_main_model_trial_to_csv, export_trial_to_csv
+from modules.hpo.metrics import evaluate_trading_history
+from modules.models.feature_extractor import TabularMLPFeatureExtractor
 from modules.models.hybrid_policy import (
     HybridActorCritic,
     HybridPPO,
@@ -400,7 +390,7 @@ def run_hpo_optimization(
     best_trial = study.best_trial
 
     if verbose:
-        print(f"=== [AutoStock HPO] Optimization Complete ===")
+        print("=== [AutoStock HPO] Optimization Complete ===")
         print(f"Best Trial #{best_trial.number}: Objective Value = {best_trial.value:.6f}")
         print("Best Hyperparameters:")
         for k, v in best_trial.params.items():
@@ -408,3 +398,437 @@ def run_hpo_optimization(
         print(f"Results exported to: {os.path.abspath(output_csv)}")
 
     return study, best_trial
+
+
+def suggest_model_params(trial: optuna.Trial, model_type: str) -> Dict[str, Any]:
+    """
+    선택된 모델 아키텍처('resnet', 'transformer', 'cvae')별 고유 하이퍼파라미터 및 공통 RL 하이퍼파라미터를 제안합니다.
+
+    Args:
+        trial: Optuna Trial 객체
+        model_type: 모델 유형 ('resnet', 'transformer', 'cvae')
+
+    Returns:
+        params: Dict[str, Any] 제안된 하이퍼파라미터 딕셔너리
+    """
+    m_type = str(model_type).lower().strip()
+    params: Dict[str, Any] = {}
+
+    # 1. 공통 RL PPO 파라미터
+    params["rl_lr"] = trial.suggest_float("rl_lr", 1e-5, 1e-3, log=True)
+    params["rl_gamma"] = trial.suggest_float("rl_gamma", 0.90, 0.999)
+    params["rl_clip_range"] = trial.suggest_float("rl_clip_range", 0.1, 0.3)
+    params["rl_ent_coef"] = trial.suggest_float("rl_ent_coef", 1e-4, 1e-1, log=True)
+    params["rl_hidden_dim"] = trial.suggest_categorical("rl_hidden_dim", [64, 128])
+    params["batch_size"] = trial.suggest_categorical("batch_size", [16, 32, 64])
+
+    # 2. 모델 아키텍처별 전용 파라미터
+    if m_type in ("resnet", "resnet1d", "temporal_resnet", "cnn"):
+        params["res_blocks"] = trial.suggest_int("res_blocks", 1, 3)
+        params["res_filters"] = trial.suggest_categorical("res_filters", [16, 32, 64])
+        params["res_kernel_size"] = trial.suggest_categorical("res_kernel_size", [3, 5])
+        params["sl_lr"] = trial.suggest_float("sl_lr", 1e-4, 1e-2, log=True)
+        params["sl_dropout"] = trial.suggest_float("sl_dropout", 0.0, 0.3)
+    elif m_type in ("transformer", "temporal_transformer", "attention"):
+        params["tf_d_model"] = trial.suggest_categorical("tf_d_model", [32, 64])
+        # tf_d_model % tf_nhead == 0 보장
+        params["tf_nhead"] = trial.suggest_categorical("tf_nhead", [2, 4, 8])
+        if params["tf_d_model"] % params["tf_nhead"] != 0:
+            candidates = [h for h in [2, 4, 8] if params["tf_d_model"] % h == 0]
+            params["tf_nhead"] = candidates[0] if candidates else 2
+        params["tf_layers"] = trial.suggest_int("tf_layers", 1, 3)
+        params["sl_lr"] = trial.suggest_float("sl_lr", 1e-4, 1e-2, log=True)
+        params["sl_dropout"] = trial.suggest_float("sl_dropout", 0.0, 0.3)
+    elif m_type in ("cvae", "temporal_cvae", "vae"):
+        params["cvae_latent_dim"] = trial.suggest_categorical("cvae_latent_dim", [8, 16, 32])
+        params["cvae_hidden_dim"] = trial.suggest_categorical("cvae_hidden_dim", [32, 64])
+        params["cvae_kl_weight"] = trial.suggest_float("cvae_kl_weight", 1e-4, 1e-1, log=True)
+        params["sl_lr"] = trial.suggest_float("sl_lr", 1e-4, 1e-2, log=True)
+        params["sl_dropout"] = trial.suggest_float("sl_dropout", 0.0, 0.3)
+    else:
+        raise ValueError(f"지원되지 않는 model_type입니다: {model_type}. ('resnet', 'transformer', 'cvae' 중 선택)")
+
+    return params
+
+
+def objective_main_model(
+    trial: optuna.Trial,
+    model_type: str = "resnet",
+    symbol: str = "005930",
+    data_path: Optional[str] = None,
+    output_csv: str = "etc/hpo_results/main_models_hpo.csv",
+    n_timesteps: int = 100,
+    fast_mode: bool = True,
+    seed: int = 42,
+    env_kwargs: Optional[Dict[str, Any]] = None,
+    verbose: bool = False,
+) -> float:
+    """
+    ResNet, Transformer, CVAE 메인 모델 전용 Optuna 단일 Trial 목적 함수.
+
+    1. suggest_model_params를 통한 아키텍처별 하이퍼파라미터 제안
+    2. SL 특징 추출기 인스턴스화 및 SLEnrichedTradingEnvWrapper(18~19D) 환경 래핑
+    3. create_hybrid_agent를 통한 하이브리드 PPO 에이전트 결합 및 고속 훈련
+    4. 결정론적 롤아웃 시뮬레이션 및 6대 금융 지표 산출
+    5. 무거래 편향 방어 및 파산 방어 목적함수 값 계산
+    6. export_main_model_trial_to_csv를 통한 원자적 CSV 누적 저장 (동시성 안전)
+    """
+    t_start = time.time()
+    dt_start = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    trial_seed = seed + trial.number
+
+    torch.manual_seed(trial_seed)
+    np.random.seed(trial_seed)
+    random.seed(trial_seed)
+
+    # 1. 하이퍼파라미터 제안
+    params = suggest_model_params(trial, model_type=model_type)
+    m_type = str(model_type).lower().strip()
+
+    trial_state = "COMPLETE"
+    metrics: Dict[str, Any] = {
+        "total_equity": 10_000_000.0,
+        "total_return_pct": 0.0,
+        "sharpe_ratio": 0.0,
+        "max_drawdown_pct": 0.0,
+        "total_trades": 0,
+        "win_rate": 0.0,
+    }
+    objective_value = 0.0
+
+    try:
+        # 2. 기본 환경 빌드
+        merged_env_kwargs = {
+            "symbol": symbol,
+            "data_path": data_path,
+            "mode": "offline",
+            "initial_cash": 10_000_000,
+        }
+        if env_kwargs:
+            merged_env_kwargs.update(env_kwargs)
+
+        base_env = HybridTradingEnv(**merged_env_kwargs)
+
+        # 3. 모델 아키텍처 인스턴스화
+        sl_dropout = float(params.get("sl_dropout", 0.1))
+        if m_type in ("resnet", "resnet1d", "temporal_resnet", "cnn"):
+            from modules.models.resnet import TemporalResNetFeatureExtractor
+            sl_model = TemporalResNetFeatureExtractor(
+                num_blocks=int(params["res_blocks"]),
+                base_filters=int(params["res_filters"]),
+                kernel_size=int(params["res_kernel_size"]),
+                dropout=sl_dropout,
+                output_dim=64,
+            )
+        elif m_type in ("transformer", "temporal_transformer", "attention"):
+            from modules.models.transformer import TemporalTransformerFeatureExtractor
+            sl_model = TemporalTransformerFeatureExtractor(
+                d_model=int(params["tf_d_model"]),
+                nhead=int(params["tf_nhead"]),
+                num_layers=int(params["tf_layers"]),
+                dropout=sl_dropout,
+                output_dim=64,
+            )
+        elif m_type in ("cvae", "temporal_cvae", "vae"):
+            from modules.models.cvae import TemporalCVAEFeatureExtractor
+            sl_model = TemporalCVAEFeatureExtractor(
+                latent_dim=int(params["cvae_latent_dim"]),
+                hidden_dim=int(params["cvae_hidden_dim"]),
+                kl_weight=float(params["cvae_kl_weight"]),
+                dropout=sl_dropout,
+                output_dim=64,
+            )
+        else:
+            raise ValueError(f"지원되지 않는 model_type: {model_type}")
+
+        # 4. SLEnrichedTradingEnvWrapper 적용 (18차원 또는 19차원 확장)
+        from modules.engine.hybrid_trading_env import SLEnrichedTradingEnvWrapper
+        wrapped_env = SLEnrichedTradingEnvWrapper(base_env, sl_model=sl_model)
+        obs_dim = wrapped_env.observation_space.shape[0]
+
+        # 5. 하이브리드 PPO 에이전트 빌드
+        from modules.models.hybrid_policy import create_hybrid_agent
+        rl_hidden_dim = int(params.get("rl_hidden_dim", 64))
+        policy = create_hybrid_agent(
+            sl_model_type=sl_model,
+            obs_dim=obs_dim,
+            feature_dim=64,
+            hidden_dims=[rl_hidden_dim, rl_hidden_dim],
+            distribution_type="beta",
+            device="cpu",
+        )
+
+        n_steps = min(64 if fast_mode else 128, max(16, n_timesteps // 2))
+        batch_size = min(int(params.get("batch_size", 32)), n_steps)
+        n_epochs = 2 if fast_mode else 4
+
+        ppo = HybridPPO(
+            env=wrapped_env,
+            policy=policy,
+            learning_rate=float(params["rl_lr"]),
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs,
+            gamma=float(params["rl_gamma"]),
+            clip_range=float(params["rl_clip_range"]),
+            ent_coef=float(params.get("rl_ent_coef", 0.01)),
+            seed=trial_seed,
+            device="cpu",
+        )
+
+        # 6. 고속 학습
+        ppo.learn(total_timesteps=n_timesteps)
+
+        # 7. 평가 롤아웃 수행
+        obs, info = wrapped_env.reset(seed=trial_seed)
+        equity_history = [float(info.get("total_equity", 10_000_000.0))]
+        returns_history: List[float] = []
+        trades_history: List[Any] = []
+        done = False
+        prev_eq = equity_history[0]
+
+        while not done:
+            action, _ = ppo.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = wrapped_env.step(action)
+            done = terminated or truncated
+
+            curr_eq = float(info.get("total_equity", 10_000_000.0))
+            equity_history.append(curr_eq)
+
+            ret = (curr_eq - prev_eq) / prev_eq if prev_eq > 0 else 0.0
+            returns_history.append(ret)
+            prev_eq = curr_eq
+
+            if info.get("trade_record") is not None:
+                trades_history.append(info["trade_record"])
+
+        # 8. 성과 지표 산출
+        metrics = evaluate_trading_history(
+            equity_history=equity_history,
+            returns_history=returns_history,
+            trades_history=trades_history,
+            initial_cash=10_000_000.0,
+        )
+
+        # 파산 방어 (잔고 급감 시 -100.0)
+        if terminated and equity_history[-1] < 500_000.0:
+            objective_value = -100.0
+        else:
+            sr = float(metrics.get("sharpe_ratio", 0.0))
+            sr_safe = sr if not (math.isnan(sr) or math.isinf(sr)) else 0.0
+            tot_ret = float(metrics.get("total_return_pct", 0.0))
+            tot_ret_safe = tot_ret if not (math.isnan(tot_ret) or math.isinf(tot_ret)) else 0.0
+            total_trades = int(metrics.get("total_trades", 0))
+
+            # 무거래 편향 방어 (total_trades == 0 시 -1.0)
+            if total_trades == 0:
+                objective_value = -1.0
+            else:
+                objective_value = sr_safe + 0.01 * tot_ret_safe
+
+        trial.report(objective_value, step=n_timesteps)
+        if trial.should_prune():
+            trial_state = "PRUNED"
+
+    except optuna.TrialPruned:
+        trial_state = "PRUNED"
+        objective_value = float(metrics.get("sharpe_ratio", -50.0))
+        raise
+
+    except Exception as e:
+        logger.warning(f"[Trial {trial.number}] {model_type} 실행 도중 예외 발생: {e}")
+        trial_state = "FAIL"
+        objective_value = -100.0
+
+    finally:
+        t_end = time.time()
+        duration_sec = max(0.001, t_end - t_start)
+        dt_complete = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        trial.set_user_attr("model_type", m_type)
+        trial.set_user_attr("total_equity", float(metrics["total_equity"]))
+        trial.set_user_attr("total_return_pct", float(metrics["total_return_pct"]))
+        trial.set_user_attr("sharpe_ratio", float(metrics["sharpe_ratio"]))
+        trial.set_user_attr("max_drawdown_pct", float(metrics["max_drawdown_pct"]))
+        trial.set_user_attr("total_trades", int(metrics["total_trades"]))
+        trial.set_user_attr("win_rate", float(metrics["win_rate"]))
+        trial.set_user_attr("state", trial_state)
+        trial.set_user_attr("duration_seconds", round(duration_sec, 4))
+        trial.set_user_attr("objective_value", round(float(objective_value), 6))
+
+        # 메인 모델 확장 CSV 원자적 저장
+        if output_csv:
+            export_main_model_trial_to_csv(
+                trial=trial,
+                metrics={
+                    **metrics,
+                    "objective_value": objective_value,
+                    "state": trial_state,
+                    "duration_seconds": duration_sec,
+                    "datetime_start": dt_start,
+                    "datetime_complete": dt_complete,
+                },
+                model_type=m_type,
+                filepath=output_csv,
+            )
+
+    if trial_state == "PRUNED":
+        raise optuna.TrialPruned()
+
+    return float(objective_value)
+
+
+def run_model_hpo(
+    model_type: str = "resnet",
+    n_trials: int = 2,
+    symbol: str = "005930",
+    data_path: Optional[str] = None,
+    output_csv: str = "etc/hpo_results/main_models_hpo.csv",
+    seed: int = 42,
+    n_timesteps: int = 100,
+    fast_mode: bool = True,
+    study_name: Optional[str] = None,
+    storage: Optional[str] = None,
+    timeout: Optional[float] = None,
+    verbose: bool = False,
+    env_kwargs: Optional[Dict[str, Any]] = None,
+) -> Tuple[optuna.Study, optuna.trial.FrozenTrial]:
+    """
+    지정된 단일 모델 아키텍처('resnet', 'transformer', 'cvae')에 대한 Optuna HPO 파이프라인을 실행합니다.
+
+    Args:
+        model_type: 모델 유형 ('resnet', 'transformer', 'cvae')
+        n_trials: 실행할 Trial 횟수 (기본값: 2)
+        symbol: 종목 코드 (기본값: '005930')
+        data_path: 데이터 파일 경로
+        output_csv: 결과 저장 대상 CSV 경로 (기본값: 'etc/hpo_results/main_models_hpo.csv')
+        seed: 난수 시드 (기본값: 42)
+        n_timesteps: RL 학습 스텝 수 (기본값: 100)
+        fast_mode: 고속 실행 모드 (기본값: True)
+        study_name: Study 이름 (기본값: f"auto_stock_hpo_{model_type}")
+        storage: Optuna 스토리지
+        timeout: 전체 타임아웃(초)
+        verbose: 진행 상황 출력 여부
+        env_kwargs: 추가 환경 인자
+
+    Returns:
+        (study, best_trial): 완료된 Optuna Study 및 최적 FrozenTrial 객체
+    """
+    m_type = str(model_type).lower().strip()
+    if m_type not in ("resnet", "transformer", "cvae", "resnet1d", "temporal_resnet", "temporal_transformer", "temporal_cvae"):
+        raise ValueError(f"지원되지 않는 model_type: {model_type}. ('resnet', 'transformer', 'cvae' 중 선택)")
+
+    s_name = study_name or f"auto_stock_hpo_{m_type}"
+
+    if verbose:
+        print(f"=== [AutoStock HPO] Starting {m_type.upper()} Optimization (n_trials={n_trials}) ===")
+
+    study = create_hpo_study(
+        study_name=s_name,
+        storage=storage,
+        seed=seed,
+        direction="maximize",
+    )
+
+    optuna.logging.set_verbosity(
+        optuna.logging.INFO if verbose else optuna.logging.WARNING
+    )
+
+    def _obj_wrapper(t: optuna.Trial) -> float:
+        return objective_main_model(
+            trial=t,
+            model_type=m_type,
+            symbol=symbol,
+            data_path=data_path,
+            output_csv=output_csv,
+            n_timesteps=n_timesteps,
+            fast_mode=fast_mode,
+            seed=seed,
+            env_kwargs=env_kwargs,
+            verbose=verbose,
+        )
+
+    study.optimize(
+        _obj_wrapper,
+        n_trials=n_trials,
+        timeout=timeout,
+        catch=(Exception,),
+    )
+
+    best_trial = study.best_trial
+
+    if verbose:
+        print(f"=== [AutoStock HPO] {m_type.upper()} Complete. Best Trial #{best_trial.number}: {best_trial.value:.6f} ===")
+
+    return study, best_trial
+
+
+def run_resnet_hpo(
+    n_trials: int = 2,
+    output_csv: str = "etc/hpo_results/main_models_hpo.csv",
+    **kwargs,
+) -> Tuple[optuna.Study, optuna.trial.FrozenTrial]:
+    """ResNet 전용 HPO 실행 편의 함수"""
+    return run_model_hpo(model_type="resnet", n_trials=n_trials, output_csv=output_csv, **kwargs)
+
+
+def run_transformer_hpo(
+    n_trials: int = 2,
+    output_csv: str = "etc/hpo_results/main_models_hpo.csv",
+    **kwargs,
+) -> Tuple[optuna.Study, optuna.trial.FrozenTrial]:
+    """Transformer 전용 HPO 실행 편의 함수"""
+    return run_model_hpo(model_type="transformer", n_trials=n_trials, output_csv=output_csv, **kwargs)
+
+
+def run_cvae_hpo(
+    n_trials: int = 2,
+    output_csv: str = "etc/hpo_results/main_models_hpo.csv",
+    **kwargs,
+) -> Tuple[optuna.Study, optuna.trial.FrozenTrial]:
+    """CVAE 전용 HPO 실행 편의 함수"""
+    return run_model_hpo(model_type="cvae", n_trials=n_trials, output_csv=output_csv, **kwargs)
+
+
+def run_all_main_models_hpo(
+    model_types: Tuple[str, ...] = ("resnet", "transformer", "cvae"),
+    n_trials: int = 2,
+    output_csv: str = "etc/hpo_results/main_models_hpo.csv",
+    seed: int = 42,
+    n_timesteps: int = 100,
+    fast_mode: bool = True,
+    verbose: bool = False,
+    **kwargs,
+) -> Dict[str, Tuple[optuna.Study, optuna.trial.FrozenTrial]]:
+    """
+    ResNet, Transformer, CVAE 3개 메인 모델 전체에 대해 순차적으로 HPO를 실행하고
+    동일한 output_csv 파일에 결과를 누적 기록합니다.
+    """
+    results: Dict[str, Tuple[optuna.Study, optuna.trial.FrozenTrial]] = {}
+    for m in model_types:
+        study, best_trial = run_model_hpo(
+            model_type=m,
+            n_trials=n_trials,
+            output_csv=output_csv,
+            seed=seed,
+            n_timesteps=n_timesteps,
+            fast_mode=fast_mode,
+            verbose=verbose,
+            **kwargs,
+        )
+        results[m] = (study, best_trial)
+    return results
+
+
+__all__ = [
+    "create_hpo_study",
+    "objective",
+    "run_hpo_optimization",
+    "suggest_model_params",
+    "objective_main_model",
+    "run_model_hpo",
+    "run_resnet_hpo",
+    "run_transformer_hpo",
+    "run_cvae_hpo",
+    "run_all_main_models_hpo",
+]

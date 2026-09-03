@@ -658,3 +658,230 @@ class ContinuousToHybridActionWrapper(gym.ActionWrapper, RecordConstructorArgs):
             act_type = 0  # HOLD
 
         return act_type, np.array([weight], dtype=np.float32)
+
+
+class SLEnrichedTradingEnvWrapper(gym.Wrapper, RecordConstructorArgs):
+    """
+    Gymnasium 1.2.0 호환 지도학습(SL) 모델 예측 기반 관측치 확장 트레이딩 환경 래퍼.
+    
+    기능 및 설계:
+    1. SL 모델(TemporalResNet, TemporalTransformer, TemporalCVAE 등 BaseSLFeatureExtractor) 주입:
+       - 각 step 및 reset 시 최근 시계열 윈도우(또는 기본 14차원 관측 벡터)를 기반으로
+         SL 예측 타겟(익일 기대 수익률 1D, 3클래스 추세 소프트맥스 확률 3D, CVAE 이상치 점수 1D) 산출.
+    2. 동적 관측 공간 확장:
+       - 원본 14차원 관측 벡터에 4~5차원 SL 예측 타겟을 결합(Concatenate)하여 18차원 또는 19차원 상태 벡터 S_t^{aug} 생성.
+       - observation_space를 Box(low=-inf, high=inf, shape=(18 또는 19,), dtype=np.float32)로 자동 갱신.
+    3. 듀얼 모드 지원 (실시간 온라인 PyTorch 추론 & 사전 계산 DataFrame 캐시):
+       - sl_predictions_df 제공 시 O(1) 인덱싱으로 초고속 백테스트 지원.
+       - sl_model 제공 시 eval() 모드 + torch.no_grad() 환경에서 실시간 추론 수행.
+    4. 강건한 결측치 및 예외 방어:
+       - np.nan_to_num(..., nan=0.0, posinf=1.0, neginf=-1.0)으로 수치 무결성 보장.
+       - info 딕셔너리에 'sl_targets' 및 'sl_predictions' 메타데이터 주입.
+    """
+
+    def __init__(
+        self,
+        env: gym.Env,
+        sl_model: Optional[Any] = None,
+        sl_predictions_df: Optional[pd.DataFrame] = None,
+        include_anomaly_score: Optional[bool] = None,
+        seq_len: int = 20,
+        device: Optional[Union[str, Any]] = None,
+    ):
+        RecordConstructorArgs.__init__(self)
+        gym.Wrapper.__init__(self, env)
+
+        self.sl_model = sl_model
+        self.sl_predictions_df = sl_predictions_df
+        self.seq_len = int(seq_len)
+
+        # 이상치 점수(CVAE 등) 포함 여부 결정
+        if include_anomaly_score is not None:
+            self.include_anomaly_score = bool(include_anomaly_score)
+        elif self.sl_model is not None:
+            cls_name = getattr(self.sl_model, "__class__", type(self.sl_model)).__name__.lower()
+            self.include_anomaly_score = "cvae" in cls_name
+        elif self.sl_predictions_df is not None:
+            self.include_anomaly_score = "anomaly_score" in self.sl_predictions_df.columns
+        else:
+            self.include_anomaly_score = False
+
+        # SL 타겟 차원 수: 기본 4 (return:1 + trend:3), 이상치 포함 시 5 (return:1 + trend:3 + anom:1)
+        self.sl_feature_dim = 5 if self.include_anomaly_score else 4
+
+        # 기존 관측 공간 차원 확인 및 확장
+        base_space = self.env.observation_space
+        if hasattr(base_space, "shape") and base_space.shape:
+            self.base_obs_dim = int(base_space.shape[0])
+        else:
+            self.base_obs_dim = 14
+
+        self.augmented_obs_dim = self.base_obs_dim + self.sl_feature_dim
+        self.observation_space = spaces.Box(
+            low=-np.inf,
+            high=np.inf,
+            shape=(self.augmented_obs_dim,),
+            dtype=np.float32,
+        )
+
+        # PyTorch SL 모델 디바이스 및 eval 모드 설정
+        self.device = None
+        if self.sl_model is not None:
+            try:
+                import torch
+                import torch.nn as nn
+                if isinstance(self.sl_model, nn.Module):
+                    self.sl_model.eval()
+                    if device is not None:
+                        self.device = torch.device(device)
+                        self.sl_model.to(self.device)
+                    else:
+                        params = list(self.sl_model.parameters())
+                        self.device = params[0].device if params else torch.device("cpu")
+            except ImportError:
+                pass
+
+    def _extract_recent_window(self) -> Optional[Any]:
+        """환경의 내부 DataFrame으로부터 최근 seq_len 시계열 윈도우 슬라이스를 추출합니다."""
+        try:
+            import torch
+            unwrapped = getattr(self.env, "unwrapped", self.env)
+            df = getattr(unwrapped, "_df", None)
+            if df is None or not isinstance(df, pd.DataFrame) or len(df) == 0:
+                return None
+
+            current_step = getattr(unwrapped, "_current_step", 0)
+            cols = getattr(unwrapped, "feature_cols", None)
+            if cols is None:
+                cols = [
+                    "returns_1d",
+                    "volatility_20d",
+                    "log_return",
+                    "ma_5_dev",
+                    "ma_20_dev",
+                    "ma_60_dev",
+                    "dynamic_per",
+                    "dynamic_pbr",
+                    "dynamic_market_cap",
+                    "volume",
+                ]
+
+            valid_cols = [c for c in cols if c in df.columns]
+            if not valid_cols:
+                return None
+
+            curr_idx = min(current_step, len(df) - 1)
+            start_idx = max(0, curr_idx - self.seq_len + 1)
+            end_idx = curr_idx + 1
+
+            sub = df[valid_cols].iloc[start_idx:end_idx].to_numpy(dtype=np.float32)
+            if len(sub) < self.seq_len:
+                pad_len = self.seq_len - len(sub)
+                pad_val = sub[0:1] if len(sub) > 0 else np.zeros((1, len(valid_cols)), dtype=np.float32)
+                padding = np.repeat(pad_val, pad_len, axis=0)
+                sub = np.vstack([padding, sub])
+            elif len(sub) > self.seq_len:
+                sub = sub[-self.seq_len:]
+
+            sub = np.nan_to_num(sub, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
+            tensor = torch.as_tensor(sub, dtype=torch.float32, device=self.device).unsqueeze(0)
+            return tensor
+        except Exception:
+            return None
+
+    def _get_sl_targets(self, base_obs: np.ndarray) -> np.ndarray:
+        """현재 상태에서 SL 예측값(익일 수익률 1D, 3클래스 추세 확률 3D, 이상치 점수 1D)을 산출합니다."""
+        targets = None
+
+        # 1. 사전 계산된 DataFrame 캐시가 주어졌을 때 (고속 백테스트 모드)
+        if self.sl_predictions_df is not None:
+            unwrapped = getattr(self.env, "unwrapped", self.env)
+            step = getattr(unwrapped, "_current_step", 0)
+            row_idx = min(max(0, step), len(self.sl_predictions_df) - 1)
+            row = self.sl_predictions_df.iloc[row_idx]
+
+            pred_ret = float(row.get("pred_return", row.get("return", 0.0)))
+            p_up = float(row.get("prob_up", row.get("trend_prob_up", 0.3333)))
+            p_neutral = float(row.get("prob_neutral", row.get("trend_prob_neutral", 0.3334)))
+            p_down = float(row.get("prob_down", row.get("trend_prob_down", 0.3333)))
+
+            t_list = [pred_ret, p_up, p_neutral, p_down]
+            if self.include_anomaly_score:
+                t_list.append(float(row.get("anomaly_score", row.get("recon_loss", 0.0))))
+            targets = np.array(t_list, dtype=np.float32)
+
+        # 2. PyTorch SL 모델 실시간 추론 (온라인 / 라이브 / 에이전트 추론)
+        elif self.sl_model is not None:
+            try:
+                import torch
+                with torch.no_grad():
+                    window = self._extract_recent_window()
+                    if window is not None:
+                        preds = self.sl_model.predict_targets(daily_x=window)
+                    else:
+                        preds = self.sl_model.predict_targets(x=base_obs)
+
+                    if isinstance(preds, dict):
+                        pred_ret_t = preds.get("pred_return", torch.zeros(1))
+                        pred_ret = float(pred_ret_t.squeeze().cpu().item()) if torch.is_tensor(pred_ret_t) else float(pred_ret_t)
+
+                        trend_t = preds.get("trend_probs", torch.tensor([0.3333, 0.3334, 0.3333]))
+                        trend_np = trend_t.squeeze().cpu().numpy() if torch.is_tensor(trend_t) else np.array(trend_t)
+                        if trend_np.ndim == 0:
+                            trend_np = np.array([0.3333, 0.3334, 0.3333], dtype=np.float32)
+                        elif len(trend_np) != 3:
+                            trend_np = np.pad(trend_np, (0, max(0, 3 - len(trend_np))))[:3]
+
+                        t_list = [pred_ret, float(trend_np[0]), float(trend_np[1]), float(trend_np[2])]
+
+                        if self.include_anomaly_score:
+                            anom_t = preds.get("anomaly_score", torch.zeros(1))
+                            anom_val = float(anom_t.squeeze().cpu().item()) if torch.is_tensor(anom_t) else float(anom_t)
+                            t_list.append(anom_val)
+
+                        targets = np.array(t_list, dtype=np.float32)
+                    elif isinstance(preds, (list, tuple, np.ndarray)):
+                        targets = np.asarray(preds, dtype=np.float32)
+            except Exception as e:
+                logger.debug("SL model prediction exception: %s. Using default targets.", e)
+
+        # 3. 모델 부재 또는 에러 시 기본값
+        if targets is None:
+            t_list = [0.0, 0.3333, 0.3334, 0.3333]
+            if self.include_anomaly_score:
+                t_list.append(0.0)
+            targets = np.array(t_list, dtype=np.float32)
+
+        # 타겟 차원 보정 및 결측치 방어
+        if len(targets) != self.sl_feature_dim:
+            if len(targets) < self.sl_feature_dim:
+                targets = np.pad(targets, (0, self.sl_feature_dim - len(targets)))
+            else:
+                targets = targets[:self.sl_feature_dim]
+
+        return np.nan_to_num(targets, nan=0.0, posinf=1.0, neginf=-1.0).astype(np.float32)
+
+    def reset(self, **kwargs) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """환경 리셋 시 18~19차원 확장 관측 벡터 반환"""
+        base_obs, info = self.env.reset(**kwargs)
+        base_obs = np.asarray(base_obs, dtype=np.float32).flatten()
+
+        sl_targets = self._get_sl_targets(base_obs)
+        aug_obs = np.concatenate([base_obs, sl_targets]).astype(np.float32)
+
+        info["sl_targets"] = sl_targets
+        info["sl_augmented_dim"] = len(aug_obs)
+        return aug_obs, info
+
+    def step(self, action: Any) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+        """환경 스텝 진행 시 18~19차원 확장 관측 벡터 반환"""
+        base_obs, reward, terminated, truncated, info = self.env.step(action)
+        base_obs = np.asarray(base_obs, dtype=np.float32).flatten()
+
+        sl_targets = self._get_sl_targets(base_obs)
+        aug_obs = np.concatenate([base_obs, sl_targets]).astype(np.float32)
+
+        info["sl_targets"] = sl_targets
+        info["sl_augmented_dim"] = len(aug_obs)
+        return aug_obs, reward, terminated, truncated, info
+

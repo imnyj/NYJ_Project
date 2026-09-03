@@ -1,0 +1,625 @@
+"""
+modules/models/resnet.py
+=========================
+Auto Stock ML/RL Trader — Phase 6: Milestone 1
+1D-CNN 기반 Temporal ResNet 특징 추출기 및 다중 타임프레임 공통 베이스 인터페이스.
+
+주요 컴포넌트:
+1. BaseSLFeatureExtractor:
+   - 다중 타임프레임(일봉, 분봉, 계좌/정적) 입력을 수용하는 공통 베이스 인터페이스 및 다형적 입력 어댑터.
+   - 키워드 인자, Dict, Tuple, 단일 3D Tensor, 단일 2D/1D 관측 벡터(14차원) 완벽 방어 및 자동 파싱.
+2. ResNet1DBlock:
+   - 1D-CNN 잔차 블록 (Conv1d -> GroupNorm -> GELU -> Dropout -> Conv1d -> GroupNorm + Shortcut -> GELU).
+3. TemporalResNetFeatureExtractor:
+   - 일봉/분봉 다중 타임프레임 Residual Block 처리 및 정적 계좌 피처 결합(Fusion MLP).
+   - 공통 특징 벡터 (B, 64), 익일 기대 수익률 (B, 1), 3클래스 추세 분류 로짓 (B, 3), 이상치 점수 (B, 1) 산출.
+"""
+
+import math
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+def _get_group_norm_groups(channels: int) -> int:
+    """GroupNorm을 위한 안전한 그룹 수를 계산합니다."""
+    for g in [4, 2, 1]:
+        if channels % g == 0:
+            return g
+    return 1
+
+
+class BaseSLFeatureExtractor(nn.Module):
+    """
+    Phase 6 지도학습(SL) 모델의 공통 표준 추상 베이스 클래스.
+    모든 SL 모델(ResNet, Transformer, CVAE)은 본 클래스를 상속받아
+    동일한 다형적 입력 어댑터 및 출력 인터페이스를 공유합니다.
+    """
+
+    def __init__(
+        self,
+        daily_in_channels: int = 10,
+        daily_seq_len: int = 20,
+        minute_in_channels: int = 10,
+        minute_seq_len: int = 60,
+        tabular_dim: int = 4,
+        output_dim: int = 64,
+    ):
+        super().__init__()
+        self.daily_in_channels = int(daily_in_channels)
+        self.daily_seq_len = int(daily_seq_len)
+        self.minute_in_channels = int(minute_in_channels)
+        self.minute_seq_len = int(minute_seq_len)
+        self.tabular_dim = int(tabular_dim)
+        self.output_dim = int(output_dim)
+
+    def _parse_inputs(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, bool]:
+        """
+        다양한 형태(다중 인자, Dict, Tuple, 단일 3D Tensor, 단일 2D 관측 벡터 등)의 입력을
+        표준 (daily_x, minute_x, tabular_x) 텐서로 정규화합니다.
+        
+        Returns:
+            daily_tensor: (B, daily_seq_len, daily_in_channels)
+            minute_tensor: (B, minute_seq_len, minute_in_channels)
+            tabular_tensor: (B, tabular_dim)
+            is_unbatched: 입력이 단일 배치(unbatched) 형태였는지 여부
+        """
+        is_unbatched = False
+        device = next(self.parameters()).device if list(self.parameters()) else torch.device("cpu")
+
+        # 1. 단일 위치 인자로 들어온 경우 x로 라우팅
+        if x is None and daily_x is not None:
+            if isinstance(daily_x, (dict, tuple, list)):
+                x = daily_x
+                daily_x = None
+            elif isinstance(daily_x, (torch.Tensor, np.ndarray)) and minute_x is None and tabular_x is None and temporal_x is None:
+                dim = daily_x.ndim
+                if dim == 1:
+                    x = daily_x
+                    daily_x = None
+                elif dim == 2:
+                    if daily_x.shape[1] == (self.daily_in_channels + self.tabular_dim):
+                        x = daily_x
+                        daily_x = None
+                    elif daily_x.shape[0] == self.daily_seq_len and daily_x.shape[1] == self.daily_in_channels:
+                        x = daily_x
+                        daily_x = None
+
+        # 2. 하위 호환 temporal_x 처리
+        if daily_x is None and temporal_x is not None:
+            daily_x = temporal_x
+
+        # 3. 컨테이너 및 단일 텐서 x 언패킹
+        if x is not None:
+            if isinstance(x, dict):
+                daily_x = x.get("daily", x.get("temporal", daily_x))
+                minute_x = x.get("minute", minute_x)
+                tabular_x = x.get("tabular", x.get("static", tabular_x))
+            elif isinstance(x, (tuple, list)):
+                if len(x) >= 3:
+                    daily_x, minute_x, tabular_x = x[0], x[1], x[2]
+                elif len(x) == 2:
+                    daily_x, tabular_x = x[0], x[1]
+                elif len(x) == 1:
+                    daily_x = x[0]
+            elif isinstance(x, (torch.Tensor, np.ndarray)):
+                if isinstance(x, np.ndarray):
+                    x_t = torch.as_tensor(x, dtype=torch.float32, device=device)
+                else:
+                    x_t = x.to(device=device, dtype=torch.float32)
+
+                if x_t.dim() == 1:
+                    is_unbatched = True
+                    x_t = x_t.unsqueeze(0)  # (1, D)
+
+                if x_t.dim() == 2:
+                    tot_dim = x_t.shape[1]
+                    if tot_dim == (self.daily_in_channels + self.tabular_dim):
+                        m_feat = x_t[:, :self.daily_in_channels]
+                        tabular_x = x_t[:, self.daily_in_channels:]
+                        daily_x = m_feat.unsqueeze(1).repeat(1, self.daily_seq_len, 1)
+                    elif tot_dim == self.daily_in_channels:
+                        daily_x = x_t.unsqueeze(1).repeat(1, self.daily_seq_len, 1)
+                    elif tot_dim >= self.tabular_dim:
+                        temp_d = tot_dim - self.tabular_dim
+                        m_feat = x_t[:, :temp_d]
+                        tabular_x = x_t[:, -self.tabular_dim:]
+                        if temp_d < self.daily_in_channels:
+                            m_feat = F.pad(m_feat, (0, self.daily_in_channels - temp_d))
+                        else:
+                            m_feat = m_feat[:, :self.daily_in_channels]
+                        daily_x = m_feat.unsqueeze(1).repeat(1, self.daily_seq_len, 1)
+                    else:
+                        m_feat = F.pad(x_t, (0, self.daily_in_channels - tot_dim))
+                        daily_x = m_feat.unsqueeze(1).repeat(1, self.daily_seq_len, 1)
+                elif x_t.dim() == 3:
+                    daily_x = x_t
+
+        # 4. 개별 입력 텐서 정규화 및 배치 크기 결정
+        batch_size = 1
+
+        if daily_x is not None:
+            if isinstance(daily_x, np.ndarray):
+                daily_x = torch.as_tensor(daily_x, dtype=torch.float32, device=device)
+            else:
+                daily_x = daily_x.to(device=device, dtype=torch.float32)
+
+            if daily_x.dim() == 1:
+                is_unbatched = True
+                daily_x = daily_x.view(1, 1, -1)
+            elif daily_x.dim() == 2:
+                if daily_x.shape[0] == self.daily_seq_len and daily_x.shape[1] == self.daily_in_channels:
+                    is_unbatched = True
+                    daily_x = daily_x.unsqueeze(0)
+                elif daily_x.shape[1] == self.daily_in_channels:
+                    daily_x = daily_x.unsqueeze(1).repeat(1, self.daily_seq_len, 1)
+                else:
+                    daily_x = daily_x.unsqueeze(1).repeat(1, self.daily_seq_len, 1)
+            elif daily_x.dim() == 3:
+                if daily_x.shape[1] == self.daily_in_channels and daily_x.shape[2] != self.daily_in_channels:
+                    daily_x = daily_x.transpose(1, 2)
+            batch_size = daily_x.shape[0]
+        elif tabular_x is not None:
+            if isinstance(tabular_x, np.ndarray):
+                tabular_x = torch.as_tensor(tabular_x, dtype=torch.float32, device=device)
+            else:
+                tabular_x = tabular_x.to(device=device, dtype=torch.float32)
+            if tabular_x.dim() == 1:
+                is_unbatched = True
+                tabular_x = tabular_x.unsqueeze(0)
+            batch_size = tabular_x.shape[0]
+
+        # 5. Missing Branch Fallback & Padding
+        if daily_x is None:
+            daily_x = torch.zeros((batch_size, self.daily_seq_len, self.daily_in_channels), dtype=torch.float32, device=device)
+        else:
+            # 시간 축 및 채널 축 형상 보정
+            if daily_x.shape[1] < self.daily_seq_len:
+                pad_len = self.daily_seq_len - daily_x.shape[1]
+                daily_x = F.pad(daily_x, (0, 0, pad_len, 0))
+            elif daily_x.shape[1] > self.daily_seq_len:
+                daily_x = daily_x[:, -self.daily_seq_len:, :]
+
+            if daily_x.shape[2] < self.daily_in_channels:
+                daily_x = F.pad(daily_x, (0, self.daily_in_channels - daily_x.shape[2]))
+            elif daily_x.shape[2] > self.daily_in_channels:
+                daily_x = daily_x[:, :, :self.daily_in_channels]
+
+        if minute_x is None:
+            minute_x = torch.zeros((batch_size, self.minute_seq_len, self.minute_in_channels), dtype=torch.float32, device=device)
+        else:
+            if isinstance(minute_x, np.ndarray):
+                minute_x = torch.as_tensor(minute_x, dtype=torch.float32, device=device)
+            else:
+                minute_x = minute_x.to(device=device, dtype=torch.float32)
+
+            if minute_x.dim() == 1:
+                minute_x = minute_x.view(1, 1, -1)
+            elif minute_x.dim() == 2:
+                if minute_x.shape[0] == self.minute_seq_len and minute_x.shape[1] == self.minute_in_channels:
+                    minute_x = minute_x.unsqueeze(0)
+                else:
+                    minute_x = minute_x.unsqueeze(1).repeat(1, self.minute_seq_len, 1)
+            elif minute_x.dim() == 3:
+                if minute_x.shape[1] == self.minute_in_channels and minute_x.shape[2] != self.minute_in_channels:
+                    minute_x = minute_x.transpose(1, 2)
+
+            if minute_x.shape[1] < self.minute_seq_len:
+                pad_len = self.minute_seq_len - minute_x.shape[1]
+                minute_x = F.pad(minute_x, (0, 0, pad_len, 0))
+            elif minute_x.shape[1] > self.minute_seq_len:
+                minute_x = minute_x[:, -self.minute_seq_len:, :]
+
+            if minute_x.shape[2] < self.minute_in_channels:
+                minute_x = F.pad(minute_x, (0, self.minute_in_channels - minute_x.shape[2]))
+            elif minute_x.shape[2] > self.minute_in_channels:
+                minute_x = minute_x[:, :, :self.minute_in_channels]
+
+        if tabular_x is None:
+            tabular_x = torch.zeros((batch_size, self.tabular_dim), dtype=torch.float32, device=device)
+        else:
+            if isinstance(tabular_x, np.ndarray):
+                tabular_x = torch.as_tensor(tabular_x, dtype=torch.float32, device=device)
+            else:
+                tabular_x = tabular_x.to(device=device, dtype=torch.float32)
+
+            if tabular_x.dim() == 1:
+                tabular_x = tabular_x.unsqueeze(0)
+
+            if tabular_x.shape[1] < self.tabular_dim:
+                tabular_x = F.pad(tabular_x, (0, self.tabular_dim - tabular_x.shape[1]))
+            elif tabular_x.shape[1] > self.tabular_dim:
+                tabular_x = tabular_x[:, :self.tabular_dim]
+
+        # 6. NaN / Inf 수치 방어
+        daily_x = torch.nan_to_num(daily_x, nan=0.0, posinf=1.0, neginf=-1.0)
+        minute_x = torch.nan_to_num(minute_x, nan=0.0, posinf=1.0, neginf=-1.0)
+        tabular_x = torch.nan_to_num(tabular_x, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        return daily_x, minute_x, tabular_x, is_unbatched
+
+    def extract_features(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+    def predict_targets(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Dict[str, torch.Tensor]:
+        raise NotImplementedError
+
+    def compute_anomaly_score(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> torch.Tensor:
+        raise NotImplementedError
+
+
+class ResNet1DBlock(nn.Module):
+    """
+    1D-CNN 잔차 블록 (Residual Block).
+    Conv1d -> GroupNorm -> GELU -> Dropout -> Conv1d -> GroupNorm + Shortcut (1x1 Conv) -> GELU
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int = 3,
+        stride: int = 1,
+        dilation: int = 1,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.dilation = dilation
+
+        padding = (kernel_size - 1) // 2 * dilation
+        gn_groups1 = _get_group_norm_groups(out_channels)
+
+        self.conv1 = nn.Conv1d(
+            in_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            bias=False,
+        )
+        self.gn1 = nn.GroupNorm(num_groups=gn_groups1, num_channels=out_channels)
+        self.act1 = nn.GELU()
+        self.drop = nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity()
+
+        self.conv2 = nn.Conv1d(
+            out_channels,
+            out_channels,
+            kernel_size=kernel_size,
+            stride=1,
+            padding=padding,
+            dilation=dilation,
+            bias=False,
+        )
+        self.gn2 = nn.GroupNorm(num_groups=gn_groups1, num_channels=out_channels)
+
+        # Shortcut projection if dimensions differ or downsampling occurs
+        if stride != 1 or in_channels != out_channels:
+            gn_groups_sc = _get_group_norm_groups(out_channels)
+            self.shortcut = nn.Sequential(
+                nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.GroupNorm(num_groups=gn_groups_sc, num_channels=out_channels),
+            )
+        else:
+            self.shortcut = nn.Identity()
+
+        self.act2 = nn.GELU()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        res = self.shortcut(x)
+        out = self.conv1(x)
+        out = self.gn1(out)
+        out = self.act1(out)
+        out = self.drop(out)
+        out = self.conv2(out)
+        out = self.gn2(out)
+        out = out + res
+        return self.act2(out)
+
+
+class TemporalResNetFeatureExtractor(BaseSLFeatureExtractor):
+    """
+    Phase 6 아키텍처 1: 1D-CNN 기반 Temporal ResNet 특징 추출기.
+    - 다중 타임프레임 (일봉, 분봉) Residual Block 스택 및 적응형 평균 풀링
+    - 정적 펀더멘털 및 계좌 상태 MLP 결합
+    - 멀티태스크 헤드: 익일 수익률 회귀 헤드, 3클래스 추세 분류 헤드, 이상치 점수 산출
+    """
+
+    def __init__(
+        self,
+        daily_in_channels: int = 10,
+        daily_seq_len: int = 20,
+        minute_in_channels: int = 10,
+        minute_seq_len: int = 60,
+        tabular_dim: int = 4,
+        output_dim: int = 64,
+        num_blocks: int = 2,
+        base_filters: int = 64,
+        kernel_size: int = 3,
+        dropout: float = 0.1,
+    ):
+        super().__init__(
+            daily_in_channels=daily_in_channels,
+            daily_seq_len=daily_seq_len,
+            minute_in_channels=minute_in_channels,
+            minute_seq_len=minute_seq_len,
+            tabular_dim=tabular_dim,
+            output_dim=output_dim,
+        )
+        self.num_blocks = int(num_blocks)
+        self.base_filters = int(base_filters)
+        self.kernel_size = int(kernel_size)
+        self.dropout_rate = float(dropout)
+
+        # 1. Daily Branch (T_d, C_d)
+        self.daily_in_proj = nn.Conv1d(self.daily_in_channels, self.base_filters, kernel_size=1)
+        daily_layers = []
+        for _ in range(self.num_blocks):
+            daily_layers.append(
+                ResNet1DBlock(
+                    in_channels=self.base_filters,
+                    out_channels=self.base_filters,
+                    kernel_size=self.kernel_size,
+                    dropout=self.dropout_rate,
+                )
+            )
+        self.daily_res_net = nn.Sequential(*daily_layers)
+        self.daily_pool = nn.AdaptiveAvgPool1d(1)
+        self.daily_fc = nn.Sequential(
+            nn.Linear(self.base_filters, 48),
+            nn.LayerNorm(48),
+            nn.GELU(),
+        )
+
+        # 2. Minute Branch (T_m, C_m)
+        self.minute_in_proj = nn.Conv1d(self.minute_in_channels, self.base_filters, kernel_size=1)
+        minute_layers = []
+        for _ in range(self.num_blocks):
+            minute_layers.append(
+                ResNet1DBlock(
+                    in_channels=self.base_filters,
+                    out_channels=self.base_filters,
+                    kernel_size=self.kernel_size,
+                    dropout=self.dropout_rate,
+                )
+            )
+        self.minute_res_net = nn.Sequential(*minute_layers)
+        self.minute_pool = nn.AdaptiveAvgPool1d(1)
+        self.minute_fc = nn.Sequential(
+            nn.Linear(self.base_filters, 48),
+            nn.LayerNorm(48),
+            nn.GELU(),
+        )
+
+        # 3. Tabular Branch
+        self.tabular_mlp = nn.Sequential(
+            nn.Linear(self.tabular_dim, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Linear(32, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+        )
+
+        # 4. Fusion MLP (48 + 48 + 32 = 128 -> output_dim=64)
+        fused_in_dim = 48 + 48 + 32
+        self.fusion_mlp = nn.Sequential(
+            nn.Linear(fused_in_dim, 64),
+            nn.LayerNorm(64),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Linear(64, self.output_dim),
+            nn.LayerNorm(self.output_dim),
+            nn.GELU(),
+        )
+
+        # 5. Multi-task Heads
+        self.return_head = nn.Sequential(
+            nn.Linear(self.output_dim, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+        )
+        self.direction_head = nn.Sequential(
+            nn.Linear(self.output_dim, 32),
+            nn.GELU(),
+            nn.Linear(32, 3),
+        )
+        self.anomaly_head = nn.Sequential(
+            nn.Linear(self.output_dim, 16),
+            nn.GELU(),
+            nn.Linear(16, 1),
+            nn.Softplus(),
+        )
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv1d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=math.sqrt(2))
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, (nn.LayerNorm, nn.GroupNorm)):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+
+    def extract_features(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+        return_batched: bool = False,
+    ) -> torch.Tensor:
+        """
+        다중 타임프레임 시계열로부터 64차원 공통 잠재 특징 벡터를 추출합니다.
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        # Conv1D는 (B, C, T) 포맷 요구 -> Transpose(1, 2)
+        d_t = d_x.transpose(1, 2)
+        m_t = m_x.transpose(1, 2)
+
+        # Daily stream
+        d_h = self.daily_in_proj(d_t)
+        d_h = self.daily_res_net(d_h)
+        d_pooled = self.daily_pool(d_h).squeeze(-1)
+        d_feat = self.daily_fc(d_pooled)
+
+        # Minute stream
+        m_h = self.minute_in_proj(m_t)
+        m_h = self.minute_res_net(m_h)
+        m_pooled = self.minute_pool(m_h).squeeze(-1)
+        m_feat = self.minute_fc(m_pooled)
+
+        # Tabular stream
+        tab_feat = self.tabular_mlp(tab_x)
+
+        # Multimodal fusion
+        fused = torch.cat([d_feat, m_feat, tab_feat], dim=-1)
+        features = self.fusion_mlp(fused)
+
+        if is_unbatched and not return_batched:
+            return features.squeeze(0)
+        return features
+
+    def forward(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        순전파: (features, pred_return, pred_direction) 반환.
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        feats = self.extract_features(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            return_batched=True,
+        )
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+
+        if is_unbatched:
+            return feats.squeeze(0), pred_return.squeeze(0), pred_direction.squeeze(0)
+        return feats, pred_return, pred_direction
+
+    def predict_targets(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        RL 상태 편입 및 예측 모니터링용 타겟 값 산출:
+        - pred_return: (B, 1) 익일 기대 수익률
+        - trend_probs: (B, 3) 3클래스 추세 소프트맥스 확률
+        - anomaly_score: (B, 1) 이상치 점수
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        feats = self.extract_features(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            return_batched=True,
+        )
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+        trend_probs = F.softmax(pred_direction, dim=-1)
+        anomaly_score = self.anomaly_head(feats)
+
+        if is_unbatched:
+            return {
+                "pred_return": pred_return.squeeze(0),
+                "trend_probs": trend_probs.squeeze(0),
+                "anomaly_score": anomaly_score.squeeze(0),
+            }
+        return {
+            "pred_return": pred_return,
+            "trend_probs": trend_probs,
+            "anomaly_score": anomaly_score,
+        }
+
+    def compute_anomaly_score(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """이상치 점수 산출"""
+        targets = self.predict_targets(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        return targets["anomaly_score"]

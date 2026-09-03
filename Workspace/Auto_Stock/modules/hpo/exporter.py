@@ -19,6 +19,7 @@ import contextlib
 import csv
 import datetime
 import fcntl
+import json
 import os
 import threading
 from typing import Any, Dict, Iterator, List, Optional, Union
@@ -44,6 +45,54 @@ CSV_COLUMNS = [
     "param_rl_clip_range",
     "param_rl_ent_coef",
     "param_rl_hidden_dim",
+    "duration_seconds",
+    "datetime_start",
+    "datetime_complete",
+]
+
+# Phase 6: 메인 모델(ResNet, Transformer, CVAE) 통합 확장 컬럼 명세
+MAIN_MODELS_CSV_COLUMNS = [
+    "trial_id",
+    "model_type",
+    "state",
+    "objective_value",
+    "total_equity",
+    "total_return_pct",
+    "sharpe_ratio",
+    "max_drawdown_pct",
+    "total_trades",
+    "win_rate",
+    # 공통 학습 및 RL 파라미터
+    "param_sl_lr",
+    "param_sl_dropout",
+    "param_rl_lr",
+    "param_rl_gamma",
+    "param_rl_clip_range",
+    "param_rl_ent_coef",
+    "param_rl_hidden_dim",
+    "param_batch_size",
+    # ResNet 전용 파라미터
+    "param_res_blocks",
+    "param_res_filters",
+    "param_res_kernel_size",
+    "param_resnet_num_blocks",
+    "param_resnet_filters",
+    "param_resnet_kernel_size",
+    "param_resnet_dropout",
+    # Transformer 전용 파라미터
+    "param_tf_d_model",
+    "param_tf_nhead",
+    "param_tf_layers",
+    "param_tf_num_layers",
+    "param_tf_dim_feedforward",
+    "param_tf_dropout",
+    # CVAE 전용 파라미터
+    "param_cvae_latent_dim",
+    "param_cvae_hidden_dim",
+    "param_cvae_kl_weight",
+    "param_cvae_dropout",
+    # 메타데이터 및 전체 파라미터 JSON 백업
+    "params_json",
     "duration_seconds",
     "datetime_start",
     "datetime_complete",
@@ -331,9 +380,270 @@ def load_hpo_results(csv_path: str = "etc/hpo_results/baseline_hpo.csv") -> pd.D
     return df[CSV_COLUMNS]
 
 
+def _sanitize_main_model_record(
+    trial: Any,
+    metrics: Optional[Dict[str, Any]] = None,
+    model_type: str = "resnet",
+) -> Dict[str, Any]:
+    """
+    Optuna Trial 또는 딕셔너리로부터 MAIN_MODELS_CSV_COLUMNS 명세에 맞추어 기본값을 보정하고 정제합니다.
+    """
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    metrics = dict(metrics) if metrics else {}
+
+    # 1. trial_id 추출
+    if hasattr(trial, "number"):
+        tid = getattr(trial, "number")
+    elif isinstance(trial, dict):
+        tid = trial.get("trial_id", trial.get("number", metrics.get("trial_id", 0)))
+    elif isinstance(trial, (int, float)):
+        tid = int(trial)
+    else:
+        tid = metrics.get("trial_id", 0)
+    try:
+        tid = int(tid)
+    except Exception:
+        tid = 0
+
+    # 2. state 추출
+    if hasattr(trial, "state"):
+        st = getattr(trial, "state")
+        state_str = st.name if hasattr(st, "name") else str(st)
+    elif isinstance(trial, dict):
+        state_str = str(trial.get("state", metrics.get("state", "COMPLETE")))
+    else:
+        state_str = str(metrics.get("state", "COMPLETE"))
+    state_str = state_str.upper()
+
+    # 3. params 및 user_attrs 추출
+    params: Dict[str, Any] = {}
+    user_attrs: Dict[str, Any] = {}
+    if hasattr(trial, "params") and isinstance(trial.params, dict):
+        params.update(trial.params)
+    if hasattr(trial, "user_attrs") and isinstance(trial.user_attrs, dict):
+        user_attrs.update(trial.user_attrs)
+    if isinstance(trial, dict):
+        for k, v in trial.items():
+            if k.startswith("param_"):
+                clean_k = k[6:]
+                params[clean_k] = v
+            elif k in (
+                "sl_lr", "sl_dropout", "rl_lr", "rl_gamma", "rl_clip_range", "rl_ent_coef",
+                "rl_hidden_dim", "batch_size", "res_blocks", "res_filters", "res_kernel_size",
+                "resnet_num_blocks", "resnet_filters", "resnet_kernel_size", "resnet_dropout",
+                "tf_d_model", "tf_nhead", "tf_layers", "tf_num_layers", "tf_dim_feedforward",
+                "tf_dropout", "cvae_latent_dim", "cvae_hidden_dim", "cvae_kl_weight", "cvae_dropout"
+            ):
+                params[k] = v
+            elif k not in (
+                "trial_id", "state", "objective_value", "total_equity", "total_return_pct",
+                "sharpe_ratio", "max_drawdown_pct", "total_trades", "win_rate",
+                "duration_seconds", "datetime_start", "datetime_complete", "model_type"
+            ):
+                user_attrs[k] = v
+
+    # 4. metrics 병합
+    combined_metrics = dict(user_attrs)
+    combined_metrics.update(metrics)
+    if isinstance(trial, dict):
+        for k in (
+            "objective_value", "total_equity", "total_return_pct", "sharpe_ratio",
+            "max_drawdown_pct", "total_trades", "win_rate", "duration_seconds"
+        ):
+            if k in trial and k not in combined_metrics:
+                combined_metrics[k] = trial[k]
+
+    def _get_float(key: str, default: float = 0.0) -> float:
+        v = combined_metrics.get(key, default)
+        try:
+            f = float(v)
+            return default if pd.isna(f) else f
+        except Exception:
+            return default
+
+    def _get_int(key: str, default: int = 0) -> int:
+        v = combined_metrics.get(key, default)
+        try:
+            return int(v)
+        except Exception:
+            return default
+
+    def _param_val(k1: str, k2: Optional[str] = None, default: Any = "") -> Any:
+        if k1 in params:
+            return params[k1]
+        if f"param_{k1}" in params:
+            return params[f"param_{k1}"]
+        if k2 and k2 in params:
+            return params[k2]
+        if k2 and f"param_{k2}" in params:
+            return params[f"param_{k2}"]
+        return default
+
+    m_type = str(combined_metrics.get("model_type", model_type)).lower().strip()
+
+    sl_lr = _param_val("sl_lr", default="")
+    sl_dropout = _param_val("sl_dropout", default="")
+    rl_lr = _param_val("rl_lr", default="")
+    rl_gamma = _param_val("rl_gamma", default="")
+    rl_clip_range = _param_val("rl_clip_range", default="")
+    rl_ent_coef = _param_val("rl_ent_coef", default="")
+    rl_hidden_dim = _param_val("rl_hidden_dim", default="")
+    batch_size = _param_val("batch_size", default="")
+
+    res_blocks = _param_val("res_blocks", "resnet_num_blocks", default="")
+    res_filters = _param_val("res_filters", "resnet_filters", default="")
+    res_kernel_size = _param_val("res_kernel_size", "resnet_kernel_size", default="")
+    resnet_dropout = _param_val("resnet_dropout", "sl_dropout", default="")
+
+    tf_d_model = _param_val("tf_d_model", default="")
+    tf_nhead = _param_val("tf_nhead", default="")
+    tf_layers = _param_val("tf_layers", "tf_num_layers", default="")
+    tf_dim_feedforward = _param_val("tf_dim_feedforward", default="")
+    tf_dropout = _param_val("tf_dropout", "sl_dropout", default="")
+
+    cvae_latent_dim = _param_val("cvae_latent_dim", default="")
+    cvae_hidden_dim = _param_val("cvae_hidden_dim", default="")
+    cvae_kl_weight = _param_val("cvae_kl_weight", default="")
+    cvae_dropout = _param_val("cvae_dropout", "sl_dropout", default="")
+
+    dt_start = str(combined_metrics.get("datetime_start", now_iso))
+    dt_complete = str(combined_metrics.get("datetime_complete", now_iso))
+    dur = round(_get_float("duration_seconds", 0.0), 4)
+
+    # Convert all params to JSON string
+    try:
+        clean_params = {}
+        for k, v in params.items():
+            if isinstance(v, (int, float, str, bool, list, dict)) or v is None:
+                clean_params[k] = v
+            else:
+                clean_params[k] = str(v)
+        params_json = json.dumps(clean_params, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        params_json = "{}"
+
+    # Determine objective value
+    if hasattr(trial, "value") and trial.value is not None:
+        obj_val = float(trial.value)
+    else:
+        obj_val = _get_float("objective_value", _get_float("value", 0.0))
+
+    record: Dict[str, Any] = {
+        "trial_id": tid,
+        "model_type": m_type,
+        "state": state_str,
+        "objective_value": round(obj_val, 6),
+        "total_equity": round(_get_float("total_equity", 10_000_000.0), 2),
+        "total_return_pct": round(_get_float("total_return_pct", 0.0), 4),
+        "sharpe_ratio": round(_get_float("sharpe_ratio", 0.0), 4),
+        "max_drawdown_pct": round(_get_float("max_drawdown_pct", 0.0), 4),
+        "total_trades": _get_int("total_trades", 0),
+        "win_rate": round(_get_float("win_rate", 0.0), 2),
+        # Common params
+        "param_sl_lr": sl_lr,
+        "param_sl_dropout": sl_dropout,
+        "param_rl_lr": rl_lr,
+        "param_rl_gamma": rl_gamma,
+        "param_rl_clip_range": rl_clip_range,
+        "param_rl_ent_coef": rl_ent_coef,
+        "param_rl_hidden_dim": rl_hidden_dim,
+        "param_batch_size": batch_size,
+        # ResNet
+        "param_res_blocks": res_blocks,
+        "param_res_filters": res_filters,
+        "param_res_kernel_size": res_kernel_size,
+        "param_resnet_num_blocks": res_blocks,
+        "param_resnet_filters": res_filters,
+        "param_resnet_kernel_size": res_kernel_size,
+        "param_resnet_dropout": resnet_dropout if "resnet" in m_type else "",
+        # Transformer
+        "param_tf_d_model": tf_d_model,
+        "param_tf_nhead": tf_nhead,
+        "param_tf_layers": tf_layers,
+        "param_tf_num_layers": tf_layers,
+        "param_tf_dim_feedforward": tf_dim_feedforward,
+        "param_tf_dropout": tf_dropout if "transformer" in m_type else "",
+        # CVAE
+        "param_cvae_latent_dim": cvae_latent_dim,
+        "param_cvae_hidden_dim": cvae_hidden_dim,
+        "param_cvae_kl_weight": cvae_kl_weight,
+        "param_cvae_dropout": cvae_dropout if "cvae" in m_type else "",
+        # Meta
+        "params_json": params_json,
+        "duration_seconds": dur,
+        "datetime_start": dt_start,
+        "datetime_complete": dt_complete,
+    }
+    return record
+
+
+def export_main_model_trial_to_csv(
+    trial: Any,
+    metrics: Optional[Dict[str, Any]] = None,
+    model_type: str = "resnet",
+    filepath: str = "etc/hpo_results/main_models_hpo.csv",
+) -> str:
+    """
+    ResNet, Transformer, CVAE 메인 모델의 Trial 결과를 CSV 파일에 원자적으로 추가(Append)합니다.
+    fcntl 기반 프로세스 레벨 파일 락과 threading.Lock을 결합하여 멀티프로세스 환경에서도
+    동시 쓰기 경쟁 상태 및 데이터 유실을 원천 차단합니다.
+
+    Args:
+        trial: Optuna Trial 객체, FrozenTrial, 또는 dict
+        metrics: 산출된 금융 및 운영 지표 딕셔너리
+        model_type: 모델 유형 ('resnet', 'transformer', 'cvae')
+        filepath: 대상 CSV 파일 경로 (기본값: 'etc/hpo_results/main_models_hpo.csv')
+
+    Returns:
+        saved_path: str 실제 저장된 절대 경로
+    """
+    abs_path = os.path.abspath(filepath)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    record = _sanitize_main_model_record(trial=trial, metrics=metrics, model_type=model_type)
+
+    with _process_file_lock(abs_path, shared=False):
+        file_exists = os.path.exists(abs_path) and os.path.getsize(abs_path) > 0
+
+        with open(abs_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=MAIN_MODELS_CSV_COLUMNS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow({k: record.get(k, "") for k in MAIN_MODELS_CSV_COLUMNS})
+            f.flush()
+            os.fsync(f.fileno())
+
+    return abs_path
+
+
+def load_main_models_hpo_results(
+    csv_path: str = "etc/hpo_results/main_models_hpo.csv",
+) -> pd.DataFrame:
+    """
+    main_models_hpo.csv 파일을 Shared Lock(LOCK_SH)으로 안전하게 읽고 반환합니다.
+
+    Args:
+        csv_path: CSV 파일 경로 (기본값: 'etc/hpo_results/main_models_hpo.csv')
+
+    Returns:
+        df: pd.DataFrame
+    """
+    abs_path = os.path.abspath(csv_path)
+    if not os.path.exists(abs_path):
+        raise FileNotFoundError(f"메인 모델 HPO 결과 CSV 파일을 찾을 수 없습니다: {abs_path}")
+
+    with _process_file_lock(abs_path, shared=True):
+        df = pd.read_csv(abs_path)
+
+    return df
+
+
 __all__ = [
     "CSV_COLUMNS",
+    "MAIN_MODELS_CSV_COLUMNS",
     "export_trial_to_csv",
     "export_study_to_csv",
     "load_hpo_results",
+    "export_main_model_trial_to_csv",
+    "load_main_models_hpo_results",
 ]

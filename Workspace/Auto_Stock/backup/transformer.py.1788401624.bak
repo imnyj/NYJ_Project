@@ -1,0 +1,492 @@
+"""
+modules/models/transformer.py
+==============================
+Auto Stock ML/RL Trader — Phase 6: Milestone 1
+시계열 Attention 기반 Temporal Transformer 특징 추출기.
+
+주요 컴포넌트:
+1. SinusoidalPositionalEncoding:
+   - 시계열 순서 정보를 주입하는 사인/코사인 위치 인코딩.
+2. AttentionPooling1D:
+   - 학습 가능한 쿼리 벡터를 통해 시간 축 가중치를 동적으로 요약(Pooling) 및 XAI 지원.
+3. CrossTimeframeAttention:
+   - 거시 일봉 쿼리와 미시 분봉 키/값 간의 교차 어텐션 메커니즘.
+4. TemporalTransformerFeatureExtractor:
+   - Pre-LN TransformerEncoderLayer (norm_first=True) 기반 다중 타임프레임 처리.
+   - 공통 특징 벡터 (B, 64), 익일 기대 수익률 (B, 1), 3클래스 추세 분류 로짓 (B, 3), 이상치 점수 (B, 1) 산출.
+"""
+
+import math
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from modules.models.resnet import BaseSLFeatureExtractor
+
+
+class SinusoidalPositionalEncoding(nn.Module):
+    """
+    Sinusoidal 위치 인코딩 (Vaswani et al., 2017).
+    PE(pos, 2i) = sin(pos / 10000^(2i/d_model))
+    PE(pos, 2i+1) = cos(pos / 10000^(2i/d_model))
+    """
+
+    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
+        super().__init__()
+        self.d_model = int(d_model)
+        self.dropout = nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity()
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model)
+        )
+
+        pe[:, 0::2] = torch.sin(position * div_term)
+        if d_model % 2 == 1:
+            pe[:, 1::2] = torch.cos(position * div_term[:-1])
+        else:
+            pe[:, 1::2] = torch.cos(position * div_term)
+
+        pe = pe.unsqueeze(0)  # (1, max_len, d_model)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor of shape (Batch, seq_len, d_model)
+        Returns:
+            Tensor of shape (Batch, seq_len, d_model)
+        """
+        seq_len = x.size(1)
+        if seq_len > self.pe.size(1):
+            # Dynamic recomputation if sequence length exceeds cached buffer
+            device = x.device
+            position = torch.arange(0, seq_len, dtype=torch.float32, device=device).unsqueeze(1)
+            div_term = torch.exp(
+                torch.arange(0, self.d_model, 2, dtype=torch.float32, device=device)
+                * (-math.log(10000.0) / self.d_model)
+            )
+            pe_ext = torch.zeros(1, seq_len, self.d_model, device=device)
+            pe_ext[0, :, 0::2] = torch.sin(position * div_term)
+            if self.d_model % 2 == 1:
+                pe_ext[0, :, 1::2] = torch.cos(position * div_term[:-1])
+            else:
+                pe_ext[0, :, 1::2] = torch.cos(position * div_term)
+            x = x + pe_ext
+        else:
+            x = x + self.pe[:, :seq_len, :]
+        return self.dropout(x)
+
+
+class AttentionPooling1D(nn.Module):
+    """
+    학습 가능한 Context Query 벡터 기반 1D Attention Pooling.
+    단순 평균 풀링 대비 중요 타임스텝에 동적으로 집중하며 시각화(XAI) 가중치를 제공합니다.
+    """
+
+    def __init__(self, d_model: int):
+        super().__init__()
+        self.d_model = int(d_model)
+        self.query = nn.Parameter(torch.randn(d_model, 1) * 0.02)
+
+    def get_attention_weights(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor of shape (Batch, seq_len, d_model)
+        Returns:
+            weights: Tensor of shape (Batch, seq_len)
+        """
+        scores = torch.matmul(x, self.query).squeeze(-1)  # (B, T)
+        scores = scores / math.sqrt(self.d_model)
+        attn_weights = F.softmax(scores, dim=-1)  # (B, T)
+        return attn_weights
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Tensor of shape (Batch, seq_len, d_model)
+        Returns:
+            pooled: Tensor of shape (Batch, d_model)
+        """
+        weights = self.get_attention_weights(x).unsqueeze(-1)  # (B, T, 1)
+        pooled = torch.sum(x * weights, dim=1)  # (B, d_model)
+        return pooled
+
+
+class CrossTimeframeAttention(nn.Module):
+    """
+    일봉(Macro Query)과 분봉(Micro Key/Value) 간의 Cross-Attention 모듈.
+    Pre-LN 구조를 적용하여 안정적인 그래디언트 흐름을 유지합니다.
+    """
+
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int = 4,
+        dim_feedforward: int = 128,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self.d_model = int(d_model)
+        self.ln_q = nn.LayerNorm(d_model)
+        self.ln_kv = nn.LayerNorm(d_model)
+
+        self.mha = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=nhead,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        self.ln_ffn = nn.LayerNorm(d_model)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, dim_feedforward),
+            nn.GELU(),
+            nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity(),
+            nn.Linear(dim_feedforward, d_model),
+            nn.Dropout(p=dropout) if dropout > 0.0 else nn.Identity(),
+        )
+
+    def forward(self, daily_seq: torch.Tensor, minute_seq: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            daily_seq: Tensor of shape (B, T_d, d_model)
+            minute_seq: Tensor of shape (B, T_m, d_model)
+        Returns:
+            enriched_daily: Tensor of shape (B, T_d, d_model)
+        """
+        q = self.ln_q(daily_seq)
+        kv = self.ln_kv(minute_seq)
+        attn_out, _ = self.mha(query=q, key=kv, value=kv)
+        daily_seq = daily_seq + attn_out
+
+        ffn_out = self.ffn(self.ln_ffn(daily_seq))
+        daily_seq = daily_seq + ffn_out
+        return daily_seq
+
+
+class TemporalTransformerFeatureExtractor(BaseSLFeatureExtractor):
+    """
+    Phase 6 아키텍처 2: 시계열 Attention 기반 Temporal Transformer 특징 추출기.
+    - Sinusoidal 위치 인코딩 + Pre-LN TransformerEncoder (norm_first=True)
+    - 다중 타임프레임 Cross-Attention (일봉 거시 쿼리 <-> 분봉 미시 키/값)
+    - 1D Attention Pooling을 통한 시간 축 동적 집약
+    - 공통 특징 벡터 (B, 64), 익일 수익률 예측 (B, 1), 3클래스 추세 분류 (B, 3) 산출
+    """
+
+    def __init__(
+        self,
+        daily_in_channels: int = 10,
+        daily_seq_len: int = 20,
+        minute_in_channels: int = 10,
+        minute_seq_len: int = 60,
+        tabular_dim: int = 4,
+        d_model: int = 64,
+        nhead: int = 4,
+        num_layers: int = 2,
+        dim_feedforward: int = 128,
+        dropout: float = 0.1,
+        output_dim: int = 64,
+        use_cross_attention: bool = True,
+    ):
+        super().__init__(
+            daily_in_channels=daily_in_channels,
+            daily_seq_len=daily_seq_len,
+            minute_in_channels=minute_in_channels,
+            minute_seq_len=minute_seq_len,
+            tabular_dim=tabular_dim,
+            output_dim=output_dim,
+        )
+        self.d_model = int(d_model)
+        self.nhead = int(nhead)
+        self.num_layers = int(num_layers)
+        self.dim_feedforward = int(dim_feedforward)
+        self.dropout_rate = float(dropout)
+        self.use_cross_attention = bool(use_cross_attention)
+
+        # 1. Daily Projections & Positional Encoding
+        self.daily_in_proj = nn.Linear(self.daily_in_channels, self.d_model)
+        self.daily_pos_enc = SinusoidalPositionalEncoding(self.d_model, dropout=self.dropout_rate)
+
+        daily_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=self.nhead,
+            dim_feedforward=self.dim_feedforward,
+            dropout=self.dropout_rate,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.daily_encoder = nn.TransformerEncoder(daily_layer, num_layers=self.num_layers, enable_nested_tensor=False)
+        self.daily_pool = AttentionPooling1D(self.d_model)
+
+        # 2. Minute Projections & Positional Encoding
+        self.minute_in_proj = nn.Linear(self.minute_in_channels, self.d_model)
+        self.minute_pos_enc = SinusoidalPositionalEncoding(self.d_model, dropout=self.dropout_rate)
+
+        minute_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=self.nhead,
+            dim_feedforward=self.dim_feedforward,
+            dropout=self.dropout_rate,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+        self.minute_encoder = nn.TransformerEncoder(minute_layer, num_layers=self.num_layers, enable_nested_tensor=False)
+        self.minute_pool = AttentionPooling1D(self.d_model)
+
+        # 3. Cross-Timeframe Interaction
+        if self.use_cross_attention:
+            self.cross_attention = CrossTimeframeAttention(
+                d_model=self.d_model,
+                nhead=self.nhead,
+                dim_feedforward=self.dim_feedforward,
+                dropout=self.dropout_rate,
+            )
+        else:
+            self.cross_attention = None
+
+        # 4. Tabular Stream
+        self.tabular_mlp = nn.Sequential(
+            nn.Linear(self.tabular_dim, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Linear(32, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+        )
+
+        # 5. Fusion MLP (d_model + d_model + 32 -> output_dim=64)
+        fused_in_dim = self.d_model + self.d_model + 32
+        self.fusion_mlp = nn.Sequential(
+            nn.Linear(fused_in_dim, 128),
+            nn.LayerNorm(128),
+            nn.GELU(),
+            nn.Dropout(p=self.dropout_rate) if self.dropout_rate > 0.0 else nn.Identity(),
+            nn.Linear(128, self.output_dim),
+            nn.LayerNorm(self.output_dim),
+            nn.GELU(),
+        )
+
+        # 6. Multi-task Heads
+        self.return_head = nn.Sequential(
+            nn.Linear(self.output_dim, 32),
+            nn.GELU(),
+            nn.Linear(32, 1),
+        )
+        self.direction_head = nn.Sequential(
+            nn.Linear(self.output_dim, 32),
+            nn.GELU(),
+            nn.Linear(32, 3),
+        )
+        self.anomaly_head = nn.Sequential(
+            nn.Linear(self.output_dim, 16),
+            nn.GELU(),
+            nn.Linear(16, 1),
+            nn.Softplus(),
+        )
+
+        self._init_weights()
+
+    def _init_weights(self) -> None:
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+
+    def extract_features(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+        return_batched: bool = False,
+    ) -> torch.Tensor:
+        """
+        다중 타임프레임 시계열로부터 64차원 공통 잠재 특징 벡터를 추출합니다.
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        # 1. Daily stream
+        d_emb = self.daily_in_proj(d_x)
+        d_seq = self.daily_pos_enc(d_emb)
+        d_encoded = self.daily_encoder(d_seq)
+
+        # 2. Minute stream
+        m_emb = self.minute_in_proj(m_x)
+        m_seq = self.minute_pos_enc(m_emb)
+        m_encoded = self.minute_encoder(m_seq)
+
+        # 3. Cross-timeframe interaction
+        if self.cross_attention is not None:
+            d_enriched = self.cross_attention(daily_seq=d_encoded, minute_seq=m_encoded)
+        else:
+            d_enriched = d_encoded
+
+        # 4. Temporal Attention Pooling
+        d_feat = self.daily_pool(d_enriched)
+        m_feat = self.minute_pool(m_encoded)
+
+        # 5. Tabular stream
+        tab_feat = self.tabular_mlp(tab_x)
+
+        # 6. Multimodal fusion
+        fused = torch.cat([d_feat, m_feat, tab_feat], dim=-1)
+        features = self.fusion_mlp(fused)
+
+        if is_unbatched and not return_batched:
+            return features.squeeze(0)
+        return features
+
+    def forward(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+        return_features_only: bool = False,
+    ) -> Union[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor]:
+        """
+        순전파: (features, pred_return, pred_direction) 반환.
+        as_backbone_mode이거나 extract_features 컨텍스트에서는 features 텐서 단독 반환.
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+
+        feats = self.extract_features(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            return_batched=True,
+        )
+
+        if self._should_return_features_only(return_features_only):
+            if is_unbatched:
+                return feats.squeeze(0)
+            return feats
+
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+
+        if is_unbatched:
+            return feats.squeeze(0), pred_return.squeeze(0), pred_direction.squeeze(0)
+        return feats, pred_return, pred_direction
+
+    def predict_targets(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        RL 상태 편입 및 예측 모니터링용 타겟 값 산출:
+        - pred_return: (B, 1) 익일 기대 수익률
+        - trend_probs: (B, 3) 3클래스 추세 소프트맥스 확률
+        - anomaly_score: (B, 1) 이상치 점수
+        """
+        d_x, m_x, tab_x, is_unbatched = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        feats = self.extract_features(
+            daily_x=d_x,
+            minute_x=m_x,
+            tabular_x=tab_x,
+            return_batched=True,
+        )
+        pred_return = self.return_head(feats)
+        pred_direction = self.direction_head(feats)
+        trend_probs = F.softmax(pred_direction, dim=-1)
+        anomaly_score = self.anomaly_head(feats)
+
+        if is_unbatched:
+            return {
+                "pred_return": pred_return.squeeze(0),
+                "trend_probs": trend_probs.squeeze(0),
+                "anomaly_score": anomaly_score.squeeze(0),
+            }
+        return {
+            "pred_return": pred_return,
+            "trend_probs": trend_probs,
+            "anomaly_score": anomaly_score,
+        }
+
+    def compute_anomaly_score(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> torch.Tensor:
+        """이상치 점수 산출"""
+        targets = self.predict_targets(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        return targets["anomaly_score"]
+
+    def get_attention_weights(
+        self,
+        daily_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        minute_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        tabular_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        temporal_x: Optional[Union[torch.Tensor, np.ndarray]] = None,
+        x: Optional[Any] = None,
+    ) -> Dict[str, torch.Tensor]:
+        """
+        설명가능성(XAI)을 위한 일봉 및 분봉 시간 축 Attention 가중치를 반환합니다.
+        """
+        d_x, m_x, tab_x, _ = self._parse_inputs(
+            daily_x=daily_x,
+            minute_x=minute_x,
+            tabular_x=tabular_x,
+            temporal_x=temporal_x,
+            x=x,
+        )
+        d_emb = self.daily_in_proj(d_x)
+        d_seq = self.daily_pos_enc(d_emb)
+        d_encoded = self.daily_encoder(d_seq)
+
+        m_emb = self.minute_in_proj(m_x)
+        m_seq = self.minute_pos_enc(m_emb)
+        m_encoded = self.minute_encoder(m_seq)
+
+        if self.cross_attention is not None:
+            d_enriched = self.cross_attention(daily_seq=d_encoded, minute_seq=m_encoded)
+        else:
+            d_enriched = d_encoded
+
+        daily_weights = self.daily_pool.get_attention_weights(d_enriched)
+        minute_weights = self.minute_pool.get_attention_weights(m_encoded)
+
+        return {
+            "daily_weights": daily_weights,
+            "minute_weights": minute_weights,
+        }

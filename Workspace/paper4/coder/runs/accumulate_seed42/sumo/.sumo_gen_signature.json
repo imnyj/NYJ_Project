@@ -1,7 +1,7 @@
 {
   "AV_SPEED": 40.0,
   "DEL_SPEED": 0.2,
-  "DENSITY": 35.0,
+  "DENSITY": 10.0,
   "FLOW_END_S": 330.0,
   "NUM_BLOCKS": 6.0,
   "NUM_LANES": 2.0,

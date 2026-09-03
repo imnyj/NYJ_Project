@@ -27,6 +27,7 @@ from __future__ import annotations
 import gc
 import glob
 import inspect
+import json
 import logging
 import math
 import os
@@ -35,6 +36,7 @@ import random
 import re
 import threading
 import time
+import traceback
 import xml.etree.ElementTree as ET
 from collections import deque
 from typing import Any, Callable, Deque, Dict, List, Optional, Sequence, Tuple, Union
@@ -56,6 +58,21 @@ except ImportError:
 
 import src.Communications as comm
 import src.sumo.make_sumo_set as ss
+from src.divergence_guard import (
+    ABORT_DIVERGED,
+    ABORT_EMPTY_EPISODES,
+    ABORT_TRAINER_CRASH,
+    DEFAULT_LOSS_ABS_FLOOR as DG_LOSS_ABS_FLOOR,
+    DEFAULT_LOSS_PATIENCE as DG_LOSS_PATIENCE,
+    DEFAULT_LOSS_RATIO as DG_LOSS_RATIO,
+    DEFAULT_MAX_NONFINITE_LOSS_UPDATES,
+    DEFAULT_MAX_ZERO_UPDATE_EPISODES as DG_MAX_ZERO_UPDATE_EPISODES,
+    DEFAULT_WARMUP_EPISODES as DG_WARMUP_EPISODES,
+    STATUS_COMPLETED,
+    AbortVerdict,
+    DivergenceMonitor,
+    is_finite_number,
+)
 from src.dynamics_predictor import (
     extract_tls_features,
     reset_fallback_counts,
@@ -592,6 +609,22 @@ class BackgroundTrainer:
         self.consecutive_failed_swaps = 0
         self.max_consecutive_failed_swaps = max(10, int(self.swap_interval_steps) * 10)
         self.fatal_error: Optional[str] = None
+        # Kind of failure, so the caller can label it without parsing prose.
+        self.fatal_kind: Optional[str] = None
+        # The refused-swap counter above only fires every `swap_interval_steps`
+        # updates, and only if the worker survives long enough to reach the next
+        # swap. On 2026-09-02 PPO's Rest weights went NaN and the very next
+        # `update()` raised out of SB3's Normal(loc=nan), killing the thread ten
+        # updates before the swap that would have noticed. This counter reads the
+        # loss on EVERY update, so the divergence is caught at the update that
+        # produced it rather than at the next scheduled swap.
+        self.consecutive_nonfinite_losses = 0
+        self.max_consecutive_nonfinite_losses = DEFAULT_MAX_NONFINITE_LOSS_UPDATES
+        # Set when `_worker_loop` catches something. Without it the thread simply
+        # vanished: `threading` printed a traceback to stderr and the episode loop,
+        # which never looked at the thread, ran another 8.8 hours training nothing.
+        self.worker_traceback: Optional[str] = None
+        self._worker_started = False
         # Held while the Rest model's weights are being mutated by `update()`, so
         # a checkpoint writer can obtain a quiescent snapshot. Distinct from
         # `self.lock` (bookkeeping) and from `swap_lock` (Act <- Rest transfer):
@@ -634,6 +667,29 @@ class BackgroundTrainer:
             self.training_steps += 1
             self.loss_history.append(loss_dict)
 
+            # Divergence, read at the update that caused it. `loss_dict` values
+            # are plain floats produced by the model's own `update()`; a NaN or
+            # Inf among them means the backward pass that just ran has already
+            # written non-finite values into the Rest weights.
+            if self._loss_dict_is_finite(loss_dict):
+                self.consecutive_nonfinite_losses = 0
+            else:
+                self.consecutive_nonfinite_losses += 1
+                logging.error(
+                    "Non-finite loss on gradient update %d (%s). Consecutive: %d/%d.",
+                    self.training_steps, loss_dict, self.consecutive_nonfinite_losses,
+                    self.max_consecutive_nonfinite_losses,
+                )
+                if (self.consecutive_nonfinite_losses >= self.max_consecutive_nonfinite_losses
+                        and self.fatal_error is None):
+                    self.fatal_kind = ABORT_DIVERGED
+                    self.fatal_error = (
+                        f"{self.consecutive_nonfinite_losses} consecutive gradient updates "
+                        f"produced a non-finite loss (latest {loss_dict}). The Rest model "
+                        "has diverged; every further environment step would train on "
+                        "poisoned weights."
+                    )
+
             # Scheduled Hot-swap
             if self.training_steps % self.swap_interval_steps == 0:
                 swapped = self.hot_swap_manager.hot_swap()
@@ -647,7 +703,9 @@ class BackgroundTrainer:
                         "last valid weights and is no longer learning.",
                         self.consecutive_failed_swaps, self.max_consecutive_failed_swaps,
                     )
-                    if self.consecutive_failed_swaps >= self.max_consecutive_failed_swaps:
+                    if (self.consecutive_failed_swaps >= self.max_consecutive_failed_swaps
+                            and self.fatal_error is None):
+                        self.fatal_kind = ABORT_DIVERGED
                         self.fatal_error = (
                             f"{self.consecutive_failed_swaps} consecutive hot-swaps refused: "
                             "the Rest model has diverged and the Act model is frozen. "
@@ -656,6 +714,21 @@ class BackgroundTrainer:
                         )
 
         return loss_dict
+
+    @staticmethod
+    def _loss_dict_is_finite(loss_dict: Optional[Dict[str, Any]]) -> bool:
+        """True when every scalar a model's `update()` reported is a real number.
+
+        A model that reports no scalars at all is not evidence of divergence, so
+        an empty or non-numeric dict passes.
+        """
+        if not isinstance(loss_dict, dict):
+            return True
+        for value in loss_dict.values():
+            if isinstance(value, (int, float, np.floating, np.integer)) and not isinstance(value, bool):
+                if not is_finite_number(value):
+                    return False
+        return True
 
     def updates_allowed(self) -> bool:
         """True while this model is still under its env-step-linked update budget.
@@ -669,13 +742,36 @@ class BackgroundTrainer:
         return float(self.training_steps) < budget
 
     def _worker_loop(self) -> None:
-        """Background thread execution loop."""
-        while not self.stop_event.is_set():
-            loss_dict = self.train_step()
-            if loss_dict is None:
-                time.sleep(0.002)
-            else:
-                time.sleep(0.0005)
+        """Background thread execution loop.
+
+        The body is guarded because an escaping exception used to end the thread
+        and nothing else. Measured on 2026-09-02: `sb3_ppo.update()` raised
+        `ValueError: Expected parameter loc ... found invalid values:
+        tensor([[nan, ...]])`, `threading._bootstrap_inner` printed the traceback
+        to stderr, the thread died at gradient update 746, and the episode loop
+        -- which never inspected the thread -- ran 89 more episodes over 8.8
+        hours and returned a summary reading `episodes: 100`. Recording the
+        failure on the object is what makes it visible to that loop.
+        """
+        try:
+            while not self.stop_event.is_set():
+                loss_dict = self.train_step()
+                if loss_dict is None:
+                    time.sleep(0.002)
+                else:
+                    time.sleep(0.0005)
+        except BaseException as exc:  # noqa: BLE001 - re-raised as a run abort
+            tb = traceback.format_exc()
+            with self.lock:
+                self.worker_traceback = tb
+                if self.fatal_error is None:
+                    self.fatal_kind = ABORT_TRAINER_CRASH
+                    self.fatal_error = (
+                        f"the background training thread died on gradient update "
+                        f"{self.training_steps} with {exc!r}. No further gradient "
+                        "update can happen in this run."
+                    )
+            logging.error("Background training thread died: %s\n%s", exc, tb)
 
     def start(self) -> None:
         """Starts background training thread."""
@@ -683,7 +779,20 @@ class BackgroundTrainer:
             return
         self.stop_event.clear()
         self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
+        self._worker_started = True
         self.worker_thread.start()
+
+    def worker_is_dead(self) -> bool:
+        """True when the worker was started, was not asked to stop, and is gone.
+
+        Belt to `_worker_loop`'s braces: a thread killed in a way that never
+        reaches the `except` clause still shows up here, so the episode loop has
+        one check that covers both.
+        """
+        if not self._worker_started or self.stop_event.is_set():
+            return False
+        thread = self.worker_thread
+        return thread is not None and not thread.is_alive()
 
     def stop(self, timeout: float = 3.0) -> None:
         """Stops background training thread and joins."""
@@ -711,7 +820,10 @@ class BackgroundTrainer:
                 "loss_history_maxlen": self.loss_history_maxlen,
                 "mean_recent_loss": round(mean_loss, 4),
                 "consecutive_failed_swaps": self.consecutive_failed_swaps,
+                "consecutive_nonfinite_losses": self.consecutive_nonfinite_losses,
                 "fatal_error": self.fatal_error,
+                "fatal_kind": self.fatal_kind,
+                "worker_traceback": self.worker_traceback,
                 "hot_swap_stats": self.hot_swap_manager.get_stats(),
             }
 
@@ -2828,6 +2940,16 @@ def run_hot_swap_training(
     start_episode: int = 0,
     error_mode: str = DEFAULT_ERROR_MODE,
     updates_per_env_step: Optional[float] = None,
+    # --- divergence guard --------------------------------------------------
+    # Exposed rather than hardcoded so a test can make the guard fire inside a
+    # handful of episodes and so an unusual model can be given a wider band
+    # deliberately, in the run's own arguments, where the summary records it.
+    # The defaults are the measured ones; see src/divergence_guard.py.
+    divergence_warmup_episodes: int = DG_WARMUP_EPISODES,
+    divergence_loss_ratio: float = DG_LOSS_RATIO,
+    divergence_loss_abs_floor: float = DG_LOSS_ABS_FLOOR,
+    divergence_loss_patience: int = DG_LOSS_PATIENCE,
+    max_zero_update_episodes: int = DG_MAX_ZERO_UPDATE_EPISODES,
 ) -> Dict[str, Any]:
     """
     Full end-to-end hot-swap training loop integrating Act model serving,
@@ -2986,6 +3108,19 @@ def run_hot_swap_training(
     # per-model budget fairness, so an inflated spike in it is not cosmetic.
     grad_updates_before_ep = int(trainer.background_trainer.training_steps)
     zero_update_episodes = 0
+
+    # The guard. See src/divergence_guard.py for where its thresholds come from.
+    # It is fed exactly the two numbers the progress CSV records, so a run stopped
+    # live and a finished CSV replayed by the scheduled report reach the same
+    # verdict by the same rule.
+    divergence_monitor = DivergenceMonitor(
+        warmup_episodes=divergence_warmup_episodes,
+        loss_ratio=divergence_loss_ratio,
+        loss_abs_floor=divergence_loss_abs_floor,
+        loss_patience=divergence_loss_patience,
+        max_zero_update_episodes=max_zero_update_episodes,
+    )
+    abort: Optional[AbortVerdict] = None
 
     # One reward for every baseline. Passed explicitly rather than relying on the
     # AoiV2IEnv defaults so that a reader of this loop can see which reward the
@@ -3191,6 +3326,48 @@ def run_hot_swap_training(
                     ep + 1, ep_density, trainer.batch_size,
                 )
 
+            # ----------------------------------------------------------------
+            # Divergence guard. Three detectors, because on 2026-09-02 all three
+            # of these had to fail silently at once for a dead PPO run to report
+            # `100/100 done`:
+            #
+            #   (a) the worker thread stopped being able to train at all -- it
+            #       raised out of `update()` and died, or the NaN guard refused
+            #       so many hot-swaps that the Act model is permanently frozen;
+            #   (b) the loss ran away and stayed away;
+            #   (c) episodes went by with no gradient update at all.
+            #
+            # None of them raises here. The run stops after this episode's row
+            # has been written, with the reason on the row, in the sidecar and
+            # in the returned summary, so the failure is legible without reading
+            # stderr. `run_all.py` then moves on to the next model.
+            # ----------------------------------------------------------------
+            bg = trainer.background_trainer
+            if abort is None and (trainer_metrics.get("fatal_error") or bg.worker_is_dead()):
+                abort = AbortVerdict(
+                    kind=trainer_metrics.get("fatal_kind") or ABORT_TRAINER_CRASH,
+                    episode=ep + 1,
+                    reason=trainer_metrics.get("fatal_error") or (
+                        "the background training thread is no longer alive; no further "
+                        "gradient update can happen in this run"
+                    ),
+                    detail={
+                        "training_steps": int(trainer_metrics["training_steps"]),
+                        "consecutive_failed_swaps": int(trainer_metrics["consecutive_failed_swaps"]),
+                        "consecutive_nonfinite_losses": int(trainer_metrics["consecutive_nonfinite_losses"]),
+                        "worker_alive": not bg.worker_is_dead(),
+                        "worker_traceback": trainer_metrics.get("worker_traceback"),
+                        "rule": "background_trainer_fatal",
+                    },
+                )
+
+            if abort is None:
+                abort = divergence_monitor.observe(
+                    episode=ep + 1,
+                    mean_loss=trainer_metrics["mean_recent_loss"],
+                    grad_updates_this_episode=ep_grad_updates,
+                )
+
             # M4. An empty episode used to be recorded as reward 0.0. Rewards are
             # penalties and are always <= 0, so 0.0 is BETTER than any real
             # episode: a dead SUMO or too short a warmup drew an upward spike on
@@ -3204,18 +3381,23 @@ def run_hot_swap_training(
                     "Empty-episode streak: %d.",
                     ep + 1, metrics.get("n_observations"), len(ep_rewards), empty_streak,
                 )
-                if empty_streak >= 3:
-                    raise RuntimeError(
-                        f"{model_name_str}: {empty_streak} consecutive episodes measured "
-                        "nothing. Aborting rather than completing a run with no data."
+                # Routed through the same abort path as divergence rather than
+                # raised, so this episode's row still reaches the CSV and the
+                # reason survives into the summary and the status sidecar.
+                if empty_streak >= 3 and abort is None:
+                    abort = AbortVerdict(
+                        kind=ABORT_EMPTY_EPISODES,
+                        episode=ep + 1,
+                        reason=(
+                            f"{empty_streak} consecutive episodes measured nothing. "
+                            "Aborting rather than completing a run with no data."
+                        ),
+                        detail={"streak": empty_streak,
+                                "n_observations": metrics.get("n_observations"),
+                                "rule": "empty_episodes"},
                     )
             else:
                 empty_streak = 0
-
-            # M7. A frozen Act model (every hot-swap refused on NaN weights) keeps
-            # producing plausible metrics and an unusually STABLE reward curve.
-            if trainer_metrics.get("fatal_error"):
-                raise RuntimeError(f"{model_name_str}: {trainer_metrics['fatal_error']}")
 
             # TensorBoard logging. Nothing is written for an empty episode: a
             # placeholder there is indistinguishable from a real measurement.
@@ -3283,6 +3465,13 @@ def run_hot_swap_training(
                 "mean_delta_actual": round(float(np.mean(ep_deltas_actual)), 4) if ep_deltas_actual else float("nan"),
                 "n_decisions": len(ep_deltas),
                 "n_intervals_closed": len(ep_deltas_actual),
+                # Why the history stops here, on the row where it stops. A reader
+                # of the CSV alone -- the scheduled report, a plotting script, a
+                # reviewer -- must not have to infer "ran to completion" from the
+                # row count, which is exactly the inference that called a dead PPO
+                # run `done 100/100`.
+                "run_status": abort.kind if abort is not None else "ok",
+                "abort_reason": abort.reason if abort is not None else "",
                 **metrics,
             }
             episodic_records.append(ep_record)
@@ -3299,6 +3488,13 @@ def run_hot_swap_training(
             except Exception as exc:  # noqa: BLE001
                 logging.warning("could not append progress row for episode %d: %s",
                                 ep + 1, exc)
+
+            if abort is not None:
+                logging.error(
+                    "ABORTING %s at episode %d/%d [%s]: %s",
+                    model_name_str, ep + 1, episodes, abort.kind, abort.reason,
+                )
+                break
 
     finally:
         trainer.stop()
@@ -3329,7 +3525,52 @@ def run_hot_swap_training(
     hot_swap_stats = trainer.hot_swap_manager.get_stats()
     final_metrics = trainer.background_trainer.get_metrics()
 
+    # ------------------------------------------------------------------------
+    # Status sidecar, written next to the progress CSV. The scheduled report
+    # reads it and says "diverged at episode N" instead of "done"; it exists
+    # because the progress CSV of an aborted run is a perfectly well-formed CSV
+    # that is simply shorter, and "shorter" is indistinguishable from "still
+    # running" to anything reading the directory.
+    # ------------------------------------------------------------------------
+    status_payload: Dict[str, Any] = {
+        "model_name": model_name_str,
+        "status": STATUS_COMPLETED if abort is None else abort.kind,
+        "episodes_requested": int(episodes),
+        "episodes_completed": len(episodic_records) + int(start_ep),
+        "error_mode": error_mode,
+        "seed": int(seed),
+        "log_csv_path": log_csv_path,
+        "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "training_steps": final_metrics["training_steps"],
+        "mean_recent_loss": final_metrics["mean_recent_loss"],
+        "zero_update_episodes": zero_update_episodes,
+        "divergence_monitor": divergence_monitor.state(),
+    }
+    if abort is not None:
+        status_payload.update(abort.as_dict())
+        if final_metrics.get("worker_traceback"):
+            status_payload["worker_traceback"] = final_metrics["worker_traceback"]
+    status_json_path = os.path.join(
+        os.path.dirname(os.path.abspath(log_csv_path)), f"{model_name_str}_status.json"
+    )
+    try:
+        with open(status_json_path, "w") as fh:
+            json.dump(status_payload, fh, indent=2, default=str)
+    except OSError as exc:  # noqa: BLE001
+        logging.warning("could not write status sidecar %s: %s", status_json_path, exc)
+        status_json_path = ""
+
     return {
+        # Whether this run is usable. Checked by `run_all.py`, which records the
+        # model as failed and moves on to the next one; a caller that ignores it
+        # gets the same summary shape it always did.
+        "status": STATUS_COMPLETED if abort is None else abort.kind,
+        "abort_kind": abort.kind if abort is not None else None,
+        "abort_reason": abort.reason if abort is not None else None,
+        "abort_episode": abort.episode if abort is not None else None,
+        "abort_detail": dict(abort.detail) if abort is not None else None,
+        "divergence_monitor": divergence_monitor.state(),
+        "status_json_path": status_json_path,
         "model_name": model_name,
         "total_steps": global_step,
         "episodes": episodes,

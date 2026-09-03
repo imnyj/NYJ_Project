@@ -8,7 +8,11 @@ Auto Stock ML/RL Trader — Phase 2 & Phase 3: 엔진 패키지
 """
 
 from modules.engine.manual_trader import ManualTrader
-from modules.engine.hybrid_trading_env import HybridTradingEnv, ContinuousToHybridActionWrapper
+from modules.engine.hybrid_trading_env import (
+    ContinuousToHybridActionWrapper,
+    HybridTradingEnv,
+    SLEnrichedTradingEnvWrapper,
+)
 from modules.engine.mock_environment import (
     # Data Models & Enums
     AccountingInvariantError,
@@ -64,5 +68,7 @@ __all__ = [
     # Milestone 1 Core Classes
     "HybridTradingEnv",
     "ContinuousToHybridActionWrapper",
+    # Milestone 2 Core Classes
+    "SLEnrichedTradingEnvWrapper",
 ]
 

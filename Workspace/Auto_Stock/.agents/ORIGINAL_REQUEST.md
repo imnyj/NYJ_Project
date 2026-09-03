@@ -65,3 +65,39 @@ Integrity mode: development
 - [ ] 가상의 정적 펀더멘털 데이터(DataFrame)를 주입했을 때, 조건(시총 1000억 이상, PER 1~15 등)에 맞는 종목만 감시 풀에 들어가는지 Assert로 검증해야 합니다.
 - [ ] 가상의 실시간 틱 데이터(Tick) 스트림을 주입했을 때, 거래량이 설정된 임계치(예: 300%) 이상 폭증한 종목만 정확히 트리거(Trigger)되어 리턴되는지 검증해야 합니다.
 - [ ] `pytest tests/test_phase5_screener.py` 실행 시 100% Pass해야 합니다.
+
+## 2026-09-03T01:57:08Z
+
+<USER_REQUEST>
+# Teamwork Project Prompt — Draft
+
+> Status: Launched
+> Goal: Craft prompt → get user approval → delegate to teamwork_preview
+> Requested team: Large-scale agent team
+
+Use a very large team of agents.
+
+주식 자동 매매 프로그램의 본 모델(Main Model) 아키텍처 개발 및 병렬 탐색.
+기존 구축된 하이브리드 RL 환경 위에서, 다중 시계열 데이터를 처리하는 3가지 이상의 다양한 지도학습(SL) 아키텍처를 설계하고, 이를 PPO 강화학습과 결합하여 대규모 파라미터 탐색(HPO)을 수행합니다.
+
+Working directory: /home/imnyj/Workspace/Auto_Stock
+Integrity mode: development
+
+## Requirements
+
+### R1. Diverse SL Architectures (다중 지도학습 모델 구현)
+1D-CNN 기반의 ResNet, 시계열 Attention 기반의 Transformer, 그리고 잠재 공간 이상치 탐지 기반의 CVAE 등 최소 3가지 이상의 상이한 딥러닝 아키텍처를 특징 추출기(Feature Extractor)로 구현해야 합니다. 각 모델은 동일한 다중 타임프레임 데이터를 입력받을 수 있어야 합니다.
+
+### R2. Hybrid RL Integration (하이브리드 강화학습 통합)
+구현된 각각의 SL 아키텍처를 기반으로 예측된 타겟 값(수익률, 추세 확률 등)을 상태(State)로 편입하여, 매수/매도/관망 및 비중을 조절하는 하이브리드 PPO 에이전트와 완벽히 결합(End-to-End 연결)해야 합니다.
+
+### R3. Large-scale HPO Pipeline (대규모 병렬 최적화 파이프라인)
+각 아키텍처(ResNet, Transformer, CVAE)별로 Optuna 파이프라인을 구축하여 하이퍼파라미터 최적화(HPO)를 수행할 수 있어야 합니다. 
+
+## Acceptance Criteria
+
+### Programmatic Verification (코드 기반 검증)
+- [ ] 에이전트는 `tests/test_phase6_models.py` 자동화 검증 스크립트를 작성해야 합니다. 해당 테스트는 3가지 SL 아키텍처 모델들이 각각 정의된 형태의 동일한 텐서(Tensor) 입력을 받아 정상적인 형태(Shape)의 출력을 반환하는지 검증해야 합니다.
+- [ ] `tests/test_phase6_hpo.py` 스크립트를 통해, 각 아키텍처별 Optuna 최적화가 최소 2회(n_trials=2) 이상 크래시 없이 정상적으로 실행되며, 결과가 `etc/hpo_results/main_models_hpo.csv` 형태로 저장됨을 입증해야 합니다.
+- [ ] 위 검증 스크립트들을 포함한 전체 테스트 스위트 실행 시 100% Pass해야 합니다.
+</USER_REQUEST>

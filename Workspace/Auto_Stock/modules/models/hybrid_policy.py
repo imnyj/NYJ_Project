@@ -31,10 +31,7 @@ from torch.distributions import Beta, Categorical, Normal
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-from modules.engine.hybrid_trading_env import (
-    ContinuousToHybridActionWrapper,
-    HybridTradingEnv,
-)
+from modules.engine.hybrid_trading_env import ContinuousToHybridActionWrapper
 from modules.models.feature_extractor import (
     DualStreamSLFeatureExtractor,
     SLPretrainer,
@@ -65,11 +62,13 @@ class HybridActorCritic(nn.Module):
         self.hidden_dims = hidden_dims if hidden_dims is not None else [64, 64]
         self.action_dim = action_dim
         self.distribution_type = distribution_type.lower()
-        self.freeze_feature_extractor = freeze_feature_extractor
+        self._freeze_feature_extractor_flag = False
 
         # 1. Feature Extractor Backbone
         if feature_extractor is not None:
             self.feature_extractor = feature_extractor
+            if hasattr(self.feature_extractor, "as_backbone_mode"):
+                self.feature_extractor.as_backbone_mode(True)
             self.feature_dim = getattr(feature_extractor, "output_dim", feature_dim)
         else:
             self.feature_extractor = TabularMLPFeatureExtractor(
@@ -79,8 +78,8 @@ class HybridActorCritic(nn.Module):
                 dropout=0.0,
             )
 
-        if self.freeze_feature_extractor:
-            self.freeze_backbone()
+        if freeze_feature_extractor:
+            self.freeze_feature_extractor()
 
         # 2. Shared Actor / Critic MLP Latents (or separate branches)
         actor_layers: List[nn.Module] = []
@@ -150,26 +149,35 @@ class HybridActorCritic(nn.Module):
         nn.init.orthogonal_(self.value_head.weight, gain=1.0)
         nn.init.zeros_(self.value_head.bias)
 
-    def freeze_backbone(self) -> None:
+    def freeze_feature_extractor(self) -> None:
         """특징 추출기 파라미터 고정 및 기존 그래디언트 초기화"""
         for param in self.feature_extractor.parameters():
             param.requires_grad = False
             param.grad = None
-        self.freeze_feature_extractor = True
+        self._freeze_feature_extractor_flag = True
 
-    def unfreeze_backbone(self) -> None:
-        """특징 추출기 파라미터 고정 해제"""
+    def unfreeze_feature_extractor(self) -> None:
+        """특징 추출기 파라미터 고정 해제 (Fine-tuning 활성화)"""
         for param in self.feature_extractor.parameters():
             param.requires_grad = True
-        self.freeze_feature_extractor = False
+        self._freeze_feature_extractor_flag = False
+
+    # 하위 호환 별칭 (Backwards-compatible aliases)
+    freeze_backbone = freeze_feature_extractor
+    unfreeze_backbone = unfreeze_feature_extractor
+
+    @property
+    def is_feature_extractor_frozen(self) -> bool:
+        """특징 추출기 동결 여부 반환"""
+        return self._freeze_feature_extractor_flag
 
     def load_from_sl_pretrainer(
         self,
-        pretrainer_or_path: Union[SLPretrainer, str],
+        pretrainer_or_path: Union[SLPretrainer, str, nn.Module],
         freeze: bool = False,
     ) -> None:
         """
-        사전학습된 SLPretrainer로부터 백본 특징 추출기 가중치를 로드합니다.
+        사전학습된 SLPretrainer, 가중치 체크포인트 경로, 또는 SL 모듈로부터 백본 특징 추출기 가중치를 로드합니다.
         """
         if isinstance(pretrainer_or_path, str):
             ckpt = torch.load(pretrainer_or_path, map_location="cpu")
@@ -186,13 +194,38 @@ class HybridActorCritic(nn.Module):
         elif isinstance(pretrainer_or_path, SLPretrainer):
             backbone = pretrainer_or_path.get_backbone()
             self.feature_extractor.load_state_dict(backbone.state_dict(), strict=False)
+        elif isinstance(pretrainer_or_path, nn.Module):
+            self.feature_extractor.load_state_dict(pretrainer_or_path.state_dict(), strict=False)
 
         if freeze:
-            self.freeze_backbone()
+            self.freeze_feature_extractor()
 
     def extract_features(self, obs: Union[torch.Tensor, np.ndarray, Dict, Tuple]) -> torch.Tensor:
-        """관측값으로부터 특징 표현 추출"""
+        """관측값으로부터 특징 표현 추출 (단일 텐서, 튜플, 딕셔너리, 다중 타임프레임 완벽 방어)"""
         device = next(self.parameters()).device if list(self.parameters()) else torch.device("cpu")
+
+        # 1. BaseSLFeatureExtractor (ResNet, Transformer, CVAE 등) 전용 빠른 경로
+        if hasattr(self.feature_extractor, "extract_features") and hasattr(self.feature_extractor, "_parse_inputs"):
+            try:
+                if hasattr(self.feature_extractor, "as_backbone_mode"):
+                    self.feature_extractor.as_backbone_mode(True)
+                feats = self.feature_extractor.extract_features(x=obs, return_batched=True)
+                if isinstance(feats, tuple):
+                    feats = feats[0]
+                elif isinstance(feats, dict):
+                    feats = feats.get("features", feats)
+                if not isinstance(feats, torch.Tensor):
+                    feats = torch.as_tensor(feats, dtype=torch.float32, device=device)
+                else:
+                    feats = feats.to(device=device, dtype=torch.float32)
+                if feats.dim() == 1:
+                    feats = feats.unsqueeze(0)
+                elif feats.dim() > 2:
+                    feats = feats.reshape(feats.shape[0], -1)
+                return torch.nan_to_num(feats, nan=0.0, posinf=1.0, neginf=-1.0)
+            except Exception:
+                pass
+
         if isinstance(obs, np.ndarray):
             obs = torch.as_tensor(obs, dtype=torch.float32, device=device)
         elif isinstance(obs, torch.Tensor):
@@ -219,12 +252,12 @@ class HybridActorCritic(nn.Module):
                         try:
                             feats = self.feature_extractor(x=(t_x, tab_x))
                         except (TypeError, AttributeError, ValueError):
-                            t_flat = t_x[:, -1, :] if t_x.dim() == 3 else t_x
+                            t_flat = t_x[:, -1, :] if (isinstance(t_x, torch.Tensor) and t_x.dim() == 3) else t_x
                             flat_x = torch.cat([t_flat, tab_x], dim=-1)
                             feats = self.feature_extractor(flat_x)
                 elif isinstance(obs, dict):
-                    t_x = obs.get("temporal")
-                    tab_x = obs.get("tabular")
+                    t_x = obs.get("temporal", obs.get("daily"))
+                    tab_x = obs.get("tabular", obs.get("static"))
                     if isinstance(t_x, np.ndarray):
                         t_x = torch.as_tensor(t_x, dtype=torch.float32, device=device)
                     elif isinstance(t_x, torch.Tensor):
@@ -239,7 +272,7 @@ class HybridActorCritic(nn.Module):
                         try:
                             feats = self.feature_extractor(x=obs)
                         except (TypeError, AttributeError, ValueError):
-                            t_flat = t_x[:, -1, :] if (t_x is not None and t_x.dim() == 3) else t_x
+                            t_flat = t_x[:, -1, :] if (t_x is not None and isinstance(t_x, torch.Tensor) and t_x.dim() == 3) else t_x
                             if t_flat is not None and tab_x is not None:
                                 flat_x = torch.cat([t_flat, tab_x], dim=-1)
                                 feats = self.feature_extractor(flat_x)
@@ -249,9 +282,23 @@ class HybridActorCritic(nn.Module):
                     feats = self.feature_extractor(x=obs)
         else:
             feats = obs
+
+        if isinstance(feats, tuple):
+            feats = feats[0]
+        elif isinstance(feats, dict):
+            feats = feats.get("features", feats)
+
+        if not isinstance(feats, torch.Tensor):
+            feats = torch.as_tensor(feats, dtype=torch.float32, device=device)
+        else:
+            feats = feats.to(device=device, dtype=torch.float32)
+
         if feats.dim() == 1:
             feats = feats.unsqueeze(0)
-        return feats
+        elif feats.dim() > 2:
+            feats = feats.reshape(feats.shape[0], -1)
+
+        return torch.nan_to_num(feats, nan=0.0, posinf=1.0, neginf=-1.0)
 
     def forward(
         self,
@@ -414,6 +461,71 @@ class HybridActorCritic(nn.Module):
         feats = self.extract_features(obs)
         crt_latent = self.critic_latent(feats)
         return self.value_head(crt_latent).squeeze(-1)
+
+    def get_action_and_value(
+        self,
+        obs: Union[torch.Tensor, np.ndarray, Dict, Tuple],
+        action: Optional[Union[Tuple, torch.Tensor]] = None,
+        deterministic: bool = False,
+    ) -> Tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        PPO 온폴리시 롤아웃 및 최적화 표준 인터페이스.
+        
+        Args:
+            obs: 관측값 (Tensor, ndarray, Dict, Tuple)
+            action: 이전 샘플링 액션 (학습 시 전달). None일 경우 내부 샘플링 (롤아웃 시).
+            deterministic: True일 경우 탐색 없이 argmax/mode 결정론적 액션 선택.
+            
+        Returns:
+            (actions, log_prob, entropy, value)
+            - actions: (act_type, pos_weight) 튜플
+            - log_prob: 결합 로그 확률 (B,)
+            - entropy: 정책 엔트로피 (B,)
+            - value: 크리틱 가치 추정치 V(s) (B,)
+        """
+        if action is None:
+            disc_dist, cont_dist = self.get_action_distribution(obs)
+            value = self.get_value(obs)
+
+            is_unbatched = False
+            if isinstance(obs, np.ndarray) and obs.ndim == 1:
+                is_unbatched = True
+            elif isinstance(obs, torch.Tensor) and obs.dim() == 1:
+                is_unbatched = True
+
+            if deterministic:
+                disc_act = torch.argmax(disc_dist.logits, dim=-1)
+                if self.distribution_type == "beta":
+                    alpha = cont_dist.concentration1
+                    beta = cont_dist.concentration0
+                    cont_act = torch.where(
+                        (alpha > 1.0) & (beta > 1.0),
+                        (alpha - 1.0) / (alpha + beta - 2.0),
+                        alpha / (alpha + beta),
+                    )
+                elif self.distribution_type == "gaussian":
+                    cont_act = cont_dist.mean
+                else:
+                    cont_act = cont_dist.sample()
+            else:
+                disc_act = disc_dist.sample()
+                cont_act = cont_dist.sample()
+
+            cont_act_clamped = torch.clamp(cont_act, 1e-6, 1.0 - 1e-6)
+
+            log_prob_disc = disc_dist.log_prob(disc_act)
+            log_prob_cont = cont_dist.log_prob(cont_act_clamped).sum(dim=-1)
+            total_log_prob = log_prob_disc + log_prob_cont
+            entropy = disc_dist.entropy() + cont_dist.entropy().sum(dim=-1)
+
+            if is_unbatched:
+                act_tuple = (int(disc_act.squeeze().item()), float(cont_act_clamped.squeeze().item()))
+                return act_tuple, total_log_prob.squeeze(), entropy.squeeze(), value.squeeze()
+            else:
+                return (disc_act, cont_act_clamped), total_log_prob, entropy, value
+        else:
+            total_log_prob, entropy, val_eval = self.evaluate_actions(obs, action)
+            return action, total_log_prob, entropy, val_eval
 
 
 class RolloutBuffer:
@@ -886,3 +998,123 @@ class SB3HybridPolicyAdapter:
             act_type = 0  # HOLD
 
         return (act_type, weight), raw_action
+
+
+def create_hybrid_agent(
+    sl_model_type: Union[str, nn.Module] = "resnet",
+    obs_dim: int = 14,
+    feature_dim: int = 64,
+    hidden_dims: Optional[List[int]] = None,
+    action_dim: int = 3,
+    distribution_type: str = "beta",
+    freeze_feature_extractor: bool = False,
+    pretrained_path: Optional[str] = None,
+    device: Optional[Union[str, torch.device]] = None,
+    daily_in_channels: int = 10,
+    daily_seq_len: int = 20,
+    minute_in_channels: int = 10,
+    minute_seq_len: int = 60,
+    tabular_dim: int = 4,
+    **kwargs,
+) -> HybridActorCritic:
+    """
+    다중 지도학습(SL: ResNet, Transformer, CVAE, MLP 등) 특징 추출기 백본과
+    PPO 하이브리드 정책 네트워크(HybridActorCritic)를 원라인으로 결합하여 생성하는 팩토리 함수.
+
+    Args:
+        sl_model_type: 백본 아키텍처 ("resnet", "transformer", "cvae", "mlp", "dual_stream" 또는 사전 생성된 nn.Module)
+        obs_dim: 환경의 관측 공간 차원 (기본: 14, SL 확장 시 18 또는 19)
+        feature_dim: 특징 추출기 잠재 출력 차원 (기본: 64)
+        hidden_dims: Actor / Critic MLP 은닉층 차원 리스트 (기본: [64, 64])
+        action_dim: 이산 매매 결정 차원 수 (기본: 3 - HOLD, BUY, SELL)
+        distribution_type: 연속 포지션 비중 확률 분포 ("beta" 또는 "gaussian")
+        freeze_feature_extractor: 특징 추출기 가중치 고정 여부
+        pretrained_path: 사전학습 체크포인트 파일 경로 (선택적)
+        device: 모델 배치 디바이스 (torch.device 또는 "cpu", "cuda")
+        daily_in_channels: 일봉 피처 채널 수 (기본: 10)
+        daily_seq_len: 일봉 시계열 윈도우 길이 (기본: 20)
+        minute_in_channels: 분봉 피처 채널 수 (기본: 10)
+        minute_seq_len: 분봉 시계열 윈도우 길이 (기본: 60)
+        tabular_dim: 정적/계좌 피처 차원 수 (기본: 4)
+
+    Returns:
+        HybridActorCritic: 지정된 SL 백본이 결합된 PPO 하이브리드 정책 에이전트 인스턴스.
+    """
+    if isinstance(sl_model_type, nn.Module):
+        extractor = sl_model_type
+    elif isinstance(sl_model_type, str):
+        m_type = sl_model_type.lower().strip()
+        if m_type in ("resnet", "resnet1d", "temporal_resnet", "cnn"):
+            from modules.models.resnet import TemporalResNetFeatureExtractor
+            extractor = TemporalResNetFeatureExtractor(
+                daily_in_channels=daily_in_channels,
+                daily_seq_len=daily_seq_len,
+                minute_in_channels=minute_in_channels,
+                minute_seq_len=minute_seq_len,
+                tabular_dim=tabular_dim,
+                output_dim=feature_dim,
+                **kwargs,
+            )
+        elif m_type in ("transformer", "temporal_transformer", "attention"):
+            from modules.models.transformer import TemporalTransformerFeatureExtractor
+            extractor = TemporalTransformerFeatureExtractor(
+                daily_in_channels=daily_in_channels,
+                daily_seq_len=daily_seq_len,
+                minute_in_channels=minute_in_channels,
+                minute_seq_len=minute_seq_len,
+                tabular_dim=tabular_dim,
+                output_dim=feature_dim,
+                **kwargs,
+            )
+        elif m_type in ("cvae", "temporal_cvae", "vae"):
+            from modules.models.cvae import TemporalCVAEFeatureExtractor
+            extractor = TemporalCVAEFeatureExtractor(
+                daily_in_channels=daily_in_channels,
+                daily_seq_len=daily_seq_len,
+                minute_in_channels=minute_in_channels,
+                minute_seq_len=minute_seq_len,
+                tabular_dim=tabular_dim,
+                output_dim=feature_dim,
+                **kwargs,
+            )
+        elif m_type in ("dual_stream", "dual"):
+            extractor = DualStreamSLFeatureExtractor(
+                tabular_dim=tabular_dim,
+                output_dim=feature_dim,
+                **kwargs,
+            )
+        elif m_type in ("mlp", "tabular"):
+            extractor = TabularMLPFeatureExtractor(
+                input_dim=obs_dim,
+                output_dim=feature_dim,
+                **kwargs,
+            )
+        else:
+            raise ValueError(
+                f"지원하지 않는 SL 모델 타입: '{sl_model_type}'. "
+                f"'resnet', 'transformer', 'cvae', 'mlp', 'dual_stream' 중 하나여야 합니다."
+            )
+    else:
+        raise TypeError(f"sl_model_type은 str 또는 nn.Module이어야 합니다: {type(sl_model_type)}")
+
+    if hasattr(extractor, "as_backbone_mode"):
+        extractor.as_backbone_mode(True)
+
+    agent = HybridActorCritic(
+        obs_dim=obs_dim,
+        feature_extractor=extractor,
+        feature_dim=feature_dim,
+        hidden_dims=hidden_dims,
+        action_dim=action_dim,
+        distribution_type=distribution_type,
+        freeze_feature_extractor=freeze_feature_extractor,
+    )
+
+    if pretrained_path is not None:
+        agent.load_from_sl_pretrainer(pretrained_path, freeze=freeze_feature_extractor)
+
+    if device is not None:
+        agent.to(device)
+
+    return agent
+

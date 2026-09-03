@@ -1,0 +1,1 @@
+{"agentType":"fix-divergence","description":"Build divergence guard and detection","name":"fix-divergence","spawnDepth":0,"model":"claude-opus-5","taskKind":"in_process_teammate","teamName":"session-09dcc097","color":"green","planModeRequired":false,"customAgentType":"p4-coder","permissionMode":"auto"}

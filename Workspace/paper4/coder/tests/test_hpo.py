@@ -553,3 +553,371 @@ class TestOpenIntervalsReachTheBuffer:
         assert not [r for r in caplog.records if "discarding" in r.getMessage()], (
             "close() reported discarded SMDP intervals"
         )
+
+
+# ============================================================================
+# Divergence guard, wired into HPO
+#
+# Why these exist. Every learning rate that destroyed a 200,000-step training
+# run on 2026-09-02 was chosen by src/hpo.py, and HPO could not have known: its
+# objective is `mean_error / mean_aoi / outage / power`, and a policy whose loss
+# has run away still produces ordinary values for all four. Nothing in the
+# objective read the loss. These tests hold the wiring in place.
+#
+# The rollout tests below drive `evaluate_model_in_env` against a stub
+# environment rather than SUMO. That is deliberate and is not the kind of
+# mocking this project forbids: no number here is reported as a result. They
+# check that a loss trace of a known shape produces a known verdict, in a few
+# milliseconds, so that removing the wiring fails a test instead of failing a
+# 200,000-step run. The corresponding claim about the REAL environment -- that
+# the two hyperparameter sets which actually diverged are caught inside
+# DEFAULT_HPO_N_STEPS -- is measured in
+# `results/hpo/divergence_detection_check.csv`, not asserted here.
+# ============================================================================
+
+import numpy as np
+
+import src.divergence_guard as dg
+import src.hpo as hpo
+from src.hot_swap_trainer import BackgroundTrainer
+from src.hpo import (
+    DEFAULT_HPO_N_STEPS,
+    FAILED_RUN_PENALTY,
+    HPO_CHECK_INTERVAL_STEPS,
+    HPO_LOSS_WINDOW,
+    RolloutLossTracker,
+    make_divergence_monitor,
+    run_diverged,
+)
+
+
+class _StubEnv:
+    """The narrowest environment `evaluate_model_in_env` will accept.
+
+    One vehicle, whose SMDP interval closes on every step, so a gradient update
+    happens on every step once the buffer holds 16 transitions. That makes the
+    step index and the update index proportional and the tests below short.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.max_steps = int(kwargs.get("max_steps", 100))
+        self.t = 0
+        self.vid = "v0"
+
+    def _obs(self):
+        return {self.vid: np.full(STATE_DIM, 0.1, dtype=np.float32)}
+
+    def reset(self):
+        return self._obs(), {}
+
+    def step(self, action_dict):
+        self.t += 1
+        completed = [{
+            "vid": self.vid, "reward": -0.01, "done": False, "delta_actual": 1.0,
+            "transmitted": True,
+        }]
+        info = {"completed": completed, "needs_decision": [self.vid]}
+        return self._obs(), {self.vid: -0.01}, {}, {}, info
+
+    def finalize_open_intervals(self):
+        return []
+
+    def get_metrics(self):
+        return {
+            "mean_error": 1.0, "mean_aoi": 1.0, "coverage_outage_rate": 0.1,
+            "packet_loss_rate": 0.1, "avg_tx_power_dbm": 15.0,
+            "n_observations": 100 * self.t, "tx_attempts": self.t,
+        }
+
+    def close(self):
+        pass
+
+
+class _ScriptedLossModel(DummyPolicy):
+    """A policy whose `update()` reports losses from a script, in order.
+
+    The weights are irrelevant; what is under test is what the rollout does with
+    the number `update()` returns, which before this change it discarded.
+    """
+
+    def __init__(self, losses, **kwargs):
+        super().__init__(state_dim=STATE_DIM, num_channels=4, hidden_dim=8, **kwargs)
+        self._losses = list(losses)
+        self.n_update_calls = 0
+
+    def update(self, batch):
+        idx = min(self.n_update_calls, len(self._losses) - 1)
+        self.n_update_calls += 1
+        return {"loss": float(self._losses[idx])}
+
+
+def _rollout(monkeypatch, losses, n_steps=1200, **kwargs):
+    monkeypatch.setattr(hpo, "AoiV2IEnv", _StubEnv)
+    model = _ScriptedLossModel(losses)
+    return hpo.evaluate_model_in_env(
+        model=model, seed=7, n_steps=n_steps, train_steps_during_rollout=1, **kwargs
+    )
+
+
+class TestHpoAndTrainingJudgeDivergenceIdentically:
+    """One rule, one module. Two thresholds would let HPO pass what training aborts."""
+
+    def test_monitor_is_configured_from_the_shared_defaults(self):
+        state = make_divergence_monitor().state()
+        assert state["loss_abs_floor"] == dg.DEFAULT_LOSS_ABS_FLOOR
+        assert state["loss_ratio"] == dg.DEFAULT_LOSS_RATIO
+        assert state["loss_patience"] == dg.DEFAULT_LOSS_PATIENCE
+        assert state["warmup_episodes"] == dg.DEFAULT_WARMUP_EPISODES
+        assert state["max_zero_update_episodes"] == dg.DEFAULT_MAX_ZERO_UPDATE_EPISODES
+
+    def test_hpo_holds_no_threshold_of_its_own(self):
+        """`src/hpo.py` must not restate a number the guard already owns."""
+        import inspect
+        source = inspect.getsource(hpo)
+        body = "\n".join(
+            line for line in source.splitlines() if not line.lstrip().startswith("#")
+        )
+        assert "DivergenceMonitor(" not in body.replace(
+            "return DivergenceMonitor(", ""
+        ), "construct the monitor through make_divergence_monitor()"
+
+    def test_loss_window_matches_the_trainers(self):
+        """The monitor is fed the same statistic in both places or the two
+        verdicts are not comparable: the trainer averages `loss_history[-50:]`."""
+        tracker = RolloutLossTracker()
+        assert tracker.losses.maxlen == HPO_LOSS_WINDOW == 50
+
+        values = [float(i) for i in range(200)]
+        for v in values:
+            tracker.observe_update({"loss": v})
+        expected = round(float(np.mean(values[-HPO_LOSS_WINDOW:])), 4)
+        assert tracker.mean_recent_loss == expected
+
+    def test_finiteness_uses_the_trainers_predicate(self):
+        tracker = RolloutLossTracker()
+        tracker.observe_update({"loss": 1.0, "actor_loss": float("nan")})
+        assert tracker.consecutive_nonfinite == 1
+        assert not BackgroundTrainer._loss_dict_is_finite({"loss": 1.0, "actor_loss": float("nan")})
+
+
+class TestDivergingRolloutIsCaught:
+    """A rollout whose loss runs away must be condemned and scored the penalty."""
+
+    def test_sustained_high_loss_is_flagged(self, monkeypatch):
+        metrics = _rollout(monkeypatch, losses=[1.0e9])
+        assert metrics["diverged"] is True
+        assert metrics["divergence_kind"] == dg.ABORT_DIVERGED
+        assert metrics["divergence_rule"] == "sustained_high_loss"
+        assert compute_composite_objective(metrics) == FAILED_RUN_PENALTY
+
+    def test_nonfinite_loss_is_flagged_without_waiting_for_a_boundary(self, monkeypatch):
+        """A NaN poisons the weights at the update that produced it, so the
+        verdict must not wait for the next `HPO_CHECK_INTERVAL_STEPS` boundary."""
+        metrics = _rollout(monkeypatch, losses=[float("nan")])
+        assert metrics["diverged"] is True
+        assert metrics["divergence_rule"] == "non_finite_update_streak"
+        assert metrics["steps_completed"] < HPO_CHECK_INTERVAL_STEPS
+
+    def test_the_rollout_stops_instead_of_finishing(self, monkeypatch):
+        """Stopping is what makes a 4000-step rollout affordable: the trials that
+        would cost the most are exactly the ones already known to have failed."""
+        metrics = _rollout(monkeypatch, losses=[1.0e9], n_steps=4000)
+        assert metrics["diverged"] is True
+        assert metrics["steps_completed"] < 4000
+
+    def test_a_healthy_rollout_is_not_flagged(self, monkeypatch):
+        """The control. A guard that condemns everything proves nothing."""
+        rng = np.random.default_rng(0)
+        losses = list(np.abs(rng.normal(0.5, 0.2, size=4000)))
+        metrics = _rollout(monkeypatch, losses=losses)
+        assert metrics["diverged"] is False
+        assert metrics["steps_completed"] == 1200
+        assert compute_composite_objective(metrics) < FAILED_RUN_PENALTY
+
+    def test_a_recoverable_spike_is_not_flagged(self, monkeypatch):
+        """I-HAMAPPO/mean hit 145,990 at one episode, 4,141 at the next and 0.79
+        at the one after, then trained for 83 more episodes. `loss_patience` is
+        what keeps that run alive, and it has to survive the HPO wiring too."""
+        # One pseudo-episode's worth of updates at a huge loss, then back down.
+        losses = [1.0e9] * HPO_CHECK_INTERVAL_STEPS + [0.5] * 4000
+        metrics = _rollout(monkeypatch, losses=losses)
+        assert metrics["diverged"] is False
+
+    def test_the_guard_can_be_turned_off(self, monkeypatch):
+        metrics = _rollout(monkeypatch, losses=[1.0e9], check_divergence=False)
+        assert metrics["diverged"] is False
+        assert metrics["steps_completed"] == 1200
+
+    def test_buffer_fill_is_not_mistaken_for_a_gradient_stall(self, monkeypatch):
+        """No update can happen until 16 SMDP intervals have closed. Counting
+        those opening steps as zero-update pseudo-episodes would trip the stall
+        rule on every healthy rollout, so the clock starts at the first update."""
+        metrics = _rollout(monkeypatch, losses=[0.5] * 4000)
+        assert metrics["diverged"] is False
+        assert metrics["n_grad_updates"] > 0
+
+
+class TestDivergingTrialIsPenalised:
+    """Trial-level scoring, which is what Optuna actually selects on."""
+
+    @staticmethod
+    def _patch_seeds(monkeypatch, verdicts):
+        """Make each seed's rollout return a canned metrics dict."""
+        calls = {"n": 0}
+
+        def fake_rollout(**kwargs):
+            i = calls["n"]
+            calls["n"] += 1
+            diverged = verdicts[i]
+            return {
+                "mean_error": 1.0, "mean_aoi": 1.0, "outage_rate": 0.1,
+                "avg_power_norm": 0.5, "n_observations": 100, "tx_attempts": 10,
+                "n_update_failures": 0, "run_failed": False,
+                "diverged": diverged,
+                "divergence_kind": dg.ABORT_DIVERGED if diverged else "",
+                "divergence_rule": "sustained_high_loss" if diverged else "",
+                "divergence_reason": "scripted" if diverged else "",
+                "divergence_episode": 3 if diverged else -1,
+                "divergence_mean_loss": 1.0e9 if diverged else float("nan"),
+                "steps_completed": 600 if diverged else 4000,
+                "n_grad_updates": 1200,
+            }
+
+        monkeypatch.setattr(hpo, "evaluate_model_in_env", fake_rollout)
+        return calls
+
+    def test_one_diverged_seed_of_three_fails_the_trial(self, monkeypatch):
+        """A per-seed penalty alone is not enough at the real score scale: one
+        penalised seed of three averages to at least 33.3, and PPO's worst
+        HEALTHY committed trial scored 35.815."""
+        self._patch_seeds(monkeypatch, [False, True, False])
+        score, avg = evaluate_trial_multiseed(
+            model_cls=DummyPolicy, hparams={}, seeds=[1, 2, 3], n_steps=10
+        )
+        assert score == FAILED_RUN_PENALTY
+        assert avg["diverged"] is True
+        assert avg["n_diverged_seeds"] == 1
+
+    def test_a_healthy_trial_keeps_its_real_score(self, monkeypatch):
+        self._patch_seeds(monkeypatch, [False, False, False])
+        score, avg = evaluate_trial_multiseed(
+            model_cls=DummyPolicy, hparams={}, seeds=[1, 2, 3], n_steps=10
+        )
+        assert score < FAILED_RUN_PENALTY
+        assert avg["diverged"] is False
+        assert avg["n_diverged_seeds"] == 0
+
+    def test_the_verdict_reaches_the_trial_attributes(self, monkeypatch):
+        """Without this the trial CSV cannot tell a rejected trial from a bad
+        one, which is the state the 2026-09-02 studies were left in."""
+        self._patch_seeds(monkeypatch, [True, False, False])
+        study = optuna.create_study(direction="minimize")
+        trial = study.ask()
+        score, avg = evaluate_trial_multiseed(
+            model_cls=DummyPolicy, hparams={}, seeds=[11, 22, 33], n_steps=10, trial=trial,
+        )
+        assert trial.user_attrs["diverged_seed11"] is True
+        assert trial.user_attrs["diverged_seed22"] is False
+        assert avg["divergence_rule"] == "sustained_high_loss"
+        assert avg["divergence_seed"] == 11
+        assert avg["divergence_at_env_step"] == 600
+
+    def test_a_diverging_study_cannot_report_a_clean_best_row(self, monkeypatch, tmp_path):
+        """If every trial diverges, `study.best_trial` is a diverged trial and
+        its hyperparameters would go straight into a 200,000-step run."""
+        self._patch_seeds(monkeypatch, [True] * 100)
+        study = run_hpo_study(
+            model_name="DummyPolicy", model_cls=DummyPolicy, n_trials=2,
+            seeds=[1], n_steps=10,
+        )
+        assert all(t.value == FAILED_RUN_PENALTY for t in study.trials)
+        _, record = save_study_results(study, model_name="DummyPolicy", output_dir=str(tmp_path))
+        assert record["best_trial_diverged"] is True
+        assert record["n_diverged_trials"] == 2
+
+
+class TestRolloutLengthCanSeeDivergence:
+    """The length has to admit a verdict at all, which 350 steps did not."""
+
+    def test_default_length_admits_the_full_patience_window(self):
+        needed = HPO_CHECK_INTERVAL_STEPS * dg.DEFAULT_LOSS_PATIENCE
+        assert DEFAULT_HPO_N_STEPS >= needed, (
+            f"a verdict needs {needed} steps of sustained over-threshold loss and "
+            f"the rollout is only {DEFAULT_HPO_N_STEPS}"
+        )
+        # The old 350 could not have produced one.
+        assert 350 < needed
+
+    def test_default_length_admits_the_relative_rule_too(self):
+        """The absolute floor fires from the first pseudo-episode, but the
+        relative rule needs `warmup_episodes` to establish a per-model scale
+        first, and models in this pipeline settle four orders of magnitude
+        apart (SPAM-D3QN at 5e-4, CARLTON at 12)."""
+        needed = HPO_CHECK_INTERVAL_STEPS * (
+            dg.DEFAULT_WARMUP_EPISODES + dg.DEFAULT_LOSS_PATIENCE
+        )
+        assert DEFAULT_HPO_N_STEPS >= needed
+
+
+class TestDivergenceThatArrivesAsACrash:
+    """Divergence does not always present as a large loss.
+
+    Once NaN is in the weights, SB3 raises `ValueError: Expected parameter loc
+    ... found invalid values: tensor([[nan, nan, nan]])` out of the next
+    `select_action`, before the non-finite-loss streak can reach its threshold.
+    That is verbatim how the PPO worker died on 2026-09-02, and it is also what
+    a 2000-step HPO rollout of PPO does at SB3's own default learning rate
+    (measured 2026-09-03). Scoring it FAILED_RUN_PENALTY as an unexplained
+    exception was already the right number; recording WHY is what lets the trial
+    CSV distinguish a diverging hyperparameter set from a coding error.
+    """
+
+    class _NaNThenCrashModel(_ScriptedLossModel):
+        def __init__(self):
+            super().__init__(losses=[float("nan")])
+            self.poisoned = False
+
+        def update(self, batch):
+            self.poisoned = True
+            return super().update(batch)
+
+        def select_action(self, state, deterministic=False):
+            if self.poisoned:
+                raise ValueError(
+                    "Expected parameter loc of distribution Normal to satisfy the "
+                    "constraint Real(), but found invalid values: tensor([[nan, nan, nan]])"
+                )
+            return super().select_action(state, deterministic)
+
+    class _CleanCrashModel(_ScriptedLossModel):
+        """Crashes with no non-finite loss behind it: an ordinary bug."""
+
+        def __init__(self):
+            super().__init__(losses=[0.5])
+            self.calls = 0
+
+        def select_action(self, state, deterministic=False):
+            self.calls += 1
+            if self.calls > 40:
+                raise RuntimeError("size mismatch in forward()")
+            return super().select_action(state, deterministic)
+
+    def test_a_crash_after_a_nan_loss_is_recorded_as_divergence(self, monkeypatch):
+        monkeypatch.setattr(hpo, "AoiV2IEnv", _StubEnv)
+        model = self._NaNThenCrashModel()
+        metrics = hpo.evaluate_model_in_env(
+            model=model, seed=7, n_steps=1200, train_steps_during_rollout=1
+        )
+        assert metrics["diverged"] is True
+        assert metrics["divergence_rule"] == "crash_after_nonfinite_loss"
+        assert metrics["max_consecutive_nonfinite_losses"] >= 1
+        assert compute_composite_objective(metrics) == FAILED_RUN_PENALTY
+
+    def test_a_crash_with_no_nan_behind_it_is_still_raised(self, monkeypatch):
+        """Relabelling every exception as divergence would bury real bugs."""
+        monkeypatch.setattr(hpo, "AoiV2IEnv", _StubEnv)
+        with pytest.raises(RuntimeError, match="size mismatch"):
+            hpo.evaluate_model_in_env(
+                model=self._CleanCrashModel(), seed=7, n_steps=1200,
+                train_steps_during_rollout=1,
+            )

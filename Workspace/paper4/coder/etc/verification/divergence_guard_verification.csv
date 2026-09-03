@@ -1,0 +1,19 @@
+arm,model,episodes_recorded,max_abs_loss,final_loss,zero_update_episodes,guard_verdict,guard_episode,episodes_saved,expected_dead,agrees_with_expectation,causal,causality_note
+accumulate_seed42,CARLTON,100,12.427,1.1139,0,,,,False,True,True,clean at every prefix
+accumulate_seed42,IHAMAPPO,100,95123250.148,45199924.3315,0,diverged,12,88,True,True,True,verdict episode 12 is reached from the prefix alone
+accumulate_seed42,MA2HDQN,100,2.6995,0.865,0,,,,False,True,True,clean at every prefix
+accumulate_seed42,MADDPGMT,86,0.7404,0.4758,0,,,,False,True,True,clean at every prefix
+accumulate_seed42,PPO,100,16105595.6267,16105591.1208,81,diverged,19,81,True,True,True,verdict episode 19 is reached from the prefix alone
+accumulate_seed42,RESMAPDDPG,100,1.3528,0.5777,0,,,,False,True,True,clean at every prefix
+accumulate_seed42,SAC,100,0.7733,0.0414,0,,,,False,True,True,clean at every prefix
+accumulate_seed42,SPAMD3QN,100,0.1928,0.0029,0,,,,False,True,True,clean at every prefix
+accumulate_seed42,TD3,100,0.1777,0.0986,0,,,,False,True,True,clean at every prefix
+mean_seed42,CARLTON,100,0.051,0.0395,0,,,,False,True,True,clean at every prefix
+mean_seed42,IHAMAPPO,100,53571816.4951,29846543.9061,0,diverged,40,60,True,True,True,verdict episode 40 is reached from the prefix alone
+mean_seed42,MA2HDQN,100,0.3935,0.264,0,,,,False,True,True,clean at every prefix
+mean_seed42,MADDPGMT,100,0.3267,0.1814,0,,,,False,True,True,clean at every prefix
+mean_seed42,PPO,100,285247.4644,285247.4644,89,diverged,13,87,True,True,True,verdict episode 13 is reached from the prefix alone
+mean_seed42,RESMAPDDPG,100,0.342,0.216,0,,,,False,True,True,clean at every prefix
+mean_seed42,SAC,100,0.1289,0.0038,0,,,,False,True,True,clean at every prefix
+mean_seed42,SPAMD3QN,100,0.0021,0.0005,0,,,,False,True,True,clean at every prefix
+mean_seed42,TD3,100,0.0165,0.0119,0,,,,False,True,True,clean at every prefix

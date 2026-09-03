@@ -1,0 +1,18 @@
+{
+  "name": "session-fedfc0fb",
+  "createdAt": 1788443380215,
+  "leadAgentId": "team-lead@session-fedfc0fb",
+  "leadSessionId": "fedfc0fb-a2f4-4268-9225-ffec8b48cf47",
+  "members": [
+    {
+      "agentId": "team-lead@session-fedfc0fb",
+      "name": "team-lead",
+      "agentType": "team-lead",
+      "joinedAt": 1788443380215,
+      "tmuxPaneId": "leader",
+      "cwd": "/home/imnyj",
+      "subscriptions": [],
+      "backendType": "in-process"
+    }
+  ]
+}

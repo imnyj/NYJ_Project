@@ -40,6 +40,11 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 - **Rule:** 작업 중 발생하는 기타 파일(임시 스크립트, 중간 데이터, 디버깅 로그 등)이 프로젝트 메인 공간에 무분별하게 쌓이는 것을 철저히 방지한다.
 - **Rule:** 메인 산출물이 아닌 모든 보조 파일들은 반드시 `etc/` 디렉토리를 생성한 뒤, 그 내부에 목적별로 카테고리화(예: `etc/scripts/`, `etc/logs/`, `etc/temp/`)하여 단정하게 정리해야 한다.
 
+## 12. Persistent Session Harness (Codex-compatible)
+- **Rule:** 새 세션에서는 먼저 현재 작업의 실제 프로젝트 루트를 확인하고, 기존 프로젝트가 있으면 그 경로를 기준으로 작업한다. 새 프로젝트의 작업 공간이 명시되었을 때에만 `/home/imnyj/Workspace/<Project_Name>/`를 생성한다.
+- **Rule:** 여러 독립적인 작업 단위가 있고 런타임의 동시성 한도 및 상위 지침이 허용할 때만, 명확한 체크리스트와 인터페이스를 전달하여 하위 에이전트에 위임한다. 단일·간단한 작업에 하위 에이전트를 강제하지 않는다.
+- **Rule:** 세션·프로젝트 초기화, 위임, 상태 기록에는 `session-harness` 및 `multi-agent-manager` 스킬을 작업 성격에 맞게 적용한다. 이 파일은 프로젝트 운영 지침이며, Codex 런타임의 시스템·개발자 지침을 대체하지 않는다.
+
 ## 13. Execution Logging (자가 개선 로그)
 - **Rule:** 모든 세션 종료 시 `logs/execution_notes.md`에 (1) 수행한 작업 (2) 실패/재시도 지점 (3) 수동 교정 내용을 3줄 이내로 요약 추가할 것.
 
@@ -47,4 +52,5 @@ The system is now operating as a **Recursive Hierarchical Multi-Agent System**.
 - **Rule:** 모든 에이전트는 사용자와 소통하거나 문서/결과물을 작성할 때 반드시 한글(Korean)을 사용해야 한다.
 
 ## 15. Idle Time Upgrades
-- **Rule:** [강화] 5시간 유휴 타이머 발동 시 최초 1회에 한하여, 오늘 대화 기반 자가 학습(skill-crafter 등)을 진행한 후 반드시 다음 명령어를 통해 GitHub에 강제 업로드한다: `git add . && git commit -m "Auto-upgrade & backup" && git push -u origin main --force`. 이후 해당 타이머는 즉시 종료된다.
+- **Rule:** 플랫폼의 유휴 업그레이드 작업이나 사용자의 명시적 지시가 있을 때에만, 최초 1회에 한하여 `feedback_backlog.md`를 검토하고 `skill-crafter` 절차를 수행한다. 반복 타이머는 만들거나 유지하지 않는다.
+- **Rule:** Git 커밋·원격 푸시는 외부 상태 변경이므로 사용자의 명시적 승인 없이는 수행하지 않는다. 특히 강제 푸시는 자동화하지 않는다.

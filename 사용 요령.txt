@@ -80,7 +80,17 @@ python encrypt_key.py
    git commit -m "2605121642"
    git push -u origin main --force
 
+   - 종필이와 공유하는 Repository
+   git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
+   git subtree push --prefix=Workspace/paper2 shared-opt main
+   git subtree pull --prefix=Workspace/paper2 shared-opt main --squash
+
+
+
 uvicorn agent_api:app --host 0.0.0.0 --port 8001 --reload
+
+claude --dangerously-skip-permissions
+codex --dangerously-bypass-approvals-and-sandbox
 
 * antigravity
 agy : 안티그래비티 실행

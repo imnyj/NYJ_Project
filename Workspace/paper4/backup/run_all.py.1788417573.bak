@@ -166,12 +166,6 @@ def load_hparams_from_csv(csv_path: Optional[str]) -> Dict[str, Dict[str, Any]]:
         "best_value", "value", "score", "reward", "best_trial_number", "number",
         "hparams_json", "reward_weights_json", "datetime_start", "datetime_complete",
         "duration", "state",
-        # Divergence bookkeeping written by `hpo.save_study_results`. They are
-        # study metadata, not hyperparameters: without this line the merge below
-        # would forward `best_trial_diverged=False` to a model constructor, where
-        # the trailing `**hparams` swallows it silently -- the exact failure mode
-        # that let HPO report tuned values for models training at their defaults.
-        "best_trial_diverged", "n_diverged_trials",
     }) | ENV_ONLY_HPARAM_KEYS
 
     for _, row in df.iterrows():

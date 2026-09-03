@@ -592,22 +592,6 @@ class TestRewardWeightSeparation:
         )
         assert loaded["PPO"] == {"learning_rate": 3e-4}
 
-    def test_27b_divergence_bookkeeping_columns_are_ignored(self):
-        """`hpo.save_study_results` writes `best_trial_diverged` and
-        `n_diverged_trials` into optuna_best_params.csv. They describe the study,
-        not the model, and every baseline constructor ends in `**hparams`, so a
-        column that is not stripped here is absorbed without a word."""
-        loaded = load_hparams_from_csv(
-            _write_csv([{
-                "model_name": "PPO",
-                "best_value": 1.0,
-                "best_trial_diverged": False,
-                "n_diverged_trials": 3,
-                "hparams_json": json.dumps({"learning_rate": 3e-4}),
-            }])
-        )
-        assert loaded["PPO"] == {"learning_rate": 3e-4}
-
     def test_28_split_env_hparams_partitions_correctly(self):
         model_hp, env_hp = split_env_hparams(
             {"learning_rate": 1e-3, "hidden_dim": 64, "w1": 0.5, "w2_raw": 0.3}

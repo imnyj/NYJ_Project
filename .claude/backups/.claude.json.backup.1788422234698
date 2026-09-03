@@ -2,6 +2,7 @@
   "numStartups": 12,
   "installMethod": "native",
   "autoUpdates": false,
+  "hasSeenTasksHint": true,
   "tipsHistory": {
     "artifact-publish-plan": 12,
     "new-user-warmup": 7,
@@ -41,7 +42,7 @@
     "custom-commands": 12,
     "c4e-ultrareview": 12
   },
-  "promptQueueUseCount": 104,
+  "promptQueueUseCount": 109,
   "cachedGrowthBookFeatures": {
     "tengu_heron_tallow": true,
     "tengu_amber_flint": true,

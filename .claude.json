@@ -42,7 +42,7 @@
     "custom-commands": 12,
     "c4e-ultrareview": 12
   },
-  "promptQueueUseCount": 108,
+  "promptQueueUseCount": 109,
   "cachedGrowthBookFeatures": {
     "tengu_heron_tallow": true,
     "tengu_amber_flint": true,
@@ -1053,7 +1053,7 @@
       "value": true
     }
   },
-  "cachedGrowthBookFeaturesAt": 1788400634063,
+  "cachedGrowthBookFeaturesAt": 1788422234697,
   "lastReleaseNotesSeen": "2.1.258",
   "announcementImpressions": {
     "opus-5-launch": 3

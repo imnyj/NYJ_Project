@@ -45,14 +45,16 @@ Adaptations, including two honest weakenings
 --------------------------------------------
 * The continuous branch emits (Delta, p) instead of (compression ratio, resource share).
   Same 2-dim continuous head; only the semantics of the outputs differ.
-* WEAKENING 1 -- the behaviour policy. PPO is on-policy and normally stores the
-  behaviour log-probability alongside each transition. `RetrospectiveReplayBuffer` does
-  not carry log-probs, so we cannot recover the true behaviour policy. We keep a FROZEN
-  SNAPSHOT of the actor, re-synced every `policy_sync_interval` updates, and evaluate the
-  denominator of the importance ratio under it. This makes the surrogate a genuine
-  clipped ratio rather than the identically-1.0 ratio that a naive
-  `exp(logp - logp.detach())` produces, but it is a proximal-policy approximation of the
-  paper's on-policy ratio, not the same estimator.
+* WEAKENING 1, LIFTED 2026-09-04 -- the behaviour policy. PPO is on-policy and normally
+  stores the behaviour log-probability alongside each transition.
+  `RetrospectiveReplayBuffer` now carries one: the acting policy reports it in
+  `select_action`, the streamer forwards it, and `update()` uses it as the denominator of
+  the importance ratio, so the surrogate is the paper's estimator on the transitions that
+  have it. The FROZEN SNAPSHOT of the actor, re-synced every `policy_sync_interval`
+  updates, survives only as the fallback for batches that carry no such column (hand-built
+  batches, buffers checkpointed before the key existed). That fallback remains a
+  proximal-policy approximation rather than the same estimator, and `update()` reports
+  which of the two it used in `behaviour_logp_stored`.
 * WEAKENING 2 -- no GAE. Generalised advantage estimation needs contiguous trajectories;
   our buffer samples transitions uniformly at random, so the advantage is a one-step SMDP
   TD residual r + gamma^Delta V(s') - V(s). This is higher-bias than the paper's
@@ -79,7 +81,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.distributions import Categorical, Normal
-from src.baselines.base_agent import BaseRLModel
+from src.baselines.base_agent import LOG_RATIO_CLAMP, BaseRLModel
 from src.rl_interface import STATE_DIM
 
 
@@ -376,13 +378,31 @@ class IHAMAPPO(BaseRLModel):
         ch_dist, cont_dist = self._distributions(states, use_old=False)
         new_log_prob = self._policy_log_prob(ch_dist, cont_dist, ch_targets, cont_targets)
         with torch.no_grad():
-            old_ch_dist, old_cont_dist = self._distributions(states, use_old=True)
-            old_log_prob = self._policy_log_prob(old_ch_dist, old_cont_dist, ch_targets, cont_targets)
+            # Preferred denominator: log pi_behaviour(a | s) as the ACTING policy
+            # reported it at selection time. That is the exact quantity PPO's
+            # importance ratio is defined with, and it is now carried through the
+            # streamer and the replay buffer, so the frozen-snapshot substitute
+            # described in the module header ("WEAKENING 1") is no longer needed
+            # whenever the column is present.
+            stored_log_prob = self.stored_behaviour_log_prob(batch, new_log_prob)
+            behaviour_stored = stored_log_prob is not None
+            if behaviour_stored:
+                old_log_prob = stored_log_prob
+            else:
+                old_ch_dist, old_cont_dist = self._distributions(states, use_old=True)
+                old_log_prob = self._policy_log_prob(old_ch_dist, old_cont_dist, ch_targets, cont_targets)
 
-        ratio = torch.exp(torch.clamp(new_log_prob - old_log_prob, -20.0, 20.0))
+        log_ratio = torch.clamp(new_log_prob - old_log_prob, -LOG_RATIO_CLAMP, LOG_RATIO_CLAMP)
+        ratio = torch.exp(log_ratio)
         surr1 = ratio * advantages
         surr2 = torch.clamp(ratio, 1.0 - self.clip_ratio, 1.0 + self.clip_ratio) * advantages
         policy_loss = -torch.min(surr1, surr2).mean()
+        with torch.no_grad():
+            clip_fraction = float(
+                torch.mean((torch.abs(ratio - 1.0) > self.clip_ratio).float()).item()
+            )
+            ratio_std = float(ratio.std().item()) if ratio.numel() > 1 else 0.0
+            ratio_max = float(ratio.max().item())
 
         entropy = ch_dist.entropy().mean() + cont_dist.entropy().sum(dim=-1).mean()
         actor_loss = policy_loss - self.entropy_coef * entropy
@@ -407,4 +427,11 @@ class IHAMAPPO(BaseRLModel):
             "entropy": float(entropy.item()),
             "mean_ratio": float(ratio.mean().item()),
             "policy_synced": float(synced),
+            # 1.0 when the ratio was formed against the true behaviour policy.
+            # At 0.0 the frozen-snapshot substitute was used, which is a
+            # proximal-policy approximation, not the paper's estimator.
+            "behaviour_logp_stored": 1.0 if behaviour_stored else 0.0,
+            "ratio_std": ratio_std,
+            "ratio_max": ratio_max,
+            "clip_fraction": clip_fraction,
         }

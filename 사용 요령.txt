@@ -81,9 +81,9 @@ python encrypt_key.py
    git push -u origin main --force
 
    - 종필이와 공유하는 Repository
-   git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
-   git subtree push --prefix=Workspace/paper2 shared-opt main
-   git subtree pull --prefix=Workspace/paper2 shared-opt main --squash
+      git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
+      git subtree push --prefix=Workspace/paper2 shared-opt main
+      git subtree pull --prefix=Workspace/paper2 shared-opt main --squash
 
 
 

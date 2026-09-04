@@ -735,6 +735,7 @@ class RetrospectiveReplayBuffer:
         done: bool,
         delta_t: float,
         action_idx: Optional[int] = None,
+        behaviour_log_prob: Optional[float] = None,
     ) -> None:
         """
         Push a transition tuple (s, a, r, s', done, delta_t) into buffer.
@@ -747,6 +748,23 @@ class RetrospectiveReplayBuffer:
         action. Agents with purely continuous / factorized action heads simply
         leave it as None; sample() then omits the "action_idx" key entirely,
         so batch contents are unchanged for every other baseline.
+
+        behaviour_log_prob (optional): log pi_behaviour(a | s) UNDER THE POLICY
+        THAT ACTUALLY EMITTED `action`, i.e. the Act model as of the last
+        hot-swap, evaluated at selection time. It exists for the same reason
+        `action_idx` does -- the value is known exactly at the moment of the
+        decision and is unrecoverable afterwards -- and the two travel the same
+        route from `select_action` through the streamer to here.
+
+        Why it matters: this buffer is off-policy in shape (uniformly sampled
+        stale transitions), so the two PPO-family baselines need the true
+        importance weight pi_new / pi_behaviour. Without it they were reduced to
+        recomputing the denominator from the CURRENT policy, which makes the
+        ratio identically 1 on the first inner epoch and therefore disables
+        clipping altogether -- a clip-free policy-gradient step on stale data,
+        which is how both models diverged (results/hpo/onpolicy_fix_check.csv).
+        Off-policy baselines ignore the key; agents that never report a
+        log-probability leave it None and `sample()` omits the key entirely.
         """
         s_arr = np.array(state, dtype=np.float32) if not isinstance(state, np.ndarray) else state.astype(np.float32)
         if isinstance(action, torch.Tensor):
@@ -766,6 +784,11 @@ class RetrospectiveReplayBuffer:
             "done": float(done),
             "delta_t": float(delta_t),
             "action_idx": None if action_idx is None else int(action_idx),
+            "behaviour_log_prob": (
+                None
+                if behaviour_log_prob is None or not np.isfinite(float(behaviour_log_prob))
+                else float(behaviour_log_prob)
+            ),
         }
 
         if len(self.buffer) < self.capacity:
@@ -810,6 +833,16 @@ class RetrospectiveReplayBuffer:
         idx_list = [b.get("action_idx") for b in batch]
         if len(idx_list) > 0 and all(i is not None for i in idx_list):
             out["action_idx"] = torch.from_numpy(np.array(idx_list, dtype=np.int64))
+
+        # Optional behaviour log-probabilities, same all-or-nothing rule: a batch
+        # in which only some transitions know their behaviour policy cannot form a
+        # consistent importance ratio, so the key is withheld and the consumer
+        # takes its (loudly reported) fallback for the whole batch.
+        logp_list = [b.get("behaviour_log_prob") for b in batch]
+        if len(logp_list) > 0 and all(p is not None for p in logp_list):
+            out["behaviour_log_prob"] = torch.from_numpy(
+                np.array([[p] for p in logp_list], dtype=np.float32)
+            )
 
         return out
 

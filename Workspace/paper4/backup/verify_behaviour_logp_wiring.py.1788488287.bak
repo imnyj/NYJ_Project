@@ -1,0 +1,169 @@
+"""Does the behaviour log-probability actually reach the replay buffer in a REAL
+training run, and does it leave the other seven baselines alone?
+
+The unit tests exercise the wiring with a stub policy. This script exercises the
+production path instead: `run_hot_swap_training` against live SUMO, with
+`RetrospectiveReplayBuffer.push` instrumented to record what it was handed. It
+answers three questions per model, from data rather than from reading the code:
+
+  1. what fraction of pushed transitions carried a finite behaviour log-prob,
+  2. whether a sampled batch therefore exposes the "behaviour_log_prob" column,
+  3. whether `update()` reported that it used it (`behaviour_logp_stored`).
+
+PPO and I-HAMAPPO must answer 1.0 / yes / 1.0. The off-policy baselines report no
+log-probability at all, so they must answer 0.0 / no, and their batches must keep
+exactly the key set they had before the column existed.
+
+Everything is written under a caller-supplied temporary directory; this script
+never touches `checkpoints/` or `logs/`.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+import os
+import sys
+import tempfile
+from typing import Any, Dict, List
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+import src.Communications as comm  # noqa: E402
+import src.hot_swap_trainer as H  # noqa: E402
+from src.baselines import get_baseline  # noqa: E402
+from src.rl_interface import RetrospectiveReplayBuffer  # noqa: E402
+
+FIELDS = ["model", "steps", "n_pushed", "frac_with_behaviour_logp", "column_in_batch",
+          "n_updates", "n_updates_reporting_the_flag", "frac_updates_with_stored_logp",
+          "batch_keys"]
+
+
+class PushSpy:
+    """Counts how many pushed transitions carried a finite behaviour log-prob."""
+
+    def __init__(self) -> None:
+        self.n_pushed = 0
+        self.n_with_logp = 0
+        self.buffers: List[RetrospectiveReplayBuffer] = []
+        self._orig = RetrospectiveReplayBuffer.push
+        spy = self
+
+        def push(self_buf, *args, **kwargs):  # noqa: ANN001
+            spy.n_pushed += 1
+            logp = kwargs.get("behaviour_log_prob")
+            if logp is not None and math.isfinite(float(logp)):
+                spy.n_with_logp += 1
+            if self_buf not in spy.buffers:
+                spy.buffers.append(self_buf)
+            return spy._orig(self_buf, *args, **kwargs)
+
+        RetrospectiveReplayBuffer.push = push  # type: ignore[method-assign]
+
+    def restore(self) -> None:
+        RetrospectiveReplayBuffer.push = self._orig  # type: ignore[method-assign]
+
+
+class UpdateSpy:
+    """Records the `behaviour_logp_stored` flag every update reports."""
+
+    def __init__(self, model_cls: Any) -> None:
+        self.flags: List[float] = []
+        #: All updates, whether or not the model reports the flag. The seven
+        #: off-policy baselines never report it, so counting only the flagged
+        #: ones would make a healthy run look like it never trained.
+        self.n_updates = 0
+        self._orig = model_cls.update
+        spy = self
+
+        def update(self_model, batch):  # noqa: ANN001
+            out = spy._orig(self_model, batch)
+            spy.n_updates += 1
+            if isinstance(out, dict) and "behaviour_logp_stored" in out:
+                spy.flags.append(float(out["behaviour_logp_stored"]))
+            return out
+
+        model_cls.update = update  # type: ignore[method-assign]
+        self.model_cls = model_cls
+
+    def restore(self) -> None:
+        self.model_cls.update = self._orig  # type: ignore[method-assign]
+
+
+def run_one(name: str, steps: int, density: float, seed: int, workdir: str) -> Dict[str, Any]:
+    cls = get_baseline(name)
+    push_spy = PushSpy()
+    update_spy = UpdateSpy(cls)
+    try:
+        H.run_hot_swap_training(
+            model_name=name,
+            model_cls=cls,
+            total_steps=steps,
+            episodes=1,
+            density=density,
+            batch_size=16,
+            swap_interval=10,
+            seed=seed,
+            checkpoint_dir=os.path.join(workdir, "ck"),
+            tensorboard_dir=os.path.join(workdir, "tb"),
+            log_dir=os.path.join(workdir, "lg"),
+            hparams={"hidden_dim": 64},
+        )
+    finally:
+        push_spy.restore()
+        update_spy.restore()
+
+    column = False
+    keys: List[str] = []
+    for buf in push_spy.buffers:
+        if len(buf.buffer) >= 8:
+            batch = buf.sample(8)
+            keys = sorted(batch.keys())
+            column = "behaviour_log_prob" in batch
+            break
+
+    n_pushed = push_spy.n_pushed
+    return {
+        "model": name,
+        "steps": steps,
+        "n_pushed": n_pushed,
+        "frac_with_behaviour_logp": round(push_spy.n_with_logp / n_pushed, 6) if n_pushed else "",
+        "column_in_batch": column,
+        "n_updates": update_spy.n_updates,
+        "n_updates_reporting_the_flag": len(update_spy.flags),
+        "frac_updates_with_stored_logp": (
+            round(sum(update_spy.flags) / len(update_spy.flags), 6) if update_spy.flags else ""
+        ),
+        "batch_keys": "|".join(keys),
+    }
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--models", nargs="+",
+                    default=["PPO", "I-HAMAPPO", "TD3", "SPAM-D3QN"])
+    ap.add_argument("--steps", type=int, default=300)
+    ap.add_argument("--density", type=float, default=25.0)
+    ap.add_argument("--seed", type=int, default=1001)
+    ap.add_argument("--out", default=os.path.abspath(os.path.join(
+        os.path.dirname(__file__), "..", "..", "results", "hpo",
+        "behaviour_logp_wiring_check.csv")))
+    a = ap.parse_args()
+
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="logp_wiring_") as workdir:
+        for name in a.models:
+            row = run_one(name, a.steps, a.density, a.seed, workdir)
+            rows.append(row)
+            print(json.dumps(row), flush=True)
+
+    with open(a.out, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=FIELDS)
+        w.writeheader()
+        w.writerows(rows)
+    print("WROTE", a.out)
+
+
+if __name__ == "__main__":
+    main()

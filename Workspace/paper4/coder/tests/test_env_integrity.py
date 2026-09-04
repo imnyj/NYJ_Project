@@ -304,7 +304,7 @@ class TestDiscreteActionIndexSurvives:
                                  num_channels=4, buffer_capacity=64, batch_size=8)
         s = np.zeros(STATE_DIM, dtype=np.float32)
         for _ in range(8):
-            _grant, raw, idx = trainer.scheduler.decide_grant("v", s)
+            _grant, raw, idx, _logp = trainer.scheduler.decide_grant("v", s)
             assert idx is not None, "decide_grant dropped the discrete action index"
             trainer.scheduler.push_transition(
                 state=s, raw_action=raw, reward=-0.1, next_state=s,

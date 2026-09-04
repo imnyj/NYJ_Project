@@ -921,3 +921,74 @@ class TestDivergenceThatArrivesAsACrash:
                 model=self._CleanCrashModel(), seed=7, n_steps=1200,
                 train_steps_during_rollout=1,
             )
+
+
+# ============================================================================
+# The rollout must hand the buffer everything the training path hands it.
+#
+# `evaluate_model_in_env` used to discard the `info` dict `select_action`
+# returns, so an HPO trial trained the five discrete-head baselines on a
+# re-derived action index and the two PPO-family baselines on no importance
+# ratio at all -- while `run_hot_swap_training` gave both models the real thing.
+# A search that measures a model under different conditions than training runs it
+# cannot promise that its chosen hyper-parameters transfer. The same defect, in
+# the form of tuned reward weights that never reached the trainer, has already
+# been fixed once in this project.
+#
+# The live measurement across both paths is in
+# `results/hpo/behaviour_logp_wiring_check.csv`; what is asserted here is the
+# wiring, so that removing it fails a test instead of costing a search.
+# ============================================================================
+class TestRolloutForwardsWhatTheModelReported:
+    class _ReportingModel(DummyPolicy):
+        """A policy with both a discrete head and a log-probability to report."""
+
+        def __init__(self, **kwargs):
+            super().__init__(state_dim=STATE_DIM, num_channels=4, hidden_dim=8, **kwargs)
+            self.seen_batches = []
+            self.calls = 0
+
+        def select_action(self, state, deterministic=False):
+            grant, raw, info = super().select_action(state, deterministic)
+            self.calls += 1
+            info = dict(info)
+            info["action_idx"] = self.calls % 4
+            info["log_prob"] = -0.25 * self.calls
+            return grant, raw, info
+
+        def update(self, batch):
+            self.seen_batches.append(sorted(batch.keys()))
+            return {"loss": 0.1}
+
+    def _run(self, monkeypatch):
+        monkeypatch.setattr(hpo, "AoiV2IEnv", _StubEnv)
+        model = self._ReportingModel()
+        hpo.evaluate_model_in_env(model=model, seed=7, n_steps=60,
+                                  train_steps_during_rollout=1, check_divergence=False)
+        assert model.seen_batches, "the rollout never trained, so nothing was measured"
+        return model
+
+    def test_the_discrete_action_index_reaches_the_batch(self, monkeypatch):
+        model = self._run(monkeypatch)
+        assert all("action_idx" in keys for keys in model.seen_batches)
+
+    def test_the_behaviour_log_prob_reaches_the_batch(self, monkeypatch):
+        model = self._run(monkeypatch)
+        assert all("behaviour_log_prob" in keys for keys in model.seen_batches)
+
+    def test_a_model_that_reports_neither_gets_neither(self, monkeypatch):
+        """The legacy key set is preserved for the purely continuous baselines."""
+        monkeypatch.setattr(hpo, "AoiV2IEnv", _StubEnv)
+
+        class _Silent(self._ReportingModel):
+            def select_action(self, state, deterministic=False):
+                grant, raw, _info = super().select_action(state, deterministic)
+                return grant, raw, {}
+
+        model = _Silent()
+        hpo.evaluate_model_in_env(model=model, seed=7, n_steps=60,
+                                  train_steps_during_rollout=1, check_divergence=False)
+        assert model.seen_batches
+        for keys in model.seen_batches:
+            assert "action_idx" not in keys
+            assert "behaviour_log_prob" not in keys

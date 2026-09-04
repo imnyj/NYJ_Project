@@ -338,10 +338,12 @@ class TestHotSwapRLScheduler:
         )
 
         s_vec = np.random.uniform(-1.0, 1.0, size=(STATE_DIM,)).astype(np.float32)
-        # Three values now: the discrete action index the policy's discrete head
-        # selected travels with the grant. Dropping it here is what forced the five
-        # discrete-head baselines onto a lossy index-reconstruction path.
-        grant, raw_action, action_idx = scheduler.decide_grant("veh_0", s_vec)
+        # Four values now. The discrete action index the policy's discrete head
+        # selected travels with the grant -- dropping it is what forced the five
+        # discrete-head baselines onto a lossy index-reconstruction path -- and so
+        # does the behaviour log-probability, without which the two PPO-family
+        # baselines have no importance ratio and their clipping is inert.
+        grant, raw_action, action_idx, behaviour_log_prob = scheduler.decide_grant("veh_0", s_vec)
         delta, ch, power = grant
 
         assert 0.1 <= delta <= 45.0

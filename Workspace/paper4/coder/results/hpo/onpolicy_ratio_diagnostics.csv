@@ -1,0 +1,5 @@
+model,arm,seed,n_updates,frac_updates_with_stored_logp,ratio_mean_avg,ratio_mean_min,ratio_mean_max,ratio_std_avg,ratio_max_max,clip_fraction_avg,frac_updates_with_ratio_exactly_one
+PPO,selected,1001,7998,1.0,0.968426,0.468953,1.667567,0.506197,11.660553,0.57226,0.000125
+PPO,control,1001,7998,1.0,0.984623,0.613595,1.431398,0.363708,5.873617,0.459881,0.000125
+I-HAMAPPO,selected,1001,7990,1.0,0.990254,0.480924,1.523559,0.35615,9.331409,0.429928,0.000125
+I-HAMAPPO,control,1001,7990,1.0,0.995533,0.590009,1.488432,0.269049,6.800398,0.295721,0.000125

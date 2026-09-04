@@ -478,6 +478,7 @@ class TransitionStreamer:
         done: bool,
         delta_t: float,
         action_idx: Optional[int] = None,
+        behaviour_log_prob: Optional[float] = None,
     ) -> bool:
         """
         Non-blocking transition push. Drops item if queue is full to preserve simulation speed.
@@ -494,6 +495,12 @@ class TransitionStreamer:
         re-deriving the index from the decoded continuous action, which is lossy
         and lossy by a DIFFERENT amount per model -- so the nine were not being
         compared under the same conditions.
+
+        `behaviour_log_prob` travels the identical route for the identical
+        reason: it is log pi_behaviour(a | s) under the Act model that emitted
+        this action, it cannot be reconstructed once that model has been swapped
+        out, and without it the two PPO-family baselines have no importance
+        ratio at all. See `RetrospectiveReplayBuffer.push`.
         """
         item = {
             "state": state,
@@ -503,6 +510,9 @@ class TransitionStreamer:
             "done": bool(done),
             "delta_t": float(delta_t),
             "action_idx": None if action_idx is None else int(action_idx),
+            "behaviour_log_prob": (
+                None if behaviour_log_prob is None else float(behaviour_log_prob)
+            ),
         }
         try:
             self.queue.put_nowait(item)
@@ -538,6 +548,7 @@ class TransitionStreamer:
                 done=it["done"],
                 delta_t=it["delta_t"],
                 action_idx=it.get("action_idx"),
+                behaviour_log_prob=it.get("behaviour_log_prob"),
             )
         return len(items)
 
@@ -862,7 +873,7 @@ class HotSwapRLScheduler:
         self,
         vid: str,
         state_vec: np.ndarray,
-    ) -> Tuple[Tuple[float, int, float], Any]:
+    ) -> Tuple[Tuple[float, int, float], Any, Optional[int], Optional[float]]:
         """Run the Act model on an observation the ENVIRONMENT produced.
 
         This method is pure inference. It used to also (a) build its own state
@@ -880,14 +891,18 @@ class HotSwapRLScheduler:
 
         Both now have exactly one owner, the environment (design_spec_v2 P1/P2).
 
-        Returns `(grant, raw_action, action_idx)`. The caller stores the last two
-        so the transition can be pushed with the action the policy actually
-        emitted AND with the discrete index its discrete head actually chose.
+        Returns `(grant, raw_action, action_idx, behaviour_log_prob)`. The caller
+        stores everything after the grant so the transition can be pushed with
+        the action the policy actually emitted, with the discrete index its
+        discrete head actually chose, and with the log-probability the ACTING
+        policy assigned to that action.
 
-        The third element used to be dropped on the floor here: `select_action`
-        returns `(grant, raw_action, info)` and `info["action_idx"]` is where the
-        five discrete-head baselines report their argmax, so discarding it forced
-        every one of them onto a lossy reconstruction path.
+        The trailing elements used to be dropped on the floor here:
+        `select_action` returns `(grant, raw_action, info)`, and `info` is where
+        the five discrete-head baselines report their argmax and where the two
+        PPO-family baselines report their behaviour log-probability. Discarding
+        it forced the former onto a lossy reconstruction path and left the
+        latter with no importance ratio whatsoever.
         """
         s = np.asarray(state_vec, dtype=np.float32)
         assert s.shape == (self.state_dim,), (
@@ -904,6 +919,7 @@ class HotSwapRLScheduler:
         self.total_inferences += 1
 
         action_idx: Optional[int] = None
+        behaviour_log_prob: Optional[float] = None
         if isinstance(info, dict):
             raw_idx = info.get("action_idx")
             if raw_idx is not None:
@@ -911,7 +927,14 @@ class HotSwapRLScheduler:
                     action_idx = int(raw_idx)
                 except (TypeError, ValueError):
                     action_idx = None
-        return grant, raw_action, action_idx
+            raw_logp = info.get("log_prob")
+            if raw_logp is not None:
+                try:
+                    logp = float(raw_logp)
+                except (TypeError, ValueError):
+                    logp = float("nan")
+                behaviour_log_prob = logp if math.isfinite(logp) else None
+        return grant, raw_action, action_idx, behaviour_log_prob
 
     def push_transition(
         self,
@@ -922,6 +945,7 @@ class HotSwapRLScheduler:
         done: bool,
         delta_t: float,
         action_idx: Optional[int] = None,
+        behaviour_log_prob: Optional[float] = None,
     ) -> None:
         """Stream one closed SMDP interval to the background trainer.
 
@@ -939,6 +963,7 @@ class HotSwapRLScheduler:
             done=bool(done),
             delta_t=float(delta_t),
             action_idx=action_idx,
+            behaviour_log_prob=behaviour_log_prob,
         )
 
 
@@ -3185,10 +3210,11 @@ def run_hot_swap_training(
             # Everyone in range at reset needs an opening decision.
             action_dict: Dict[str, Any] = {}
             for vid, s_vec in obs.items():
-                grant, raw_action, action_idx = trainer.scheduler.decide_grant(vid, s_vec)
+                grant, raw_action, action_idx, beh_logp = trainer.scheduler.decide_grant(vid, s_vec)
                 open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
                                       "raw_action": raw_action,
-                                      "action_idx": action_idx}
+                                      "action_idx": action_idx,
+                                      "behaviour_log_prob": beh_logp}
                 action_dict[vid] = grant
                 ep_deltas.append(float(grant[0]))
 
@@ -3223,6 +3249,7 @@ def run_hot_swap_training(
                         done=done,
                         delta_t=rec["delta_actual"],
                         action_idx=prev.get("action_idx"),
+                        behaviour_log_prob=prev.get("behaviour_log_prob"),
                     )
                     ep_rewards.append(float(rec["reward"]))
                     ep_deltas_actual.append(float(rec["delta_actual"]))
@@ -3233,10 +3260,11 @@ def run_hot_swap_training(
                     s_vec = next_obs.get(vid)
                     if s_vec is None:
                         continue
-                    grant, raw_action, action_idx = trainer.scheduler.decide_grant(vid, s_vec)
+                    grant, raw_action, action_idx, beh_logp = trainer.scheduler.decide_grant(vid, s_vec)
                     open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32),
                                           "raw_action": raw_action,
-                                          "action_idx": action_idx}
+                                          "action_idx": action_idx,
+                                          "behaviour_log_prob": beh_logp}
                     action_dict[vid] = grant
                     ep_deltas.append(float(grant[0]))
 
@@ -3276,6 +3304,7 @@ def run_hot_swap_training(
                     done=False,
                     delta_t=rec["delta_actual"],
                     action_idx=prev.get("action_idx"),
+                    behaviour_log_prob=prev.get("behaviour_log_prob"),
                 )
                 ep_rewards.append(float(rec["reward"]))
                 ep_deltas_actual.append(float(rec["delta_actual"]))

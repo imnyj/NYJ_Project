@@ -19,7 +19,7 @@
 # bin, or the |dim-2| entropy staying pinned while Delta/p entropy falls.
 #
 # ---------------------------------------------------------------------------
-# ON-POLICY / OFF-POLICY MISMATCH -- stated honestly, not papered over.
+# ON-POLICY / OFF-POLICY MISMATCH -- what remains of it after the 2026-09-04 fix.
 #
 # PPO is on-policy. Our pipeline is off-policy in shape: `hot_swap_trainer`
 # streams retrospective SMDP transitions into `RetrospectiveReplayBuffer` and
@@ -34,23 +34,27 @@
 #         return = r + (1 - done) * gamma**delta_t * V(s'),
 #     i.e. GAE with lambda = 0. Multi-step GAE is not available because the
 #     buffer stores independent transitions, not contiguous trajectories.
-#   * `old_log_prob` is recomputed from the *current* policy under no_grad at
-#     the top of `update()`, so the first inner epoch has ratio == 1 exactly and
-#     the following `n_epochs - 1` epochs get a genuine clipped surrogate.
+#   * `old_log_prob` is the BEHAVIOUR log-probability the acting policy reported
+#     at selection time and the buffer stored alongside the transition
+#     (`batch["behaviour_log_prob"]`), so the surrogate carries the true
+#     importance weight pi_new / pi_behaviour and the clip range binds against
+#     the policy that actually collected the data.
 #
-# THE RESULTING CAVEAT: the PPO trust region is therefore enforced only between
-# the start and the end of a single `update()` call -- NOT between the behaviour
-# policy that actually collected the data and the updated policy. The true
-# importance weight pi_new/pi_behaviour is unavailable (the buffer does not store
-# the behaviour log-prob), so the off-policy correction PPO relies on is simply
-# absent. What is left is a clipped, entropy-regularized, advantage-weighted
-# policy-gradient step on stale data. This is a real approximation and it is the
-# expected reason PPO underperforms the off-policy baselines here; it must be
-# reported as such in the paper rather than presented as textbook PPO.
+# WHAT THIS REPLACED, AND WHY IT MATTERED. `old_log_prob` used to be recomputed
+# from the *current* policy under no_grad at the top of `update()`. That makes
+# the ratio exactly 1 on the first inner epoch, and PPO's clipping only acts when
+# the ratio leaves [1-eps, 1+eps], so the first epoch was an UNCLIPPED policy
+# gradient step on stale data and the trust region bound only between the start
+# and the end of one `update()` call. Both on-policy baselines diverged from it:
+# PPO went NaN at env step 588 with the tuned learning rate AND at 2,493 with the
+# textbook 3e-4 (`results/hpo/divergence_detection_check.csv`), which is why the
+# learning rate was never the cause.
 #
-# (Making it exact would require storing the behaviour log-prob alongside each
-# transition -- a change to `RetrospectiveReplayBuffer.push`, which is outside
-# this module's ownership.)
+# THE FALLBACK IS STILL HERE and still carries the old caveat, because callers
+# exist that do not supply the key (hand-built batches, older checkpointed
+# buffers). It is not silent: `update()` returns `behaviour_logp_stored = 0.0`
+# and logs a warning the first time, since in that mode the ratio is identically
+# 1 on the first epoch and the clipping is inert.
 # ============================================================================
 
 from __future__ import annotations
@@ -62,6 +66,7 @@ import torch
 import torch.nn.functional as F
 from stable_baselines3 import PPO as SB3PPO
 
+from src.baselines.base_agent import LOG_RATIO_CLAMP
 from src.baselines.sb3_wrapper import SB3BaselineModel
 from src.rl_interface import STATE_DIM
 
@@ -158,15 +163,39 @@ class PPO(SB3BaselineModel):
         return grant, raw_action, info
 
     # ------------------------------------------------------------------
+    def behaviour_log_prob(
+        self,
+        batch: Dict[str, torch.Tensor],
+        states: torch.Tensor,
+        actions: torch.Tensor,
+    ) -> Tuple[torch.Tensor, bool]:
+        """Denominator of the importance ratio, and whether it is the real one.
+
+        Preferred path: the log-probability the ACTING policy reported when it
+        emitted this action, carried through the streamer and the replay buffer
+        (`BaseRLModel.stored_behaviour_log_prob`). Fallback, for batches built by
+        hand or restored from a buffer written before the column existed: the
+        current policy re-evaluated on the same (s, a), which is what this method
+        replaced and which makes the first-epoch ratio identically 1.
+        """
+        reference = torch.zeros(states.shape[0], 1, dtype=states.dtype, device=states.device)
+        stored = self.stored_behaviour_log_prob(batch, reference)
+        if stored is not None:
+            return stored.detach(), True
+        _, recomputed, _ = self.policy.evaluate_actions(states, actions)
+        return recomputed.detach().reshape(-1, 1), False
+
+    # ------------------------------------------------------------------
     def update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
         """
         One PPO update treating the sampled batch as a single short rollout.
 
         See the module header for the on-policy/off-policy caveat this carries.
-        Mirrors `stable_baselines3.PPO.train()` except that (a) the advantage
-        comes from a 1-step SMDP TD target instead of GAE over a contiguous
-        rollout, and (b) `old_log_prob` is a snapshot of the current policy
-        rather than the true behaviour policy.
+        Mirrors `stable_baselines3.PPO.train()` except that the advantage comes
+        from a 1-step SMDP TD target instead of GAE over a contiguous rollout.
+        `old_log_prob` is the stored behaviour log-probability when the batch
+        carries one, and only then does the reported `behaviour_logp_stored`
+        equal 1.0.
         """
         states, actions, rewards, next_states, dones, discounts = self.unpack_batch(batch)
         sb3 = self._sb3
@@ -185,8 +214,7 @@ class PPO(SB3BaselineModel):
             # multi-step advantage cannot be formed. gamma**delta_t comes per-sample.
             returns = rewards + (1.0 - dones) * discounts * next_values
             advantages = returns - old_values
-            _, old_log_prob, _ = self.policy.evaluate_actions(states, actions)
-            old_log_prob = old_log_prob.detach()
+            old_log_prob, behaviour_stored = self.behaviour_log_prob(batch, states, actions)
 
         n_epochs = int(sb3.n_epochs)
         pg_losses: List[float] = []
@@ -196,6 +224,10 @@ class PPO(SB3BaselineModel):
         approx_kls: List[float] = []
         total_loss_val = 0.0
         epochs_run = 0
+        first_ratio_mean = 1.0
+        first_ratio_std = 0.0
+        first_ratio_max = 1.0
+        first_clip_fraction = 0.0
 
         for _ in range(n_epochs):
             values, log_prob, entropy = self.policy.evaluate_actions(states, actions)
@@ -205,7 +237,19 @@ class PPO(SB3BaselineModel):
             if sb3.normalize_advantage and adv.shape[0] > 1:
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
-            ratio = torch.exp(log_prob.reshape(-1, 1) - old_log_prob.reshape(-1, 1))
+            # The log-ratio is clamped before exponentiation. With a genuine
+            # behaviour policy the ratio is no longer pinned at 1, and a
+            # transition the current policy has moved far away from can produce
+            # exp() of a few hundred, i.e. inf in float32 -- the clamp bounds the
+            # surrogate at exp(+-20) instead. Outside the clamp the gradient is
+            # zero, which is the intended trust-region behaviour and is what
+            # `i_hamappo` already does.
+            log_ratio = torch.clamp(
+                log_prob.reshape(-1, 1) - old_log_prob.reshape(-1, 1),
+                -LOG_RATIO_CLAMP,
+                LOG_RATIO_CLAMP,
+            )
+            ratio = torch.exp(log_ratio)
             policy_loss_1 = adv * ratio
             policy_loss_2 = adv * torch.clamp(ratio, 1.0 - clip_range, 1.0 + clip_range)
             policy_loss = -torch.min(policy_loss_1, policy_loss_2).mean()
@@ -224,9 +268,18 @@ class PPO(SB3BaselineModel):
             loss = policy_loss + sb3.ent_coef * entropy_loss + sb3.vf_coef * value_loss
 
             with torch.no_grad():
-                log_ratio = log_prob.reshape(-1, 1) - old_log_prob.reshape(-1, 1)
-                approx_kl = torch.mean((torch.exp(log_ratio) - 1.0) - log_ratio).item()
+                approx_kl = torch.mean((ratio - 1.0) - log_ratio).item()
                 clip_fraction = torch.mean((torch.abs(ratio - 1.0) > clip_range).float()).item()
+                if epochs_run == 0:
+                    # First-epoch ratio statistics. This is the number that
+                    # diagnoses the bug this module used to have: with a
+                    # recomputed `old_log_prob` it is exactly 1.0 with zero
+                    # spread and a clip fraction of 0, so the first and largest
+                    # gradient step of every update was unclipped.
+                    first_ratio_mean = float(ratio.mean().item())
+                    first_ratio_std = float(ratio.std().item()) if ratio.numel() > 1 else 0.0
+                    first_ratio_max = float(ratio.max().item())
+                    first_clip_fraction = float(clip_fraction)
 
             pg_losses.append(policy_loss.item())
             value_losses.append(value_loss.item())
@@ -241,8 +294,10 @@ class PPO(SB3BaselineModel):
             self.policy.optimizer.step()
             epochs_run += 1
 
-            # SB3's KL early stop, kept so the trust region at least binds within
-            # the update even though it cannot bind against the behaviour policy.
+            # SB3's KL early stop. `approx_kl` is now measured against the
+            # behaviour policy, so it starts non-zero at the first epoch and this
+            # stop can fire immediately -- which is the correct reading of a
+            # batch the current policy has already moved far away from.
             if sb3.target_kl is not None and approx_kl > 1.5 * float(sb3.target_kl):
                 break
 
@@ -255,4 +310,12 @@ class PPO(SB3BaselineModel):
             "approx_kl": float(np.mean(approx_kls)),
             "clip_fraction": float(np.mean(clip_fractions)),
             "epochs": float(epochs_run),
+            # 1.0 only when the true behaviour log-prob was available. At 0.0 the
+            # first-epoch ratio is identically 1 and the clipping does nothing --
+            # the caveat in the module header applies to that update.
+            "behaviour_logp_stored": 1.0 if behaviour_stored else 0.0,
+            "first_epoch_ratio_mean": first_ratio_mean,
+            "first_epoch_ratio_std": first_ratio_std,
+            "first_epoch_ratio_max": first_ratio_max,
+            "first_epoch_clip_fraction": first_clip_fraction,
         }

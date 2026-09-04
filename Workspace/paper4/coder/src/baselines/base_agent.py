@@ -25,6 +25,7 @@
 # ============================================================================
 
 from __future__ import annotations
+import logging
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -32,6 +33,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 from src.rl_interface import STATE_DIM, ActionDecoder
+
+logger = logging.getLogger(__name__)
+
+#: Bound on |log(pi_new / pi_behaviour)| before exponentiation, shared by the two
+#: PPO-family baselines. exp(20) ~ 4.9e8 is already far outside any clip range,
+#: while exp of the few hundred a genuinely off-policy transition can produce is
+#: inf in float32. Clamping zeroes the gradient beyond the bound, which is the
+#: intended trust-region behaviour rather than a numerical patch.
+LOG_RATIO_CLAMP: float = 20.0
 
 
 class BaseRLModel(nn.Module):
@@ -67,6 +77,9 @@ class BaseRLModel(nn.Module):
         self.num_channels = int(num_channels)
         self.decoder = ActionDecoder(num_channels=self.num_channels)
         self.hparams = hparams
+        #: One warning per model instance when a batch arrives without a stored
+        #: behaviour log-probability. See `stored_behaviour_log_prob`.
+        self._warned_missing_behaviour_logp = False
 
     def _prepare_state_tensor(self, state: Union[np.ndarray, torch.Tensor, list]) -> torch.Tensor:
         """Helper to convert input state into a 2D float32 Tensor on model's device."""
@@ -186,6 +199,45 @@ class BaseRLModel(nn.Module):
         if "discount" in batch:
             return batch["discount"].to(device=device, dtype=dtype).reshape(reference.shape)
         return torch.full_like(reference, gamma)
+
+    # ------------------------------------------------------------------
+    # Behaviour log-probability (importance sampling)
+    # ------------------------------------------------------------------
+    def stored_behaviour_log_prob(
+        self, batch: Dict[str, torch.Tensor], reference: torch.Tensor
+    ) -> Optional[torch.Tensor]:
+        """
+        The behaviour log-probability the acting policy reported, or None.
+
+        `RetrospectiveReplayBuffer.sample` emits "behaviour_log_prob" only when
+        EVERY transition in the batch carries one, so the result is either a
+        full column shaped like `reference` or nothing at all. It is the
+        denominator of the importance ratio pi_new / pi_behaviour that the two
+        PPO-family baselines need: this buffer hands out uniformly sampled stale
+        transitions, so without it the ratio has to be built from the current
+        policy, which pins it at 1 and disables clipping.
+
+        Returning None is a legitimate state -- hand-built batches and buffers
+        checkpointed before the key existed have no such column -- but it is
+        never a silent one. The caller reports which branch it took, and this
+        method logs once per model instance.
+        """
+        stored = batch.get("behaviour_log_prob")
+        if stored is None:
+            if not self._warned_missing_behaviour_logp:
+                self._warned_missing_behaviour_logp = True
+                logger.warning(
+                    "%s.update(): the batch carries no 'behaviour_log_prob', so the "
+                    "importance ratio is formed against a substitute denominator taken "
+                    "from the learner itself instead of the policy that collected the "
+                    "data, and the clip range is weakened accordingly -- for PPO it is "
+                    "entirely inert on the first inner epoch, where the ratio is then "
+                    "exactly 1. Further occurrences are not logged; the returned "
+                    "'behaviour_logp_stored' key reports this per update.",
+                    type(self).__name__,
+                )
+            return None
+        return stored.to(device=reference.device, dtype=reference.dtype).reshape(reference.shape)
 
     def select_action(
         self,

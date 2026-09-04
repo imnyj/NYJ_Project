@@ -22,6 +22,7 @@ import argparse
 import gc
 import json
 import logging
+import math
 import os
 import random
 from collections import deque
@@ -575,6 +576,51 @@ def compute_composite_objective(
     return float(objective_val)
 
 
+def _decision_record(s_vec: Any, info: Any, raw_action: Any) -> Dict[str, Any]:
+    """One open SMDP decision, with everything the buffer needs when it closes.
+
+    `info` is the third element of `select_action`, and this rollout used to
+    discard it entirely. Two things travel in it, both known exactly at the
+    moment of the decision and both unrecoverable once the policy has taken
+    another gradient step:
+
+      * `info["log_prob"]`, the behaviour log-probability the two PPO-family
+        baselines need as the denominator of their importance ratio. Without it
+        the ratio is identically 1 and the clipping is inert, which is what made
+        both models diverge (`results/hpo/onpolicy_fix_check.csv`).
+      * `info["action_idx"]`, the combined discrete index the five discrete-head
+        baselines actually selected. Without it they fall back to re-deriving the
+        index from the decoded continuous action.
+
+    Both are what `hot_swap_trainer` already forwards on the training path. They
+    are forwarded here for the same reason the tuned reward weights had to be:
+    a search that measures a model under different conditions than training runs
+    it does not tell us that its chosen hyper-parameters transfer.
+    """
+    logp: Optional[float] = None
+    if isinstance(info, dict) and info.get("log_prob") is not None:
+        try:
+            value = float(info["log_prob"])
+        except (TypeError, ValueError):
+            value = float("nan")
+        if math.isfinite(value):
+            logp = value
+
+    action_idx: Optional[int] = None
+    if isinstance(info, dict) and info.get("action_idx") is not None:
+        try:
+            action_idx = int(info["action_idx"])
+        except (TypeError, ValueError):
+            action_idx = None
+
+    return {
+        "state": np.asarray(s_vec, dtype=np.float32),
+        "raw_action": raw_action,
+        "behaviour_log_prob": logp,
+        "action_idx": action_idx,
+    }
+
+
 def evaluate_model_in_env(
     model: Any,
     seed: int = 42,
@@ -656,8 +702,8 @@ def evaluate_model_in_env(
     open_decision: Dict[str, Dict[str, Any]] = {}
     action_dict: Dict[str, Any] = {}
     for vid, s_vec in obs.items():
-        grant, raw_action, _ = model.select_action(s_vec, deterministic=False)
-        open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
+        grant, raw_action, info = model.select_action(s_vec, deterministic=False)
+        open_decision[vid] = _decision_record(s_vec, info, raw_action)
         action_dict[vid] = grant
 
     # The rollout runs under a try/except because divergence does not always
@@ -686,7 +732,9 @@ def evaluate_model_in_env(
                     if s2 is None:
                         s2 = np.zeros(STATE_DIM, dtype=np.float32)
                     buffer.push(prev["state"], prev["raw_action"], rec["reward"],
-                                np.asarray(s2, dtype=np.float32), bool(done), rec["delta_actual"])
+                                np.asarray(s2, dtype=np.float32), bool(done), rec["delta_actual"],
+                                action_idx=prev.get("action_idx"),
+                                behaviour_log_prob=prev.get("behaviour_log_prob"))
 
                 if len(buffer) >= 16 and train_steps_during_rollout > 0:
                     for _ in range(train_steps_during_rollout):
@@ -722,8 +770,8 @@ def evaluate_model_in_env(
                 s_vec = next_obs.get(vid)
                 if s_vec is None:
                     continue
-                grant, raw_action, _ = model.select_action(s_vec, deterministic=False)
-                open_decision[vid] = {"state": np.asarray(s_vec, dtype=np.float32), "raw_action": raw_action}
+                grant, raw_action, info = model.select_action(s_vec, deterministic=False)
+                open_decision[vid] = _decision_record(s_vec, info, raw_action)
                 action_dict[vid] = grant
 
             for vid in [v for v in open_decision if v not in next_obs]:
@@ -797,7 +845,9 @@ def evaluate_model_in_env(
         if s2 is None:
             s2 = np.zeros(STATE_DIM, dtype=np.float32)
         buffer.push(prev["state"], prev["raw_action"], rec["reward"],
-                    np.asarray(s2, dtype=np.float32), bool(rec["done"]), rec["delta_actual"])
+                    np.asarray(s2, dtype=np.float32), bool(rec["done"]), rec["delta_actual"],
+                    action_idx=prev.get("action_idx"),
+                    behaviour_log_prob=prev.get("behaviour_log_prob"))
 
     metrics = env.get_metrics()
     env.close()

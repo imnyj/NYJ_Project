@@ -42,7 +42,7 @@
     "custom-commands": 12,
     "c4e-ultrareview": 12
   },
-  "promptQueueUseCount": 110,
+  "promptQueueUseCount": 115,
   "cachedGrowthBookFeatures": {
     "tengu_tool_search_unsupported_models": [
       "claude-3-5-haiku",

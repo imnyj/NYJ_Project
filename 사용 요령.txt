@@ -84,6 +84,7 @@ python encrypt_key.py
       git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
       
       * 불러오기
+      git pull shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
       git fetch shared-opt main
       git merge -X subtree=Workspace/paper2 shared-opt/main --allow-unrelated-histories -m "2609041348"
 

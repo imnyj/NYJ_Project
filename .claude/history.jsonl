@@ -103,3 +103,5 @@
 {"display":"/goal agian","pastedContents":{},"timestamp":1788443390490,"project":"/home/imnyj","sessionId":"3b462830-f472-4351-a6b3-bd5ebd3a999d"}
 {"display":"/goal again","pastedContents":{},"timestamp":1788443397535,"project":"/home/imnyj","sessionId":"3b462830-f472-4351-a6b3-bd5ebd3a999d"}
 {"display":"/login","pastedContents":{},"timestamp":1788485287155,"project":"/home/imnyj","sessionId":"3b462830-f472-4351-a6b3-bd5ebd3a999d"}
+{"display":"앞으로 github에 업로드하고 다운로드 받는 작업들을 할 건데, 내 전체 프로젝트는 이제 거의 업로드만 할 것 같아. 그래도 언젠간 다운로드할 필요도 있겠지. 문제는 이중에서 Workspace/paper2/ 디렉토리만 별도로 공유하여 협업을 하고 싶어. 그래서 여러 시도를 하고 있는데(사용 요령.txt의 line 83-92) 잘못 건드리면 지금 작업 중인 모든 것이 날아가더라고. 그래도 계속 백업을 해두었으니까 불러오기는 했는데, 내 프로젝트 전체를 건드리지 않으면서, 해당 paper2만 친구가 수정한 바를 반영하여 다운로드하고 내가 수정한 바를 반영하여 업로드 하는 명령어를 정리해줬으면 좋겠어.","pastedContents":{},"timestamp":1788499064824,"project":"/home/imnyj","sessionId":"4c060dcb-3631-4488-8d71-e47c3def8dfa"}
+{"display":"/login","pastedContents":{},"timestamp":1788499077323,"project":"/home/imnyj","sessionId":"4c060dcb-3631-4488-8d71-e47c3def8dfa"}

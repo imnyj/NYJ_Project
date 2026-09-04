@@ -1,5 +1,5 @@
 {
-  "numStartups": 14,
+  "numStartups": 15,
   "installMethod": "native",
   "autoUpdates": false,
   "hasSeenTasksHint": true,
@@ -34,7 +34,7 @@
     "subagent-fanout-nudge": 7,
     "loop-command-nudge": 7,
     "goal-command-nudge": 7,
-    "dynamic-workflows": 8,
+    "dynamic-workflows": 14,
     "workflow-size-prompting-ambient": 8,
     "agent-flag": 9,
     "permissions": 12,
@@ -42,7 +42,7 @@
     "custom-commands": 12,
     "c4e-ultrareview": 12
   },
-  "promptQueueUseCount": 110,
+  "promptQueueUseCount": 115,
   "cachedGrowthBookFeatures": {
     "tengu_tool_search_unsupported_models": [
       "claude-3-5-haiku",
@@ -976,7 +976,7 @@
   "hasResetAutoModeOptInForDefaultOffer": true,
   "migrationVersion": 14,
   "userID": "d5eefd5cef0d7b962a57fca43a67f0203ccc2985e3a3a2d9d3950b3a0d364aec",
-  "changelogLastFetched": 1788443216064,
+  "changelogLastFetched": 1788498892825,
   "autoUpdatesProtectedForNative": true,
   "claudeCodeFirstTokenDate": "2026-04-14T06:23:02.864594Z",
   "shiftEnterKeyBindingInstalled": true,
@@ -1088,10 +1088,10 @@
     }
   },
   "cachedGrowthBookFeaturesAt": 1788485305317,
-  "lastReleaseNotesSeen": "2.1.259",
+  "lastReleaseNotesSeen": "2.1.260",
   "announcementImpressions": {
     "opus-5-launch": 3,
-    "fable-5-1-launch": 2
+    "fable-5-1-launch": 3
   },
   "projects": {
     "/home/imnyj": {
@@ -1111,7 +1111,7 @@
         "make_sumo_set.py"
       ],
       "lastGracefulShutdown": false,
-      "lastVersionBase": "2.1.259",
+      "lastVersionBase": "2.1.260",
       "hasUnseenTeamArtifacts": false,
       "exampleFilesGeneratedAt": 1788335542728,
       "lastCost": 0,
@@ -1209,7 +1209,7 @@
     "subagent-fanout-nudge": 1,
     "loop-command-nudge": 1,
     "goal-command-nudge": 1,
-    "dynamic-workflows": 1,
+    "dynamic-workflows": 2,
     "workflow-size-prompting-ambient": 1,
     "agent-flag": 1,
     "permissions": 1,

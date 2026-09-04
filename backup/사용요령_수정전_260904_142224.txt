@@ -76,70 +76,20 @@ python encrypt_key.py
    git config --global user.email johndoe@example.com
 
 * GitHub 명령어
+   git add .
+   git commit -m "2605121642"
+   git push -u origin main --force
 
-  ===== 1. 전체 프로젝트 (imnyj/NYJ_Project) =====
-  * 홈 디렉터리(/home/imnyj)에서 실행한다.
-  * Workspace/paper2는 .gitignore로 제외되어 있으므로 여기에 섞이지 않는다.
+   - 종필이와 공유하는 Repository
+      git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
+      
+      * 불러오기
+      git pull shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
+      git fetch shared-opt main
+      git merge -X subtree=Workspace/paper2 shared-opt/main --allow-unrelated-histories -m "2609041348"
 
-     * 올리기
-        cd /home/imnyj
-        git add .
-        git commit -m "2609041402"
-        git push origin main
-
-     * 내려받기 (다른 PC에서 작업한 것을 가져올 때)
-        cd /home/imnyj
-        git pull origin main
-
-  ===== 2. 종필이와 공유하는 paper2 (imnyj/UAM-Net_Opt) =====
-  * Workspace/paper2는 독립된 git 저장소이며 origin이 UAM-Net_Opt를 가리킨다.
-  * 반드시 cd로 그 디렉터리에 들어간 뒤에 실행한다. 홈에서 실행하면 안 된다.
-  * 여기서 무엇을 하든 전체 프로젝트에는 아무런 영향이 없다.
-
-     * 내려받기 (친구가 수정한 것을 반영)
-        cd /home/imnyj/Workspace/paper2
-        git pull origin main
-
-     * 올리기 (내가 수정한 것을 반영)
-        cd /home/imnyj/Workspace/paper2
-        git add .
-        git commit -m "2609041402"
-        git push origin main
-
-     * 충돌이 났을 때
-        git status                        (충돌 파일 확인)
-        해당 파일을 열어 <<<<<<< ======= >>>>>>> 마커를 지우고 내용을 정리한다
-        git add .
-        git commit -m "conflict resolved"
-        git push origin main
-
-     * pull을 했는데 친구 수정분이 반영되지 않을 때
-        원인은 대부분 둘 중 하나다.
-        (1) 내 폴더의 그 파일에 커밋하지 않은 수정이 남아 있다.
-            git이 이를 내가 의도한 수정으로 보고 덮어쓰지 않는다.
-        (2) 친구가 아직 push하지 않았다. 원격에 새 커밋이 없으면 pull은 할 일이 없다.
-
-        먼저 어느 쪽인지 확인한다.
-           git status                          (수정됨으로 표시된 파일이 있는가)
-           git fetch origin main
-           git log --oneline origin/main -3    (원격 최신 커밋)
-           git log --oneline -3                (내 최신 커밋, 위와 같으면 받을 것이 없다)
-           git diff origin/main -- 파일경로     (원격과 내 파일의 실제 차이)
-
-        내 수정을 버리고 GitHub 버전을 그대로 받으려면
-           git restore 파일경로                 (특정 파일만)
-           git restore .                       (전체, 되돌리면 복구 불가하니 주의)
-
-        내 수정을 살리고 싶으면 먼저 커밋한 뒤에 받는다.
-           git add . && git commit -m "2609041430"
-           git pull origin main
-
-  ===== 절대 쓰지 말 것 =====
-  * git subtree split / merge -X subtree / pull에 커밋해시:브랜치 형태의 인자
-    -> 이 명령들이 전체 프로젝트를 통째로 날려버린 원인이다.
-  * push에 --force
-    -> 상대가 올린 작업을 지운다. 두 저장소 모두에서 쓰지 않는다.
-
+      * 보내기
+      git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
 
 
 uvicorn agent_api:app --host 0.0.0.0 --port 8001 --reload

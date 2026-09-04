@@ -40,3 +40,6 @@ simulation_log.txt
 # 기타 임시 파일
 *.log
 __pycache__/
+
+# paper2는 별도 공유 저장소(UAM-Net_Opt)에서 독립 관리
+Workspace/paper2/

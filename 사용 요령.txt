@@ -86,29 +86,28 @@ python encrypt_key.py
       git subtree pull --prefix=Workspace/paper2 shared-opt main --squash
 
 
-
 uvicorn agent_api:app --host 0.0.0.0 --port 8001 --reload
 
 claude --dangerously-skip-permissions
 codex --dangerously-bypass-approvals-and-sandbox
 
 * antigravity
-agy : 안티그래비티 실행
-agy --dangerously-skip-permissions
-안티그래비티 실행하며 사용자에게 더이상 허락 받지 않고 진행
+   agy : 안티그래비티 실행
+   agy --dangerously-skip-permissions
+   안티그래비티 실행하며 사용자에게 더이상 허락 받지 않고 진행
 
-/grill-me : 애매한 거는 사용자에게 전부 질문하여 픽스하기
-/plan : 진행하지 않고 일단 계획서를 만들어 사용자에게 컨펌받기
-/teamwork-preview : orchestrator가 되어 하위 에이전트 팀을 꾸려 대형 프로젝트 진행
-/learn : 사용자와의 피드백을 기반으로 자체적인 업그레이드
-/resume : 세션을 불러오기
-/rename : 세션의 이름을 바꾸기
-/clear : 이 세션을 접고 정리하기
-/btw : 현재 진행 중인 것들은 놔두고 병렬적으로 질의응답을 진행
-/goal : 목표에 달성하기 위해 여러번에 걸쳐서 작업을 수행하여 목표에 도달할 때까지 무한 진행
-/usage : 토큰 사용량과 잔량 확인 (주간당, 5시간당 사용량 확인)
-/exit : 안티그래비티 종료
-/model : 세션 모델 변경
+   /grill-me : 애매한 거는 사용자에게 전부 질문하여 픽스하기
+   /plan : 진행하지 않고 일단 계획서를 만들어 사용자에게 컨펌받기
+   /teamwork-preview : orchestrator가 되어 하위 에이전트 팀을 꾸려 대형 프로젝트 진행
+   /learn : 사용자와의 피드백을 기반으로 자체적인 업그레이드
+   /resume : 세션을 불러오기
+   /rename : 세션의 이름을 바꾸기
+   /clear : 이 세션을 접고 정리하기
+   /btw : 현재 진행 중인 것들은 놔두고 병렬적으로 질의응답을 진행
+   /goal : 목표에 달성하기 위해 여러번에 걸쳐서 작업을 수행하여 목표에 도달할 때까지 무한 진행
+   /usage : 토큰 사용량과 잔량 확인 (주간당, 5시간당 사용량 확인)
+   /exit : 안티그래비티 종료
+   /model : 세션 모델 변경
 
 * 한국어 패치
 https://github.com/snflkd/fluent-korean/ 링크 README 읽고, 설치 안내 단락 읽고 어떻게 설치해서 사용할지 설명해줘.

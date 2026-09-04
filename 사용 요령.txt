@@ -85,10 +85,10 @@ python encrypt_key.py
       
       * 불러오기
       git fetch shared-opt main
-      git merge -X subtree=Workspace/paper2 shared-opt/main --allow-unrelated-histories -m "친구 코드 병합 완료"
+      git merge -X subtree=Workspace/paper2 shared-opt/main --allow-unrelated-histories -m "2609041348"
 
-      git subtree push --prefix=Workspace/paper2 shared-opt main
-      git subtree pull --prefix=Workspace/paper2 shared-opt main --squash
+      * 보내기
+      git push shared-opt `git subtree split --prefix=Workspace/paper2 main`:main --force
 
 
 uvicorn agent_api:app --host 0.0.0.0 --port 8001 --reload

@@ -1,0 +1,4 @@
+csw 14 cslw 22 cbRgFcLcb 183 base=0x9a
+1Table len 141757
+idx 33 fc=0x21c46 lcb=549 범위내=True 첫바이트=0x02
+idx 66 fc=0x0 lcb=0 범위내=False 

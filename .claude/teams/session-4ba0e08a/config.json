@@ -1,0 +1,18 @@
+{
+  "name": "session-4ba0e08a",
+  "createdAt": 1788501277069,
+  "leadAgentId": "team-lead@session-4ba0e08a",
+  "leadSessionId": "4ba0e08a-8a34-453c-9719-9c87d512fe2d",
+  "members": [
+    {
+      "agentId": "team-lead@session-4ba0e08a",
+      "name": "team-lead",
+      "agentType": "team-lead",
+      "joinedAt": 1788501277069,
+      "tmuxPaneId": "leader",
+      "cwd": "/home/imnyj",
+      "subscriptions": [],
+      "backendType": "in-process"
+    }
+  ]
+}

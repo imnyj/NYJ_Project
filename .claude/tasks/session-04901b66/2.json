@@ -1,0 +1,9 @@
+{
+  "id": "2",
+  "subject": "통신 노드 클래스 통합과 고도 의존 링크 모델",
+  "description": "models.py 기준으로 통신 노드를 단일 계층으로 통합하고 3GPP 형태의 고도/앙각 의존 안테나 이득을 추가. N(z) 가용성 집합 함수 구현.",
+  "activeForm": "통신 노드 통합 중",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

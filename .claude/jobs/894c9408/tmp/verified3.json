@@ -1,0 +1,86 @@
+[
+ {
+  "doi": "10.1145/3508546.3508598",
+  "title": "An Overview of the Action Space for Deep Reinforcement Learning",
+  "authors": [
+   "Jie Zhu",
+   "Fengge Wu",
+   "Junsuo Zhao"
+  ],
+  "container": "2021 4th International Conference on Algorithms, Computing and Artificial Intelligence",
+  "type": "proceedings-article",
+  "volume": null,
+  "issue": null,
+  "page": "1-10",
+  "year": 2021,
+  "publisher": "ACM",
+  "event_location": "Sanya China",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://dl.acm.org/doi/10.1145/3508546.3508598",
+  "s2_abstract": "In recent years, deep reinforcement learning has been applied to tasks in the real world gradually. Especially in the field of control, reinforcement learning has shown unprecedented popularity, such as robot control, autonomous driving, and so on. Different algorithms may be suitable for different problems, so we investigate and analyze the existing advanced deep reinforcement learning algorithms from the perspective of action space. At the same time, we analyze the differences and connections between discrete action space, continuous action space and discrete-continuous hybrid action space, and elaborate various reinforcement learning algorithms suitable for different action spaces. Applying reinforcement learning to the control problem in the real world still presents huge challenges. Finally, we summarize these challenges and discuss how reinforcement learning can be appropriately applied to satellite attitude control tasks."
+ },
+ {
+  "doi": "10.1016/j.engappai.2025.112499",
+  "title": "Hybrid Reinforcement Learning in parameterized action space via fluctuates constraint",
+  "authors": [
+   "Chengcheng Yan",
+   "Shujie Chen",
+   "Jiawei Xu",
+   "Xuejie Wang",
+   "Zheng Peng"
+  ],
+  "container": "Engineering Applications of Artificial Intelligence",
+  "type": "journal-article",
+  "volume": "162",
+  "issue": null,
+  "page": "112499",
+  "year": 2025,
+  "publisher": "Elsevier BV",
+  "event_location": "",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://linkinghub.elsevier.com/retrieve/pii/S0952197625025308",
+  "s2_abstract": null
+ },
+ {
+  "doi": "10.1109/COG52621.2021.9619068",
+  "title": "Hierarchical Advantage for Reinforcement Learning in Parameterized Action Space",
+  "authors": [
+   "Zhejie Hu",
+   "Tomoyuki Kaneko"
+  ],
+  "container": "2021 IEEE Conference on Games (CoG)",
+  "type": "proceedings-article",
+  "volume": null,
+  "issue": null,
+  "page": "1-8",
+  "year": 2021,
+  "publisher": "IEEE",
+  "event_location": "Copenhagen, Denmark",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://ieeexplore.ieee.org/document/9619068/",
+  "s2_abstract": "We propose a hierarchical architecture for the advantage function to improve the performance of reinforcement learning in parameterized action space, which consists of a set of discrete actions and a set of continuous parameters corresponding to each discrete action. The hierarchical architecture extends the actor-critic architecture with two specialized advantage functions, one for discrete actions and the other for continuous parameters, to estimate a better baseline. We incorporate this architecture into proximal policy optimization, which is referred to as HA-PPO. We evaluated all of our methods on the Half Field Offense domain, and found that the hierarchical architecture of the advantage function, which is referred to as the hierarchical advantage, helps to stabilize the learning and leads to a better performance."
+ },
+ {
+  "doi": "10.1109/MILCOM61039.2024.10774010",
+  "title": "Enhancing Interference Mitigation via Hybrid Action Space Control Deep Reinforcement Learning",
+  "authors": [
+   "Madan Dahal",
+   "Mojtaba Vaezi"
+  ],
+  "container": "MILCOM 2024 - 2024 IEEE Military Communications Conference (MILCOM)",
+  "type": "proceedings-article",
+  "volume": null,
+  "issue": null,
+  "page": "560-565",
+  "year": 2024,
+  "publisher": "IEEE",
+  "event_location": "Washington, DC, USA",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://ieeexplore.ieee.org/document/10774010/",
+  "s2_abstract": "Multi-agent deep reinforcement learning (DRL) has been utilized for interference mitigation in multi-cell networks, employing either discrete or continuous action spaces. A DRL algorithm with hybrid action spaces can combine discrete and continuous action spaces, which is natural when actions include both discrete and continuous components. By employing continuous power allocation but discrete beamforming selection, this paper introduces a hybrid multi-agent DRL algorithm for enhancing interference mitigation in millimeter-wave multi-cell networks. In this multi-agent DRL, each base station is equipped with an agent that receives the signal-to-interference-plus-noise ratio (SINR) from the associated users. A central controller collects these SINRs to generate and assign uniform rewards/penalties to all agents so that they can update their models locally. Hence, the algorithm adopts centralized reward generation but distributed model updating. This reduces the communication between the agents and the central node to SINR and reward exchange. Simulation results confirm that this hybrid action space interference management algorithm outperforms approaches utilizing either discrete or continuous action spaces in terms of the system sum-rate. Additionally, the proposed framework exhibits scalability with the number of cells."
+ }
+]

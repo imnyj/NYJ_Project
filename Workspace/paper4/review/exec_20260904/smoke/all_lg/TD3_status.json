@@ -1,0 +1,25 @@
+{
+  "model_name": "TD3",
+  "status": "completed",
+  "episodes_requested": 1,
+  "episodes_completed": 1,
+  "error_mode": "accumulate",
+  "seed": 42,
+  "log_csv_path": "/home/imnyj/Workspace/paper4/review/exec_20260904/smoke/all_lg/TD3_progress.csv",
+  "finished_at": "2026-09-04T15:34:51",
+  "training_steps": 34,
+  "mean_recent_loss": 0.124,
+  "zero_update_episodes": 0,
+  "divergence_monitor": {
+    "episodes_seen": 1,
+    "baseline_loss": null,
+    "loss_threshold": 1000.0,
+    "high_loss_streak": 0,
+    "zero_update_streak": 0,
+    "warmup_episodes": 5,
+    "loss_ratio": 1000.0,
+    "loss_abs_floor": 1000.0,
+    "loss_patience": 3,
+    "max_zero_update_episodes": 3
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "name": "session-a451dd5b",
+  "createdAt": 1788502984267,
+  "leadAgentId": "team-lead@session-a451dd5b",
+  "leadSessionId": "a451dd5b-ad4d-4465-95ad-6cfb0c601784",
+  "members": [
+    {
+      "agentId": "team-lead@session-a451dd5b",
+      "name": "team-lead",
+      "agentType": "team-lead",
+      "joinedAt": 1788502984267,
+      "tmuxPaneId": "leader",
+      "cwd": "/home/imnyj",
+      "subscriptions": [],
+      "backendType": "in-process"
+    },
+    {
+      "agentId": "audit-core@session-a451dd5b",
+      "name": "audit-core",
+      "color": "blue",
+      "joinedAt": 1788503140523,
+      "tmuxPaneId": "in-process",
+      "subscriptions": [],
+      "agentType": "p4-critic",
+      "model": "opus",
+      "prompt": "paper4 프로젝트(`/home/imnyj/Workspace/paper4`)의 전수 조사 중에서, 핵심 시뮬레이션 파이프라인의 완성도를 검증하는 작업을 맡아 주십시오.\n\n## 조사 대상\n- `coder/src/hot_swap_trainer.py` (환경, 스케줄러, 훈련 루프)\n- `coder/src/rl_interface.py` (상태 17차원, 액션 3축, SMDP 버퍼)\n- `coder/src/Communications.py` (802.11p 물리계층)\n- `coder/src/dynamics_predictor.py`\n- `coder/src/sumo/make_sumo_set.py`\n- `coder/run_all.py`\n\n## 반드시 검증해야 할 사항\n\n1. `CODE_GUIDE.md` 4장은 결함 A-1부터 A-15까지가 전부 수정되었고 \"B절은 비었다\"고 주장합니다. 이 주장이 사실인지 각 항목마다 실제 코드를 열어서 확인해 주십시오. 수정되지 않았거나 부분적으로만 수정된 항목이 있으면 파일명과 줄 번호를 명시해 주십시오.\n\n2. 보상 함수의 설계가 `idea/design_spec_v2.md`의 정의와 실제 구현에서 일치하는지 확인해 주십시오. 특히 추정 오차 항, 전력 항, 혼잡 항, 중복 갱신 페널티 항의 부호와 정규화 방식을 대조해 주십시오.\n\n3. SMDP 전이가 올바르게 구현되었는지 확인해 주십시오. 가변 시간 간격에 대한 할인 처리, 구간이 닫히는 시점, 리플레이 버퍼에 들어가는 (s, a, r, s', tau)의 정합성을 봐 주십시오.\n\n4. anti-mocking 단언 4종이 실제로 우회 불가능한지 확인해 주십시오. SUMO를 실제로 굴리지 않고도 통과할 수 있는 경로가 있는지 찾아 주십시오.\n\n5. dead reckoning 기반 추정 오차 계산이 물리적으로 타당한지 확인해 주십시오. RSU가 보유한 마지막 갱신 시점의 상태로 현재 위치를 외삽하는 방식이 실제 코드에서 그대로 구현되어 있는지 봐 주십시오.\n\n6. 802.11p 물리계층 수식이 표준과 일치하는지 웹 검색으로 확인해 주십시오. 경로손실 모델, Rayleigh 페이딩, SINR 판정 임계값, 에어타임 계산을 대상으로 합니다.\n\n7. 미구현 흔적(TODO, pass, 빈 함수, 항상 상수를 반환하는 함수, 사용되지 않는 인자)을 전부 찾아 주십시오.\n\n8. 결과를 유리하게 만드는 방향의 편향이 코드에 있는지 확인해 주십시오. 제안 방안에만 유리한 관측 정보가 주어지거나, 베이스라인에만 불리한 제약이 걸려 있는 경우를 찾아 주십시오.\n\n## 보고 형식\n결함마다 심각도(치명/중대/경), 파일과 줄 번호, 왜 문제인지, 어떻게 고쳐야 하는지를 적어 주십시오. 확인하지 못한 사항은 확인하지 못했다고 명시하고, 추측으로 채우지 마십시오. 직접 수정하지 말고 지침만 정리해 주십시오. 답을 받아야 진행할 수 있는 사항은 최종 보고 맨 위의 `## 질의` 블록에 적어 주십시오.",
+      "planModeRequired": false,
+      "cwd": "/home/imnyj/Workspace/paper4",
+      "backendType": "in-process"
+    },
+    {
+      "agentId": "audit-baselines@session-a451dd5b",
+      "name": "audit-baselines",
+      "color": "green",
+      "joinedAt": 1788503160350,
+      "tmuxPaneId": "in-process",
+      "subscriptions": [],
+      "agentType": "p4-critic",
+      "model": "opus",
+      "prompt": "paper4 프로젝트(`/home/imnyj/Workspace/paper4`)의 전수 조사 중에서, 비교 방안 9종 구현의 진정성을 검증하는 작업을 맡아 주십시오.\n\n## 조사 대상\n- `coder/src/baselines/` 디렉토리 전체 (sb3_ppo.py, sb3_sac.py, sb3_td3.py, res_mapddpg.py, ma2hdqn.py, i_hamappo.py, spam_d3qn.py, carlton.py, maddpg_mt.py, base_agent.py, sb3_wrapper.py, __init__.py)\n- `coder/src/evaluate.py`\n- `coder/src/hpo.py`\n- `coder/src/heuristic_scheduler.py`\n- 대조용 문헌 근거: `librarian/baselines_v2.md`, `librarian/baselines_v2.json`, `review/baselines_for_main_run.md`, `Conversation.md`\n\n## 반드시 검증해야 할 사항\n\n1. 9종 각각이 원논문의 알고리즘을 실제로 구현하고 있는지 확인해 주십시오. 이름만 다르고 내부 구조가 거의 동일한 껍데기 구현이 있는지 찾아 주십시오. 각 모델의 고유한 구성 요소(예: 어텐션 모듈, 계층적 액션 분해, 멀티 에이전트 크리틱, 듀얼링 구조)가 실제로 존재하는지 코드로 확인해 주십시오.\n\n2. 원논문이 실제로 그런 구조인지 웹 검색으로 확인해 주십시오. `librarian/baselines_v2.md`가 기재한 각 베이스라인의 알고리즘 요약이 원문과 맞는지 대조해 주십시오. 특히 CARLTON, SPAM-D3QN, RES-MAPDDPG, MA2HDQN, I-HAMAPPO, MADDPG-MT가 실존하는 논문인지 확인해 주십시오.\n\n3. 9종이 제안 방안과 공정하게 비교되는 조건인지 확인해 주십시오. 신경망 용량(파라미터 수), 학습 스텝 수, 관측 정보의 범위, 탐색 정책의 초기화가 한쪽에만 유리하게 설정되어 있는지 봐 주십시오. `coder/results/diagnostics/baseline_capacity_parity.csv`도 확인해 주십시오.\n\n4. 하이브리드 액션 공간(연속 Δ와 전력, 이산 서브채널)을 각 베이스라인이 어떻게 처리하는지 확인해 주십시오. 원래 이산 액션만 다루는 알고리즘에 연속 액션을 억지로 붙여서 성능이 부당하게 낮아지는 구조가 있는지 봐 주십시오.\n\n5. 학습이 실제로 일어나는지 확인해 주십시오. 그래디언트가 흐르지 않거나, 옵티마이저 스텝이 호출되지 않거나, 타깃 네트워크가 갱신되지 않는 베이스라인이 있는지 찾아 주십시오.\n\n6. `evaluate.py`와 `hpo.py`가 레지스트리에서 모델 목록을 유도하도록 수정되었다고 `CODE_GUIDE.md`가 주장합니다. 실제로 그러한지, 남아 있는 하드코딩된 모델명이 있는지 확인해 주십시오.\n\n7. `coder/results/hpo/optuna_trials_*.csv` 9개 파일을 읽고, 각 모델의 탐색이 실제로 다른 하이퍼파라미터 공간에서 이루어졌는지 확인해 주십시오. 모든 모델이 동일한 파라미터만 탐색했다면 A-10 수정이 불완전한 것입니다.\n\n## 보고 형식\n결함마다 심각도(치명/중대/경), 파일과 줄 번호, 왜 문제인지, 어떻게 고쳐야 하는지를 적어 주십시오. 문헌 검증 결과는 논문 제목, 저자, 게재지, 연도, DOI를 명시하고 실제로 확인한 것과 확인하지 못한 것을 구분해 주십시오. 확인하지 못한 사항은 추측으로 채우지 마십시오. 직접 수정하지 말고 지침만 정리해 주십시오. 답을 받아야 진행할 수 있는 사항은 최종 보고 맨 위의 `## 질의` 블록에 적어 주십시오.",
+      "planModeRequired": false,
+      "cwd": "/home/imnyj/Workspace/paper4",
+      "backendType": "in-process"
+    },
+    {
+      "agentId": "audit-refs@session-a451dd5b",
+      "name": "audit-refs",
+      "color": "yellow",
+      "joinedAt": 1788503177394,
+      "tmuxPaneId": "in-process",
+      "subscriptions": [],
+      "agentType": "p4-librarian",
+      "model": "opus",
+      "prompt": "paper4 프로젝트(`/home/imnyj/Workspace/paper4`)의 전수 조사 중에서, 수집된 문헌이 실존하는지 검증하는 작업을 맡아 주십시오.\n\n## 조사 대상\n- `librarian/related_works.json`, `librarian/related_works.md`\n- `librarian/baselines_v2.json`, `librarian/baselines_v2.md`\n- `writer/references.json`\n- `writer/main.tex`의 인용 목록\n- `User_Request.md` 맨 아래의 References [1]~[9]\n\n## 반드시 검증해야 할 사항\n\n1. 모든 항목의 DOI가 실제로 존재하는지 Crossref 등으로 조회해 주십시오. `coder/etc/scripts/verify_bibliography.py`가 이미 존재하지만, 그 스크립트의 판정을 그대로 믿지 말고 직접 조회해 주십시오.\n\n2. DOI가 존재하더라도, 그 DOI가 가리키는 실제 논문의 제목과 저자가 JSON에 기재된 것과 일치하는지 대조해 주십시오. DOI는 살아 있는데 다른 논문을 가리키는 경우가 가장 위험합니다.\n\n3. `User_Request.md`의 References [1]~[9]를 특히 주의 깊게 봐 주십시오. `10.1109/TITS.2025.3512345`, `10.1109/TVT.2024.3456789`처럼 끝자리가 규칙적인 숫자로 보이는 DOI가 여러 개 있어서 생성된 값일 가능성이 있습니다. 각각이 실존하는지 확인해 주십시오.\n\n4. 게재 연도가 2025년과 2026년으로 기재된 항목들이 실제로 그 시점에 출판되었는지 확인해 주십시오. 오늘 날짜는 2026년 9월 4일입니다.\n\n5. 검증 결과를 세 등급으로 분류해 주십시오. 첫째, 제목과 저자와 DOI가 모두 일치하는 확인 완료 항목. 둘째, 논문은 실존하나 서지 정보에 오류가 있는 수정 필요 항목. 셋째, 실존을 확인할 수 없는 미확인 항목입니다.\n\n6. 미확인 항목에 대해서는, 그 자리를 대신할 수 있는 실존하는 문헌을 IEEE, ACM, Elsevier, ScienceDirect, Nature 등 신뢰할 수 있는 학술 자료에서 찾아 제안해 주십시오. Scopus, MDPI, arXiv는 사용하지 마십시오.\n\n7. 인용의 적합성도 확인해 주십시오. 실존하는 논문이더라도, 본문에서 주장하는 내용을 그 논문이 실제로 뒷받침하는지 초록 수준에서 대조해 주십시오.\n\n## 작업 산출물\n검증 결과를 `librarian/verification_20260904.md`에 표 형태로 기록해 주십시오. 기존 파일은 수정하지 말고 새 파일로 만들어 주십시오. 항목마다 원래 기재된 서지 정보, 조회 결과, 판정 등급, 필요한 수정 사항을 적어 주십시오.\n\n## 주의\n확인하지 못한 문헌은 어떤 경우에도 지어내지 마십시오. 빈칸으로 두고 확인하지 못했다고 보고해 주십시오. 답을 받아야 진행할 수 있는 사항은 최종 보고 맨 위의 `## 질의` 블록에 적어 주십시오.",
+      "planModeRequired": false,
+      "cwd": "/home/imnyj/Workspace/paper4",
+      "backendType": "in-process"
+    },
+    {
+      "agentId": "audit-idea@session-a451dd5b",
+      "name": "audit-idea",
+      "color": "purple",
+      "joinedAt": 1788503199552,
+      "tmuxPaneId": "in-process",
+      "subscriptions": [],
+      "agentType": "p4-idea",
+      "model": "opus",
+      "prompt": "paper4 프로젝트(`/home/imnyj/Workspace/paper4`)의 전수 조사 중에서, 연구 아이디어의 정당성과 기여도를 검토하는 작업을 맡아 주십시오.\n\n## 조사 대상\n- `idea/scenario.md`, `idea/design_spec_v2.md`, `idea/Claude_Response.md`, `idea/User_Response_v1.md`, `idea/User_Response_v2.md`\n- `Conversation.md` (사용자 승인 확정본)\n- `User_Request.md` (서론 설계)\n- `aoi_scheduling_design.md`\n- `simulation_plan.md`\n- `writer/main.tex`\n- 구현 대조용: `coder/src/rl_interface.py`, `coder/src/hot_swap_trainer.py`\n- 문헌 대조용: `librarian/related_works.md`\n\n## 반드시 검토해야 할 사항\n\n1. 이 논문의 핵심 주장은 기존 AoI 최소화 연구가 상황적 예측 가능성을 무시하고 시간 경과만 최소화한다는 것입니다. 이 주장이 정당한지 판단해 주십시오. `librarian/related_works.md`에 정리된 선행 연구들 중에 이미 예측 오차 기반 목적 함수를 다룬 것이 있는지 확인해 주십시오. 특히 Age of Incorrect Information, Value of Information, effective AoI, estimation-error-based scheduling 같은 개념이 이미 존재하는지 검토해 주십시오. 이 개념들이 이미 확립되어 있다면 본 논문의 신규성 주장은 재조정되어야 합니다.\n\n2. 설계 확정본인 `idea/design_spec_v2.md`의 State, Action, Reward 정의가 실제 구현과 일치하는지 대조해 주십시오. 상태 17차원 각각이 설계 문서의 어느 항목에 대응하는지 매핑하고, 설계에는 있으나 구현되지 않았거나 구현에는 있으나 설계에 없는 항목을 찾아 주십시오.\n\n3. 논문이 내세우는 기여 항목들을 나열하고, 각각이 실제로 기여인지 판단해 주십시오. 하이브리드 액션 공간, SMDP 정형화, 다목적 보상 함수, Optuna 가중치 교정, 핫스왑 이중 모델 구조 각각에 대해, 이것이 새로운 것인지 아니면 기존 기법의 조합에 불과한지 평가해 주십시오.\n\n4. 핫스왑 이중 모델(Act/Rest 무중단 교체) 구조가 논문의 핵심 주장과 논리적으로 연결되는지 검토해 주십시오. 이 구조가 컨텍스트 인지형 스케줄링이라는 주제와 어떤 관계인지, 아니면 별개의 공학적 장치인지 판단해 주십시오.\n\n5. 시나리오 설정의 타당성을 검토해 주십시오. 6x6 격자망, RSU 한 대, 반경 300미터, 서브채널 4개, 802.11p라는 설정이 논문의 주장을 뒷받침하기에 충분한지, 심사자가 제기할 만한 반론이 무엇인지 정리해 주십시오. 특히 RSU가 한 대뿐인 설정에서 핸드오버나 다중 RSU 간섭을 다루지 않는 것이 한계로 지적될 수 있는지 봐 주십시오.\n\n6. `Conversation.md`에서 사용자가 승인한 설계 사항과 현재 구현 사이에 어긋난 부분이 있는지 확인해 주십시오.\n\n7. 심사자 관점에서 이 논문에 제기될 가장 강한 반론 다섯 가지를 예상하고, 각각에 대해 현재 프로젝트가 답할 수 있는지 없는지 판단해 주십시오.\n\n## 보고 형식\n읽기 전용이므로 파일을 수정하지 마시고, 보고서 본문을 최종 보고에 담아 주십시오. 판단마다 근거가 되는 파일과 줄 번호를 명시해 주십시오. 확인하지 못한 사항은 추측으로 채우지 마십시오. 답을 받아야 진행할 수 있는 사항은 최종 보고 맨 위의 `## 질의` 블록에 적어 주십시오.",
+      "planModeRequired": false,
+      "cwd": "/home/imnyj/Workspace/paper4",
+      "backendType": "in-process"
+    },
+    {
+      "agentId": "audit-run@session-a451dd5b",
+      "name": "audit-run",
+      "color": "orange",
+      "joinedAt": 1788503220076,
+      "tmuxPaneId": "in-process",
+      "subscriptions": [],
+      "agentType": "p4-coder",
+      "model": "opus",
+      "prompt": "paper4 프로젝트(`/home/imnyj/Workspace/paper4`)의 전수 조사 중에서, 코드가 실제로 동작하는지 실측하고 기존 결과 파일의 신뢰성을 검증하는 작업을 맡아 주십시오.\n\n이 작업은 검증이 목적이므로, 기존 코드와 결과 파일을 수정하지 마십시오. 새로 만드는 산출물은 `review/` 아래에 두십시오. 장시간이 걸리는 본훈련은 절대 실행하지 마십시오.\n\n## 반드시 수행해야 할 사항\n\n1. `coder/tests/`의 pytest 전체를 실행하고 결과를 보고해 주십시오. 통과 수, 실패 수, 건너뛴 수를 정확히 적고, 실패한 테스트는 원인까지 파악해 주십시오. `CODE_GUIDE.md`는 테스트가 104개 또는 110개라고 서로 다르게 적고 있으니 실제 수집 개수를 확인해 주십시오.\n\n2. `coder/etc/scripts/`의 검증 스크립트 9종을 실행할 수 있는 것부터 전부 실행하고 결과를 보고해 주십시오. 실행에 실패하는 스크립트는 왜 실패하는지 적어 주십시오. `verify_bibliography.py`는 네트워크가 필요하니 실패해도 무방합니다.\n\n3. 짧은 스모크 테스트를 돌려 파이프라인이 실제로 끝까지 도는지 확인해 주십시오. 에피소드 수와 스텝 수를 최소로 잡고, 제안 방안과 베이스라인 9종 각각을 짧게라도 한 번씩 굴려서 예외 없이 완주하는지 봐 주십시오. 산출물은 `review/` 아래 임시 디렉토리에 두고, 기존 `coder/checkpoints/`와 `coder/logs/training/`을 오염시키지 마십시오.\n\n4. `coder/results/eval/eval_leaderboard.csv`, `eval_summary_by_density.csv`, `eval_raw_runs.csv`를 읽고 내용을 보고해 주십시오. 이 결과가 언제 어떤 조건으로 생성된 것인지, 본훈련 결과인지 예비 실행 결과인지 판단해 주십시오. `coder/results/eval_prelim_mean/`과 `eval_prelim_accumulate/`도 같이 확인해 주십시오.\n\n5. `coder/runs/mean_seed42/`와 `coder/runs/accumulate_seed42/`의 `run_config.json`과 `run_result.json`을 읽고 어떤 실험이 어떤 설정으로 돌았는지 정리해 주십시오. 학습 곡선이 수렴했는지 `lg/` 아래 진행 CSV로 판단해 주십시오.\n\n6. `coder/logs/training/*_progress.csv` 10개 파일을 읽어 주십시오. 파일 크기가 400에서 500바이트 수준으로 매우 작은데, 몇 에피소드 분량이 기록되어 있는지, 이것이 정상적인 학습 기록인지 판단해 주십시오.\n\n7. `coder/results/hpo/optuna_best_params.csv`와 `coder/results/hpo_parallel/` 아래 결과를 읽고, HPO가 실제로 완료되었는지, 몇 trial이 돌았는지, 최적값이 탐색 공간의 경계에 붙어 있지는 않은지 확인해 주십시오.\n\n8. `coder/results/diagnostics/` 아래 4개 CSV를 읽고 무엇을 진단한 결과인지, 그 결과가 정상 범위인지 판단해 주십시오.\n\n## 보고 형식\n실행한 명령과 실제 출력을 근거로 보고해 주십시오. 실행하지 못한 것은 실행하지 못했다고 명시하고, 결과를 추측으로 채우지 마십시오. 수치는 파일에서 직접 읽은 값만 기재해 주십시오. 답을 받아야 진행할 수 있는 사항은 최종 보고 맨 위의 `## 질의` 블록에 적어 주십시오.",
+      "planModeRequired": false,
+      "cwd": "/home/imnyj/Workspace/paper4",
+      "backendType": "in-process"
+    }
+  ]
+}

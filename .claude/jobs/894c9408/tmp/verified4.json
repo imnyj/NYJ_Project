@@ -1,0 +1,43 @@
+[
+ {
+  "doi": "10.1109/EICT68394.2025.11355604",
+  "title": "Velocity Aware Predictive Geometry Based Handover Management in LEO Satellite NTNs",
+  "authors": [
+   "Lamia Enam",
+   "Mostafa Zaman Chowdhury"
+  ],
+  "container": "2025 7th International Conference on Electrical Information and Communication Technology (EICT)",
+  "type": "proceedings-article",
+  "volume": null,
+  "issue": null,
+  "page": "1-6",
+  "year": 2025,
+  "publisher": "IEEE",
+  "event_location": "Khulna, Bangladesh",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://ieeexplore.ieee.org/document/11355604/",
+  "s2_abstract": "Sixth generation (6G) non-terrestrial networks (NTNs) are increasingly envisaged through Low Earth Orbit (LEO) mega constellations to provide ubiquitous broadband connectivity with minimal propagation latency. However, the orbital motion of LEO satellites produces frequent beam handovers that can be problematic at high mobility user equipment (UE) rates, creating a higher probability of radio link failure (RLF), excessive control signaling, and poor energy efficiency in both saturation and post saturation mode. To alleviate the impacts of RLF due to excessive (and unverified) height/latency for beam transitions, this research proposes a predictive kinematic handover ($\\mathbf{P K H}$) approach with location-based handover triggering (LHT), augmented by velocity aware Reward ($\\mathbf{R}$), Penalty ($\\mathbf{P}$) and Reward + Penalty ($\\mathbf{R}+\\mathbf{P}$). By using the user mobility profiles with satellite ephemeris data, the PKH decision making framework is able to anticipate handover timing based on user mobility data modelled during handover transitions based on geometrical positioning. Evidence supporting the viability of the proposed LHT-($\\mathbf{R}+\\mathbf{P}$) approach is provided from Monte Carlo simulations with twenty UEs traveling at $\\mathbf{5 0 0 ~ k m} / \\mathbf{h}$, and seven satellites at $\\mathbf{6 0 0 ~ k m}$ altitude (19 beams per satellite) over a rural area of size $110 \\times 35 \\mathrm{~km}$, etc. The average handover distance is 18.45 km, RLF probability is kept below 2.5% (under extreme mobility), it saves 23.38% of energy per call, and it reduces signaling overhead by 40.48%. These results clearly demonstrate that mobility resilience, resource utilization and an approach to solve seamless global coverage and ultra reliable, low latency communications for 6 G NTN in the future is practical with velocity aware LHT."
+ },
+ {
+  "doi": "10.1109/LWC.2025.3546724",
+  "title": "Handover-Aware Trajectory Optimization for Cellular-Connected UAV",
+  "authors": [
+   "Xiangming Du",
+   "Shuowen Zhang",
+   "Francis C.-M. Lau"
+  ],
+  "container": "IEEE Wireless Communications Letters",
+  "type": "journal-article",
+  "volume": "14",
+  "issue": "7",
+  "page": "1849-1853",
+  "year": 2025,
+  "publisher": "Institute of Electrical and Electronics Engineers (IEEE)",
+  "event_location": "",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://ieeexplore.ieee.org/document/10907947/",
+  "s2_abstract": "In this letter, we study a cellular-connected uncrewed aerial vehicle (UAV) which aims to complete a mission of flying between two pre-determined locations while maintaining satisfactory communication quality with the ground base stations (GBSs). Due to the potentially long distance of the UAV’s flight, frequent handovers may be incurred among different GBSs, which leads to various practical issues such as large delay and synchronization overhead. To address this problem, we investigate the trajectory optimization of the UAV to minimize the number of GBS handovers during the flight, subject to a communication quality constraint and a maximum mission completion time constraint. Although this problem is non-convex and difficult to solve, we derive useful structures of the optimal solution, based on which we propose an efficient algorithm based on graph theory and Lagrangian relaxation for finding a high-quality suboptimal solution in polynomial time. Numerical results validate the effectiveness of our proposed trajectory design."
+ }
+]

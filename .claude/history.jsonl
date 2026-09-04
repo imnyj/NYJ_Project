@@ -106,3 +106,15 @@
 {"display":"앞으로 github에 업로드하고 다운로드 받는 작업들을 할 건데, 내 전체 프로젝트는 이제 거의 업로드만 할 것 같아. 그래도 언젠간 다운로드할 필요도 있겠지. 문제는 이중에서 Workspace/paper2/ 디렉토리만 별도로 공유하여 협업을 하고 싶어. 그래서 여러 시도를 하고 있는데(사용 요령.txt의 line 83-92) 잘못 건드리면 지금 작업 중인 모든 것이 날아가더라고. 그래도 계속 백업을 해두었으니까 불러오기는 했는데, 내 프로젝트 전체를 건드리지 않으면서, 해당 paper2만 친구가 수정한 바를 반영하여 다운로드하고 내가 수정한 바를 반영하여 업로드 하는 명령어를 정리해줬으면 좋겠어.","pastedContents":{},"timestamp":1788499064824,"project":"/home/imnyj","sessionId":"4c060dcb-3631-4488-8d71-e47c3def8dfa"}
 {"display":"/login","pastedContents":{},"timestamp":1788499077323,"project":"/home/imnyj","sessionId":"4c060dcb-3631-4488-8d71-e47c3def8dfa"}
 {"display":"simulator/sim1.md 가 변경 되었는데 pull로 변경이 반영이 안되고 있어.","pastedContents":{},"timestamp":1788499546087,"project":"/home/imnyj","sessionId":"4c060dcb-3631-4488-8d71-e47c3def8dfa"}
+{"display":"/resume","pastedContents":{},"timestamp":1788501039821,"project":"/home/imnyj","sessionId":"4c060dcb-3631-4488-8d71-e47c3def8dfa"}
+{"display":"/resume","pastedContents":{},"timestamp":1788501059823,"project":"/home/imnyj","sessionId":"9ecc8cb0-2f2b-42ee-9d89-9464d5e42d1a"}
+{"display":"/clear","pastedContents":{},"timestamp":1788501084173,"project":"/home/imnyj","sessionId":"9ecc8cb0-2f2b-42ee-9d89-9464d5e42d1a"}
+{"display":"Workspace/paper2 내부를 읽고 해당 프로젝트를 이어가보도록 하자. Urban Air Mobility(UAM) 관련 Predictive Handover Scheduling를 주제로 연구하고 있었어. 그러나, 잘못 받아들여서 UAV로 가져간 것 같아. 해당 논문(paper2)에서는 UAM을 타겟으로 잡았음을 기억해.","pastedContents":{},"timestamp":1788501232262,"project":"/home/imnyj","sessionId":"3fe54f8d-4cec-43d0-99cc-7db5d2cc3870"}
+{"display":"/login","pastedContents":{},"timestamp":1788501242167,"project":"/home/imnyj","sessionId":"3fe54f8d-4cec-43d0-99cc-7db5d2cc3870"}
+{"display":"/exit","pastedContents":{},"timestamp":1788501260700,"project":"/home/imnyj","sessionId":"3fe54f8d-4cec-43d0-99cc-7db5d2cc3870"}
+{"display":"/reume","pastedContents":{},"timestamp":1788501289629,"project":"/home/imnyj","sessionId":"894c9408-6096-4933-b2b1-80f3d5d795fc"}
+{"display":"/resume","pastedContents":{},"timestamp":1788501293060,"project":"/home/imnyj","sessionId":"894c9408-6096-4933-b2b1-80f3d5d795fc"}
+{"display":"Workspace/paper2 내부를 읽고 해당 프로젝트를 이어가보도록 하자. Urban Air Mobility(UAM) 관련 Predictive Handover Scheduling를 주제로 연구하고 있었어. 그러나, 잘못 받아들여서 UAV로 가져간 것 같아. 해당 논문(paper2)에서는 UAM을 타겟으로 잡았음을 기억해.","pastedContents":{},"timestamp":1788501300157,"project":"/home/imnyj","sessionId":"3fe54f8d-4cec-43d0-99cc-7db5d2cc3870"}
+{"display":"/Workspace/paper4를 읽고 시뮬레이션의 완성도, 아이디어의 정당성 및 기여도, 찾은 논문들의 검증 등 해당 논문 프로젝트를 전수 조사 해줘.","pastedContents":{},"timestamp":1788503077071,"project":"/home/imnyj","sessionId":"a451dd5b-ad4d-4465-95ad-6cfb0c601784"}
+{"display":"/rename paper4-critic","pastedContents":{},"timestamp":1788503092725,"project":"/home/imnyj","sessionId":"a451dd5b-ad4d-4465-95ad-6cfb0c601784"}
+{"display":"/rename paper2","pastedContents":{},"timestamp":1788503152236,"project":"/home/imnyj","sessionId":"3fe54f8d-4cec-43d0-99cc-7db5d2cc3870"}

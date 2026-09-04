@@ -1,0 +1,11 @@
+model,path,steps,n_pushed,frac_with_behaviour_logp,frac_with_action_idx,logp_column_in_batch,action_idx_column_in_batch,n_updates,n_updates_reporting_the_flag,frac_updates_with_stored_logp,batch_keys
+PPO,training,300,529,1.0,0.0,True,False,15,15,1.0,action|behaviour_log_prob|delta_t|discount|done|next_state|reward|state
+PPO,hpo_rollout,300,441,1.0,0.0,True,False,598,598,1.0,action|behaviour_log_prob|delta_t|discount|done|next_state|reward|state
+I-HAMAPPO,training,300,903,1.0,1.0,True,True,200,200,1.0,action|action_idx|behaviour_log_prob|delta_t|discount|done|next_state|reward|state
+I-HAMAPPO,hpo_rollout,300,486,1.0,1.0,True,True,586,586,1.0,action|action_idx|behaviour_log_prob|delta_t|discount|done|next_state|reward|state
+TD3,training,300,1472,0.0,0.0,False,False,183,0,,action|delta_t|discount|done|next_state|reward|state
+TD3,hpo_rollout,300,3609,0.0,0.0,False,False,570,0,,action|delta_t|discount|done|next_state|reward|state
+SPAM-D3QN,training,300,709,0.0,1.0,False,True,85,0,,action|action_idx|delta_t|discount|done|next_state|reward|state
+SPAM-D3QN,hpo_rollout,300,761,0.0,1.0,False,True,594,0,,action|action_idx|delta_t|discount|done|next_state|reward|state
+CARLTON,training,300,249,0.0,1.0,False,True,40,0,,action|action_idx|delta_t|discount|done|next_state|reward|state
+CARLTON,hpo_rollout,300,336,0.0,1.0,False,True,594,0,,action|action_idx|delta_t|discount|done|next_state|reward|state

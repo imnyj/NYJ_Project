@@ -1,0 +1,9 @@
+{
+  "id": "7",
+  "subject": "단위 테스트 작성과 실행",
+  "description": "지시받은 5개 검증 항목을 단위 테스트로 확인하고 실제 실행 로그를 확보.",
+  "activeForm": "단위 테스트 실행 중",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

@@ -1,0 +1,127 @@
+{
+  "state": "blocked",
+  "detail": "You've hit your session limit · resets 8:20pm (Asia/Seoul)",
+  "tempo": "blocked",
+  "inFlight": {
+    "tasks": 5,
+    "queued": 0,
+    "kinds": [
+      "in_process_teammate"
+    ],
+    "drainableMonitors": 0
+  },
+  "fan": [
+    {
+      "id": "tkd94abx8",
+      "kind": "agent",
+      "label": "paper2의 기획 문서를 진단하고 UAM 기준으로 재작성한 본문을 만들어 주십시오. #...",
+      "startedAt": 1788501617642,
+      "doneAt": 0
+    },
+    {
+      "id": "tcac8cg9j",
+      "kind": "agent",
+      "label": "paper2의 작업 디렉터리 구조를 정비해 주십시오. ## 수행할 일 1. `/home/...",
+      "startedAt": 1788501628791,
+      "doneAt": 0
+    },
+    {
+      "id": "tkw3l3wfe",
+      "kind": "agent",
+      "label": "paper2의 초기 문헌 인덱스를 구축해 주십시오. ## 연구 주제 UAM(Urban A...",
+      "startedAt": 1788502120142
+    },
+    {
+      "id": "tb3um4prd",
+      "kind": "agent",
+      "label": "paper2의 UAM 시뮬레이터를 재설계해 주십시오. 승계한 paper5 코드를 통합하고 ...",
+      "startedAt": 1788503203378,
+      "doneAt": 0
+    },
+    {
+      "id": "tw3q6e6dl",
+      "kind": "agent",
+      "label": "paper2의 비교 방안 13종 규격을 정의해 주십시오. ## 먼저 읽어야 할 파일 - ...",
+      "startedAt": 1788503230146,
+      "doneAt": 0
+    },
+    {
+      "id": "todo:1",
+      "kind": "todo",
+      "label": "설정 파일과 로더 구축",
+      "startedAt": 0,
+      "doneAt": 0
+    },
+    {
+      "id": "todo:2",
+      "kind": "todo",
+      "label": "통신 노드 클래스 통합과 고도 의존 링크 모델",
+      "startedAt": 0,
+      "doneAt": 0
+    },
+    {
+      "id": "todo:3",
+      "kind": "todo",
+      "label": "계획 궤적과 실제 궤적 분리",
+      "startedAt": 0,
+      "doneAt": 0
+    },
+    {
+      "id": "todo:4",
+      "kind": "todo",
+      "label": "궤적 편차 분해와 회랑 여유 지표",
+      "startedAt": 0,
+      "doneAt": 0
+    },
+    {
+      "id": "todo:5",
+      "kind": "todo",
+      "label": "관측 인터페이스 구현 중",
+      "startedAt": 0
+    },
+    {
+      "id": "todo:6",
+      "kind": "todo",
+      "label": "PSU 궤적 승인과 시뮬레이터 본체 통합"
+    },
+    {
+      "id": "todo:7",
+      "kind": "todo",
+      "label": "단위 테스트 작성과 실행"
+    }
+  ],
+  "tokens": 636065,
+  "output": null,
+  "children": null,
+  "linkScanOffset": 1284176,
+  "linkScanPath": "/home/imnyj/.claude/projects/-home-imnyj/3fe54f8d-4cec-43d0-99cc-7db5d2cc3870.jsonl",
+  "template": "bg",
+  "respawnFlags": [
+    "--permission-mode",
+    "bypassPermissions",
+    "--model",
+    "opus",
+    "--name",
+    "paper2"
+  ],
+  "bgIsolation": "none",
+  "providerEnv": {},
+  "interactiveLineage": true,
+  "intent": "",
+  "name": "paper2",
+  "nameSource": "user",
+  "sessionId": "894c9408-6096-4933-b2b1-80f3d5d795fc",
+  "resumeSessionId": "3fe54f8d-4cec-43d0-99cc-7db5d2cc3870",
+  "daemonShort": "894c9408",
+  "cliVersion": "2.1.260",
+  "cwd": "/home/imnyj",
+  "createdAt": "2026-09-04T05:54:45.072Z",
+  "updatedAt": "2026-09-04T06:54:10.613Z",
+  "firstTerminalAt": null,
+  "bridgeSessionId": "cse_01MoipKy2ZZBDNBJQRJ79uEp",
+  "bridgeOwnerAccountUuid": "088c6aa7-5e22-4910-bbde-c3f6385d9d49",
+  "bridgeOwnerOrganizationUuid": "4b451601-f75a-47c8-885e-d8b56bfc88d2",
+  "bridgeOutboundOnly": false,
+  "backend": "daemon",
+  "needs": "rate limited — wait and retry · You've hit your session limit · resets 8:20pm (Asia/Seoul)"
+}

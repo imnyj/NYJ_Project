@@ -1,0 +1,1666 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    &%#!&!&"!*&!
+
+
+
+       
+
+
+
+
+                                          33E#+1/
+
+
+
+
+
+
+
+
+                  
+
+
+
+   
+
+
+
+        333E#+1/
+THIS PAGE INTENTIONALLY LEFT BLANK
+
+
+
+
+                                     iv | Page
+Executive Summary
+The Federal Aviation Administration (FAA) NextGen Office developed this Concept of
+Operations for Urban Air Mobility (UAM) (ConOps 1.0) to describe the envisioned operational
+environment that supports the expected growth of flight operations in and around urban areas.
+UAM is a subset of the Advanced Air Mobility (AAM), a National Aeronautics and Space
+Administration (NASA), FAA, and industry initiative to develop an air transportation system that
+moves people and cargo between local, regional, intraregional, and urban places previously not
+served or underserved by aviation using revolutionary new aircraft. While AAM supports a wide
+range of passenger, cargo, and other operations within and between urban and rural environments,
+UAM focuses on the transition from the traditional management of air traffic operations to the
+future passenger or cargo-carrying air transportation services within an urban environment.
+
+The envisioned future state for UAM operations includes increasing levels of autonomy and
+operational tempo across a range of environments including major metropolitan areas and the
+surrounding suburbs. As described in stakeholder sessions, the mature state operations will be
+achieved at scale through a crawl-walk-run approach, wherein:
+
+   1. Initial UAM operations are conducted using new vehicle types that have been certified to
+      fly within the current regulatory and operational environment.
+   2. Higher tempo UAM operations are supported through regulatory evolution and UAM
+      Corridors that leverage collaborative separation methodologies.
+   3. New operational rules and infrastructure facilitate highly automated traffic management
+      enabling remotely piloted and autonomous vehicles to safely operate at increased
+      operational tempos.
+
+This document defines the UAM operating environment in the context of Air Traffic Management
+(ATM) and Unmanned Aircraft System (UAS) Traffic Management (UTM). This document
+presents the ATM vision to support initial UAM operations. UAM ConOps 1.0 does not prescribe
+specific solutions, detailed operational procedures, or implementation methods except as examples
+to support a fuller understanding of the elements associated with UAM operations.
+
+The UAM ConOps implementation is an evolutionary approach and includes engagement with
+NASA and industry and community stakeholders. This version captures the combined thoughts of
+industry, NASA, and the FAA of how operations may be conducted in the future and is still in
+need of test, validation, and verification before becoming a more established description. Future
+versions of this concept will be developed to reflect the outcomes of analyses, trials, concept
+maturation, and collaboration that arise from these initial thoughts.
+
+
+
+
+                                                                                          v | Page
+THIS PAGE INTENTIONALLY LEFT BLANK
+
+
+
+
+                                     vi | Page
+Version History
+
+Date        Revision            Version
+
+6/26/2020   Baseline Document   1.0
+
+
+
+
+                                      vii | Page
+THIS PAGE INTENTIONALLY LEFT BLANK
+
+
+
+
+                                     viii | Page
+Table of Contents
+1     Introduction ............................................................................................................................. 1
+    1.1     Scope ................................................................................................................................ 1
+    1.2     Document Organization ................................................................................................... 1
+    1.3     Background ...................................................................................................................... 2
+      1.3.1         Drivers for Change.................................................................................................... 3
+      1.3.2         Aircraft Evolution ..................................................................................................... 3
+    1.4     Operating Environment Perspectives ............................................................................... 4
+2     Overarching Principles and Assumptions................................................................................ 6
+3     Evolution of UAM Operations ................................................................................................ 7
+    3.1     Initial UAM Operations ................................................................................................... 8
+    3.2     ConOps 1.0 Operations .................................................................................................... 9
+    3.3     Mature State Operations................................................................................................. 10
+4     UAM Operational Concept.................................................................................................... 11
+    4.1     Overview ........................................................................................................................ 11
+    4.2     Definitions...................................................................................................................... 11
+    4.3     Roles and Responsibilities ............................................................................................. 12
+      4.3.1         FAA......................................................................................................................... 12
+          4.3.1.1         FAA – Regulatory ........................................................................................... 12
+          4.3.1.2         FAA – Air Traffic Control............................................................................... 12
+          4.3.1.3         FAA – NAS Data Exchange............................................................................ 13
+      4.3.2         UAM Operator ........................................................................................................ 13
+      4.3.3         Pilot in Command (PIC) ......................................................................................... 14
+      4.3.4         Provider of Services for UAM (PSU)..................................................................... 14
+      4.3.5         PSU Network .......................................................................................................... 15
+      4.3.6         Supplemental Data Service Providers..................................................................... 15
+      4.3.7         UAM Aerodrome .................................................................................................... 15
+      4.3.8         UAS Service Supplier ............................................................................................. 15
+      4.3.9         Other NAS Airspace Users ..................................................................................... 16
+      4.3.10        Public Interest Stakeholders.................................................................................... 16
+
+
+                                                                                                                                      ix | Page
+    4.4     UAM Corridors .............................................................................................................. 16
+      4.4.1         UAM Corridor Demand Capacity Balancing ......................................................... 17
+      4.4.2         UAM Corridor Evolution........................................................................................ 18
+    4.5     UAM Separation ............................................................................................................ 18
+    4.6     Weather and Obstacles Within UAM Corridors ............................................................ 19
+    4.7     Constraint Information and Advisories .......................................................................... 19
+    4.8     UAM Operational Assumptions..................................................................................... 19
+5     Notional Architecture ............................................................................................................ 21
+    5.1     Supporting Services........................................................................................................ 22
+6     UAM Use Cases and Scenarios ............................................................................................. 23
+    6.1     Nominal UAM Use Case................................................................................................ 23
+      6.1.1         Nominal UAM Operations Through a Single UAM Corridor................................ 23
+          6.1.1.1         Planning Phase................................................................................................. 23
+          6.1.1.2         In-Flight Phases ............................................................................................... 24
+          6.1.1.3         Post Operations Phase ..................................................................................... 25
+    6.2     Off-Nominal UAM Use Case......................................................................................... 25
+      6.2.1         UAM Operation Non-Conformant to Shared UAM Operational Intent ................. 25
+      6.2.2         UAM Operational Contingency.............................................................................. 26
+7     UAM Implementation............................................................................................................ 27
+Appendix A             References ........................................................................................................... 28
+Appendix B             Acronyms ............................................................................................................ 29
+Appendix C             Glossary............................................................................................................... 31
+Appendix D             Helicopter Route Operations............................................................................... 34
+
+List of Figures
+Figure 1-1: US Auto Commute Congestion Growth Trend............................................................ 2
+Figure 1-2: UAM, UTM, and ATM Operating Environments ....................................................... 5
+Figure 3-1: Evolution of the UAM Operational Environment........................................................ 8
+Figure 4-1: Multiple UAM Corridors ........................................................................................... 17
+Figure 4-2: UAM Corridor with “Tracks” .................................................................................... 18
+Figure 5-1: Notional UAM Architecture ...................................................................................... 22
+
+                                                                                                                                     x | Page
+List of Tables
+Table 1: Operating Environment Perspectives ............................................................................... 4
+Table 2: Use Case Descriptions .................................................................................................... 23
+Table D-1: Comparison of Helicopter Route Operations and UAM Operations.......................... 34
+
+
+
+
+                                                                                                                          xi | Page
+THIS PAGE INTENTIONALLY LEFT BLANK
+
+
+
+
+                                     xii | Page
+1 Introduction
+1.1 Scope
+Urban Air Mobility (UAM) enables highly automated, cooperative, passenger or cargo-carrying
+air transportation services in and around urban areas. UAM is a subset of the Advanced Air
+Mobility (AAM) concept under development by the National Aeronautics and Space
+Administration (NASA), the Federal Aviation Administration (FAA), and industry. While AAM
+supports operations moving people and cargo between local, regional, intraregional, and urban
+environments, UAM will focus on the urban and suburban environments. This Concept of
+Operations (ConOps) provides an initial, foundational perspective supporting the introduction and
+incorporation of UAM operations into the National Airspace System (NAS).
+
+The goal is to provide a common frame of reference to support the FAA, NASA, industry, and
+other stakeholder discussions and decision-making with a shared understanding of the challenges,
+technologies, their potential, and examples of areas of applicability to the NAS. No solutions,
+specific implementation methods, or detailed operational procedures are described in this
+document except for example purposes (i.e., operational scenarios). This document will be further
+matured and updated as the concept undergoes validation, stakeholder engagement continues, and
+additional operational scenarios are developed.
+
+As the initial UAM ConOps, this document represents a step along an evolution that introduces
+UAM operations, orients these operations in relation to other operations (e.g., existing NAS
+operations, Unmanned Aircraft System (UAS) Traffic Management (UTM) operations), identifies
+the range of automation and regulatory changes to support the operations, and describes a
+collaborative environment to support increasing density of operations. Each of these items is
+explored in this ConOps.
+
+For this ConOps, consistent with industry expectations, UAM operations will include a Pilot in
+Command (PIC) onboard the UAM aircraft.
+
+1.2 Document Organization
+This ConOps is organized as follows:
+
+Section 1 – Introduction – provides the scope and background for the ConOps
+
+Section 2 – Overarching Principles and Assumptions
+
+Section 3 – Evolution of UAM – describes how the operations described in the UAM ConOps fit
+into the larger evolution of UAM operations
+
+Section 4 – UAM Operations – describes the operations within the scope of the UAM ConOps
+
+Section 5 – Notional Architecture – describes the primary actors, functions, and data flows that
+support the UAM operations described in the UAM ConOps
+
+
+
+                                                                                         1 | Page
+Section 6 – UAM Use Cases – describes single thread operations that demonstrate the orchestration
+of UAM operations (Section 4) and the notional architecture (Section 5)
+
+Section 7 – UAM Implementation – describes an evolutionary approach to implementation of
+UAM operations within scope of the UAM ConOps
+
+Appendix A – Glossary
+
+Appendix B – Acronyms
+
+Appendix C – References
+
+Appendix D – Helicopter Route Operations
+
+1.3 Background
+Each year, ground traffic increases resulting in longer commute times with significant economic
+costs. Americans spend an estimated 8.8 billion hours sitting in road traffic per year with an
+expected increase of 14 percent by 2023 1. Figure 1-1 shows the general increasing trend of how
+many hours Americans have spent commuting1.
+
+
+
+
+                     Figure 1-1: US Auto Commute Congestion Growth Trend
+While the concept of urban-centered air transportation has existed for decades in limited
+availability in the form of conventional helicopter transportation, this has not been widely
+accessible due to high operational expense, service cost for the customer, and negative public
+response to noise and pollution. Recent technological advances have allowed the concept to
+evolve. Significant improvements in electrical energy storage and capacity will enable electrically
+powered aircraft that will reduce costs, reduce noise, and provide greater safety.
+
+
+1
+ Texas A&M Transportation Institute. (2019). 2019 Urban Mobility Report.
+https://static.tti.tamu.edu/tti.tamu.edu/documents/mobility-report-2019.pdf
+
+                                                                                          2 | Page
+1.3.1   Drivers for Change
+
+For the UAM concept to mature to operational viability, understanding stakeholder business and
+operational needs is important for incorporation into, and understanding the impact to, the NAS.
+Accordingly, the FAA has collaborated with NASA and participated in the industry stakeholder
+engagements to identify the desired operations and environment for these aircraft.
+
+With traffic and commute times on the ground increasing, there will be an increasing demand, and
+a market, for alternative transportation methods. With anticipated decreasing operational costs due
+to economic scaling, the volume of UAM operations may increase substantially. At present, the
+degree to which some, or all, of these UAM operations will require current Air Traffic
+Management (ATM) systems and services is undefined. To the degree that these operations require
+current ATM systems and services, the increasing number of UAM operations may soon challenge
+the current capabilities of the ATM infrastructure and Air Traffic Control (ATC) workforce
+resources. Solutions that extend beyond the current paradigm for manned aircraft operations to
+those that promote shared situational awareness and collaboration among operators are needed. As
+the FAA continues to mature the UAM concept, additional support systems for UAM operations
+may be introduced.
+
+The introduction of the UAM concept presents new approaches to aviation which will allow a new
+class of operations to provide an alternative intermodal transportation method within urban areas
+where surface congestion causes significant travel delays. Several industry leaders and other
+stakeholders have already invested heavily in this new concept and technology with the goal of
+eventually being able to provide the public with personal transportation or cargo services. Personal
+transportation services may be scheduled, on demand, or part of intermodal transportation links
+within major urban areas.
+
+Advances in technology have enabled detect-and-avoid (DAA) and other advances in operational
+capabilities. Cloud networks and mobile devices now support fleet management and customer
+interactions for on-demand service. Greater public acceptance of aircraft integrity and automation
+in the ride sharing economic model will also help enable increased UAM operations.
+
+1.3.2   Aircraft Evolution
+
+The industry vision involves incorporating new aircraft designs and systems technologies. Some
+of these new aircraft designs are anticipated to include vertical takeoff and landing (VTOL)
+capabilities that allow for operations between various locations (e.g., metropolitan commutes).
+Major aircraft innovations, mainly with the advancement of distributed electric propulsion (DEP)
+and development of electric VTOLs (eVTOLs), will potentially allow for these operations to be
+utilized more frequently and in more locations than are currently performed by conventional
+aircraft. Indications from industry manufacturers and operators are that initial operations will be
+flown with a PIC on board these VTOL aircraft with the potential of evolving to fully autonomous
+operations with remote PICs.
+
+Leveraging economies of scale and investing heavily in mass-produced lightweight airframe
+structures that will enable lower-cost aircraft construction and increasingly automated flight
+operations may reduce pilot and associated operational costs. Lower operational costs may allow
+
+
+                                                                                           3 | Page
+companies to make short-range air transportation more accessible to the public which is expected
+to eventually lead to large numbers of daily operations.
+
+1.4 Operating Environment Perspectives
+NAS operating environments are the airspaces, types of operations, regulations, and procedures to
+support an operation. Table 1 shows a high-level comparison of UAM, UTM, and ATM
+environments. UAM operations occur within the context of the UAM environment defined by this
+ConOps (UAM ConOps 1.0). UAM aircraft operate between UAM aerodromes (“aerodromes”)
+within UAM Corridors – a performance-based airspace of defined dimensions in which aircraft
+abide by UAM specific rules, procedures, and performance requirements. UTM ConOps 2.0
+defines the UTM environment where UAS operations occur at or below 400 feet Above Ground
+Level (AGL). The ATM environment encompasses all other airspace operations.
+
+                           Table 1: Operating Environment Perspectives
+
+    Environment                  Airspace                                       Basis
+
+    UAM               UAM Corridor                        UAM ConOps 1.0
+
+
+    UTM               UAS operating at or below UTM ConOps 2.0 2
+                      400 ft AGL
+
+
+    ATM               All airspace                        Current regulations for all other manned and
+                                                          unmanned aircraft operations including
+                                                          UAM aircraft operating outside of the UAM
+                                                          environment
+
+
+
+
+2
+ Federal Aviation Administration. (2020). Integration of Unmanned Aircraft Systems into the National Airspace
+System, Concept of Operations v2.0. Washington, DC: Federal Aviation Administration.
+
+                                                                                                    4 | Page
+Figure 1-2 illustrates the different environments and types of operations in each environment.
+UAM Corridors are shown along with aerodromes supporting UAM operations. The following
+describes the operations inside and outside UAM Corridors for UAM aircraft, fixed wing aircraft,
+helicopters, and UTM aircraft.
+
+   x   Inside UAM Corridors:
+           o All aircraft operate under UAM specific rules, procedures, and performance
+              requirements
+           o Fixed wing aircraft and UTM aircraft cross UAM Corridors
+           o Helicopters and UAM aircraft operate within or cross UAM Corridors
+           o Operations do not vary with airspace class
+   x   Outside of UAM Corridors, operations adhere to relevant ATM and UTM rules based on
+       operation type, airspace class, and altitude.
+
+
+
+
+                Figure 1-2: UAM, UTM, and ATM Operating Environments
+
+
+
+
+                                                                                        5 | Page
+2 Overarching Principles and Assumptions
+The following principles and assumptions will be used when guiding the development of the UAM
+operating environment and evolving the concept:
+
+   x   UAM will operate within a regulatory, operational, and technical environment that is
+       incorporated within the NAS.
+
+   x   Any evolution of the regulatory environment will always maintain safety of the NAS.
+
+   x   The architecture (technology) for UAM services will be flexible and scalable.
+
+   x   The FAA retains regulatory authority and is responsible for establishing operational
+       parameters and maintaining oversight.
+
+   x   Operators cannot optimize their own operations at the expense of sub-optimizing the
+       environment as a whole.
+
+   x   The FAA has on-demand access to information regarding UAM operations.
+
+   x   Airspace management will be structured where necessary and flexible when possible.
+
+   x   Cooperative traffic management is conducted in compliance with a set of community
+       developed and FAA-approved Community Based Rules (CBRs).
+
+   x   The FAA reserves the right to increase individual aircraft operational performance
+       requirements in order to optimize the capacity utilization of the airspace structure.
+
+   x   Providers of Services for UAM (PSUs) will be utilized by operators to receive/exchange
+       information during UAM operations.
+
+   x   PSUs will be able to obtain UTM flight information via the UAS Service Supplier (USS)
+       network, and the USS network will be able to obtain UAM flight information via the PSU
+       network.
+
+   x   UAM operators maintain conformance to shared intent; operators, via PSUs, are aware of
+       intent of other operations in the vicinity.
+
+   x   FAA Demand Capacity Balancing (DCB) intervention may be required to support
+       operations as the number of UAM operations increases.
+
+
+
+
+                                                                                       6 | Page
+3 Evolution of UAM Operations
+The evolution of UAM operations is characterized by the following key indicators:
+
+1. Operational tempo: representation of the density, frequency, and complexity of UAM
+      operations. Tempo evolves from a small number of low complexity operations to a high
+      density and high rate of complex operations.
+2. UAM structure (airspace and procedural): the level of complexity of infrastructure and
+      services that support the UAM environment. Structure evolves from current helicopter
+      routing to UAM-specific corridors and associated performance requirements and
+      procedures that reduce operational complexity.
+3. UAM driven regulatory changes: existing regulations may evolve from current regulations
+      to address the needs for UAM operations’ structure and performance.
+4. UAM CBRs: CBRs augment the UAM-driven regulations to establish the expectations of
+      UAM Operators and PSUs. CBRs are developed by industry based on FAA guidelines and
+      require FAA approval to address elements covered by FAA authority (e.g., NAS safety,
+      DCB, equitable access to airspace, security).
+5. Aircraft automation level: the level of PIC engagement with the UAM aircraft enabling
+      systems. The following categories describe the evolution of aircraft automation:
+      x Human-within-the-Loop (HWTL)
+              o Human is always in direct control of the automation (systems)
+      x Human-on-the-Loop (HOTL)
+              o Human has supervisory control of the automation (systems)
+              o Human actively monitors the systems and can take full control when required
+                  or desired
+      x Human-over-the-Loop (HOVTL)
+              o Human is informed, or engaged, by the automation (systems) to take action
+              o Human passively monitors the systems and is informed by automation if, and
+                  what, action is required
+              o Human is engaged by the automation either for exceptions that are not
+                  reconcilable or as part of rule set escalation
+6. Location of the PIC: the physical location of the PIC. UAM operations will evolve from a
+      PIC onboard the UAM aircraft to remote UAM PICs.
+
+
+
+
+                                                                                    7 | Page
+The relationship of this UAM ConOps to these key indicators is shown in Figure 3-1 and described
+in subsections below.
+
+
+
+
+                Figure 3-1: Evolution of the UAM Operational Environment
+Based on the key indicators, the following UAM operational evolutionary stages are described:
+
+       x   Initial UAM operations
+       x   ConOps 1.0 operations
+       x   Mature state operations
+
+3.1 Initial UAM Operations
+Initial UAM operations are conducted by certified UAM aircraft and conventional helicopters
+consistent with current rules and regulations. Key indicators of initial UAM operations are:
+
+       Operational tempo: Low.
+
+       UAM structure (airspace and procedural): Implementation of existing helicopter
+       infrastructure (e.g., routes, helipads, rules and regulations, ATC services). No UAM unique
+       structures or procedures exist.
+
+       UAM driven regulatory changes: Initial UAM operations are conducted consistent with
+       the current rules, regulations, and local agreements.
+
+       UAM CBRs: No CBRs, only existing agreements such as Letters of Agreement (LOAs).
+
+       Aircraft automation level: Consistent with current, manned helicopter technologies.
+
+       Location of the PIC: Onboard.
+
+                                                                                          8 | Page
+Current helicopter operations (see Appendix D - Helicopter Route Operations) are supported by
+existing rules, procedures, and routes. As additional operations are initiated, additional procedures,
+LOAs, routes, and other procedural changes may need to be introduced to accommodate the
+additional demand and location of operations within the regulatory framework of the current ATM
+system. Since industry anticipates increasing operations to scale cost effectively and meet
+increased demand for services, the demand for UAM operations will eventually reach the limits of
+current regulations and ATC services.
+
+3.2 ConOps 1.0 Operations
+With increased operations, UAM operations will need to evolve through changes to the governing
+regulations augmented by CBRs, UAM structure, and automation. The evolution to a
+collaborative, information-rich, data-sharing environment will require new technologies and
+capabilities. UAM operators, the FAA, and other stakeholders will share information with the FAA
+having on-demand access to identified operational information.
+
+This ConOps represents operations supported by an environment that meets the needs of increased
+operational tempo. Key indicators of UAM Operations consistent with this ConOps are:
+
+       Operational tempo: The operational tempo is low; however, the operational tempo will
+       have increased to a point that requires changes in the existing regulatory framework and
+       procedures.
+
+       UAM structure (airspace and procedural): Operations of UAM aircraft occur within
+       defined UAM Corridors from specific aerodromes based on UAM performance
+       requirements. There is minimal UAM Corridor structure or intersections. ATC tactical
+       separation services are not provided for operations within the UAM Corridors. Tactical
+       separation is allocated to the UAM operators, PICs, and PSUs.
+
+       UAM driven regulatory changes: Changes to ATM regulations and new UAM
+       regulations that enable operations within UAM Corridors.
+
+       UAM CBRs: CBRs are defined by industry to meet industry standards or FAA guidelines
+       when specified. CBRs will require FAA approval.
+
+       Aircraft automation level: PICs actively control the aircraft with UAM-specific
+       capabilities.
+
+       Location of the PIC: Onboard.
+
+Once the density of these additional operations increases total operations up to the current
+constraints of the UAM environment, DCB will need to take place effectively managing the
+demand. To allow these operations to meet operators’ business goals, a new approach for UAM
+flight rules and procedures will be required. UAM-specific structure, new or modified procedures,
+the regulatory framework, and CBRs will likely be developed to accommodate the increased
+traffic. The UAM-specific structure – the UAM Corridor – is performance-based airspace
+structures with defined dimensions. UAM Corridors would be known to airspace users and
+governed by a set of rules which prescribe access and operations. Where supporting infrastructure
+and support services meet performance requirements within a UAM Corridor, operators whose
+aircraft also meet performance requirements will be able to operate within the UAM Corridor.
+
+
+                                                                                             9 | Page
+Initially, the number of UAM Corridors may be small or limited in use, but, over time, additional
+UAM Corridors may be introduced.
+
+Operations within UAM Corridors will also be supported by CBRs collaboratively developed by
+the stakeholder community based on industry standards or FAA guidelines and approved by the
+FAA to ensure that the FAA’s regulatory authority is maintained (e.g., NAS safety, DCB for equal
+access, security). The collaborative development of CBRs allows for stakeholders to agree on
+norms of interactions foregoing the need for ATC tactical control of individual flights and
+management of access. The collaboratively developed, transparent, standard CBRs augment the
+regulatory foundation for UAM operations.
+
+3.3 Mature State Operations
+As UAM operational tempo increases, UAM operations will evolve along the lines of the key
+indicators: structure, regulations, and automation level. Key indicators of mature state UAM
+operations are:
+
+       Operational tempo: The operational tempo increases significantly. Higher operational
+       tempo needs drive the maturity for the other indicators.
+
+       UAM structure (airspace and procedural): UAM operations continue to occur within
+       UAM Corridors from aerodromes. The UAM Corridors may form a network to optimize
+       paths between an increasing number of aerodromes; the internal structure of the UAM
+       Corridors may increase in complexity, and the necessary performance parameters for UAM
+       participation may increase.
+
+       UAM driven regulatory changes: Additional UAM driven regulations may be necessary
+       to enable operations within UAM Corridors.
+
+       UAM CBRs: The complexity of CBRs and involvement in the FAA establishing
+       guidelines or approving CBRs may increase.
+
+       Aircraft automation level: Automation improvements may lead to HOVTL capabilities.
+
+       Location of the PIC: Remote.
+
+Additional increases in the tempo of ConOps 1.0 operations will require advances to the UAM
+environment and aircraft. To overcome the constraints, UAM operations will evolve to UAM
+mature state operations through advances to data sharing, DCB, UAM structure, and aircraft
+automation. Mature state operations will also include additional CBRs accompanied by UAM-
+driven regulatory changes.
+
+
+
+
+                                                                                       10 | Page
+4 UAM Operational Concept
+This section provides an overview of the UAM operational concept (UAM ConOps 1.0) followed
+by key definitions and descriptions of the roles and responsibilities, UAM Corridors, constraint
+information and advisories, and operational assumptions.
+
+4.1    Overview
+UAM operations transport people or goods from an aerodrome through one or more UAM
+Corridors to another aerodrome. The UAM Corridor structure, UAM procedures, information
+sharing, and UAM performance criteria enable increasing operational tempo, without the need for
+tactical ATC separation services, and minimize impact to ATM and UTM operations. Similar to
+how UTM is supported by USSs, UAM operations are supported by PSUs that form a PSU network
+to enhance the capabilities of individual UAM operators in all phases of operations through
+exchange, analysis, and mediation of information amongst UAM operators, PSUs, USSs, the FAA,
+and public interest stakeholders (e.g. law enforcement).
+
+Any aircraft operating within a UAM Corridor must meet the performance and participation
+requirements of the UAM environment. The performance and participation requirements of UAM
+Corridors may vary for operations wholly within UAM Corridors versus operations crossing UAM
+Corridors (e.g., general aviation). Within UAM Corridors, strategic deconfliction and tactical
+separation occur without direct ATC involvement. The UAM community will establish CBRs as
+standards for operations. The FAA may contribute to CBR guidelines and will approve CBRs to
+address elements covered by FAA authority (e.g., NAS safety, DCB, equitable access to airspace,
+security). UAM aircraft operating outside UAM Corridors must follow the operational rules and
+procedures applicable to the corresponding airspace.
+
+The concept represents an early step in the evolution of the regulatory framework, development of
+operating rules and performance requirements commensurate with demands of the operation, and
+a data exchange and information architecture to support UAM operator and FAA responsibilities.
+UAM leverages a common, shared, technical environment, similar to UTM, where the operators
+are responsible for coordination, execution, and management of operations and follow CBRs. This
+networked information exchange is the cornerstone for stakeholders to plan, manage, execute, and
+oversee UAM operations. Public interest and other stakeholders can access UAM shared
+operational information.
+
+4.2 Definitions
+UAM aerodrome – a location from which UAM flight operations depart or arrive. The use of
+“UAM aerodrome” and “aerodrome” in this ConOps are synonymous. “UAM aerodrome” is used
+explicitly when the context indicates functionality to support UAM operations that is not present
+in current NAS operations.
+
+UAM aircraft – an aircraft that can execute UAM operations.
+
+UAM Corridor – an airspace volume defining a three-dimensional route segment with performance
+requirements to operate within or cross where tactical ATC separation services are not provided.
+
+
+                                                                                       11 | Page
+UAM operation – the transport of people or goods from one aerodrome to another using UAM
+Corridors.
+
+UAM Operational Intent (“flight intent”) – operation specific information including, but not
+limited to, UAM operation identification, the intended UAM Corridor(s), aerodromes, and key
+operational event times (e.g., departure, arrival) of the UAM operation.
+
+UAM operator – the entity responsible for the overall management of a UAM operation; represents
+the organization that is executing the operation.
+
+UTM operator – operators conducting low altitude UAS operations utilizing UTM-specific
+services.
+
+4.3 Roles and Responsibilities
+This section defines the roles and responsibilities for all actors associated with UAM operations.
+
+4.3.1   FAA
+
+The FAA performs regulatory, ATC, and NAS data exchange roles for UAM.
+
+4.3.1.1 FAA – Regulatory
+
+The FAA is the federal authority over aircraft operations in all airspace and the regulatory and
+oversight authority for civil operations in the NAS. The FAA maintains an operating environment
+that ensures airspace users have access to the resources needed to meet specific operational
+objectives and that shared use of the airspace can be achieved safely and equitably. The FAA
+develops or modifies regulations to support UAM operations. The FAA may also provide
+guidelines for CBRs and will approve CBRs to ensure that the FAA authority is maintained (e.g.,
+NAS safety, equal access to airspace, and security). The FAA will define, maintain, and make
+publicly available UAM Corridor definitions and will manage the performance requirements of
+UAM Corridors.
+
+4.3.1.2 FAA – Air Traffic Control
+
+The primary purpose of ATC is to prevent collisions involving aircraft operating within the NAS;
+however, for UAM operations, tactical separation within UAM Corridors is allocated to the UAM
+community with no tactical ATC services provided by the FAA. ATC may provide advisories
+regarding UAM operations to other aircraft on a workload permitting basis. As such, ATC must
+have on-demand access to UAM operational data to ensure safety for aircraft receiving ATC
+services. ATC may request information as needed from participating actors and may receive
+automated notifications in accordance with applicable requirements.
+
+The ATC responsibilities that enable UAM operations are:
+
+   1. Set UAM Corridor availability (e.g., open or closed) based on operational design (e.g., time
+      of day, flow direction of a nearby airport)
+
+
+
+                                                                                         12 | Page
+   2. Provide advisories regarding UAM operations to other aircraft on a workload permitting
+      basis
+
+   3. Respond to UAM off-nominal operations as needed
+
+As part of fulfilling responsibilities, ATC may review any pertinent information from UAM
+operations.
+
+4.3.1.3 FAA – NAS Data Exchange
+
+FAA NAS data sources are available to UAM operations via FAA-industry exchange protocols.
+This allows for authorized data flow between the UAM community and FAA operational systems.
+This interface between the FAA and UAM stakeholders is a gateway such that external entities do
+not have direct access to FAA systems and data. FAA data sources available via the FAA-industry
+data exchange include, but are not limited to, flight data, restrictions, charted routes, active Special
+Activity Airspaces (SAAs).
+
+4.3.2   UAM Operator
+
+UAM operators may conduct operations as scheduled service or on-demand service via a request
+from an individual customer or from an intermodal operator. UAM operators are responsible for
+regulatory compliance and all aspects of UAM operation execution. Use of the term ‘Operator’ in
+this document indicates airspace users electing to conduct operations via cooperative management
+within the UAM environment.
+
+The UAM operator obtains current conditions from PSU and Supplemental Data Service Provider
+(SDSP) services (e.g., environment, situational awareness, strategic operational demand, UAM
+aerodrome availability, supplemental data) to determine the desired UAM Operational Intent
+information such as location of flight (e.g., aerodrome locations), route (e.g., specific UAM
+Corridor(s)), and desired flight time.
+
+UAM operators must provide flight intent and operational data to a PSU to operate within or cross
+UAM Corridors. UAM Operational Intent data serves the following primary functions:
+
+   1. Informs other operators of nearby operations within the UAM Corridor to promote safety
+      and shared awareness
+
+   2. Enables strategic deconfliction
+
+   3. Enables identification and distribution of known airspace constraints and restrictions for
+      the intended area of operation
+
+   4. Enables distribution of spatially and temporally relevant advisories, weather, and
+      supplemental data
+
+   5. Supports cooperative separation management services (e.g., conformance monitoring,
+      advisory services)
+
+
+
+                                                                                              13 | Page
+The UAM operator also plans for off-nominal events. This includes an understanding of alternative
+landing sites and the airspace classes that border the UAM Corridor(s) for the operation.
+
+Upon completion of the operation, the UAM operator notifies the PSU.
+
+4.3.3   Pilot in Command (PIC)
+
+The PIC is the person aboard the UAM aircraft who is ultimately responsible for the operation and
+safety during flight.
+
+4.3.4   Provider of Services for UAM (PSU)
+
+A PSU is an entity that supports UAM operators with meeting UAM operational requirements that
+enable safe, efficient, and secure use of the airspace. A PSU:
+
+   1. Provides a communication bridge between federated UAM actors, PSU to PSU via the PSU
+      Network, to support the UAM operator’s ability to meet the regulatory and operational
+      requirements for UAM operations
+
+   2. Provides the UAM operator with information gathered from the PSU Network, about
+      planned UAM operations in a UAM Corridor so that UAM operators can ascertain the
+      ability to conduct safe and efficient missions
+
+   3. Analyzes and confirms that a UAM operator’s Operational Intent is complete, consistent
+      with current advisories and restrictions, and strategically deconflicted considering already
+      established flight intent of other UAM operators, the CBRs, UAM Corridor capacity,
+      airspace restrictions, UAM aerodrome resource availability, and adverse environmental
+      conditions
+
+   4. Provides the confirmed flight intent to the PSU network
+
+   5. Distributes notifications (e.g., constraints, restrictions) for the intended area of operation
+
+   6. Distributes FAA operational data and advisories, weather, and supplemental data
+
+   7. Supports cooperative separation management services (e.g., conformance monitoring,
+      advisory services)
+
+   8. Determines UAM Corridor use status
+
+           a. UAM Corridor use status (e.g., active, inactive) is an indication that one or more
+              UAM operations are occurring in the UAM Corridor
+
+   9. Archives operational data in historical databases for analytics, regulatory, and UAM
+      operator accountability purposes
+
+These key functions allow a PSU to provide cooperative management for UAM operations without
+direct FAA involvement on a per flight basis.
+
+
+
+                                                                                            14 | Page
+PSU services support operations planning, flight intent sharing, strategic and tactical deconfliction,
+airspace management functions, and support to off-nominal operations. PSUs may provide value-
+added services to subscribers that optimize operations or provide access to supplemental data in
+support of UAM operations. PSUs exchange information with other PSUs via the PSU Network
+to enable UAM services (e.g., exchange of flight intent information, notification of UAM Corridor
+status, information queries). PSUs also support local municipalities and communities, as needed,
+to gather, incorporate, and maintain airspace reservations that may be accessed by UAM operators.
+
+4.3.5   PSU Network
+
+A PSU Network is the collection of connected PSUs that share subscriber information, FAA data,
+SDSP data, and USS data with other entities (e.g., PSUs, FAA, USSs, public interest stakeholders)
+to provide a common operational picture to support UAM operations. Since multiple PSUs can
+provide services in the same geographical area, the PSU Network facilitates the ready availability
+of data to the FAA and other entities as required to ensure safe operation of the NAS and any other
+information sharing functions including security and identification.
+
+4.3.6   Supplemental Data Service Providers
+
+UAM operators and PSUs use Supplemental Data Service Providers (SDSPs) to access supporting
+data including, but not limited to, terrain, obstacle, aerodrome availability, and specialized
+weather. SDSPs may be accessed via the PSU network or directly by UAM operators.
+
+4.3.7   UAM Aerodrome
+
+A UAM aerodrome is an aerodrome that meets the capability requirements to support UAM
+departure and arrival operations. The UAM aerodrome provides current and future resource
+availability information for UAM operations (e.g., open/closed, pad availability) to support UAM
+operator planning and PSU strategic deconfliction. UAM aerodrome availability is accessible via
+the PSU network or directly by UAM operators via an SDSP. The UAM aerodrome information
+is used by UAM operators and PSUs for UAM operation planning including strategic deconfliction
+and DCB; however, the UAM aerodromes do not provide strategic deconfliction or DCB services.
+
+4.3.8   UAS Service Supplier
+
+USSs are entities that support UAS operations under the UAS Traffic Management (UTM) system.
+See UTM Concept of Operations 2.0 for more details.
+
+From a UAM operational perspective, USSs will interact with PSUs as follows:
+
+   1. Enable UTM operations to use PSU network services to cross a UAM Corridor
+
+   2. Support UAM off-nominal operations as needed
+
+   3. Support UTM off-nominal operations as needed
+
+
+
+
+                                                                                            15 | Page
+4.3.9   Other NAS Airspace Users
+
+Other NAS Airspace Users are any non-UAM aircraft operation within the NAS. Other NAS
+Airspace Users have the responsibility to know about and meet the relevant performance and
+participation requirements to operate in, or cross, active UAM Corridors or avoid the active UAM
+Corridors. UAM Corridor definitions and availability will be publicly available.
+
+4.3.10 Public Interest Stakeholders
+
+Public interest stakeholders are entities declared by governing processes (e.g., FAA, CBR) to be
+able to access UAM operational information. This access may support activities including, but not
+limited to, public right to know, government regulatory, government assured safety and security,
+and public safety. Examples of public interest stakeholders are local law enforcement and US
+federal agencies.
+
+4.4 UAM Corridors
+UAM Corridors enable safe and efficient UAM operations without tactical ATC separation
+services. The UAM Corridors support increasing operational tempo that are related to UAM
+operator capability (e.g., aircraft performance), UAM Corridor structure, and UAM procedures.
+UAM Corridors are the primary mechanism of separation between UAM operations and ATM and
+UTM operations that do not meet UAM performance and participation requirements.
+
+An operational view of UAM Corridors was shown in Figure 3-1.
+
+Operations within UAM Corridors will have operational performance (e.g., aircraft performance
+envelope, navigation, DAA) and participation (e.g., flight intent sharing, deconfliction within the
+UAM Corridor) requirements. The performance and participation requirements of UAM Corridors
+may vary between UAM Corridors. Additionally, the requirements may vary for operations wholly
+within UAM Corridors and operations crossing UAM Corridors (e.g., general aviation). UAM
+Corridor performance and participation requirements support adjustments for most UAM off-
+nominal operations where the UAM aircraft can complete the operation safely. Any operator that
+meets the UAM Corridor performance and participation requirements may operate in, or cross, the
+UAM Corridor.
+
+UAM Corridor definitions are available to stakeholders for planning and operational use. ATC
+will be aware of UAM Corridors as part of general awareness of the airspace for which ATC is
+responsible. Other NAS Users will be aware of UAM Corridors through airspace familiarization
+associated with flight planning or ATC flight plan approval or advisories. UAM Corridor design
+considerations include:
+
+  1.    Minimal impact to existing ATM and UTM operations
+
+  2.    Public interest stakeholder needs (e.g., local environmental and noise, safety, security)
+
+  3.    Stakeholder utility (e.g., customer need)
+
+
+
+
+                                                                                           16 | Page
+UAM Corridor availability (e.g., open, closed) is in accordance with ATC operational design (e.g.,
+nearby airport flow direction change). UAM Corridor availability is communicated through the
+PSU network to PSUs and UAM operators. In addition to UAM Corridor availability established
+by ATC, PSUs determine UAM Corridor status that identifies if one or more UAM operations are
+occurring somewhere within the UAM Corridor. UAM Corridor usage information may be used
+by the FAA or other stakeholders for situational awareness.
+
+Initially, the UAM Corridors connect two known aerodrome locations to support point-to-point
+UAM operations. As UAM operations evolve, UAM Corridors may be segmented and connected
+to form more complex and efficient networks of available routing between aerodromes. Figure 4-1
+shows a small number of point-to-point UAM Corridors.
+
+
+
+
+                             Figure 4-1: Multiple UAM Corridors
+4.4.1   UAM Corridor Demand Capacity Balancing
+
+DCB applies when the UAM Corridor or aerodromes cannot support the collective UAM
+Operational Intent demand. DCB business rules are part of FAA-approved CBRs. In certain
+circumstances, the excessive demand may not be due to UAM Corridor capacity but due to other
+factors such as congestion at the aerodrome. The application of DCB will be consistent with FAA
+authority including access, equity, safety, and security.
+
+
+
+
+                                                                                        17 | Page
+4.4.2   UAM Corridor Evolution
+
+Increasing UAM operational tempo may create demand in excess of a corridor’s current capacity
+at which point additional capacity may be made available through additional structure (e.g.,
+“tracks”), increased performance levels (e.g., ability to safely reduce separation minima within the
+corridor through various methods), or expanded UAM Corridor topology.
+
+Figure 4-2 depicts a notional internal structure of “tracks” that may meet a future UAM operational
+requirement. The “tracks” represent additional internal structure with increased performance
+requirements that support an increased operational tempo within the same UAM Corridor.
+
+
+
+
+                              Figure 4-2: UAM Corridor with “Tracks”
+
+4.5 UAM Separation
+Separation of operations within UAM Corridors is assured through various strategic and tactical
+methods. The primary method is strategic deconfliction based on collaborative flight intent
+sharing. Tactical separation is allocated to the UAM operators, including PIC and aircraft
+capabilities, and may include support from the PSUs.
+
+When operating within a UAM Corridor, the FAA regulations and CBRs include the manner of
+strategic deconfliction and tactical separation. The strategic deconfliction rules are exercised by
+the PSUs. UAM operators remain responsible for the safe conduct of operations including
+operating relative to other aircraft, weather, terrain, and hazards and avoiding unsafe conditions.
+UAM separation is achieved via shared flight intent, shared awareness, strategic deconfliction of
+flight intent, and the establishment of procedural rules.
+
+
+
+
+                                                                                          18 | Page
+In addition to strategic deconfliction within UAM Corridors that occurs during UAM flight
+planning, responsibilities also exist for in-flight coordination to ensure tactical separation is
+maintained. The PIC, supported by the UAM aircraft’s capabilities (e.g., DAA) and possibly PSU
+services (e.g., flight data from active operations in the UAM Corridor), maintains separation from
+other operations within the UAM Corridor. In the event a tactical action results in a UAM aircraft
+operating outside of the bounds of shared UAM Operational Intent, notifications of the off-nominal
+event and updates to the UAM Operational Intent, if applicable, are shared via the PSU Network.
+
+The regulatory framework governing UAM operations will evolve to account for increasing levels
+of performance and automation which may include autonomous flight. This evolution may have
+implications for approaches to separation between aircraft in airspace that includes UAM
+operations.
+
+4.6 Weather and Obstacles Within UAM Corridors
+PSUs or SDSPs support the UAM operator by supplying weather, terrain, and obstacle clearance
+data specific to the UAM operation. This data is obtained in the flight planning phase to ensure
+strategic management of a UAM operation and updated in-flight, as appropriate. UAM operators
+monitor weather and winds prior to and throughout flight. In the event that aircraft performance is
+inadequate to maintain required separation within the UAM Corridor due to forecasted or current
+weather, UAM operators are responsible to take appropriate strategic and tactical action to ensure
+separation is maintained (e.g., do not take off, exit the UAM Corridor and operate per appropriate
+airspace rules).
+
+4.7 Constraint Information and Advisories
+UAM operators are responsible for identifying operational conditions or flight hazards that may
+affect an operation. This information is collected and assessed both prior to and during flight in
+order to ensure the safe conduct of the flight. PSUs support this UAM operator responsibility by
+supplying information and advisories including, but not limited to:
+
+   x   Other airborne traffic including operations within and crossing UAM Corridors
+
+   x   Weather and winds
+
+   x   Other hazards pertinent to low altitude flight (e.g., obstacles such as a crane or power-line
+       Notices to Airmen (NOTAM), bird activity, local restrictions)
+
+   x   Special Activity Airspace status
+
+   x   UAM Corridor availability
+
+4.8 UAM Operational Assumptions
+The following assumptions apply to UAM Operations:
+
+   x   UAM aircraft identification and location information are available to the UAM operator
+       and to the PSU Network. This is not provided by ADS-B Out or transponders for operations
+
+                                                                                          19 | Page
+    in the UAM Corridor(s); however, other functionality (e.g., UAM applicable Remote ID)
+    may support this identification and location information capability.
+
+x   Two-way voice communication with ATC will not be conducted inside UAM Corridors
+    during nominal operations.
+
+x   The UAM operator will not receive ATC clearances nor ATC authorizations for operations
+    in UAM Corridors.
+
+x   Operational ATC involvement is limited to setting UAM Corridor availability based on the
+    ATC operational design, receiving UAM Corridor status for awareness of which UAM
+    Corridors have active operations, and responding to UAM off-nominal events as needed.
+
+
+
+
+                                                                                   20 | Page
+5 Notional Architecture
+Within the UAM cooperative management environment, the FAA maintains regulatory and
+operational authority for airspace and traffic operations. UAM operations are organized,
+coordinated, and managed by a federated set of actors through a distributed network that leverages
+interoperable information systems. Figure 5-1 depicts a notional architecture of the UAM actors
+and contextual relationships and information flows. This architecture is based on patterns
+established within the UTM architecture described in the FAA’s UTM Concept of Operations.
+
+The PSU network, comprised of individual PSUs operating as a collective, lies at the center of the
+UAM notional architecture and exchanges data with UAM operators, USSs, SDSPs, the FAA, and
+public interest stakeholders. PSUs receive supplemental data supporting UAM operation
+management from the SDSPs and provide relevant UAM operational data to the public. PSUs
+communicate and coordinate via the PSU network. This allows other UAM stakeholders (e.g. a
+UAM operator, ATC, law enforcement) connected to a PSU to access data shared by the PSU
+network.
+
+PSUs and USSs exchange operational information about UAM and UTM operations. Notionally,
+a USS can expand to become a PSU, and vice versa, based on services provided. Combined service
+providers will support operations in both the UAM and UTM environments. The architecture
+depicts the connectivity of the PSU network to USSs for information exchange while retaining a
+UAM-centric architectural view.
+
+The vertical dot-dashed line in Figure 5-1 represents the demarcation between the FAA and
+industry responsibilities for the infrastructure, services, and entities that interact as part of UAM.
+The FAA-Industry Data Exchange Protocol provides an interface for the NAS Data Exchange to
+request UAM operational data on demand and send FAA information to the PSU network for
+distribution to UAM operators, PICs, UAM Aircraft, and public interest stakeholders.
+
+
+
+
+                                                                                            21 | Page
+                          Figure 5-1: Notional UAM Architecture
+
+5.1 Supporting Services
+UAM services provided by PSUs and SDSPs are modular and discrete allowing for increased
+flexibility in the design and implementation of new services. This modular approach allows the
+FAA to provide tailored oversight of UAM operations and allows PSUs and SDSPs to provide
+focused services consistent with a business model and subscriber needs.
+
+Similar to UTM, UAM services can be characterized in one of the following ways:
+
+       1. Services that are required to be used by UAM operators due to FAA regulation or for
+          a direct connection to FAA systems. These services must be qualified and approved by
+          the FAA.
+
+       2. Services that may be used by a UAM operator to meet all or part of an FAA regulation.
+          These services must meet an acceptable means of compliance and may be individually
+          qualified and approved by the FAA.
+
+       3. Services that provide value-added assistance to a UAM operator but are not used for
+          FAA regulatory compliance. These services may meet an industry standard but will not
+          be qualified or approved by the FAA.
+
+
+
+
+                                                                                      22 | Page
+6 UAM Use Cases and Scenarios
+This section introduces several high-level use cases and scenarios to further explore the UAM
+concept. The use cases develop scenarios that step through the relevant portions of a specific
+operation. The use cases illustrate the operational and architectural information from Sections 4
+and 5.
+
+The use cases (see Table 2) illustrate a subset of UAM operations and interactions during specific
+nominal and off-nominal operations. A nominal UAM operation is a single UAM operation that
+executes in accordance with the established performances, rules, policies, and procedures. An off-
+nominal operation deviates from nominal operations.
+
+                                Table 2: Use Case Descriptions
+
+         Use Case Title                                     Description
+
+ Nominal UAM Use Case              x      Explores a UAM operation at a high-level including
+                                          operations within a UAM Corridor, strategic
+                                          deconfliction, information exchanges between
+                                          operators, and information needs
+
+ Off-Nominal UAM Use Case          x      Explores conformance monitoring and situations in
+                                          which operations are non-conforming with shared,
+                                          planned flight intent
+
+                                   x      Explores contingency situations
+
+
+6.1 Nominal UAM Use Case
+6.1.1   Nominal UAM Operations Through a Single UAM Corridor
+
+This use case covers a single UAM operation of on-demand service between two aerodromes. This
+use case description is a specific operation that conforms to the UAM Operational concept
+described in Section 4.8 and is independent of airspace class. UAM operations occur in the
+following phases: Planning, Departure, En Route, Arrival, and Post Operations. Throughout all
+phases of operation, the UAM operator’s actions may be supported by service providers.
+
+6.1.1.1 Planning Phase
+
+Planning of this operation starts with the UAM operator receiving a request from an individual
+customer for a flight between Aerodrome A and Aerodrome B.
+
+The UAM operator obtains current conditions from their subscribed PSU as well as relevant SDSP
+services (e.g., environment, situational awareness, strategic operational demand, UAM aerodrome
+availability, supplemental data).
+
+
+
+
+                                                                                        23 | Page
+After determining that the current conditions are acceptable for the operation, the UAM operator
+submits desired UAM Operational Intent information (e.g., identifying information, aerodrome
+locations, route of flight via UAM Corridor(s), desired time of operation) to the subscribed PSU.
+
+The PSU, through the PSU network:
+
+   1. Evaluates the desired UAM Operational Intent for other operations that may cause a
+      strategic conflict
+
+   2. Evaluates UAM Operational Intent against known airspace constraints (e.g., FAA
+      originating constraints, local restrictions)
+
+   3. Identifies availability of UAM Corridors and UAM aerodrome resources
+
+   4. Identifies adverse operating environment conditions
+
+Because there are no conflicting operations, airspace restrictions (e.g., TFR), or aerodrome
+resource limitations, the UAM operator’s desired UAM Operational Intent is considered
+strategically deconflicted and confirmed. The PSU notifies the UAM operator and provides the
+UAM Operational Intent to the PSU network.
+
+The UAM operator considers possible actions due to an off-nominal event. Alternate landing
+locations are evaluated. The airspace classes and ATC facilities with jurisdiction for the airspaces
+that border the UAM Corridor(s) for the operation are identified. These prepare the PIC in the
+event that a contingency operation is required.
+
+The majority of the planning actions and information exchanges between the UAM operator and
+PSU are automated and are expected to take very little time from the initial customer request to
+the confirmed UAM Operational Intent.
+
+6.1.1.2 In-Flight Phases
+
+Throughout all phases of flight (e.g., Departure, En Route, Arrival), the UAM aircraft
+identification and location information are available to the UAM operator and subscribed PSU.
+The PIC and UAM operator monitor aircraft performance to identify an off-nominal state. The
+PSU monitors operational conformance to the confirmed UAM Operational Intent.
+
+6.1.1.2.1 Departure Phase
+
+The PIC departs from Aerodrome A within the departure compliance window and enters the UAM
+Corridor.
+
+6.1.1.2.2 En Route Phase
+
+The PIC navigates along the UAM Corridor per the confirmed UAM Operational Intent. The PIC
+maintains tactical separation from other aircraft within the UAM corridor with possible support
+from the UAM aircraft (e.g., DAA) or PSU services (e.g., flight data from active operations in the
+UAM Corridor). Tactical separation responsibilities for encounters in a UAM Corridor are shared
+by the UAM PIC and other NAS Airspace Users. The UAM aircraft completes the en route portion
+
+                                                                                          24 | Page
+of the flight per the UAM Operational Intent and approaches the arrival aerodrome within the
+compliance window of the arrival time.
+
+6.1.1.2.3 Arrival Phase
+
+As the UAM aircraft approaches the arrival aerodrome, the PIC, UAM operator, PSU, and UAM
+aerodrome confirm the landing pad is still available per the UAM Operational Intent. The PIC
+navigates to the allocated aerodrome pad and lands the aircraft.
+
+6.1.1.3 Post Operations Phase
+
+The UAM operator provides mission completion indication to the PSU. The PSU archives required
+UAM operational data.
+
+6.2 Off-Nominal UAM Use Case
+Two specific off-nominal use case scenarios are presented in this section; each describes a different
+off-nominal situation that may occur during a UAM operation.
+
+6.2.1   UAM Operation Non-Conformant to Shared UAM Operational Intent
+
+This scenario explores a situation where a UAM operation is not in conformance with the
+confirmed UAM Operational Intent due to performance issues, high winds, and navigation
+degradation. In this scenario, the UAM aircraft can safely continue within the UAM Corridor to
+the originally planned aerodrome. Prior to the determination of the off-nominal event, the UAM
+operation is consistent with the phases and steps defined in the Nominal Use Case (see Section
+6.1).
+
+During the en route phase, the UAM operation enters a situation of non-conformance with the
+confirmed UAM Operational Intent which may be detected by the PIC, the UAM operator, or the
+PSU. The UAM operator’s PSU notifies impacted subscribers and distributes information about
+the off-nominal event through the PSU network for other PSUs to notify other affected UAM
+operations. The UAM operator and PSU are able to confirm a new UAM Operational Intent that
+meets the CBRs and UAM Corridor performance requirements to resolve the off-nominal situation
+and allow the operation to continue to the aerodrome in the UAM Corridor. If a new UAM
+Operational Intent could not be confirmed, the UAM aircraft would have exited the UAM Corridor
+and continued the operation consistent with requirements of the airspace class entered. The UAM
+operator continues to maintain separation (e.g., DAA capabilities, right-of-way rules) to complete
+the operation. The PSU continues to distribute operational data associated with the flight through
+the PSU Network.
+
+The arrival phase is consistent with the steps outlined in Nominal Use Case since the off-nominal
+event remained in the UAM Corridor and did not result in a conflict at the arrival aerodrome.
+
+During the post operations phase, the UAM operator provides mission completion indication to
+the PSU, the PSU archives required UAM operational data, and the UAM operator submits
+information to the reporting process for the off-nominal event, as required.
+
+
+
+                                                                                           25 | Page
+6.2.2   UAM Operational Contingency
+
+This scenario explores a situation where a UAM aircraft is non-conformant to the UAM
+Operational Intent due to a failure that results in a forced landing. In this scenario, the UAM aircraft
+is expected to exit the UAM Corridor. As a result, the description of this scenario is dependent on
+airspace classification since ATC services may be impacted.
+
+Prior to the determination of the off-nominal event, the UAM operation is consistent with the
+phases and steps defined in Nominal Use Case (see Section 6.1). During the en route phase, the
+UAM aircraft experiences an in-flight contingency situation, identified by the PIC, and is expected
+to exit the UAM Corridor. As with manned operations in the NAS during an contingency, the
+PIC’s order of responsibility is to: 1) Aviate (fly the aircraft), 2) Navigate (maintain an intended
+course), and 3) Communicate (notify ATC of the contingency). For this scenario, the PIC must
+focus entirely on flying the aircraft for a safe landing. The UAM operator detects the contingency
+and notifies the PSU for distribution of relevant information through the PSU network. Prior to the
+UAM aircraft exiting the UAM Corridor into Class B airspace, the PIC turns on ADS-B out and
+the transponder as a mean of ATC identification and contacts ATC. Once contacted, ATC
+determines the possible impact of the contingency UAM operation on other aircraft receiving ATC
+services and provides advisories or ATC instructions as necessary to mitigate the risk to other
+aircraft.
+
+The PIC identifies a safe and suitable landing location. The landing location is not an aerodrome.
+
+During the post operations phase, the UAM operator provides mission completion indication to
+the PSU, the PSU archives required UAM operational data, and the UAM operator submits
+information to the reporting process for the off-nominal event, as required. ATC also submits
+information to the reporting process, as required.
+
+
+
+
+                                                                                              26 | Page
+7 UAM Implementation
+UAM ConOps 1.0 implementation is the set of FAA efforts, in collaboration with NASA, industry,
+and other stakeholders, that transform UAM operations from current, helicopter operations to the
+operations described in Section 4. UAM implementation also sets the stage for further
+transformation to the mature state operations depicted in Section 3.3. The implementation will
+safely, efficiently, and securely incorporate the entrance of the UAM aircraft and operations while
+ensuring the integrity of current NAS operations.
+
+UAM implementation is an evolutionary developmental approach starting with low-complexity,
+low-operational tempo operations and building toward an environment of higher operational tempo
+and the introduction of UAM airspace structure to mitigate an otherwise higher level of
+complexity. The concept will evolve through the results of analysis, simulation, demonstration,
+and community engagement. While the concept evolves, the FAA will engage stakeholders to set
+high level principles and assumptions on performance with an understanding that the principles
+and assumptions will be implemented as required. Stakeholders will develop and adopt applicable
+CBRs related to collaboration, information sharing, operational protocols, and equipment
+performance to support the automated nature of the envisioned cooperative environment. This
+concept will mature to encompass increasingly complex operations in heavily populated
+environments and more heavily utilized airspace.
+
+This evolutionary approach to UAM implementation provides several advantages. By initially
+addressing lower complexity operations, where technological requirements and services should be
+the least stringent, implementation can be streamlined to the environment using current capabilities
+that meet performance requirements and do not require a full-scale regulatory and operational
+infrastructure. UAM operations will adapt to new technologies and automation, both ground-based
+and airborne, and increasingly allow for more advanced forms of interaction with the ATM
+environment through collaborative systems capable of automated information exchange. UAM
+operations will also support the range of UAM demand, business models, applications, and
+technologies, support safe, efficient, and secure operations that coexist with other operations (e.g.,
+manned aircraft, UTM), impose minimal disruption to the existing ATM system, and maintain fair
+and equitable access to airspace.
+
+
+
+
+                                                                                            27 | Page
+Appendix A - References
+Federal Aviation Administration. (2020). Integration of Unmanned Aircraft Systems into the
+       National Airspace System, Concept of Operations v2.0. Washington, DC: Federal Aviation
+       Administration
+
+Texas A&M Transportation Institute. (2019). 2019 Urban Mobility Report.
+      https://static.tti.tamu.edu/tti.tamu.edu/documents/mobility-report-2019.pdf
+
+
+
+
+                                                                                    28 | Page
+Appendix B - Acronyms
+         Acronym                              Definition
+AAM                Advanced Air Mobility
+
+ADS-B              Automatic Dependent Surveillance - Broadcast
+
+AGL                Above Ground Level
+
+ANG                FAA Organization – NextGen Program Office
+
+ANSP               Air Navigation Service Provider
+
+ATC                Air Traffic Control
+
+ATIS               Automatic Terminal Information Service
+
+ATM                Air Traffic Management
+
+CBR                Community Business Rule
+
+ConOps             Concept of Operations
+
+DAA                Detect and Avoid
+
+DCB                Demand Capacity Balancing
+
+DEP                Distributed Electric Propulsion
+
+eVTOL              Electric Vertical Take-Off and Landing
+
+FAA                Federal Aviation Administration
+
+HOTL               Human-on-the-Loop
+
+HOVTL              Human-over-the-Loop
+
+HWTL               Human-within-the-Loop
+
+LOA                Letter of Agreement
+
+NAS                National Airspace System
+
+
+
+                                                                  29 | Page
+       Acronym                                Definition
+NASA             National Aeronautics and Space Administration
+
+NOTAM            Notice to Airmen
+
+PIC              Pilot in Command
+
+PSU              Provider of Services for UAM
+
+RID              Remote Identification (ID)
+
+SAA              Special Activity Airspace
+
+SDSP             Supplemental Data Service Provider
+
+SWIM             System Wide Information Management
+
+TFR              Temporary Flight Restriction
+
+UAM              Urban Air Mobility
+
+UAS              Unmanned Aircraft System
+
+USS              UAS Service Supplier
+
+UTM              UAS Traffic Management
+
+V2V              Vehicle-to-Vehicle
+
+VTOL             Vertical Take-Off and Landing
+
+
+
+
+                                                                 30 | Page
+Appendix C - Glossary
+             Term                                    Definition
+Air Traffic Management      The dynamic, integrated management of air traffic and
+(ATM)                       airspace including air traffic services, airspace management
+                            and air traffic flow management — safely, economically and
+                            efficiently — through the provision of facilities and seamless
+                            services in collaboration with all parties and involving
+                            airborne and ground-based functions. (Source: ICAO Doc
+                            4444 PANS-ATM)
+
+Community Business Rules    Collaborative set of UAM operational business rules
+(CBR)                       developed by the stakeholder community. Rules may be set
+                            by the UAM community to meet industry standards or FAA
+                            guidelines when specified. CBRs will require FAA approval.
+
+Conflict                    A point in time in which the predicted separation of two or
+                            more aircraft is less than the defined separation minima.
+
+Constraint                  An impact to the capacity of a resource. Constraints can be
+                            natural (e.g., weather), circumstantial (e.g., runway
+                            construction), or intentional (e.g., TFR).
+
+Cooperative Separation      Separation based on shared flight intent and data exchanges
+                            between operators, stakeholders, and service providers and
+                            supported by the appropriate rules, regulations, and policies
+                            for the planned operations. Air Navigation Service Providers
+                            (ANSP) do not provide tactical ATC separation services for
+                            UAM operations.
+
+Demand Capacity Balancing   Flight intent adjustments during the planning phase to ensure
+(DCB)                       that predicted demand does not exceed the capacity of a
+                            resource (e.g., UAM Corridor, aerodrome).
+
+
+Human-on-the-Loop (HOTL)    Human supervisory control of the automation (systems)
+                            where the human actively monitors the systems and can take
+                            full control when required or desired
+
+Human-over-the-Loop         Human informed, or engaged, by the automation (system) to
+(HOVTL)                     take actions. Human passively monitors the systems and is
+                            informed by automation if, and what, action is required.
+                            Human is engaged by the automation either for exceptions
+                            that are not reconcilable or as part of rule set escalation.
+
+
+
+                                                                                  31 | Page
+            Term                                         Definition
+Human-within-the-Loop           Human is always in direct control of the automation
+(HWTL)                          (systems).
+
+Operational Tempo               The density, frequency, and complexity of operations.
+
+Providers of Services for UAM An entity that assists UAM operators with meeting UAM
+(PSU)                         operational requirements to enable safe and efficient use of
+                              UAM Corridors and aerodromes. This service provider
+                              shares operational data with stakeholders and confirms flight
+                              intent.
+
+PSU Network                     A collection of PSUs with access to each PSU’s data for use
+                                and sharing with their subscribers.
+
+Strategic Deconfliction         Deconfliction of UAM Operational Intent via advanced
+                                planning and information exchange.
+
+Tactical Separation             UAM operator responsibility for tactical conflict and
+                                collision avoidance.
+
+UAM aerodrome                   A location from which UAM flights arrive and depart.
+
+UAM aircraft                    An aircraft that can execute UAM operations.
+
+UAM Corridor                    An airspace volume defining a three-dimensional route
+                                segment with performance requirements to operate within or
+                                cross where tactical ATC separation services are not
+                                provided.
+
+UAM operation                   The transport of people or goods from one aerodrome to
+                                another using UAM Corridors.
+
+UAM Operational Intent          Operation specific information including, but not limited to,
+                                UAM operation identification, the intended UAM
+                                Corridor(s), aerodromes, and key operational event times
+                                (e.g., departure, arrival) of the UAM operation.
+
+UAM operator                    The person or entity responsible for the overall management
+                                of an UAM operation; represents the organization that is
+                                executing the operation.
+
+UAS Traffic Management          The manner in which the FAA will support operations for
+(UTM)                           UAS operating in low altitude airspace.
+
+
+                                                                                        32 | Page
+          Term                           Definition
+UTM operator     Operators conducting low altitude UAS operations utilizing
+                 UTM-specific services.
+
+
+
+
+                                                                    33 | Page
+Appendix D - Helicopter Route Operations
+Current Helicopter Route operations are helicopters using locally, charted airspace structures,
+Helicopter Routes, to simplify the interactions between a helicopter PIC and ATC. Helicopter
+Route operations have the similar high-level operational patterns and concerns as initial UAM
+operations. This appendix is a brief description of nominal operations that occur today and offers
+a point of comparison to the operations described in Sections 4 and 6.1. The comparison is
+summarized in Table D-1.
+       Table D-1: Comparison of Helicopter Route Operations and UAM Operations
+  Operational Attribute             Helicopter Route Operations               ConOps 1.0 UAM        Similar or
+                                                                                Operations          Different
+
+ Use of airspace structure   Intended for helicopter operations per          Intended for UAM       Similar
+                             airspace class regulations                      operations that meet
+                                                                             UAM Corridor
+                                                                             performance and
+                                                                             participation
+                                                                             requirements
+
+ Tactical ATC Separation     No                                              No                     Similar
+ within airspace structure
+
+ ATC separates other         Yes, airspace class specific                    Yes, airspace class    Similar
+ traffic from the airspace                                                   specific
+ structure
+
+ 2-way communications        Yes, airspace class specific                    No, for nominal        Similar
+ with ATC                                                                    operations in UAM
+                                                                             Corridors
+
+ Monitor ATC frequency       Yes, airspace class specific                    Not required           Different
+
+ Operations that may         Any operation subject to airspace class         Any operations that    Different
+ occur within structure      regulations                                     can meet UAM
+                                                                             Corridor performance
+                                                                             and participation
+                                                                             requirements
+
+ Airspace permissions        Yes - approval by ATC into the airspaces        Yes - through          Different
+                             consistent with airspace class rules - use of   negotiated UAM
+                             Helicopter Routes simplifies the ATC            Operational Intent
+                             approval considerations                         (not ATC approved)
+
+ Use of ADS-B Out and        Yes, airspace class specific                    Not during nominal     Different
+ Transponders during                                                         operations within
+ operations                                                                  UAM Corridors
+
+ ATC monitors flight         Yes                                             No                     Different
+ progress within airspace
+ structure
+
+
+
+
+                                                                                                      34 | Page
+  Operational Attribute          Helicopter Route Operations              ConOps 1.0 UAM   Similar or
+                                                                            Operations     Different
+
+ Variations based on       Yes, airspace class rules apply for equipage   No               Different
+ airspace class            and interactions with, and approval by,
+                           ATC
+
+
+Nominal Helicopter Route operations can be organized by the following groupings:
+
+   1. Operation Independent: activities that occur continuously in the “background” of any
+      individual helicopter operation
+
+   2. Operation Dependent: activities that occur within the context of the execution of a specific
+      Helicopter Route operation
+
+The following special procedures apply to helicopters operating in Helicopter Routes:
+
+   1. Modified regulations (e.g., through Letters of Agreement (LOAs)) streamline two-way
+      voice communication with ATC
+
+   2. ATC involvement includes setting Helicopter Route availability, providing ATC
+      clearances for Helicopter Routes that traverse Class B airspace, and providing advisories
+      as appropriate when workload permits
+
+Operation Independent Activities
+
+Operation independent activities include actions by the FAA, ATC, and heliports.
+
+The FAA takes the following actions:
+
+   1. Local facility defines and makes publicly available Helicopter Routes
+
+   2. Makes available NAS Operational Data to the PIC including maintaining existing FAA
+      information distribution systems (e.g., SWIM, NOTAMs, TFRs) and supporting processes
+
+ATC determines the availability of Helicopter Routes. Availability is an indication that helicopters
+may use the route.
+
+Heliports maintain heliport availability and pad utilization schedule. This supports the planning
+activity consider helipad availability based on operating hours and utilization.
+
+Operation Dependent Activities
+
+Within the context of Operation Dependent activities, Helicopter Route operations occur in the
+following phases: Planning, Departure, En Route, Arrival, and Post Operations.
+
+
+
+
+                                                                                             35 | Page
+Planning Phase
+
+As helicopter operations may be on-demand services, initiation of this operation starts with the
+PIC receiving a request from an individual customer for a flight between helipad A in Class G
+airspace and helipad B in Class B airspace. The planned trajectory includes the option to use a
+Helicopter Route that begins in Class G airspace and proceeds through a portion of Class B
+airspace to the vicinity of helipad B. No other airspace classes are traversed in this operation.
+
+The PIC obtains current conditions from Automatic Terminal Information Service (ATIS) or ATC.
+The PIC determines desired flight intent including origination and destination heliports, airspace
+classes to transit (and associated requirements), and specific Helicopter Route(s) based on
+availability.
+
+The PIC completes the following:
+
+   1. Plans for off-nominal events and alternative landing locations
+   2. Identifies the rules, regulations, and procedures associated with each class of airspace
+      traversed during the operation
+   3. Obtains all relevant information (e.g., NOTAMs, TFRs, ATIS) from FAA information
+      distribution systems
+
+Departure Phase
+
+The PIC takes-off from helipad A in Class G airspace.
+
+En Route Phase
+
+The PIC navigates towards Class B airspace noting the proposed use of the Helicopter Route. The
+PIC requests an ATC Clearance to enter Class B airspace from the appropriate ATC facility on the
+appropriate frequency. ATC reviews the airspace, notes the intended operations along the intended
+flight path in Class B, grants the ATC Clearance as requested, issues additional instructions to
+notify ATC when landing assured, and begins monitoring the progress of the flight. The PIC enters
+the Helicopter Route, navigates along the route, and enters Class B airspace.
+
+As the PIC navigates along the Helicopter Route in Class B:
+
+   1. ATC separates, when possible, other NAS Users from the Helicopter Route but not the
+      individual helicopter.
+   2. The PIC shares with other helicopters the responsibility for separation (e.g., see and avoid)
+      from other helicopters within the Helicopter Route.
+   3. The PIC does not contact ATC for situations that would normally warrant communication
+      in Class B (e.g., course changes) as long as the helicopter remains on the cleared Helicopter
+      Route.
+   4. The PIC continues to helipad B.
+
+
+
+
+                                                                                         36 | Page
+Arrival Phase
+
+As the helicopter approaches the arrival helipad located at the Class B airport, the PIC confirms
+the landing pad is still available per the flight intent. The PIC contacts ATC on the appropriate
+frequency and requests clearance to land at helipad B. ATC reviews the helipad operations and
+issues clearance to land. The PIC lands the helicopter.
+
+Post-Operations Phase
+
+The PIC advises ATC of landing assured. ATC acknowledges the PIC and discontinues monitoring
+of the flight.
+
+
+
+
+                                                                                       37 | Page
+

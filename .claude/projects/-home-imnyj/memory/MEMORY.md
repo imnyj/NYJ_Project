@@ -2,3 +2,4 @@
 - [paper4 AoI RL 논문 프로젝트](paper4-aoi-rl-project.md) — 파이프라인 구축 완료, 200k-step 본훈련 승인 대기 중
 - [Claude-Antigravity 교대 협업 방식](claude-antigravity-handoff-workflow.md) — Claude는 antigravity를 의심하고 직접 검토/수정, md로 인계
 - [논문 서브에이전트 팀 규약](paper-subagent-team-convention.md) — pN- 접두사 7종 팀, 백그라운드 실행, 질의 에스컬레이션 경로
+- [paper2 UAM 핸드오버 논문](paper2-uam-handover-project.md) — paper5 승계, PAMDP 유지, UAM 표기 고정

@@ -1,0 +1,984 @@
+      ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+
+TECHNICAL SPECIFICATION
+
+
+
+
+                          5G;
+      Unmanned Aerial System (UAS) support in 3GPP
+        (3GPP TS 22.125 version 17.6.0 Release 17)
+3GPP TS 22.125 version 17.6.0 Release 17                        1                             ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+
+                                                            Reference
+                                                   RTS/TSGS-0122125vH60
+
+                                                            Keywords
+                                                                 5G
+
+
+
+
+                                                               ETSI
+                                                  650 Route des Lucioles
+                                         F-06921 Sophia Antipolis Cedex - FRANCE
+
+                                       Tel.: +33 4 92 94 42 00 Fax: +33 4 93 65 47 16
+
+                                              Siret N° 348 623 562 00017 - APE 7112B
+                                            Association à but non lucratif enregistrée à la
+                                           Sous-Préfecture de Grasse (06) N° w061004871
+
+
+
+                                                       Important notice
+                                       The present document can be downloaded from:
+                                            http://www.etsi.org/standards-search
+ The present document may be made available in electronic versions and/or in print. The content of any electronic and/or
+ print versions of the present document shall not be modified without the prior written authorization of ETSI. In case of any
+    existing or perceived difference in contents between such versions and/or in print, the prevailing version of an ETSI
+                     deliverable is the one made publicly available in PDF format at www.etsi.org/deliver.
+    Users of the present document should be aware that the document may be subject to revision or change of status.
+                    Information on the current status of this and other ETSI documents is available at
+                                  https://portal.etsi.org/TB/ETSIDeliverableStatus.aspx
+          If you find errors in the present document, please send your comment to one of the following services:
+                                   https://portal.etsi.org/People/CommiteeSupportStaff.aspx
+                   If you find a security vulnerability in the present document, please report it through our
+                                         Coordinated Vulnerability Disclosure Program:
+                              https://www.etsi.org/standards/coordinated-vulnerability-disclosure
+
+                                       Notice of disclaimer & limitation of liability
+The information provided in the present deliverable is directed solely to professionals who have the appropriate degree of
+         experience to understand and interpret its content in accordance with generally accepted engineering or
+                                  other professional standard and applicable regulations.
+                No recommendation as to products and services or vendors is made or should be implied.
+  No representation or warranty is made that this deliverable is technically accurate or sufficient or conforms to any law
+and/or governmental rule and/or regulation and further, no representation or warranty is made of merchantability or fitness
+                     for any particular purpose or against infringement of intellectual property rights.
+        In no event shall ETSI be held liable for loss of profits or any other incidental or consequential damages.
+
+   Any software contained in this deliverable is provided "AS IS" with no warranties, express or implied, including but not
+ limited to, the warranties of merchantability, fitness for a particular purpose and non-infringement of intellectual property
+ rights and ETSI shall not be held liable in any event for any damages whatsoever (including, without limitation, damages
+for loss of profits, business interruption, loss of information, or any other pecuniary loss) arising out of or related to the use
+                                                 of or inability to use the software.
+
+                                                   Copyright Notification
+No part may be reproduced or utilized in any form or by any means, electronic or mechanical, including photocopying and
+                             microfilm except as authorized by written permission of ETSI.
+             The content of the PDF version shall not be modified without the written authorization of ETSI.
+                    The copyright and the foregoing restriction extend to reproduction in all media.
+
+                                                          © ETSI 2022.
+                                                       All rights reserved.
+
+
+
+
+                                                              ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                   2                        ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+Intellectual Property Rights
+Essential patents
+
+IPRs essential or potentially essential to normative deliverables may have been declared to ETSI. The declarations
+pertaining to these essential IPRs, if any, are publicly available for ETSI members and non-members, and can be
+found in ETSI SR 000 314: "Intellectual Property Rights (IPRs); Essential, or potentially Essential, IPRs notified to
+ETSI in respect of ETSI standards", which is available from the ETSI Secretariat. Latest updates are available on the
+ETSI Web server (https://ipr.etsi.org/).
+
+Pursuant to the ETSI Directives including the ETSI IPR Policy, no investigation regarding the essentiality of IPRs,
+including IPR searches, has been carried out by ETSI. No guarantee can be given as to the existence of other IPRs
+not referenced in ETSI SR 000 314 (or the updates on the ETSI Web server) which are, or may be, or may become,
+essential to the present document.
+
+Trademarks
+
+The present document may include trademarks and/or tradenames which are asserted and/or registered by their
+owners. ETSI claims no ownership of these except for any which are indicated as being the property of ETSI, and
+conveys no right to use or reproduce any trademark and/or tradename. Mention of those trademarks in the present
+document does not constitute an endorsement by ETSI of products, services or organizations associated with those
+trademarks.
+
+DECT™, PLUGTESTS™, UMTS™ and the ETSI logo are trademarks of ETSI registered for the benefit of its
+Members. 3GPP™ and LTE™ are trademarks of ETSI registered for the benefit of its Members and of the 3GPP
+Organizational Partners. oneM2M™ logo is a trademark of ETSI registered for the benefit of its Members and of
+the oneM2M Partners. GSM® and the GSM logo are trademarks registered and owned by the GSM Association.
+
+
+
+Legal Notice
+This Technical Specification (TS) has been produced by ETSI 3rd Generation Partnership Project (3GPP).
+
+The present document may refer to technical specifications or reports using their 3GPP identities. These shall be
+interpreted as being references to the corresponding ETSI deliverables.
+
+The cross reference between 3GPP and ETSI identities can be found under
+http://webapp.etsi.org/key/queryform.asp.
+
+
+
+Modal verbs terminology
+In the present document "shall", "shall not", "should", "should not", "may", "need not", "will", "will not", "can"
+and "cannot" are to be interpreted as described in clause 3.2 of the ETSI Drafting Rules (Verbal forms for the
+expression of provisions).
+
+"must" and "must not" are NOT allowed in ETSI deliverables except when used in direct citation.
+
+
+
+
+                                                          ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                                                  3                                     ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+Contents
+Intellectual Property Rights ................................................................................................................... 2
+Legal Notice .......................................................................................................................................... 2
+Modal verbs terminology....................................................................................................................... 2
+Foreword................................................................................................................................................ 4
+Introduction ........................................................................................................................................... 4
+1        Scope ........................................................................................................................................... 5
+2        References ................................................................................................................................... 5
+3        Definitions, symbols and abbreviations ...................................................................................... 5
+3.1           Definitions ............................................................................................................................................ 5
+3.2           Symbols ................................................................................................................................................ 6
+3.3           Abbreviations ....................................................................................................................................... 6
+4        Overview on UAS ....................................................................................................................... 6
+4.1           General ................................................................................................................................................. 6
+4.2           C2 Communication............................................................................................................................... 6
+5        Requirements for Remote Identification of UAS ........................................................................ 7
+5.1           General ................................................................................................................................................. 7
+5.2           UAS traffic management ...................................................................................................................... 9
+5.2.1            General............................................................................................................................................ 9
+5.2.2            Decentralized UAS traffic management ......................................................................................... 9
+5.3           Void ...................................................................................................................................................... 9
+5.4           Security ................................................................................................................................................ 9
+6        Requirements for UAV usages .................................................................................................. 10
+6.1           General ............................................................................................................................................... 10
+6.2           Network exposure for UAV services.................................................................................................. 10
+6.3           Service restriction for UEs onboard of UAV ..................................................................................... 10
+6.4           Requirements for UxNB ..................................................................................................................... 10
+6.5           C2 communication ............................................................................................................................. 11
+7        Performance requirements......................................................................................................... 11
+7.1           KPIs for services provided to the UAV applications.......................................................................... 11
+7.2           KPIs for UAV command and control ................................................................................................. 12
+7.3           Positioning performance requirements ............................................................................................... 13
+7.4           Other requirements ............................................................................................................................. 14
+
+Annex A (informative):                           UAS Reference Model ...................................................................... 15
+A.1           UAS Reference Model in 3GPP ecosystem........................................................................................ 15
+
+Annex B (informative):                           Change history .................................................................................. 16
+History ................................................................................................................................................. 17
+
+
+
+
+                                                                                       ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                   4                        ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+Foreword
+This Technical Specification has been produced by the 3rd Generation Partnership Project (3GPP).
+
+The contents of the present document are subject to continuing work within the TSG and may change following
+formal TSG approval. Should the TSG modify the contents of the present document, it will be re-released by the
+TSG with an identifying change of release date and an increase in version number as follows:
+
+   Version x.y.z
+
+   where:
+
+       x the first digit:
+
+            1 presented to TSG for information;
+
+            2 presented to TSG for approval;
+
+            3 or greater indicates TSG approved document under change control.
+
+       y the second digit is incremented for all changes of substance, i.e. technical enhancements, corrections,
+         updates, etc.
+
+       z the third digit is incremented when editorial only changes have been incorporated in the document.
+
+
+
+
+Introduction
+Interest in using cellular connectivity to support Uncrewed Aerial Systems (UAS) is strong, and the 3GPP
+ecosystem offers excellent benefits for UAS operation. Ubiquitous coverage, high reliability and QoS, robust
+security, and seamless mobility are critical factors to supporting UAS command and control functions. In parallel,
+regulators are investigating safety and performance standards and Registration and licensing programs to develop a
+well-functioning private and civil UAS ecosystem which can safely coexist with commercial air traffic, public and
+private infrastructure, and the general population.
+
+The 3GPP system can provide control plane and user plane communication services for UAS. Examples of services
+which can be offered to the UAS ecosystem includes data services for command and control (C2), telematics, UAS-
+generated data, remote identification, and authorisation, enforcement, and regulation of UAS operation.
+
+
+
+
+                                                         ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                       5                         ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+1                Scope
+The present document identifies the requirements for operation of Uncrewed Aerial Vehicles (UAVs) via the 3GPP
+system.
+
+This includes requirements for meeting the business, security, and public safety needs for the remote identification
+and tracking of UAS linked to a 3GPP subscription.
+
+
+
+2                References
+The following documents contain provisions which, through reference in this text, constitute provisions of the
+present document.
+
+    -     References are either specific (identified by date of publication, edition number, version number, etc.) or
+          non-specific.
+
+    -     For a specific reference, subsequent revisions do not apply.
+
+    -     For a non-specific reference, the latest version applies. In the case of a reference to a 3GPP document
+          (including a GSM document), a non-specific reference implicitly refers to the latest version of that document
+          in the same Release as the present document.
+
+    [1]                 3GPP TR 21.905: "Vocabulary for 3GPP Specifications".
+
+    [2]                 FAA UTM Concept of Operations v1.0, Foundational Principles, Roles and Responsibilities,
+                        Use Cases and Operational Threads https://utm.arc.nasa.gov/docs/2018-UTM-ConOps-
+                        v1.0.pdf
+
+    [3]                 FAA Remote Identification, https://www.faa.gov/uas/research_development/remote_id/
+
+    [4]                 3GPP TS 22.261: "Service requirements for the 5G system; Stage 1".
+
+    [5]                 IMT 2020(5G): "Application for UAV in 5G White Paper", September 2018
+
+
+
+3                Definitions, symbols and abbreviations
+
+3.1              Definitions
+For the purposes of the present document, the terms and definitions given in 3GPP TR 21.905 [1] and the following
+apply. A term defined in the present document takes precedence over the definition of the same term, if any, in
+3GPP TR 21.905 [1].
+
+Above ground level (AGL): In the context of a UAV it is the UAV altitude referenced to ground level in the
+vicinity.
+
+Command and Control (C2) Communication: the user plane link to convey messages with information of
+command and control for UAV operation between a UAV controller and a UAV.
+
+Uncrewed Aerial System (UAS): Composed of Uncrewed Aerial Vehicle (UAV) and related functionality,
+including command and control (C2) links between the UAV and the controller, the UAV and the network, and for
+remote identification. A UAS is comprised of a UAV and a UAV controller.
+
+    NOTE:        A UAV can be controlled by different UAV controllers, but at any given time, a UAV is under the
+                 control of only one UAV controller. The mechanisms to ensure which UAV controller is active and
+                 controlling the UAV is out of scope of 3GPP.
+
+Uncrewed Aerial System Traffic Management (UTM): a set of functions and services for managing a range of
+autonomous vehicle operations.
+
+
+
+
+                                                             ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                     6                         ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+UAV controller: The UAV controller of a UAS enables a drone pilot to control an UAV.
+
+UxNB: radio access node on-board UAV. It is a radio access node providing connectivity to UEs, which is carried in
+the air by an Uncrewed Aerial Vehicle (UAV).
+
+
+3.2           Symbols
+For the purposes of the present document, the following symbols apply:
+
+
+3.3           Abbreviations
+For the purposes of the present document, the abbreviations given in 3GPP TR 21.905 [1] and the following apply.
+An abbreviation defined in the present document takes precedence over the definition of the same abbreviation, if
+any, in 3GPP TR 21.905 [1].
+
+    BVLOS            Beyond Visual Line of Sight
+    C2               Command and Control
+    Remote ID        Remote Identification [3]
+    UAS              Uncrewed Aerial System
+    UAV              Uncrewed Aerial Vehicle
+    UTM              Uncrewed Aerial System Traffic Management [2]
+
+
+4             Overview on UAS
+
+4.1           General
+An Uncrewed Aerial System (UAS) is the combination of an Uncrewed Aerial Vehicle (UAV), sometimes called a
+drone, and a UAV controller. A UAV is an aircraft without a human pilot onboard – instead, in some cases. the
+UAV can be controlled from an operator via a UAV controller and will have a range of autonomous flight
+capabilities. The communication system between the UAV and UAV controller is, within the scope of this
+specification and in some scenarios, provided by the 3GPP system. The UAS model considers also the scenario
+where the UAV controller communicates with the UAV via mechanisms outside the scope of 3GPP.
+
+UAVs range in size and weight from small, light aircraft often used for recreational purposes to large, heavy aircraft
+which are often more suited to commercial applications. Regulatory requirements vary across this range and vary on
+a regional basis.
+
+The communication requirements for UAS cover both the Command and Control (C2), and uplink and downlink
+data to/from the UAS components towards both the serving 3GPP network and network servers. The applicable C2
+communication modes is depicted in clause 4.2.
+
+Uncrewed Aerial System Traffic Management (UTM) is used to provide a number of services to support UAS and
+their operations including but not limited to UAS identification and tracking, authorisation, enforcement, regulation
+of UAS operations, and also to store the data required for UAS(s) to operate. It also allows authorised users (e.g., air
+traffic control, public safety agencies) to query the identity and metadata of a UAV and its UAV controller.
+
+
+4.2           C2 Communication
+When using 3GPP network as the transport network for supporting UAS services, the following C2 communication
+are considered to provision UAS services by guaranteeing QoS for the C2 communication:
+
+Direct C2 communication: the UAV controller and UAV establish a direct C2 link to communicate with each other
+and both are registered to the 5G network using the radio resource configured and scheduled provided by the 5G
+network for direct C2 communication.
+
+Network-Assisted C2 communication: the UAV controller and UAV register and establish respective unicast C2
+communication links to the 5G network and communicate with each other via 5G network. Also, both the UAV
+
+
+
+
+                                                           ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                       7                        ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+controller and UAV may be registered to the 5G network via different NG-RAN nodes. The 5G network needs to
+support mechanism to handle the reliable routing of C2 communication.
+
+UTM-Navigated C2 communication: the UAV has been provided a pre-scheduled flight plan, e.g. array of 4D
+polygons, for autonomous flying, however UTM still maintains a C2 communication link with the UAV in order to
+regularly monitor the flight status of the UAV, verify the flight status with up-to-date dynamic restrictions, provide
+route updates, and navigate the UAV whenever necessary.
+
+In general, Direct C2 communication and Network-Assisted C2 communication are used by a human-operator using
+a UAV controller. UTM-Navigated C2 communication is used by the UTM to provide cleared flying routes and
+routes updates. In order to ensure the service availability and reliability of the C2 communication for UAS
+operation, especially when the UAV is flying beyond line of sight (BLOS) of the operator, redundant C2
+communication links can be established for any C2 communication links from UAV controller or UTM to a UAV.
+
+For reliability and service availability consideration, it is possible to activate more than one C2 communication with
+one as a backup link for C2 communication or switch among the applicable links for C2 communication.
+
+    -     For example, Direct C2 communication can be used at first and then switch to the Network-Assisted C2
+          communication when the UAV is flying BLOS.
+
+    -     For example, UTM-navigated C2 communication can be utilized whenever needed, e.g. for air traffic control,
+          the UAV is approaching a No Drone Zone, and detected potential security threats, etc.
+
+There are four control modes considered in the C2 communication for the UAV operation that are with different
+requirements, e.g. on message intervals, sizes, and end to end latencies, etc., including steer to waypoints, direct
+stick steering, automatic flight by UTM and approaching autonomous navigation infrastructure.
+
+        - Steer to waypoints: the control message contains flight declaration, e.g. waypoints, sent from the UAV
+          controller or UTM to the UAV. The control mode is used in both of direct C2 communication and network-
+          assisted C2 communication.
+
+        - Direct stick steering: the control message contains direction instructions sending from the UAV controller to
+          the UAV while optionally video traffic is provided as feedback from the UAV to the UAV controller. The
+          control mode is used in both of direct C2 communication and network-assisted C2 communication.
+
+        - Automatic flight by UTM: the control message contains a pre-scheduled flight plan, e.g. array of 4D
+          polygons, sent from the UTM to the UAV, which thereafter flies autonomously with periodic position
+          reporting. The control mode is used in UTM-Navigated C2 communication.
+
+        - Approaching autonomous navigation infrastructure: the control message contains direction instructions, e.g.
+          waypoints, altitudes and speeds from the UTM to the UAV. When the UAV is landing/departing, the UTM
+          coordinates more closely with autonomous navigation infrastructure, e.g. vertiport or package distribution
+          center. The control mode is used in UTM-Navigated C2 communication.
+
+
+
+5                Requirements for Remote Identification of UAS
+
+5.1              General
+[R-5.1-001] The 3GPP system should enable UTM to associate the UAV and UAV controller, and the UTM to
+identify them as a UAS.
+
+[R-5.1-002] The 3GPP system shall be able to provide UTM with the identity/identities of a UAS.
+
+[R-5.1-003] The 3GPP system shall enable a UAS to send UTM the UAV data which can contain: unique identity
+(this may be a 3GPP identity), UE capability of the UAV, make & model, serial number, take-off weight, position,
+owner identity, owner address, owner contact details, owner certification, take-off location, mission type, route data,
+operating status.
+
+[R-5.1-004] The 3GPP system shall enable a UAS to send UTM the UAV controller data which can contain: unique
+identity (this may be a 3GPP identity), UE capability of the UAV controller, position, owner identity, owner
+
+
+
+
+                                                             ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                  8                       ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+address, owner contact details, owner certification, UAV operator identity, UAV operator license, UAV operator
+certification, UAV pilot identity, UAV pilot license, UAV pilot certification and flight plan.
+
+[R-5.1-005] The 3GPP system shall enable a UAS to send different UAS data to UTM based on the different
+authentication and authorizations level which are applied to the UAS.
+
+   NOTE 0: Subject to the regional regulation, the different authentication and authorization levels can be: the
+           initial network access authentication and authorization, UAS identity authentication, UAV flight plan
+           authorization, additional UTM service authentications, such as flight monitoring, collision avoidance
+           services, so on.
+
+[R-5.1-006] The 3GPP system shall support capability to extend UAS data being sent to UTM with the evolution of
+UTM and its support applications in future.
+
+[R-5.1-007] Based on regulations and security protection, the 3GPP system shall enable a UAS to send UTM the
+identifiers which can be: IMEI, MSISDN, or IMSI, or IP address.
+
+[R-5.1-008] The 3GPP system shall enable a UE in a UAS to send the following identifiers to a UTM: IMEI,
+MSISDN, or IMSI, or IP address
+
+[R-5.1-009] The 3GPP system should enable an MNO to augment the data sent to a UTM with the following:
+network-based positioning information of UAV and UAV controller.
+
+   NOTE 1: This augmentation may be trust-based (i.e. the MNO informs the UTM that the UAV position
+           information is trusted) or it may be additional location information based on network information,
+           such as OTDOA, cell coordinates, synchronization source, etc.
+
+   NOTE 2: This requirement will not be applied to the case which the UAS and UTM has direct control
+           communication connection without going through MNO, such as OTDOA, cell coordinates,
+           synchronization source, etc.
+
+[R-5.1-010] The 3GPP system shall enable UTM to inform an MNO of the outcome of an authorisation to operate.
+
+[R-5.1-011] The 3GPP system shall enable an MNO to allow a UAS authorisation request only if appropriate
+subscription information is present.
+
+[R-5.1-012] The 3GPP system shall enable a UAS to update a UTM with the live location information of a UAV
+and its UAV controller.
+
+[R-5.1-013] The 3GPP network should be able to provide supplement location information of UAV and its
+controller to a UTM.
+
+   NOTE 3: This supplement may be trust-based (i.e. the MNO informs the UTM that the UAV position
+           information is trusted) or it may be additional location information based on network information.
+
+[R-5.1-014] The 3GPP network shall support UAVs and the corresponding UAV controller are connecting to
+different PLMNs at the same time.
+
+[R-5.1-014a] The 3GPP system shall support UAVs and the corresponding UAV controller are connecting to
+different PLMNs at the same time.
+
+[R-5.1-015] The 3GPP system shall provide the capability for network to obtain the UAS information regarding its
+support of 3GPP communication capabilities designed for UAS operation.
+
+[R-5.1-016] The 3GPP system shall support the UAS identification and subscription data which can differentiate the
+UAS with UAS-capable UE and the UAS with non-UAS-capable UE.
+
+   NOTE 4: UAS-capable UE refers to the UE which support interaction capability with UTM and certain 3GPP
+           communication features which 3GPP provides for UAS.
+
+[R-5.1-017] The 3GPP system shall support the UTM in detection of UAV operating without authorization.
+
+   NOTE 5: the scenarios covered by the requirement above are FFS.
+
+
+
+
+                                                        ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                    9                        ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+5.2           UAS traffic management
+5.2.1         General
+   NOTE:      The following requirements are valid for both centralized and decentralized UTM.
+
+[R-5.2.1-001] The 3GPP system shall provide a mechanism for a UTM to provide route data, along with flight
+clearance, to a UAV.
+
+[R-5.2.1-002] The 3GPP system shall be able to deliver route modification information received from a UTM to a
+UAS with a latency of less than 500ms.
+
+[R-5.2.1-003] The 3GPP system shall be able to deliver the notifications received from a UTM to a UAV controller
+with a latency of less than 500ms.
+
+[R-5.2.1-004] Based on MNO policies and/or regulatory requirements, the 3GPP system shall enable the UTM to
+take over the communication used to control the UAV.
+
+
+5.2.2         Decentralized UAS traffic management
+[R-5.2.2-001] The 3GPP system shall enable a UAV to broadcast the following data for identifying UAV(s) in a
+short-range area for collision avoidance: e.g. UAV identities if needed based on different regulation requirements,
+UAV type, current location and time, flight route information, current speed, operating status.
+
+[R-5.2.2-002] The 3GPP system shall be able to support a UAV to transmit a message via network connection for
+identifying itself as an UAV to the other UAV(s).
+
+[R-5.2.2-003] The 3GPP system shall enable UAV to preserve the privacy of the owner of the UAV, UAV pilot, and
+the UAV operator in its broadcast of identity information.
+
+[R-5.2.2-004] The 3GPP system shall enable a UAV to receive local broadcast communication transport service
+from other UAV in short range.
+
+[R-5.2.2-005] A UAV shall be able to use a direct UAV to UAV local broadcast communication transport service in
+the coverage or out of coverage of a 3GPP network.
+
+[R-5.2.2-006] A UAV shall be able to use a direct UAV to UAV local broadcast communication transport service
+when the sending and receiving UAVs are served by the same or different PLMNs.
+
+[R-5.2.2-007] The 3GPP system shall support a direct UAV to UAV local broadcast communication transport
+service at relative speeds of up to 320kmph.
+
+[R-5.2.2-008] The 3GPP system shall support a direct UAV to UAV local broadcast communication transport
+service with variable message payloads of 50-1500 bytes, not including security-related message component(s).
+
+[R-5.2.2-009] The 3GPP system shall support a direct UAV to UAV local broadcast communication transport
+service which supports a range of up to 600m.
+
+[R-5.2.2-010] The 3GPP system shall support a direct UAV to UAV local broadcast communication transport
+service which can transmit messages at a frequency of at least 10 messages per second.
+
+[R-5.2.2-011] The 3GPP system shall support a direct UAV to UAV local broadcast communication transport
+service which can transmit messages with an end-to-end latency of at most 100ms.
+
+
+5.3           Void
+
+5.4           Security
+[R-5.4-001] The 3GPP system shall protect the transport of data between the UAS and UTM.
+
+[R-5.4-002] The 3GPP system shall protect against spoofing attacks of the UAS identities.
+
+
+
+                                                          ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                         10                          ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+[R-5.4-003] The 3GPP system shall allow non-repudiation of data sent between the UAS and UTM at the
+application layer.
+
+[R-5.4-004] The 3GPP system shall support the capability to provide different levels of integrity and privacy
+protection for the different connections between UAS and UTM as well as the data being transferred via those
+connections.
+
+[R-5.4-005] The 3GPP system shall support confidentiality protection of identities related to the UAS and personally
+identifiable information.
+
+[R-5.4-006] The 3GPP system shall support regulatory requirements (e.g. Lawful Intercept) for UAS traffic.
+
+
+
+6              Requirements for UAV usages
+
+6.1            General
+Beyond UAV related requirements, the 3GPP can be used to support for a wide range of applications and scenarios
+by using low altitude UAVs in various commercial and government sectors. New service level requirements and
+KPIs for supporting various UAV applications by the 3GPP system have been identified and specified e.g. Service
+requirements and KPIs related to command and control (C2), payload (e.g. camera) and the operation of radio access
+nodes on-board UAVs.
+
+
+6.2            Network exposure for UAV services
+[R-6.2-001] The 3GPP system shall provide means to allow a 3rd party to request and obtain real-time monitoring
+the status information (e.g., location of UAV, communication link status) of a UAV.
+
+[R-6.2-002] Based on operator 's policy, the 3GPP system shall provide means to provide a 3rd party with the
+information regarding the service status for UAVs in a certain geographical area and/or at a certain time.
+
+    NOTE:      Service status is about the information of whether the communication service to the UAV can be
+               provided with a certain QoS by the network.
+
+
+6.3            Service restriction for UEs onboard of UAV
+[R-6.3-001] The 3GPP network shall be able to support network-based 3D space positioning (e.g., with altitude
+30~300m) of a UE onboard UAV.
+
+[R-6.3-002] The 3GPP system shall be able to notify the authorized third party of potential stopping of connectivity
+service before the UE onboard of UAV enters an area (e.g., due to altitude) where the connectivity service is not
+authorized for the UE.
+
+
+6.4            Requirements for UxNB
+[R-6.4-001] The 5G system shall be able to support UxNBs to provide enhanced and more flexible radio coverage.
+
+[R-6.4-002] The 3GPP system shall be able to provide suitable means to control the operation of the UxNBs (e.g. to start
+operation, stop operation, replace UxNB etc.).
+
+[R-6.4-003] The 3GPP system shall be able to provide means to minimize power consumption of the UxNBs (e.g. optimizing
+operation parameter, optimized traffic delivery).
+
+[R-6.4-004] The 3GPP system shall be able to minimize interference e.g. caused by UxNBs changing their positions.
+
+
+
+
+                                                               ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                     11                         ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+6.5           C2 communication
+[R-6.5-001] The 3GPP system shall support C2 communication with required QoS for pre-defined C2
+communication models (e.g. using direct ProSe Communication between UAV and the UAV controller, UTM-
+navigated C2 communication based on flight plan between UTM and the UAV).
+
+[R-6.5-002] The 3GPP system shall support C2 communication with required QoS when switching between the C2
+communication models.
+
+[R-6.5-003] The 3GPP system shall support a mechanism for the UTM to request monitoring of the C2
+communication with required QoS for pre-defined C2 communication models (e.g. using direct ProSe
+Communication between UAV and the UAV controller, UTM-navigated C2 communication between UTM and
+the UAV).
+
+
+
+7             Performance requirements
+
+7.1           KPIs for services provided to the UAV applications
+The 5G system shall be able to provide uncrewed aerial vehicle with the service performance requirements reported
+in Table 7.1-1.
+
+UAV originated QoS in the table refers to the QoS of Uplink data (e.g. from UAV to the network side). UAV
+terminated QoS is the QoS of downlink data (e.g. from the network side to UAV).
+
+The data transmitted by the 5G system includes data collected by hardware devices installed on UAV such as
+cameras, e.g. pictures, videos and files. It is also possible to transmit some software calculation or statistical data,
+e.g. UAV management data. The service control data transmitted by the 5G system may be based on application
+triggers, such as switch, rotation, promotion and demotion control of equipment on UAV. Various UAV
+applications may require different uplink and downlink QoS at the same time. The 5G system may simultaneously
+provide services to other users on the ground (e.g., the KPIs for rural and urban scenarios as defined in 7.1 of TS
+22.261 [4]) in the same area without service degradation.
+
+
+
+
+                                                            ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                    12                        ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+                       Table 7.1-1 KPIs for services provided to the UAV applications
+                                                           End to
+ Use                                       Data rate                                                    service area
+                   Services                                 end           Altitude AGL
+ case                                                                                                     (note 4)
+                                                          Latency
+ 1                                            100Mbps
+                                                UAV         200 ms            <100 m
+                                             originated
+            8K video live broadcast                                                                  Urban, scenic area
+                                             600Kbps
+                                                UAV          20 ms            <100 m
+                                            terminated
+ 2                                           120Mbps
+                                                UAV
+                                                            200 ms           30-300 m
+                Laser mapping/               originated
+                    HD patrol                  Note 1                                          Urban, rural area, scenic area
+                     Note 7                  300Kbps
+                                                UAV          20 ms           30-300 m
+                                            terminated
+ 3                                           120Mbps
+                                                UAV         20 ms             <200 m
+                                             originated
+             4*4K AI surveillance                                                                     Urban, rural area
+                                              50Mbps
+                                                UAV          20 ms            <200 m
+                                            terminated
+ 4                                          >=25Mbps
+                                                UAV
+                                                            100 ms            <300 m
+                                             originated
+            Remote UAV controller
+                                              (Note 3)                                                Urban, rural area
+               through HD video
+                                             300Kbps
+                                                UAV          20 ms            <300 m
+                                            terminated
+ 5                                          0.06 Mbps
+                                             w/o video      100 ms
+                Real-Time Video                                                  -                Urban, rural, countryside
+                                                UAV
+                                             originated
+ 6                                          4 Mbps for
+                                           720p video
+                                            9 Mbps for      100 ms
+                Video streaming                                                  -                Urban, rural, countryside
+                                           1080p video
+                                                UAV
+                                             originated
+ 7                                               1Mbps
+                                                                                                  Urban, rural, countrysideUrban, rural
+              Periodic still photos               UAV          1s 1S           0.1mm
+                                                                              <120          <120m             -
+                                                                                                                              area
+                                               originated
+ NOTE 1:    The flight average speed is 60km/h. The KPI is referring to [5].
+ NOTE 2:    The latency is the time of the 5G system provide higher accuracy location information of a UAV to a third party.
+ NOTE 3:    Referring to clause 5.2.2, the absolute flying speed of UAV in this service can be up to 160km/h.
+ NOTE 4:    The density of active UAV is 10/200km2. The maximum altitude is 300m. The flight average speed is 60km/h.
+
+
+
+
+7.2           KPIs for UAV command and control
+UAVs may use a variety of flight command and control modes. Command and control (C2) communications refers to
+the two-way communication, which may include video, required to control the operation of the UAV itself. C2
+messages may be communicated with the UAV controller, the UTM or both and may or may not be periodic. UAV
+controller and UTM communications may happen at essentially the same time with different required QoS. Any mission
+specific communication (e.g. HD video for area surveillance), if required, is additional. Different modes of control and
+their typical KPIs are listed in this clause below. The 5G system shall support UAV operation at altitudes of at least
+120m / 400ft above ground level, e.g. the services should be provided and characterized up to 3000ft AGL.
+
+
+
+
+                                                           ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                     13                      ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+                        Table 7.2-1 KPIs for command and control of UAV operation
+   Control           Function             Typical           Max         Typical           End to       Reliability     Positive
+    Mode                                  Message           UAV       message Size         end          (note 2)         ACK
+                                          Interval         ground       (note 1)         Latency                       (note 8)
+                                                           speed
+ Steer to        UAV terminated      >=1 s                300 km/h   100 byte            1s           99.9%            Required
+ waypoints       C2 message
+ (note 3)        UAV originated      1s                              84-140 byte         1s           99.9%            Not
+                 C2 message                                                                                            Required
+                 (note 4)
+ Direct stick    UAV terminated      40 ms                60km/h     24 byte             40 ms        99.9%            Required
+ steering        C2 message          (note 6)
+ (note 5)        UAV originated      40 ms                           84-140 byte         40 ms        99.9%            Not
+                 C2 message                                                                                            Required
+                 (note 7)
+ Automatic       UAV terminated      1s                   300 km/h   <10 kbyte           5 s (note    99.9%            Required
+ flight on       C2 message                                                              9)
+ UTM
+ (note 10)
+                 UAV originated      1s                              1500 byte           5s           99.9%            Required
+                 C2 message          (note 9)                                            (note 9)
+ Approaching     UAV terminated      500 ms                 50 km/h     4 kbyte          10 ms         99%               Required
+ Autonomous      C2 message
+ Navigation      UAVoriginated           500 ms                         4 kbyte             140 ms     99.99%            Required
+ Infrastructur   C2 message
+ e
+ NOTE 1: Message size is at the application layer and excludes any headers and security related load. The numbers shown are
+           typical as message size depends on the commands sent and is implementation specific.
+ NOTE 2: Message reliability is defined as the probability of successful transmission within the required latency at the
+           application layer while under network coverage.
+ NOTE 3: Video is neither required nor expected to be used for steering in this mode.
+ NOTE 4: It may be possible to transmit this message on an event driven basis (e.g. approaching a geo fence). A status
+           message may, but is not required to, be sent as a response to a control message.
+ NOTE 5: A video feedback is required for this mode. The KPIs for video are defined in table 7.2-2.
+ NOTE 6: UAVs on-board controllers typically update at either 50Hz (20ms) or 25Hz (40ms).
+ NOTE 7: A status message may, but is not required to, be sent as a response to a control message A 1Hz slow mode also
+           exists.
+ NOTE 8: Positive ACK is sent to the originator of the message (i.e. UAV controller and / or the UTM). The 5G system makes no
+           assumption whether an appropriate ACK is sent by the application layer.
+ NOTE 9: At the application layer, the C2 communication between a UAV and UTM can be allowed to experience much longer
+           traffic interruptions, e.g. timeouts of 30 s on the uplink and 300 s on the downlink.
+ NOTE 10: This only represents periodic message exchange during a nominal mission in steady state. Itdoes not represent
+           unusual or aperiodic events such as conveying dynamic restrictions or a flight plan to the UAV on the downlink.
+
+
+
+                                Table 7.2-2 KPIs for video used to aid UAV control.
+
+                                                                       Reliabilit
+     Scenario                                         End to end
+                                Data rate                                  y         Direction       Positive ACK required
+     (note 2)                                          Latency
+                                                                        (note 1)
+ VLOS (visual line   2 Mpbs at 480 p, 30 fps         1s                99.9%        Sent by        Not Required
+ of sight)                                                                          UAV
+ Non-VLOS         4 Mbps at 720 p, 30 fps          140 ms              99.99%       Sent by        Not Required
+                                                                                    UAV
+ NOTE 1: Message reliability is defined as the probability of successful transmission within the required latency.
+ NOTE 2: Maximum UAV speed is same as control mode of direct stick steering in 7.2-1
+
+
+
+
+7.3             Positioning performance requirements
+Table 7.3-1 below lists typical scenarios and the corresponding positioning requirements for horizontal and vertical
+accuracy, availability, heading, latency, and UE speed.
+
+
+
+
+                                                            ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                    14                          ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+   NOTE:      The column on "Corresponding Positioning Service Level in TS 22.261" maps the scenarios listed in
+              Table 7.3-1 to the service levels defined in TS 22.261 [4].
+
+                              Table 7.3-1: Positioning performance requirements
+         Scenario                    Accuracy          Availability      Heading        Latency for     UE     Corresponding
+                              (95 % confidence level)                                    position      Speed     Positioning
+                               Horizontal     Vertical                                  estimation              Service Level
+                                                                                                                in TS 22.261
+                               accuracy      accuracy                                      of UE
+ 8K video live broadcast     [0.5 m]       [1 m]       99%                              1s            [<120    5
+                                                                                                      km/h]
+ Laser mapping/              [0.5 m]         [1 m]       99%                            1s            [<120    5
+ HD patrol                                                                                            km/h]
+ 4*4K AI surveillance        [0.1 m]                                                                  [<60
+                                                                                                      km/h]
+ Remote UAV controller       [0.5 m]         [1 m]       99%                            1s            [<120    5
+ through HD video                                                                                     km/h]
+ Periodic still photos       [0.1 m]         [1 m]                                                    [<60
+                                                                                                      km/h]
+ NOTE: The positioning accuracy in this table is not related to navigation or safety.
+
+7.4           Other requirements
+[R-7.4-001] The 5G system shall support a mechanism to switch between C2 communication modes for UAS operation,
+e.g. from indirect C2 communication to direct C2 communication, and ensure the disconnect time is below the latency
+requirements.
+
+[R-7.4-002] The 3GPP system shall enable concurrent communications between the UAV-controller and UAV and
+between the UTM and the UAV that may require different KPIs.
+
+[R-7.4-003] The 3GPP system shall be capable of switching between the KPIs, as requested by the UAV-controller or
+the UTM, within [500ms].
+
+
+
+
+                                                           ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                     15                   ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+Annex A (informative):
+UAS Reference Model
+
+A.1          UAS Reference Model in 3GPP ecosystem
+
+
+
+                             UAV Application
+                                                                   3GPP
+                                                                   Mobile
+                                                                  Network
+                                   UAV
+                          C2
+                   (transport not in
+                      3GPP scope)
+                                         UAV Application
+
+                                                            C2 over 3GPP
+                                                             connectivity
+                      UAV                        UAV
+                    Controller
+                                         UAV Application
+
+
+
+                                                 UAV
+                                               Controller
+
+
+                                       Figure B.1-1: UAS model in 3GPP ecosystem.
+
+In the UAS reference model:
+
+   -   a UAS is composed of one UAV and one UAV controller in this illustration
+
+   -   UAVs are connected over cellular connectivity
+
+   -   a UAV can be controlled by a UAV controller connected via the 3GPP mobile network
+
+   -   a UAV can be controlled by a UAV controller not connected via the 3GPP mobile network, using a C2 interface
+       not in 3GPP scope
+
+   -   a UAV controller connected via the 3GPP mobile network can control one or more UAV(s)
+
+   -   the UAS exchanges application data traffic with a UTM
+
+   NOTE:     Several types of UAV controllers exist, e.g. hand-held UAV controllers, PCs/WSs and automated or
+             manual functions that are part of the UTM. The mechanisms to ensure which UAV controller is active
+             and controlling the UAV is out of scope of 3GPP.
+
+
+
+
+                                                            ETSI
+3GPP TS 22.125 version 17.6.0 Release 17                   16                             ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+Annex B (informative):
+Change history
+
+                                                    Change history
+Date         Meeting TDoc        CR       R Cat   Subject/Comment                                                         New
+                                          ev                                                                              version
+24/08/2018   SA1#83 S1-182766    -        - -     Skeleton created                                                        0.1.0
+16/11/2018   SA1#84 S1-183278    -        - -     TS22.125 v0.2.0 created to include agreements at this meeting           0.2.0
+2018-12      SA#82 SP-181009     -        - -     Presentation for one-step approval to SA                                1.0.0
+2018-12      SA#82 SP-181009     -        - -     Raised to v.16.0.0 following SA#82’s one step approval                  16.0.0
+2019-03      SA#83 SP-190083     0001     2 C     Removal of requirement on enforcement                                   16.1.0
+2019-03      SA#83 SP-190083     0005     1 F     Detect and report the problematic UAV controller to UTM                 16.1.0
+2019-03      SA#83 SP-190083     0009     1 F     Clarification for identity of UAV controller data                       16.1.0
+2019-03      SA#83 SP-190083     0008     1 B     Addition for Abbreviations                                              16.1.0
+2019-03      SA#83 SP-190083     0003     3 F     Clarification of Centralized UTM                                        16.1.0
+2019-03      SA#83 SP-190083     0004     3 F     Clarification of Decentralized UTM for Collision Avoidance              16.1.0
+2019-03      SA#83 SP-190083     0002     2 F     Clarification of UTM Definition                                         16.1.0
+2019-03      SA#83 SP-190083     0006     3 B     Definition and Clarification for UTM                                    16.1.0
+2019-06      SA#84 SP-190300     0010     3 F     Rewording the enforcement requirement in section 5.2                    16.2.0
+2019-09      SA#85 SP-190801     0021     2 F     Clarifications on UAS terminology and model                             16.3.0
+2019-09      SA#85 SP-190809     0017     2 B     Definition and introduction of C2 Communication                         17.0.0
+2019-09      SA#85 SP-190809     0018     2 B     CR to 22.125 Network exposure requirements for UAV                      17.0.0
+2019-09      SA#85 SP-190809     0013     2 B     Adding UxNB related requirements                                        17.0.0
+2019-09      SA#85 SP-190809     0020     2 B     Service restriction requirements for UAV                                17.0.0
+2019-09      SA#85 SP-190801     0024     2 F     Corrections to Requirements                                             17.0.0
+2019-12      SA#86 SP-191024     0026     2 B     KPIs for UAV services                                                   17.1.0
+2019-12      SA#86 SP-191024     0027     3 F     Clarification of Control Modes in C2 communication                      17.1.0
+2020-09      SA#89e SP-200881    0028   5    F    Clarification of the definition of a UAS                                17.2.0
+2021-03      SA#91e SP-210197    0034   1    F    Clarification of problematic UAV                                        17.3.0
+2021-09      SA#93e SP-211034    0036   1    D    UAS terminology alignment                                               17.4.0
+2021-12      SP-94 SP-211491     0038   1    D    CR Editorial to T22.125 clause 6.4 and clause 7.1                       17.5.0
+2021-12      SP-94 SP-211491     0039   1    D    CR inclusive language correction to T22.125 clause 1                    17.5.0
+2021-12      SP-94 SP-211491     0040   1    C    CR to T22.125 for correction and readability improvement clause         17.5.0
+                                                  4.2 and clause
+2021-12      SP-94   SP-211491   0041 2     C     Addition of a note to [R-5.1-017] related to the applicability of the   17.5.0
+                                                  requirement
+2022-03      SP#95e SP-220078    0043 1     D     Editorial corrections to TS 22.125 on UAV                               17.6.0
+
+
+
+
+                                                          ETSI
+3GPP TS 22.125 version 17.6.0 Release 17             17          ETSI TS 122 125 V17.6.0 (2022-04)
+
+
+
+History
+                                              Document history
+ V17.6.0       April 2022       Publication
+
+
+
+
+                                                    ETSI
+

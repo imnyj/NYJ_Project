@@ -1,0 +1,1 @@
+{"agentType":"audit-run","description":"실측 재현과 결과 검증","name":"audit-run","spawnDepth":0,"model":"opus","taskKind":"in_process_teammate","teamName":"session-a451dd5b","color":"orange","planModeRequired":false,"customAgentType":"p4-coder","permissionMode":"bypassPermissions"}

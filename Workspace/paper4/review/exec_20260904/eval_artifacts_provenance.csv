@@ -1,0 +1,5 @@
+artifact,models,densities,seeds,n_rows,columns_generation,verdict
+coder/results/eval/,"PureAoI HeuristicScheduler HybridSAC MAPPO HybridPPO HyARPPO DuelingQAoI HybridTD3 SACAoI MPDQN (옛 10종)","15 25 35 45 55","42 101 777 999 2024",250,"구세대(coverage_outage_rate·mean_update_error·tx_abandoned·dynamics_fallbacks 없음)",폐기대상 - 현행 레지스트리 9종과 모델명이 하나도 일치하지 않음
+coder/results/eval_prelim_mean/,"HeuristicScheduler PPO","5 10 15 20 25 30 35","5001 5002",28,현세대,예비실행 - 보상 error_mode=mean 팔의 2종 비교
+coder/results/eval_prelim_accumulate/,"HeuristicScheduler PPO","5 10 15 20 25 30 35","5001 5002",28,현세대,예비실행 - 보상 error_mode=accumulate 팔의 2종 비교
+review/exec_20260904/eval_smoke/,"HeuristicScheduler + 현행 9종","25","5001",10,현세대,본 감사의 스모크 - 평가 파이프라인 완주 확인용이며 성능 해석 불가(200스텝)

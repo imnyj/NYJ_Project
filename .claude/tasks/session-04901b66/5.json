@@ -1,0 +1,10 @@
+{
+  "id": "5",
+  "subject": "누수 방지 관측 인터페이스",
+  "description": "계획 정보 조회(ScheduleOracle)와 실측 정보 조회(MeasurementLog)를 서로 다른 객체로 분리하고 시각 범위를 강제.",
+  "activeForm": "관측 인터페이스 구현 중",
+  "status": "in_progress",
+  "blocks": [],
+  "blockedBy": [],
+  "owner": "p2-coder-sim"
+}

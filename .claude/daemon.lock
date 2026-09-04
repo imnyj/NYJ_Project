@@ -1,0 +1,16 @@
+{
+  "pid": 3958646,
+  "version": "2.1.260",
+  "jsonPath": "/home/imnyj/.claude/daemon.json",
+  "logPath": "/home/imnyj/.claude/daemon.log",
+  "startedAt": 1788501285303,
+  "origin": "transient",
+  "spawnedBy": {
+    "label": "claude",
+    "cwd": "/home/imnyj",
+    "pid": 3956815
+  },
+  "procStart": "128917656",
+  "launchTarget": "/home/imnyj/.local/share/claude/versions/2.1.260",
+  "processWrapper": ""
+}

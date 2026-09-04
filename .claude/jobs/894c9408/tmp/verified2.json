@@ -1,0 +1,26 @@
+[
+ {
+  "doi": "10.1109/DASC55683.2022.9925820",
+  "title": "Design and Analysis of Corridors for UAM Operations",
+  "authors": [
+   "Savvy Verma",
+   "Victoria Dulchinos",
+   "Robert Dan Wood",
+   "Amir Farrahi",
+   "Richard Mogford",
+   "Megan Shyr",
+   "Rania Ghatas"
+  ],
+  "container": "2022 IEEE/AIAA 41st Digital Avionics Systems Conference (DASC)",
+  "type": "proceedings-article",
+  "volume": null,
+  "issue": null,
+  "page": "1-10",
+  "year": 2022,
+  "publisher": "IEEE",
+  "event_location": "Portsmouth, VA, USA",
+  "abstract": "",
+  "resolve_status": 302,
+  "resolve_dest": "https://ieeexplore.ieee.org/document/9925820/"
+ }
+]

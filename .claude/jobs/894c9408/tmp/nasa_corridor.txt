@@ -1,0 +1,462 @@
+Design and Analysis of Corridors for UAM
+              Operations
+                                         Savvy Verma
+           NASA Ames Research Center, Aviation Systems Division, Moffett Field, CA, USA
+                                   savita.a.verma@nasa.gov
+
+
+
+                                        Victoria Dulchinos
+  NASA Ames Research Center, San Jose State University Research Foundation, Moffett Field CA, USA
+                                  victoria.l.dulchinos@nasa.gov
+
+
+                                      Robert (Dan)Wood
+                   NASA Ames Research Center, SimLabs, Moffett Field, CA, USA
+                                   robert.d.wood@nasa.gov
+
+
+                                           Amir Farrahi
+     NASA Ames Research Center, Universities Space Research Association, Moffett Field, CA, USA
+                                     amir.h.farrahi@nasa.gov
+
+
+                                       Richard Mogford
+      NASA Ames Research Center, Human Systems Integration Division, Moffett Field, CA, USA
+                                  richard.mogford@nasa.gov
+
+
+                                         Megan Shyr
+      NASA Ames Research Center, Human Systems Integration Division, Moffett Field, CA, USA
+                                   megan.c.shyr@nasa.gov
+
+
+                                            Rania Ghatas
+      Langley Research Center, Crew Systems and Aviation Operations Branch, Langely, VA, USA
+                                      rania.w.ghatas@nasa.gov
+    Abstract— Urban Air Mobility (UAM) is predicted to provide             A NASA study explored the use of existing helicopter
+alternate modes of transportation for cargo and passengers in the     routes in Dallas Fort Worth (DFW) airspace for initial UAM
+urban areas. Integration of UAM operations into the National          operations using a Letter of Agreement (LOA) that included
+Airspace System is a challenge especially around large airport.       procedures to request a Class B (controlled airspace) clearance
+The Federal Aviation Administration’s (FAA) UAM Concept of            [4,5]. The research showed that this approach was feasible for
+Operations (ConOps) suggests new airspace structures for UAM          near-term, low-demand UAM traffic, but was not scalable due
+operations such as corridors where FAA air traffic control (ATC)      to the impact on ATC workload.
+will not be expected to provide services. This paper presents a
+design for corridors in the Dallas Fort Worth (DFW) area that             The growth of air traffic in today’s aviation system has
+attempts to minimize air traffic controller interactions with UAM     resulted in new airspace reorganization and procedures to ensure
+pilots and operators. The corridor and vertiports are then            safety and efficiency. One proposed innovation that can help
+analyzed with respect to Class B separation criteria and wake         with the introduction of UAM is establishing routes and
+advisory criteria. The results show that for the corridors designed   corridors [3]. While such routes and corridors are similar to the
+for the DFW area and presented in this research, in some cases        area navigation procedures used today at busy airports, instead
+Class B separation criteria are not available between UAM             of ATC managing the flow of traffic, some UAM concepts
+corridors and legacy traffic due to the geometry of the airport. It   envision a third-party service provider performing this role as
+shows that wake advisory criteria were not met for some segments
+                                                                      the Provider of Services for UAM (PSU) Network [3,6].
+in North Flow traffic but were generally met in South Flow. This
+means that some corridor segments at DFW airport will not be               The FAA’s UAM ConOps [4] suggests that new airspace
+available for a given airport flow and may need new placements,       structures such as UAM corridors include the following criteria:
+which need further investigation.                                     1) minimal impact on existing NAS operations, 2) minimal
+                                                                      additional ATC services, 3) include public interest
+  Keywords—UAM, Corridors, Urban Air Mobility, Advanced Air           considerations such as noise, safety, and security, and 4) address
+Mobility                                                              customer demand The airspace available in urban environments
+                                                                      is limited by the height of buildings, the effect of weather
+                       I. INTRODUCTION                                (including wind gusts), privacy needs, and existing air traffic
+    Urban Air Mobility (UAM) is a part of Advanced Air                flows. New airspace structures would need to be located near
+Mobility (AAM), a joint initiative between the Federal Aviation       large airports and urban areas where the initial market demand
+Administration (FAA), the National Aeronautics and Space              is likely to exist [1].
+Administration (NASA), and industry to develop an air                     The primary function of corridors in controlled airspace is to
+transportation system that uses new air vehicles in geographical      facilitate separation of UAM aircraft from other conventional
+areas previously underserved by traditional aviation. Market          traffic [3]. This has the result of limiting controller workload
+forecast studies [1] predict that there will be demand for            since UAM aircraft will be self-managed inside corridors.
+alternate modes of air transportation using electric vertical take-   Corridors will also simplify maintaining separation between
+off and landing (eVTOL) aircraft. UAM expands transportation          UAM flights by constraining their direction, speed, and altitude
+networks by introducing short flights to move people and goods        within the corridor boundaries, like the automobile freeway
+around metropolitan areas [2,3]. UAM is expected to improve           system.
+mobility for the public, alleviate road traffic, reduce trip time,
+and decrease strain on existing public transportation networks.           The FAA UAM ConOps states that corridors will have
+                                                                      minimum operational performance requirements for aircraft.
+    Various challenges exist to make the introduction of UAM          Corridor availability will be managed by the FAA and
+feasible in the U.S. National Airspace System (NAS). These            communicated to operators through the PSU Network. Corridors
+include integration with existing airports and airspace, provision    may have an internal structure of tracks that consist of laterally
+of air traffic services (e.g., separation), vehicle design and        and vertically separate pathways for UAM aircraft. This will
+certification, and community acceptance. The focus of this paper      allow increased capacity and safety.
+is on integration of UAM operations into the NAS via the
+introduction of new airspace structures.                                  There is an existing precedent for UAM corridors in VFR
+                                                                      corridors. A VFR corridor is defined as a segment of Class B
+    UAM will function within a regulatory, operational, and           airspace with defined vertical and lateral boundaries in which
+technical environment that is incorporated into the NAS. In the       aircraft may operate without an ATC clearance or
+UAM Concept of Operations (ConOps) [3], the FAA retains               communication with ATC. An example is a corridor through the
+regulatory authority and is responsible for establishing              Los Angeles Class B airspace, which has been reclassified as a
+operational parameters for UAM. The FAA’s UAM ConOps                  special flight rules area (SFRA). An SFRA allows pilots to fly
+describes UAM flights at altitudes below 5,000 ft with minimal        through Class B airspace without contacting ATC if they follow
+disruption to established conventional aircraft traffic and limited   certain procedures. In addition to this example, the Hudson
+interactions with air traffic control (ATC). Early stages of UAM      River Flyway SFRA allows traffic to transit down the Hudson
+may use existing procedures to safely operate with conventional       River between Teterboro and Newark to the west, and
+flights. This would involve flying under Part 91 visual flight        LaGuardia and Kennedy to the east.
+rules (VFR) and using voice for communications. The initial
+UAM ecosystem will utilize the current infrastructure such as             NASA has been evaluating airspace in the DFW area for the
+helicopter routes, helipads, and ATC services, where                  design of new airspace structures for UAM. It is assumed that
+practicable.                                                          there will be an on-board pilot-in-command and the flights will
+operate under VFR in visual meteorological conditions.                            Fig. 1. shows the approach patterns into DFW in South Flow
+Corridors may be required in controlled airspace, although                   and the altitude restrictions at different waypoints (e.g., NETEE
+UAM operations can fly in uncontrolled Class G and E airspace                is 2,400 above mean sea level (MSL)). The airspace identified
+using current day rules. Keeler et al. [6] identified factors and            for UAM operations at 1,100 MSL is about 1,000 ft below what
+heuristics for development of routes for UAM operations close                legacy flights are expected to fly (e.g., 2,300 MSL at Hasty or
+to large airports such as DFW and Dallas Love Field (DAL).                   2,400 MSL at NETEE). Similarly, Fig. 2 shows the expected
+This paper describes the heuristics applied to define the                    altitude of the legacy flights from the departure end of the
+corridors, analyzes them with respect to legacy traffic, and                 runway in South Flow. The green band of airspace identified in
+presents key results.                                                        Fig. 3 shows that UAM flights would be flying at 1,100 MSL
+                                                                             while the legacy flights would be at 2,166 MSL at that location,
+                  II. DESIGN OF CORRIDORS                                    providing 1,000 ft separation between the legacy and UAM
+                                                                             flights.
+    Corridors were designed for the Dallas airspace that would
+have minimal impact on ATC services. The process of designing                    The corridor airspace was further evaluated using historical
+corridors started with a search for unused airspace that was                 track data to ensure that most of the UAM flights were outside
+around DFW Airport, DAL, and Addison Airport.                                the wake turbulence advisory criteria. The right-side image of
+                                                                             Error! Reference source not found. shows the revisions made
+    The researchers started by evaluating Standard Instrument                based on historical tracks that led to defining UAM operations
+Departures (SIDs) and Instrument Approach Procedures (IAP)                   at different altitudes (Fig. 4). For the purpose of this research, all
+to identify the airspace demands of traditional traffic around               the UAM operations were planned to fly at 500 ft above ground
+DFW (Fig. 1 and Fig. 2) in South Flow only, since DFW                        level (AGL). The result was airspace identified for UAM flights
+operates predominantly in South flow. The analysis required                  at different altitudes around the DFW area, as shown in Fig. 4,
+identifying airspace that was 2,500 ft laterally or 1,000 ft                 that is separated (about 95% of the time) from legacy traffic.
+vertically separated from traditional traffic. These separation
+criteria were selected because there is an FAA requirement that                  A UNICOM (Universal Communications) area is a non-
+ATC must provide wake turbulence advisories to aircraft with                 government communication facility, which provides airport
+less than 2,500 ft lateral or 1,000 ft vertical separation [7]. With         information at certain non-towered airports. UAM pilots would
+the objective to have the least amount of conflict between UAM               switch to a common frequency before they enter and use this
+operations and legacy traffic, and to minimize UAM aircraft                  while inside the UNICOM area to coordinate with other traffic.
+interactions with ATC, these criteria were applied to identify               The researchers proposed a candidate UNICOM area over
+areas where UAM flights in Class B airspace would be separated               Dallas Downtown ( Fig. 4) 1,500 MSL to avoid other VFR
+from SIDs and IAPs and conventional traffic. This led the first              traffic. The proposed UNICOM area is a relatively small portion
+iteration of the airspace for UAM (see left side image in Fig. 3).           of the DFW Class B surface area that could be used by UAM
+This airspace was not planned to be segregated from aircraft                 flights without requiring ATC communications or clearances.
+other than traditional traffic.
+
+
+
+
+                   Fig. 1. DFW Arrival Procedures. Fixes and altitude restrictions for the South approaches to East Complex of DFW.
+                              Fig. 2. DARTZ Departure. The departure procedure depicts the expected path of 18L departure traffic
+
+
+
+
+Fig. 3. Iterative design of airspace for UAM operations. The left side of the figure shows the initial design using SIDs as restrictions. The right side of the figure
+   shows changes made to the initial design based on historical track data to ensure that UAM routes were deconflicted from 99% of traditional traffic, and the
+                                                                   UNICOM Area is also added.
+
+
+
+
+                                    Fig. 4. Class B and D airspace designed to minimize interactions with conventional aircraft.
+                                                                            filtered to exclude all track points above 3,000 ft MSL since
+                        III. METHOD                                         they were unlikely to interact with UAM traffic planned at
+    The objectives of this analysis were to apply heuristics to             1,100 ft MSL.
+the design of UAM corridors and then analyze them with                          Analyses were performed on 12 days of D10 TRACON
+respect to legacy traffic. Corridors with tracks within them                arrival and departure track data from 2018. Six summer and
+were designed and created for a subset of the airspace                      six winter days from 2018 were selected where three days
+identified for UAM operations. These corridors were then                    were predominantly in North Flow and other three days were
+divided into segments for ease of analysis, and to identify                 predominantly in South Flow. Analyses for North Flow days
+areas that may require iterative adjustments to refine the                  were conducted to identify the corridors that did not meet the
+airspace (see Fig. 5). The corridors were located only in Class             separation or wake turbulence advisory criteria in both
+B and Class D airspace and housed tracks or pre-defined                     directions so that new corridors could be investigated.
+routes that connected 34 potential vertiports in the region. All
+the corridor volumes were assumed to have a floor of 400                        UAM corridor segments and vertiport volumes were
+AGL and a ceiling of 600 with UAM flights planned to fly at                 evaluated in the DFW airspace (See Fig. 5). The 15 corridors
+500 ft AGL or approximately 1,100 ft MSL (the elevation of                  (A through O) were broken into multiple smaller segments for
+the terrain in that area is about 600 ft). The width of the                 a total of 36 segments. The 36 corridor segments and 20
+corridor was 3000 ft with two routes or tracks planned in                   vertiport volumes were analyzed with respect to the two
+opposite directions with 1500 ft between them.                              separation criteria from the legacy air traffic.
+    The flight summary and other files used for these analyses                  The two criteria that were used for this evaluation are the
+were obtained from the NASA Ames Sherlock data                              wake advisory and the Class B separation requirements. The
+warehouse [8]. The files include a one-line summary for each                wake advisory criteria are defined as a lateral separation of
+flight flown in the facility in the last 24-hour period. The                2,500 ft or a vertical separation of 1,000 ft. The Class B
+summary contained data on origin, destination, departure                    separation criteria are defined as a lateral separation of 1.5 mi
+runway, arrival runway, takeoff center, takeoff date, and                   or a vertical separation of 500 ft between any VFR and all
+route.                                                                      aircraft that weigh more than 19,000 lb or are turbojets in
+                                                                            Class B airspace.
+   This DFW area D10 Terminal Radar Control Facility
+(TRACON) data for the selected days of interest were then
+
+
+
+
+                                            Fig. 5. DFW UAM airspace with corridors and vertiports.
+                        IV. RESULTS
+                                                                                   All vertiports met the wake advisory separation criteria
+    The analysis results for 36 corridors and 20 vertiport                     except for vertiport DF7 that had encounters with DFW South
+volumes with respect to the wake advisory criteria and Class                   Flow arrivals. Table I shows the percentage of times the
+B separation criteria are described in this section. The results               segments had encounters with legacy traffic and Fig. 8 shows
+will be presented in terms of DFW and DAL arrival and                          the segments and their locations graphically. Fig. 7 illustrates
+departure traffic for both North and South Flow airport                        that segments F-1, F-2, and G-1 did not meet the wake criteria
+configurations. Based on discussions with SMEs, it was                         for North DFW arrivals since the corridors were designed
+decided that handling greater than 5% of encounters between                    using the wake advisory criteria for South Flow only. The blue
+UAM corridors and traditional traffic tactically would be                      markers on Fig. 9 mean that they have lateral separation even
+unacceptable workload for the air traffic controllers. Results                 though vertical separation is lost, whereas the red markers
+showing encounters greater than 5% are described in this                       mean that both lateral and vertical separation are lost.
+section.
+
+A.        Segments with encounters due to wake advisory                           TABLE I.        DFW NORTH AND SOUTH FLOW ENCOUNTERS USING
+                                                                                                       WAKE ADVISORY CRITERIA
+criteria with DFW arrivals and departures
+                                                                                  Segment         Arrival/Departure     Percent of N   Total (N)
+    The wake advisory criteria are defined as a lateral                             F-1             North Arrivals          11%          5142
+separation of 2,500 ft or a vertical separation of 1,000 ft                         F-2             North Arrivals          25%          5142
+between the corridor and the legacy traffic. All segments                           G-1             North Arrivals           5%          5142
+except for segments F-1, F-2, and G-1 met the wake advisory                       Vertiport       Arrival/Departure     Percent of N   Total (N)
+criteria for DFW arrival traffic in North Flow (see Fig. 6).                        DF7             South Arrivals          25%          5245
+
+
+
+
+                                 Fig. 6. DFW North and South flow results using wake advisory separation criteria.
+                                                                     TABLE II.      DFW NORTH AND SOUTH FLOW ENCOUNTERS USING
+                                                                                 CLASS B SEPARATION CRITERIA SEGMENTS
+                                                                                      Arrival/Departure       Percent of N     Total (N)
+                                                                       F-2              North Arrivals            68%            5142
+                                                                       G-1              North Arrivals            77%            5142
+                                                                       G-2              North Arrivals            69%            5142
+                                                                       G-3              North Arrivals            69%            5142
+                                                                       G-3             North Departures           99%            5200
+                                                                       H-3             North Departures           99%            5200
+                                                                       D-3              South Arrivals            31%            5245
+                                                                       D-4              South Arrivals            31%            5245
+                                                                       D-5              South Arrivals             8%            5245
+                                                                       G-2             South Departures           97%            5238
+                                                                       G-3              South Arrivals            64%            5245
+                                                                       G-3             South Departures          100%            5238
+       Fig. 7. DFW North Arrivals encounters with F2 and G1.
+                                                                       H-2              South Arrivals            64%            5245
+                                                                       H-3              South Arrivals            64%            5245
+B.        Segments with encounters due to Class B                    Vertiport        Arrival/Departure       Percent of N     Total (N)
+                                                                       DF7              South Arrivals            46%            5245
+separation criteria with DFW arrivals and departure
+    The separation criteria of 1.5 mi lateral or 500 ft vertical
+was not met for several corridor segments. The traffic did not
+meet the 1.5 mi criteria as the flights descend to runways 31L
+and 31 R in North Flow. Similarly, segments F-2, G-1, G-2,
+and G-3 did not meet the criteria for DFW north arrivals.
+Error! Reference source not found.The north arrival
+segments G-3 and H-3 do not meet the Class B separation
+criteria for north DFW departures as shown in Table II and
+Fig. 8Fig. 8.
+    Segments D-3, D-4 and D-5 are important segments that
+connect the north and south parts of the Dallas area. Table II
+shows that D-3 and D-4 segments lose 1.5 mi lateral
+separation for about 30% of the DFW arrivals descending into
+17L. Fig. 9 shows encounters for D-3 as indicated by the large
+red circle and it can be inferred that D-4 would have the same
+encounters with traffic in South Flow.
+    Vertiport DF7 is a potential location for UAM flights
+destined for DFW airport, especially if they are unable to use
+                                                                      Fig. 8. DFW North and South Flow results from Table II. using Class B
+segments G-2 or G-3 (Spine Road). As shown in Table II, the                                 separation criteria
+vertiport loses the 1.5 mi lateral separation (46% of the time)
+shown as the large red circles (Fig. 9) for both DFW arrivals
+to runways 17L and 17C. It also loses the 2,500 ft wake
+advisory separation (25% of the time) shown by the small red
+circle for DFW arrivals to 17L in South Flow.
+    Segments G-2 and G-3 are over the Spine Road which is
+an existing helicopter route that runs between the East and
+West Complexes of DFW airport. Spine Road is about 1,400
+ft wide and it has more than 2,500 ft from the inner runways
+(17R and 18L) thus it always meets the 2,500 ft lateral wake
+vortex separation requirement when the flights are descending
+or climbing in either of the flows. However, given its
+placement and geometry, it does not meet the Class B
+separation requirements of 1.5 mi laterally in either of the
+flows. Table II shows that segment G-2 has encounters with
+south DFW departures and north DFW arrivals, whereas
+segment G-3, which is closer to the runways, has encounters
+for both north DFW arrivals and departures as well as with
+south DFW arrivals and departures.                                 Fig. 9. D3 segment and DF7 vertiport losing separation and wake advisory
+                                                                                               requirements.
+C.        Segments with encounters due to Wake Advisory
+Criteria with DAL arrivals and departures
+     The segments that did not meet the wake advisory criteria
+in both North and South Flows for DAL are shown in Table
+III and Fig. 10. The segments that did not meet the wake
+advisory criteria with DAL north arrivals are A-1, A-2, I-1,
+and I-2 and vertiports DF3 and DF4 as shown in Table III. Fig.
+11 shows that segments A-1 and A-2 as well as segments I-1
+and I-2 over the Dallas Downtown area lose the 2,500 ft lateral
+separation during descents, as shown by the red circle.
+Segments A-2 and I-2 lose wake advisory separation only 5%
+of the time, whereas A-1 and I-1 lose separation 94% and 50%
+of the time respectively. These results are expected since they
+were not designed for North Flow.
+    Segments C-2, C-3, and M and vertiport DF31 do not meet
+the wake advisory criteria for DAL south arrivals. This is
+possibly due to visual approaches flying lower altitudes than
+published instrument approaches into DAL airport as shown
+in Fig. 12. The blue markers in Fig. 12 show that vertical
+separation is lost whereas lateral separation remains, and the
+orange markers describe the opposite. The red markers mean
+that both lateral and vertical separation are lost and green                Fig. 11. Segments I-1, I-2, A-1 and A-2 and vertiport DF7 losing wake
+means neither of those were lost.                                                                     advisory separation
+
+
+    TABLE III. DAL NORTH AND SOUTH FLOW PERCENTAGE OF
+         ENCOUNTERS USING WAKE ADVISORY CRITERIA.
+   Segment        Arrival/Departure      Percent of N      Total (N)
+ A-1                North Arrivals           94%              1700
+ A-2                North Arrivals            5%             1700
+ I-1                North Arrivals           50%             1700
+ I-2                North Arrivals            5%             1700
+ C-2                South Arrivals           12%             1714
+ C-3                South Arrivals           14%             1714
+ M                  South Arrivals            7%             1714
+   Vertiport      Arrival/Departure      Percent of N      Total (N)
+ DF3                North Arrivals           95%             1700
+ DF4                North Arrivals           95%             1700
+ DF31               South Arrivals           10%             1714
+
+
+
+                                                                                 Fig. 12. Segment C-3, M and vertiport DF31 encounters for wake
+                                                                                              advisory in DAL South arrivals.
+
+
+
+                                                                           D.        Segments with encounters due to Class B
+                                                                           Separation Criteria with DAL arrivals and departures
+                                                                               For DAL traffic in the North Flow, segments A-1, A-2, B-
+                                                                           1, B-2, I-1 I-2 and vertiports DF3, DF32, DF4, DF52 did not
+                                                                           meet the Class B separation criteria (Fig. 13 and Table IV).
+                                                                           Similarly, for DAL traffic in the South Flow, segments B-2, I-
+                                                                           1 departure traffic and vertiport DF52 for both arrivals and
+                                                                           departures did not meet the Class B separation criteria.
+                                                                               Both the wake turbulence advisory and the separation
+                                                                           criteria was not met for DAL North Flow arrivals for
+                                                                           segments A-1. A-2, I-1 and I-2 (Tables III and IV). Segment
+                                                                           I-1 is close to DAL airport and in the North Flow both the
+                                                                           wake criteria and separation criteria are not met as shown in
+                                                                           Fig. 14.
+ Fig. 10. DAL North and South flow results using wake advisory criteria.
+                                                                               Segment B-2 is close to the vertiport DF52 and given their
+                                                                           proximity to DAL airport, they do not have 1.5 mi lateral
+                                                                           separation with legacy traffic in both directions. Similarly,
+                                                                           DF52 serves as a potential vertiport for UAM flights to DAL
+Airport. As shown in Table IV, it loses separation criteria for
+both north and south DAL arrivals 100% and 89%
+respectively. Fig. 15 shows the loss of the separation criteria
+in North Flow only (see the large red circle).
+
+    TABLE IV.  DAL NORTH AND SOUTH FLOW PERCENTAGE OF
+        ENCOUNTERS USING CLASS B SEPARATION CRITERIA
+  Segment       Arrival/Departure       Percent of N       Total (N)
+   A-1            North Arrivals            97%              1700
+   A-2            North Arrivals            16%              1700
+    I-1           North Arrivals            99%              1700
+    I-2           North Arrivals            16%              1700
+   B-1            North Arrivals            57%              1700
+   B-2            North Arrivals            99%              1700
+   B-2           North Departures           18%              1632
+   B-2           South Departures           98%              1684
+    I-1          South Departures           19%              1684
+ Vertiport      Arrival/Departure       Percent of N       Total (N)
+   DF3            North Arrivals            98%              1700            Fig. 15. A-1, A-2, I-1 and I-2 segments and DF52 vertiport losing
+  DF32            North Arrivals            42%              1700               separation and wake advisory requirements in North Flow.
+   DF4            North Arrivals            98%              1700
+  DF52            North Arrivals           100%              1700
+  DF52           North Departures           94%              1632                                 V. DISCUSSION
+  DF52             South Arrival            89%              1714            The FAA ConOps for UAM operations [4] proposes new
+  DF52           South Departures           98%              1684
+                                                                         airspace structures. The DFW area corridors were designed
+                                                                         so that future third-party services, such as PSU and flight
+                                                                         deck technologies, could provide separation in lieu of ATC
+                                                                         services inside the new airspace structures. ATC provides
+                                                                         separation services and wake advisories to aircraft as per
+                                                                         ATC Handbook (JO 7110.65) [7]. The corridors were
+                                                                         designed such that the wake advisory criteria are met so that
+                                                                         the UAM aircraft can fly with the legacy traffic in South
+                                                                         Flow, which is the dominant flow for DFW. SIDs and IAPs
+                                                                         were used for the initial design followed by an analysis of
+                                                                         historical track data and their proximity to the corridors. It
+                                                                         was assumed that UAM aircraft are operating between
+                                                                         sunrise and sunset, using VFR, in VMC.
+                                                                             This paper analyzes the corridors and their segments
+                                                                         against two criteria, the wake advisory criteria of 2,500 ft
+                                                                         lateral or 1,000 ft vertical and the Class B separation
+                                                                         requirement with aircraft that weigh more than 1,900 lbs, and
+                                                                         turbojets. There were 36 corridor segments and 20 vertiport
+                                                                         volumes that were analyzed against the two criteria for DFW
+                                                                         and DAL arrivals and departures in the North and South
+  Fig. 13. DAL North Flow segments losing Class B separation criteria.   Flows.
+                                                                             Data shows that all the corridor segments meet the wake
+                                                                         advisory criteria with DFW South Flow traffic. However,
+                                                                         segments F1, F2, and G1 do not meet the wake criteria in the
+                                                                         DFW North Flow traffic. This is expected since DFW
+                                                                         operates predominantly in South Flow, and the corridors were
+                                                                         designed with South Flow in mind. This analysis identifies
+                                                                         segments that do not work in both flows so that alternatives
+                                                                         can be investigated in the future. One alternative would be to
+                                                                         identify alternate routes that work for both flows so that UAM
+                                                                         operators can provide reliable transportation services to
+                                                                         customers especially near large airports where early demand
+                                                                         is likely to exist. Another alternative is to have a hybrid
+                                                                         system where ATC provide wake advisories and separation
+                                                                         services where corridors cannot be adequately separated from
+                                                                         legacy traffic.
+                                                                             Spine Road and a vertiport close to DFW (DF7) and the
+                                                                         segments D-3 through D-5 that connect the north and south
+  Fig. 14. DAL North Flow segments losing Class B Separation Criteria.
+                                                                         part of DFW do not meet the Class B separation criteria in
+                                                                         either North or South Flow. This is due to the placement and
+geometry of the Spine Road and its proximity to the arrival         separation requirement is not available for arrival and
+flows into DFW 17R, 17C and 18R, 18L being less than 1.5            departure flows in the DFW area. A waiver of this
+mi. Segments D3-D5 face a similar challenge in that 1.5 mi          requirement may be needed through FAA’s Safety Risk
+lateral separation is not available with traffic descending (and    Management processes. In the absence of the waiver, ATC
+losing the required vertical separation) to 17L. Such               will need to provide services to separate VFR aircraft from
+operations will require ATC to provide separation services          all other aircraft that weight more than 19,000 lbs and
+unless this criterion that exists in Class B can be waived for      turbojets.
+VFR operations in VMC. There exists a waiver for the                    To summarize, most corridors designed for South Flow
+required Instrument Flight Rules (IFR) separation of 3 mi           met the required wake advisory requirement in South Flow. If
+between arrival flows into DAL 13L/R and DFW 17L arrivals           the goal is to minimize ATC interactions with UAM flights,
+that affects 127,000 aircraft every year. This waiver for IFR       some corridors or segments may not be available under certain
+separation has allowed both DAL and DFW to work as                  airport configurations unless the corridors can be redesigned
+independent airports even though the flows into DAL are             and placed outside of Class B airspace (e.g., segments A1 and
+closely spaced to DFW 17L arrivals and lose the required 3          A2). Reduction or elimination of ATC interaction will allow
+mi separation. Near term operations in Spine road may               future third party services to provide separation services inside
+                                                                    the corridor. Further investigation into placement of corridors
+require ATC services whereas corridors defined in the
+                                                                    that work in both airport configurations is required.
+periphery of the Class B or large airport like DFW may be
+self-sufficient creating a hybrid system for UAM operations.
+    The analyses of corridor segments in close proximity to                                       REFERENCES
+DAL traffic shows that wake advisory requirements were not          [1] evtol.com. 2022. “Morgan Stanley shifts its timeline but stays bullish on
+met for segments C-2, C-3, and M in the north part of the           eVTOL market.” https://evtol.com/news/morgan-stanley-shifts-timeline-
+                                                                    stays-bullish-evtol-urban-air-mobility/
+Dallas Class B airspace, mostly because south arrivals into
+DAL are on visual approaches. They are flying lower than the        [2] Mueller, E., Kopardekar, P., and Goodrich, K., “Enabling Airspace
+published instrument approach procedure altitudes while             Integration for High-Density On-Demand Mobility Operations,” 17th AIAA
+descending into DAL airport and lose the vertical separation        Aviation Technology, Integration, and Operations Conference, Paper 2017-
+                                                                    3086, June 2017.
+of 1,000 ft. This can be mitigated if DAL approaches are
+required to have altitude restrictions so that they can maintain    [3] “Uber Elevate Fast-Forwarding to a Future of On-Demand Urban Air
+1,000 ft above the corridors designed for UAM operations.           Transportation,"       Uber         Elevate       Report,      2017,
+    The segments and vertiports close DAL airport, such A-          https://www.uber.com/elevate.pdf.
+1, A-2, and vertiport DF3, as well as those designed over           [4] FAA Concept of Operations V1.0 Urban Air Mobility (UAM), Federal
+Dallas Downtown (segments I-1 and I-2 and vertiport DF4)            Aviation Administration, Washington, D.C., 2020.
+do not meet the wake advisory or Class B separation criteria
+for North Flow. Therefore, these corridors may not be               [5] Verma, S. A., Keeler, J., Edwards, T., and Dulchinos, V., “Exploration
+                                                                    of Near-term Potential Routes and Procedures for Urban Air Mobility,”
+available in North Flow. Further analyses will investigate          AIAA Aviation 2019 Forum, Paper 2019-3624, June 2019.
+changing the placement of corridors such as A-1 and A-2 to
+the East or even outside of Class B so that at least the required   [6] Keeler, J., Verma, S., and Edwards, E., “Investigation of
+wake advisory requirement is achieved. Similarly, segments          Communications Involved in Near-term UAM Operations," 38th
+                                                                    IEEE/AIAA Digital Aviation Systems Conference, Paper 2018-3676,
+B1, B2, and DF52 are so close to DAL airport that they do           September 2019.
+not meet the Class B separation criteria in either flow.
+    The encounters between corridors and legacy traffic due         [7] Federal Aviation Administration (2014b). FAA Order JO 7110.65V. Air
+to wake advisory requirements or Class B separation                 Traffic Control. Washington, DC: Federal Aviation Administration:
+                                                                    Department of Transportation.
+requirements mean that ATC will need to provide separation
+services in the near term. In the long term, waivers to some        [8] Eshow, M., Liu, M., Ranjan, S., “Architecture and Capabilities of a Data
+of these requirements may be necessary so that the workload         Warehouse for ATM Research,” 34th IEEE/AIAA Digital Avionics Systems
+on ATC can be managed and the corridors can be used                 Conference (DASC),, Hilton Head, SC, October 2014.
+successfully.
+    Due to the proximity of the airports and the different
+arrival and departure flows, the 1.5 mi lateral Class B
+

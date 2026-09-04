@@ -1,0 +1,12 @@
+script,exit_code,verdict,note
+verify_phy_802_11p.py,0,PASS,802.11p 물리계층 전 항목 통과. 에어타임 448us CBR 단조증가 포화 1.0 확인
+verify_all_baselines.py,0,PASS,9종 전부 계약 준수. 파라미터 수 10887~772810 전부 상이
+verify_sumo_gen_lock.py,0,PASS,4프로세스 동시 생성이 직렬화됨. 부작용으로 src/sumo/를 기본 밀도 25로 재생성함
+verify_model_input_liveness.py,0,PASS,모델 실제 입력 17/17 차원 전부 변동. 956벡터 x 17차원 표본
+verify_bibliography.py,1,PARTIAL,인자 필요. 51개 중 OK 47 DIFF 1 FAIL 1(네트워크) SKIP 2
+verify_sb3_baselines.py,1,SCRIPT_BUG,스크립트 166행 device 불일치. 앞선 .to(cpu) 테스트 뒤 복구 없이 신규 cuda 모델과 allclose 비교
+verify_observation_liveness.py,1,SCRIPT_STALE,라벨이 옛 레이아웃. [0]을 AoI age로 [15]를 dynamics indicator로 부름. 정본은 [0]last_pred_err [15]n_queue [16]heading
+verify_n_queue_live.py,1,SCRIPT_STALE,HEADING_IDX=17 하드코딩. STATE_DIM 18에서 17로 축소된 뒤 미갱신. IndexError
+verify_behaviour_logp_wiring.py,,RUNNING,실행 중
+check_onpolicy_fix.py,,RUNNING,실행 중
+measure_hw_feasibility.py,,NOT_RUN,results/hw_feasibility.json을 무조건 덮어씀. HPO 3프로세스가 GPU 점유 중이라 지연 측정이 오염됨

@@ -1,0 +1,25 @@
+[
+ {
+  "doi": "10.1142/S230138502442007X",
+  "title": "Throughput Performance of Cellular-Connected UAV Coexisting with Terrestrial Users",
+  "authors": [
+   "N. L. Mohd Kamal",
+   "Z. Sahwee",
+   "N. Norhashim",
+   "S. Ahmad Shah",
+   "W. Hashim"
+  ],
+  "container": "Unmanned Systems",
+  "type": "journal-article",
+  "volume": "12",
+  "issue": "03",
+  "page": "535-543",
+  "year": 2024,
+  "publisher": "World Scientific Pub Co Pte Ltd",
+  "event_location": "",
+  "abstract": "<jats:p> Unmanned aerial vehicles (UAVs) have opened up various applications with significant socioeconomic benefits, but require reliable connectivity for control and data transmission. In situations where obstacles separate aerial vehicles and ground operators, the cellular network can be used to establish beyond the visual line of sight (BVLOS) communication links. However, the cellular network is designed to optimize terrestrial user performance, so investigating its connectivity performance for aerial users is crucial. This paper presents an investigation into the upper-bound throughput estimations of the cellular network based on practical RSS measurements for both aerial and terrestrial users occupying the network resources simultaneously, in a typical sub-urban environment in Malaysia. Actual measurements of received signal strength (RSS) were taken to quantify the throughput performance for each category of users. Results indicate that the cellular network is feasible as a communication link for UAVs at altitudes below 40[Formula: see text]m. However, the overall throughput performance degrades when aerial users are present, and the probability of aerial user arrival must be kept at a minimum level beyond this height. Despite this, the mean aerial throughput outperforms the terrestrial throughput below 40[Formula: see text]m. </jats:p>",
+  "resolve_status": 302,
+  "resolve_dest": "https://www.worldscientific.com/doi/10.1142/S230138502442007X",
+  "s2_abstract": null
+ }
+]

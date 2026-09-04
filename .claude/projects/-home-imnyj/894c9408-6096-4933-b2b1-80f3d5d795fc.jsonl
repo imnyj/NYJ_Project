@@ -1,0 +1,4 @@
+{"type":"mode","mode":"normal","sessionId":"894c9408-6096-4933-b2b1-80f3d5d795fc"}
+{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"894c9408-6096-4933-b2b1-80f3d5d795fc"}
+{"parentUuid":null,"isSidechain":false,"type":"system","subtype":"informational","content":"Unknown command: /reume. Did you mean /resume?","isMeta":false,"timestamp":"2026-09-04T05:54:49.636Z","uuid":"5ea1d40f-3de8-46ff-82c0-ba4e28115b1f","level":"warning","sessionKind":"bg","userType":"external","entrypoint":"cli","cwd":"/home/imnyj","sessionId":"894c9408-6096-4933-b2b1-80f3d5d795fc","version":"2.1.260","gitBranch":"main"}
+{"type":"cost-state","sessionId":"894c9408-6096-4933-b2b1-80f3d5d795fc","totalCostUSD":0,"totalAPIDuration":0,"totalAPIDurationWithoutRetries":0,"totalToolDuration":0,"totalLinesAdded":0,"totalLinesRemoved":0,"totalDuration":9857,"startTime":1788501285476,"modelUsage":{},"hasUnknownModelCost":false}

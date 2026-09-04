@@ -1,0 +1,9 @@
+{
+  "id": "6",
+  "subject": "PSU 궤적 승인과 시뮬레이터 본체 통합",
+  "description": "버티포트 슬롯 예약, 4D 충돌 회피를 PSU 클래스로 정리하고 시뮬레이터 루프에 통합.",
+  "activeForm": "시뮬레이터 본체 통합 중",
+  "status": "pending",
+  "blocks": [],
+  "blockedBy": []
+}

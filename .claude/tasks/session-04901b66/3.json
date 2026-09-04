@@ -1,0 +1,10 @@
+{
+  "id": "3",
+  "subject": "계획 궤적과 실제 궤적 분리",
+  "description": "PlannedTrajectory로 임의 시각의 계획 위치/고도/속도/비행단계 조회. 바람 교란 모델과 실제 기체 운동 분리.",
+  "activeForm": "계획 궤적과 실제 궤적 분리 중",
+  "owner": "p2-coder-sim",
+  "status": "completed",
+  "blocks": [],
+  "blockedBy": []
+}

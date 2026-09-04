@@ -1,0 +1,34 @@
+{
+  "model": "TD3",
+  "steps": 600,
+  "runs": [
+    {
+      "tag": "isolated",
+      "act_device": "cuda:0",
+      "rest_device": "cuda:1",
+      "training_steps": 1620,
+      "throughput_steps_per_sec": 21.18,
+      "swap_count": 82,
+      "inference_latency": {
+        "mean_latency_ms": 1.2097,
+        "p50_latency_ms": 1.0789,
+        "p95_latency_ms": 1.7016,
+        "p99_latency_ms": 2.9801
+      }
+    },
+    {
+      "tag": "shared",
+      "act_device": "cuda:0",
+      "rest_device": "cuda:0",
+      "training_steps": 1658,
+      "throughput_steps_per_sec": 21.1,
+      "swap_count": 83,
+      "inference_latency": {
+        "mean_latency_ms": 1.232,
+        "p50_latency_ms": 1.1209,
+        "p95_latency_ms": 1.728,
+        "p99_latency_ms": 2.5447
+      }
+    }
+  ]
+}

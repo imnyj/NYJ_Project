@@ -1,0 +1,2593 @@
+Integrated Required Time of Arrival (RTA) and Interval
+Management (IM) Concept of Operations
+
+
+
+
+Approved:
+                        Digitally signed by DANIEL S.
+ DANIEL S. HICOK        HICOK
+____________________________________________
+                        Date: 2023.01.09 09:15:48 -05'00'           Date: __________________
+Dan Hicok
+Director, Mission Support Strategy Directorate, AJV-S
+
+
+
+
+                                  Federal Aviation Administration
+                                    800 Independence Avenue
+                                     Washington, D.C. 20591
+Integrated RTA and IM Concept of Operations                                                           Version: 1.0
+
+
+
+                                              Version History
+
+       Version               Date                                        Notes
+ Coordination Draft      May 9, 2022     AJV-S Initial Review
+ (v0.0)
+ Coordination Draft      May 23, 2022    AJV-S Second Review
+ (v0.1)
+ Coordination Draft      June 16, 2022   Addressed comments from AJV-S’s second review.
+ (v0.2)
+ Coordination Draft      July 8, 2022    Updates based on feedback from FAA reviewers during review kick-off
+ for FAA Review (v0.3)                   briefing. Addressed editorial comments identified by team.
+ Coordination Draft      August 16,      Address comments from ANG and AJM-4 reviewers.
+ for FAA Review (v0.4)   2022
+ Coordination Draft      November        Incorporate feedback from AJT, NATCA, AIR, and AFS reviewers.
+ for FAA Review (v0.5)   15, 2022
+ Coordination Draft      December 5,     Incorporate written feedback from NATCA, AJT, and AFS.
+ for FAA Review (v0.6)   2022
+ Final Version (v1.0)    December        Final version of the ConOps delivered to industry stakeholders.
+                         16, 2022
+
+
+
+
+                                                        i
+Integrated RTA and IM Concept of Operations                                                                                           Version: 1.0
+
+
+
+Table of Contents
+     Terminology ...................................................................................................................................1
+1.      Introduction................................................................................................................................3
+     1.1       Background .........................................................................................................................3
+     1.2       Concept Overview................................................................................................................5
+        1.2.1         Time-Based Management .............................................................................................5
+        1.2.2         Required Time of Arrival ...............................................................................................6
+        1.2.3         Interval Management ...................................................................................................8
+     1.3       Statement of Purpose ........................................................................................................ 11
+     1.4       Document Overview .......................................................................................................... 12
+2.      Assumed Baseline Operation ..................................................................................................... 13
+     2.1       Use of the Time-Based Flow Management System ............................................................... 13
+     2.2       Use of Flight-deck Capabilities ............................................................................................ 15
+3.      Justification of Changes ............................................................................................................. 16
+4.      Use of Flight-deck Capabilities in TBM Operations ....................................................................... 18
+     4.1       Assumptions ...................................................................................................................... 18
+     4.2       Constraints ........................................................................................................................ 19
+     4.3       Concept of Operations ....................................................................................................... 20
+        4.3.1         Roles and Responsibilities ........................................................................................... 20
+        4.3.2         Standalone RTA Operations......................................................................................... 21
+        4.3.3         Standalone IM Operations .......................................................................................... 24
+        4.3.4         Integrated RTA and IM Operations .............................................................................. 30
+     4.4       Supporting Infrastructure ................................................................................................... 35
+5.      Operational Scenarios ............................................................................................................... 37
+     5.1       Scenario Assumptions ........................................................................................................ 37
+     5.2       RTA and IM Operations in an Extended and Arrival Metering Environment............................ 38
+6.      Summary of Impacts.................................................................................................................. 49
+7.      References................................................................................................................................ 50
+Appendix A. Acronyms and Abbreviations .......................................................................................... 54
+Appendix B. RTA Capability in Current Fleet ....................................................................................... 57
+
+
+
+
+                                                                          ii
+Integrated RTA and IM Concept of Operations                                                                                                Version: 1.0
+
+
+
+List of Figures
+Figure 1-1. Initial TBO: Realizing Performance Based Navigation and Time-Based Management. .............4
+Figure 1-2. Depiction of TBM Operations including Extended, Arrival, and Terminal Metering Operations.
+..........................................................................................................................................................5
+Figure 1-3: Pilot Configures FMS TOAC Function with RTA. ....................................................................7
+Figure 1-4. Sample Implementation of the FIM Capability. ....................................................................9
+Figure 3-1. Enabling Technologies to Support ATC PBN Procedure Conformance. ................................. 16
+Figure 3-2. Rate of Intervention for Different Delivery Accuracies. ....................................................... 17
+Figure 4-1. RTA Operational Concept Utilizing TBFM Capabilities. ........................................................ 22
+Figure 4-2. Depiction of RTA Operations During Cruise and Arrival Operations. .................................... 23
+Figure 4-3. System Diagram of RTA Operations in a TBO Environment. ................................................ 24
+Figure 4-4. Notional IM Clearance Window on an ERAM Display. ......................................................... 26
+Figure 4-5. Illustration of the Range of IM Operations Supported by DO-361A...................................... 29
+Figure 4-6. System Diagram of IM Operations in a TBO Environment. .................................................. 30
+Figure 4-7. Logical Flow Chart to Determine Whether to Use RTA or IM Operations for RTA+IM-Capable
+Aircraft. ........................................................................................................................................... 31
+Figure 4-8. Combinations of Leading/Trailing RTA and IM Operations. ................................................. 33
+Figure 5-1. Extended and Arrival Metering Environment. .................................................................... 39
+Figure 5-2. Initial Conditions for Aircraft 1-3. ...................................................................................... 40
+Figure 5-3. Aircraft 2 Path Stretch followed by IM Behind Aircraft 1. .................................................... 41
+Figure 5-4. Aircraft 3 IM Behind Aircraft 2 (Cross-Sector)..................................................................... 43
+Figure 5-5. Initial Conditions for Aircraft 4-6. ...................................................................................... 43
+Figure 5-6. Initial Conditions for Aircraft 7-8; IM Clearance for Aircraft 5. ............................................. 45
+Figure 5-7. New IM Clearance for Aircraft 6. ....................................................................................... 46
+Figure 5-8. Delayed IM Initiation for Aircraft 7 and New RTA for Aircraft 8. .......................................... 47
+
+
+
+
+                                                                            iii
+Integrated RTA and IM Concept of Operations                                                                        Version: 1.0
+
+
+
+List of Tables
+Table 4-1. Assumptions for the Integrated RTA and IM ConOps. .......................................................... 18
+Table 4-2. Constraints for the Integrated RTA and IM ConOps. ............................................................ 19
+Table 5-1. Arrival Schedule and En Route Operations. ......................................................................... 39
+
+
+
+
+                                                               iv
+Integrated RTA and IM Concept of Operations                                                   Version: 1.0
+
+
+
+
+Terminology
+The terminology used in this document is defined here. In some cases, terms have been changed from
+other documents to provide clarity and consistency between the Required Time of Arrival (RTA) and
+Interval Management (IM) operations and their respective flight-deck capabilities.
+RTA and Time of Arrival Control (TOAC)-related Terms
+    •   Required Time of Arrival (RTA) describes the operation using the TOAC capability on the flight
+        deck to meet an Air Traffic Control (ATC)-provided clock time (also called the RTA) at a defined
+        point. RTA operations involve the use of ground-based automation systems to identify
+        RTA-capable aircraft and the RTA clearance information.
+    •   Time of Arrival Control (TOAC) refers to the flight-deck capability (i.e., the avionics) used for
+        RTA operations.
+    •   TOAC speed guidance refers to the speed guidance calculated by the TOAC capability to meet
+        the RTA at the point where it applies.
+    •   RTA-capable aircraft refers to a flight that is equipped with the TOAC capability and the flight
+        crew has been trained to perform RTA operations.
+    •   RTA Aircraft refers to an aircraft that is implementing TOAC speed guidance to meet an
+        ATC-issued RTA clearance.
+    •   Absolute spacing describes the use of fixed (clock) times at points in the airspace to meet Time-
+        Based Management (TBM) objectives. An RTA operation is an absolute spacing operation.
+IM and Flight-deck IM (FIM)-related Terms
+    •   Interval Management (IM) describes the operation using the FIM capability on the flight deck to
+        meet an ATC-provided Assigned Spacing Goal (ASG) relative to a Lead Aircraft. IM operations
+        involve the use of ground-based automation systems to identify IM-capable aircraft and the IM
+        clearance information.
+    •   Flight-deck Interval Management (FIM) refers to the flight-deck capability (i.e., the avionics)
+        used in IM operations.
+    •   Assigned Spacing Goal (ASG) is the ATC-provided spacing goal that the FIM capability is
+        attempting to achieve or maintain. The ASG is provided in time (seconds) or distance (Nautical
+        Miles [NM]). This document only describes the use of time-based ASGs as time is the relevant
+        parameter for TBM operations.
+    •   IM clearance type refers to the desired IM spacing behavior. Two different IM clearance types
+        are described in this document: Cross and Maintain.
+    •   Cross clearance type describes the use of the FIM capability to achieve the ASG at the Crossing
+        Point (CP) and then maintain the ASG until the Planned Cancellation Point (PCP) or until
+        terminated by ATC.
+    •   Maintain clearance type describes the use of the FIM capability to quickly achieve the ASG and
+        then maintain the ASG until the PCP or until terminated by ATC.
+    •   FIM speed guidance refers to the speed guidance calculated by the avionics to achieve and/or
+        maintain the ASG relative to the Lead Aircraft.
+    •   IM Aircraft refers to a flight that is implementing FIM speed guidance to meet an ATC-issued IM
+        clearance.
+    •   Lead Aircraft refers to a flight that an IM Aircraft is spacing relative to.
+    •   Intended Flight Path Information (IFPI) describes the information provided in the IM clearance
+        to describe the Lead Aircraft’s cleared navigation route. This information is used by the FIM
+
+
+                                                    1
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+        capability to predict the Lead Aircraft’s trajectory and is used as part of the FIM speed
+        calculation.
+    •   IM-capable aircraft refers to a flight that is equipped with the FIM capability and the flight crew
+        has been trained to perform IM operations.
+    •   RTA+IM-capable aircraft refers to a flight that is equipped with both the FIM and TOAC
+        capabilities and the flight crew has been trained to use both.
+    •   Relative spacing describes the use of a spacing interval relative to another aircraft to meet TBM
+        objectives. An IM operation is a relative spacing operation.
+General Terms
+    •   Data link communications describes a flight-deck capability to receive and send messages
+        digitally. This document will not imply specific data communications links described in the
+        baseline operation.
+    •   Ground-based automation is generally used to refer to automation systems used by Federal
+        Aviation Administration (FAA) air traffic personnel to manage and separate aircraft.
+    •   Leading aircraft is used to refer to the sequence of flights (i.e., an aircraft preceding the trailing
+        aircraft).
+    •   Trailing aircraft is used to refer to sequence of flights (i.e., an aircraft following the leading
+        aircraft).
+
+
+
+
+                                                      2
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+
+1. Introduction
+The purpose of this concept of operations (ConOps) document is to describe the operational and
+functional characteristics of Required Time of Arrival (RTA) and Interval Management (IM) operations
+when used together in a Trajectory-Based Operations (TBO) environment.
+This integrated RTA and IM ConOps document was developed by the Federal Aviation Administration
+(FAA) in response to a NextGen Advisory Committee (NAC) recommendation requesting the FAA clarify
+and document how these concepts could be used together in a TBO environment. To date, the avionics
+capabilities needed to conduct RTA and IM operations have been developed independently. This
+document provides input to committees developing standards for the avionics capabilities needed to
+conduct RTA and IM operations, avionics manufacturers developing those capabilities, and to airlines
+considering future flight-deck capabilities for their fleets. Without this ConOps, the avionics capabilities
+will continue to be developed independently, potentially limiting benefits to the National Airspace
+System (NAS) and airlines.
+
+1.1   Background
+To enable a more efficient and predictable NAS with reduced flight delays, the FAA has been deploying
+capabilities and procedures to introduce TBO into the NAS. The FAA defined TBO as “an Air Traffic
+Management (ATM) method for strategically planning, managing, and optimizing flights throughout the
+operation by using Time-Based Management (TBM), information exchange between air and ground
+systems, and the aircraft’s ability to fly precise paths in time and space” [1]. TBM capabilities provide the
+underlying ATM Decision Support Tools (DSTs) that enable controllers and traffic managers to efficiently
+manage flights in high-density traffic conditions. TBM tools enable the transition from tactical,
+distance-based traffic management techniques to more strategic TBM techniques. TBM also involves
+strategic management and optimization of trajectories throughout an operation by leveraging
+Performance Based Navigation (PBN) procedures and aircraft abilities to fly precise paths in time and
+space.
+The first phase of TBO (termed initial TBO), completing in 2025, will leverage significant FAA investments
+already made in PBN procedures, surveillance infrastructure, and upgrades to TBM DSTs and flight data
+management systems. The TBM systems that enable TBO (shown in Figure 1-1) are the Traffic Flow
+Management System (TFMS), the Time-Based Flow Management (TBFM) system, and the Terminal Flight
+Data Management (TFDM) system. With respect to the environment shown in Figure 1-1, the purpose of
+each system is:
+     • TBFM: schedules airborne and departure flights to points in en route and terminal airspace and
+          provides air traffic controllers with DSTs to manage flights to their schedule times.
+     • TFMS: helps plan and implement Traffic Flow Management (TFM) strategies, including Traffic
+          Management Initiatives (TMIs), use of TBM operations, and airborne and pre-departure re-
+          routes to mitigate demand and capacity imbalances in en route and terminal airspace. TFMS
+          also supports Collaborative Decision Making (CDM) processes by providing a common view of
+          the NAS and helping quantify the impacts of ATM decisions on various stakeholders.
+     • TFDM: integrates surface operations into TBM and provides air traffic controllers with flight
+          data management tools to increase surface and terminal area traffic management efficiencies.
+
+
+
+
+                                                      3
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+
+
+            Figure 1-1. Initial TBO: Realizing Performance Based Navigation and Time-Based Management.
+
+Following initial TBO, the FAA will continue to enhance and expand TBM automation and flight-deck
+capabilities toward full and dynamic TBO [2].1 Full and dynamic TBO phases include integrated
+automation capabilities for advanced trajectory management, such as improved strategic flow
+management and flight planning, airborne flight negotiation, and departure planning. It also includes
+individual aircraft solutions enabled by Automatic Dependent Surveillance-Broadcast (ADS-B) In
+applications and mobile applications. The capabilities included in full and dynamic TBO phases highlight
+an increased use of flight-deck capabilities, including information exchange between air and ground
+systems and PBN capabilities on the aircraft.
+The FAA recently published a document describing operations in an information-centric NAS (referred to
+as the “Info-centric NAS”) [3]. That vision document highlights the need to scale NAS operations to
+accommodate diverse users (i.e., greater numbers of traditional NAS users, commercial space
+operations, as well as new entrants like Urban Air Mobility). To support this future vision, the foundation
+provided by TBO, including capabilities supporting air/ground information exchange, ground-based
+automation enhancements, and aircraft systems, must be in place.
+For the past two decades, the FAA and other stakeholder organizations have been researching and
+developing flight-deck capabilities intended to increase NAS throughput and reduce delays. These
+include the Time of Arrival Control (TOAC) capability, used for RTA operations, and ADS-B In
+applications, such as the Flight-deck Interval Management (FIM) capability used for IM operations. While
+the FAA has studied the use of TOAC and FIM capabilities in the TBO environment to enable throughput
+and efficiency benefits, the concepts and avionics standards have been largely studied and developed
+independently. This integrated ConOps has been developed to describe how RTA and IM operations may
+be used in a common environment. As a result of this effort, changes to TOAC and FIM avionics
+standards may be identified to ensure consistency in avionics performance, promoting ATC and flight
+crew acceptability.
+
+
+
+
+1
+    See slide 6 in reference [2] for details on full and dynamic TBO phases.
+
+
+                                                            4
+Integrated RTA and IM Concept of Operations                                                         Version: 1.0
+
+
+1.2     Concept Overview
+This section provides a high-level summary of the TBM, RTA, and IM concepts. Further details on the
+RTA and IM concepts and their avionics capabilities are provided in Section 4.
+1.2.1     Time-Based Management
+TBM operations are one TFM method to efficiently balance traffic demand with available airspace and
+airport capacity. TBM uses time as a common planning variable to define a sequence and appropriate
+flight crossing times at constraint points in the airspace. Implementation of TBM is achieved through the
+integration and application of TFMS (or its future replacement system, Flow Management and Data
+Services [FMDS]), TBFM, and TFDM to schedule and manage flights over their entire operation.
+Figure 1-2 depicts TBM operations in en route and terminal airspace. In this environment, TBM
+operations are primarily enabled using the TBFM system, which was originally developed for the arrival
+metering operation to effectively manage flows into terminal airspace by scheduling flights at Meter
+Fixes (MFs), on the boundary between en route and terminal airspace, and at the runway [4]. The core
+functions of the TBFM system include the trajectory generation, scheduling, and meet-time advisory
+generation functions [4, 5]. As part of the original TBFM implementation, flights were only managed to
+their Scheduled Times of Arrival (STA) at the MFs, which helped to pre-condition traffic as it entered the
+terminal. The extended metering operation, depicted in Figure 1-2, was later added to TBFM to extend
+metering operations further into the en-route environment. This allows scheduled delays, which are
+needed to deconflict flights at the MFs and runways, to be absorbed over longer distances using speed
+changes instead of less-efficient, path-lengthening maneuvers. En route meter arcs upstream of the MF
+are used to segment metering operations into smaller distances, which allows scheduled times to be
+frozen as flights progress thereby allowing schedule flexibility as flights are subject to uncertainties in
+the operational environment [6].
+
+
+
+
+      Figure 1-2. Depiction of TBM Operations including Extended, Arrival, and Terminal Metering Operations.
+
+
+
+
+                                                        5
+Integrated RTA and IM Concept of Operations                                                                Version: 1.0
+
+
+As a flight crosses the en route meter arc freeze horizon2, its STA at the en route meter arc is frozen, and
+ATC begins managing the flight to meet its STA. As depicted in Figure 1-2, when the flight crosses the en
+route meter arc freeze horizon, only the STA at the en route meter arc is frozen. This keeps the TBM
+operation flexible and responsive to how actual flights are traversing the airspace. The STAs at the MF
+and the runway are frozen when the flight crosses the MF freeze horizon.
+When terminal metering operations, which extend the TBM operation into terminal airspace, are in use,
+TBFM will also calculate STAs at Terminal Meter Points (TMPs). The STAs at TMPs are frozen when the
+aircraft crosses the MF freeze horizon. The necessary DSTs will be provided on the Standard Terminal
+Automation Replacement System (STARS) display to help Terminal Radar Approach Control Facility
+(TRACON) ATC manage flights to their STAs [7].
+TBFM Departure Scheduling is also used to schedule departures to busy arrival airports. TBFM may
+schedule departures directly to the arrival timeline (i.e., to an en route meter arc or the MF). These
+operations are referred to as internal departures.
+While TFMS and TFDM are components of TBM operations, as noted in Section 1.1, RTA and IM
+operations will primarily interact with TBFM. Therefore, further details on TFMS and TFDM will be
+limited in this document.
+1.2.2     Required Time of Arrival
+1.2.2.1    High-Level Description
+The objective of an RTA operation is for an aircraft to cross a defined point in space at a specified clock
+time; this time is also referred to as the RTA. Various operational concept documents have described
+how RTA operations may be used in the context of air traffic operations. Reference [8] describes a Single
+European Sky ATM Research (SESAR) concept that relies on flight crews to communicate the range of
+feasible RTAs from which a sequence and schedule of arrival flights may be determined. RTA operations
+are then used to precisely meet the assigned RTAs. Separately, a U.S.-based operational concept was
+developed to use the TBFM schedule as the basis for RTA operations. References [9] and [10] describe
+how RTA operations may be used in TBM operations with TBFM providing the underlying schedule to
+inform the RTA clearance provided to the flight crew. The most recent FAA-developed concept, referred
+to as TBM-RTA and described in [11], reflects the FAA’s TBO vision including more details on TBFM
+enhancements, the use of PBN procedures, and specifies the use of the Flight Management System
+(FMS) TOAC capability to conduct RTA operations.
+The TOAC capability, as defined in avionics standards described in Section 1.2.2.2, accepts an RTA as a
+time constraint and calculates speeds that are implemented automatically by the flight guidance system
+to precisely meet the RTA. Examples of the TOAC flight-deck interfaces are shown in Figure 1-3. The
+aircraft’s navigation route is graphically depicted on the navigation display, as shown on the left, with
+the Estimated Time of Arrival (ETA) at the next waypoint, BUKKO, shown in the top right. The RTA
+operation status is shown on the RTA progress page on the Control Display Unit (CDU) on the right. The
+
+
+
+
+2
+  The freeze horizon specifies when a flight’s schedule should be “frozen.” Prior to the freeze horizon, the flight’s
+“unfrozen” STA is updated each scheduling cycle (on average, every 12 seconds). The unfrozen STA can change
+each time it is calculated as the flight’s ETA changes and as the STAs of other flights may also be changing. Once
+the flight crosses the freeze horizon, its STA becomes frozen, meaning it will remain a constant value until the
+flight crosses the downstream meter arc or MF. The frozen STA provides ATC with a fixed time for managing the
+flight.
+
+
+                                                           6
+Integrated RTA and IM Concept of Operations                                                     Version: 1.0
+
+
+RTA point, SLIDR, and RTA are shown in the top row. The distance to SLIDR and ETA at SLIDR are also
+provided on the progress page.
+
+
+
+
+                             Figure 1-3: Pilot Configures FMS TOAC Function with RTA.
+
+1.2.2.2     State of Avionics Standards
+Current avionics standards for TOAC are defined in the Minimum Aviation System Performance
+Standards (MASPS): Required Navigation Performance for Area Navigation (RTCA DO-236C, Change 1)
+[12]. This standard provides performance requirements for TOAC and specifies two meet-time
+accuracies:
+      •    Tolerance for points located in the cruise phase of flight: 30 seconds (95%)3
+      •    Tolerance for points located in the descent phase of flight: 10 seconds (95%)
+Detailed performance and display requirements are provided in the Minimum Operational Performance
+Standards (MOPS) for Required Navigation Performance (RNP) for Area Navigation (RNAV) (DO-283B)
+[13], which includes additional information such as system-level test procedures for the TOAC capability.
+Currently, the TOAC capability is not referenced in Technical Standard Order (TSO)-C115d [14] for RNP
+Equipment using Multi-Sensor Inputs, which references DO-283B. In Advisory Circular (AC) 20-138D for
+Airworthiness Approval of Positioning and Navigation Systems [15], TOAC is classified as an advanced
+RNP function intended for “longer-term implementation and remains optional for all equipment due to
+uncertain equipment requirements and airspace implementation.” Furthermore, the paragraph on
+TOAC in AC 20-138D states the TOAC function is “not well defined for either equipment requirements or
+airspace implementation.” Implementers are directed to DO-283B for guidance.
+The requirements for RTA operations in level flight only were specified in the first version of the RNP for
+RNAV MASPS (DO-236) [12]. As a result, a cruise-only RTA capability exists in a significant portion of the
+airline fleet and is based on manufacturer-derived lower-level requirements. While much of the fleet
+currently supports RTA cruise operations and some portion also supports RTA operations during descent
+(see Appendix B for legacy RTA/TOAC capability in the current fleet), the ATC acceptability of RTA
+operations using the legacy flight-deck capability, developed based on earlier standards, remains an
+open question and requires further study. Research has suggested that RTA performance variability
+during level flight is likely to be minimal [16]. Today, use of the legacy RTA/TOAC capability is largely
+
+
+3
+    This notation means that 95% of operations should meet the RTA within ±30 seconds.
+
+
+                                                        7
+Integrated RTA and IM Concept of Operations                                                             Version: 1.0
+
+
+limited to oceanic operations. Some flight crews may also use the capability in domestic operations
+today; these are pilot-initiated uses of the legacy RTA/TOAC capability as opposed to ATC-initiated
+clearances. In pilot-initiated uses of the capability, speed changes deviating from an ATC-issued speed
+instruction by more 10 knots (kt) must be coordinated with ATC prior to flight crew implementation.
+In 2020, RTCA Special Committee 227 (SC-227) resumed efforts to update the RNP for RNAV MASPS and
+MOPS. As part of the effort, the committee considered changes to the TOAC requirements to
+standardize TOAC behavior during cruise and descent operations, thereby addressing potential
+variability in implementations that have been identified as a risk to ATC acceptability. Updates to
+requirements on limits to speed changes to bound TOAC speeds on segments of PBN procedures
+without speed restrictions, while also allowing bounded speed changes on segments of PBN procedures
+with speed restrictions, were proposed. However, the proposed changes were not ultimately
+implemented with the lack of a well-defined operational concept cited as the reason.4 SC-227 has
+acknowledged that this ConOps document may provide the operational concept description needed to
+justify updates to the latest versions of DO-236 and DO-283.
+1.2.2.3    State of FAA Investments
+The TBM-RTA ConOps, developed in 2017, describes the use of RTA operations with TBM operations in
+en route airspace [17]. That ConOps covered two scenarios: RTA operations in an extended metering
+environment, crossing multiple en-route sectors during level flight, and RTA operations in an arrival
+metering environment during initial descent to the MF.
+In 2018, the FAA planned to pursue ground-based automation enhancements as part of the TBFM
+Enhancement 2 investment to enable RTA operations, but only during level flight. This would have
+allowed legacy RTA capabilities to also be used, as current implementation variations are expected to be
+negligible during level flight. TBFM requirements in support of RTA operations were later removed from
+the TBFM Enhancement 2 investment scope based on an assessment of the maturity of the avionics
+standards.5 Except for SC-227 activities and this ConOps document, there are no current FAA activities
+focused on deploying RTA operations in the NAS.
+1.2.3     Interval Management
+1.2.3.1    High-Level Description
+The IM operational concept comprises a set of operational applications in which the flight crew of a
+trailing aircraft follows FIM capability-generated speeds (or FIM speeds) to achieve or maintain a spacing
+goal relative to an ATC-specified Lead Aircraft. The use of IM operations will yield precise, inter-aircraft
+spacing and improved spacing consistency by enabling more frequent speed adjustments than possible
+with a ground system alone. Precise and consistent spacing translates into increased arrival throughput
+when aircraft can be spaced closer to separation minimums without increasing the need for controller
+interventions. IM combines ground-based and flight-deck capabilities to provide air traffic controllers
+another tool to manage traffic flows:
+    •     Ground-based automation assists ATC in identifying and issuing IM clearances to merge and
+          space aircraft safely and efficiently and in monitoring the progress of those IM operations; and
+
+
+4
+ As noted in Section 1.2.2.1, several operational concept documents have been developed with some key
+differences between the SESAR concept document and more recent FAA-sponsored concepts.
+5
+ As noted in Section 1.2.2.2, the TOAC capability is listed as an optional function in DO-283B, and FAA regulatory
+documents do not yet include certification guidance for TOAC.
+
+
+                                                         8
+Integrated RTA and IM Concept of Operations                                                                 Version: 1.0
+
+
+    •    Flight-deck capabilities6 allow the pilot to conform to the IM clearance by providing FIM speeds
+         to achieve and maintain a spacing goal relative to another aircraft.
+Examples of a retrofit7 FIM traffic display (left) and speed guidance display (right) are shown in Figure
+1-4. In this example, speeds are displayed to the flight crew in the forward field of view and
+implemented manually. In forward-fit flight deck implementations, the speed-implementation
+functionality may be incorporated into the FMS and flight crews may monitor the operation and speed
+compliance via installed displays.
+
+
+
+
+                             Figure 1-4. Sample Implementation of the FIM Capability.
+
+The Assigned Spacing Goal (ASG) is provided by the controller and may be given in time or distance. The
+value of the ASG will align with the controller’s goal of establishing an efficient and safe traffic flow. In a
+
+
+
+6
+  While we use the term “flight-deck capabilities” in this ConOps, the TOAC and FIM capabilities are used in
+combination with the flight guidance system to implement the TOAC or FIM speed guidance, respectively. As such,
+TOAC and FIM could be considered “aircraft capabilities.” Furthermore, the ability to meet the RTA or Assigned
+Spacing Goal (ASG) within tolerance at a downstream point can only be measured in a closed-loop manner where
+the speed guidance is implemented and the aircraft responds during flight to the RTA point or Crossing Point (CP),
+respectively.
+7
+ The FIM capability is not required to be implemented in the FMS. Retrofit installations could implement the
+required functionality across new and existing flight-deck systems. In forward-fit installations, the functionality will
+likely be implemented in existing flight-deck systems, such as the FMS.
+
+
+                                                           9
+Integrated RTA and IM Concept of Operations                                                                   Version: 1.0
+
+
+TBM operation, the ASG will be based on the automation-generated schedule at a Meter Reference
+Point (MRP)8, such as a meter arc, MF, or TMP. In TBM operations, ATC DSTs will be used to help ATC
+manage aircraft instructed to cross a desired location at a particular time (i.e., metered aircraft) and
+aircraft managing spacing relative to other aircraft (i.e., IM) within the same overall flow. IM can be used
+in the cruise, arrival, and approach phases of flight, but not on departure.
+The FIM capability has two distinct stages of spacing behavior: the achieve stage and the maintain stage.
+During the achieve stage, the FIM speeds are calculated to achieve the ASG no later than the ATC-
+specified Crossing Point (CP). During the maintain stage, the FIM speeds are calculated to maintain the
+ASG until crossing the Planned Cancellation Point (PCP). Different IM clearance types map to these
+stages and are intended to support different operational objectives.
+1.2.3.2      State of Avionics Standards
+The ADS-B In concepts are briefly summarized in reference [18]. The lower-level flight-deck capability
+requirements are defined in the Aircraft Surveillance Applications (ASA) MOPS, DO-317C [19]. The IM
+operational concept and performance and safety analyses are provided in the FIM Safety, Performance,
+and Interoperability Requirements document, DO-328B [20], which was most recently updated in 2020.
+The FIM MOPS, DO-361A [24], was also updated in 2020. The FIM standards provide performance
+requirements for the FIM capability:
+       •    During the achieve stage: the ASG must be met within 10 seconds (95%)9 at the CP.
+       •    During the maintain stage: the ASG must be met within 10 seconds for 95% of the time in the
+            Maintain Stage.
+The achieve and maintain stages can be used in cruise, arrival, or approach phases of flight.
+At the time of publication of this ConOps, the TSO for ADS-B ASAs [21] was being updated to TSO-C195c.
+This revision of the TSO includes the FIM capability and references the most recent version of the FIM
+MOPS [22]. TSO-C195c also references the most recent version of the ASA MOPS [19]. Airbus, Boeing,
+and various avionics companies offer products that support one or more ASAs, and several ADS-B In IM
+flight trials have already been conducted with retrofit avionics. These include a UPS Field Test in 2010,
+the National Aeronautics and Space Administration (NASA) ATM Technology Demonstration-1 (ATD-1)
+flight test in 2017, and a Paired Approach flight test conducted with United Airlines and Alaska Airlines
+aircraft at San Francisco and Tucson International Airports in 2019. These flight test results generally
+validate the achievability of the DO-361A [22] performance requirement with acceptable tolerances
+under real-world conditions.
+1.2.3.3      State of FAA Investments
+In parallel with the standards work, the FAA released an IM ConOps document in 2017 describing a
+comprehensive set of IM operations enabled by the FIM MOPS [23].10 These included the use of IM to
+manage the spacing between aircraft arriving to the same runway or to dependent runways (both
+parallel and crossing or converging configurations). Due to expected cost and risk of deploying the full
+set of automation enhancements needed to enable the end-state IM operations, the FAA’s Surveillance
+and Broadcast Services (SBS) program defined a phased investment strategy for ADS-B In applications.
+
+
+8
+ In this ConOps, we use MRP to refer generally to a meter element (e.g., a meter arc, MF, or TMP) where an STA
+applies.
+9
+    This performance requirement specifies that 95% of flights must meet the 10-second tolerance at the CP.
+10
+     This ConOps is not currently publicly available, but a summary of the operations is available in [53].
+
+
+                                                            10
+Integrated RTA and IM Concept of Operations                                                            Version: 1.0
+
+
+The initial phase would support simpler operations relying on fewer automation changes. This phased
+investment and operational deployment approach would allow lessons learned from early operations to
+be incorporated into later operations.
+In support of the first investment and deployment phase, an initial set of IM operations was defined to
+support en route extended metering and arrival operations, en route Miles-In-Trail (MIT), and
+approaches when the IM Aircraft and Lead Aircraft are landing on the same or parallel runways. A
+ConOps document describing these operations was drafted in 2020 [24].
+Additionally, the FAA, American Airlines, Aviation Communication & Surveillance Systems (ACSS), and
+the National Air Traffic Controllers Association (NATCA) have partnered in an activity called the ADS-B In
+Retrofit Spacing (AIRS) Evaluation. The AIRS Evaluation will quantify operational benefits and provide
+feedback on conducting ADS-B In operations in an actual operational environment to support the FAA’s
+ADS-B In investment analysis. At time of development of this ConOps, American Airlines was in the
+process of equipping over 300 Airbus A321 aircraft with FAA-certified ACSS SafeRoute+® avionics that
+are capable of several ASAs, including a sub-set of the IM capabilities defined in DO-361A [22] termed
+Initial IM (I-IM).11 The AIRS Evaluation of I-IM operations began in late 2022 and will continue for one
+year. The final report is expected in early 2024.
+As the American Airlines A321 fleet may be the only aircraft equipped with a set of FIM capabilities
+when IM operations are deployed in the NAS, the first phase of IM operations following the AIRS
+evaluation will likely leverage the ACSS SafeRoute+ avionics capabilities as well as any aircraft equipped
+with TSO-C195c-compliant avionics.
+
+1.3    Statement of Purpose
+While the RTA and IM operational concepts and flight-deck system requirements have been developed
+independently to date, the concepts are similar in their provision of speeds on the flight-deck to
+precisely achieve a spacing objective. In 2020, the FAA’s Mission Support-Strategy organization (AJV-S)
+tasked The MITRE Corporation’s Center for Advanced Aviation System Development (CAASD) with
+evaluating how flight deck-enabled operations, including RTA and IM, could be implemented in a TBO
+environment. That effort produced documents covering operational concepts and benefits, key actions
+needed for implementation in the NAS, and an implementation roadmap [25, 26, 27].
+Since that time, avionics standards and other industry efforts have highlighted a need for consensus on
+an operational concept that considers how the TOAC and FIM capabilities may be used in concert12
+during TBM operations in the NAS. Avionics manufacturers have asked the FAA for help in
+understanding how TOAC and FIM capabilities may be implemented on the same flight deck, allowing
+aircraft equipped with both TOAC and FIM capabilities to conduct either RTA or IM operations,
+respectively, as directed by ATC. For aircraft equipped with both capabilities, pilots must understand the
+differences in the operations and flight-deck systems. When possible, flight-deck interfaces and
+performance should be made consistent to improve pilot acceptance, reduce errors, and reduce pilot
+training needs.
+
+
+11
+   I-IM operations will be conducted in Albuquerque Air Route Traffic Control Center (ARTCC) (ZAB) airspace for
+flights destined to Phoenix Sky Harbor International Airport (PHX) and overflights passing through ZAB airspace and
+destined to other airports.
+12
+   This refers to the use of RTA operations for some aircraft and IM operations for other aircraft in the same
+airspace and even in the same flows. It should not be interpreted to mean using TOAC and FIM capabilities on the
+same aircraft at the same time.
+
+
+                                                        11
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+A recent NAC ADS-B In Task Group therefore included the following recommendation in their final
+report to the FAA [28]:
+            Formalize an FAA approved concept of operations for the use of Flight-deck Interval
+            Management applications with Time-Based Management procedures such as Time of
+            Arrival Control (TOAC) and communicate it to Operators, [Original Equipment
+            Manufacturers] OEMs, pilots, and air traffic controller associations, and standards
+            developing organizations as changes occur.
+The NAC further noted that while MITRE has analyzed how RTA and IM operations could be
+implemented in a TBO environment in the NAS13, an authoritative, FAA-approved ConOps is needed.
+In response, this document defines an integrated operational concept and identifies key avionics
+functionality that enables these concepts to be used in a mutually beneficial manner. Furthermore, this
+document aims to identify ways to ensure consistent aircraft behaviors from an ATC perspective as well
+as to flight crews that may use TOAC and FIM capabilities on the same aircraft. As such, this document
+will help the FAA, its partners, and industry stakeholders standardize TOAC and FIM capabilities and
+form a basis for regulators to approve the flight-deck capabilities for use in air traffic operations.
+This document also aims to help FAA stakeholders understand how RTA and IM operations may be used
+in a TBO environment such that FAA resources may be coordinated to deploy ground-based automation
+enhancements and certify flight-deck capabilities in an efficient and cost-effective way. For example:
+       •    The FAA Mission Support-Strategy Organization (AJV-S) could promote an operationally
+            acceptable, feasible, and beneficial integrated concept aligned with TBO and Info-centric NAS
+            objectives.
+       •    The FAA Program Management Organization (AJM) could understand how an integrated
+            operational concept impacts TBM automation requirements and how automation
+            enhancements should be deployed in an efficient way.
+       •    The FAA Aircraft Certification Service (AIR) could understand how TOAC and FIM capabilities
+            should be implemented on a flight deck to ensure their performance and speed behavior are
+            consistent with ATC expectations and ground system assumptions.
+       •    The FAA Flight Standards Service (AFS) could understand the operations that certified TOAC and
+            FIM capabilities can support in the NAS.
+
+1.4        Document Overview
+The remainder of the document is organized as follows:
+       •    Section 2 describes the baseline operation that does not include the use of TOAC or FIM
+            capabilities.
+       •    Section 3 describes the benefits from using the TOAC and FIM capabilities.
+       •    Section 4 describes the use of the TOAC and FIM capabilities in TBM operations in detail.
+       •    Section 5 presents an operational scenario illustrating the use of RTA and IM operations in level
+            flight and during arrival operations.
+       •    Section 6 summarizes the impact on NAS operations and airlines based on this ConOps.
+
+
+
+
+13
+     This refers to the AJV-S-sponsored research described previously.
+
+
+                                                          12
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+
+2. Assumed Baseline Operation
+This section describes the baseline operation that has the potential to be in place prior to the inclusion
+of RTA and IM operations. The timeframe for the baseline operation follows the completion of initial
+TBO in 2025 and before the initial implementation of the Info-centric NAS. While some of the
+capabilities and procedures described have already been implemented in the NAS, enhancements
+and/or further proliferation of capabilities and procedures will be needed.
+In the assumed baseline operation, the FAA will be in the process of modernizing TFM strategies as
+described in the TBO Vision [1] and in preparation for the Info-centric NAS [3]. The application of TFM
+strategies will be data-driven and continuously evaluated using FMDS to ensure demand/capacity
+imbalances are efficiently addressed. Integrated TFM strategies will consider the use of TBM operations
+(using TBFM) in combination with TMIs, such as Ground Delay Programs (GDPs) or Airspace Flow
+Programs (AFPs). TFDM will also be deployed to several sites enabling more efficient surface metering
+and improved compliance with FMDS- and TBFM-generated departure times. In addition, some aircraft
+are assumed to be equipped with advanced flight-deck capabilities, like select ADS-B In applications and
+data link communications, and those capabilities are assumed to be in use.
+As RTA and IM operations will primarily be impacted by TBFM, PBN, and other flight-deck capabilities,
+this section describes the expected use of the TBFM system in the baseline operation and advanced
+flight-deck capabilities that are likely to be available in the same timeframe.
+
+2.1   Use of the Time-Based Flow Management System
+TBFM is assumed to be used in all Air Route Traffic Control Centers (ARTCCs) in the NAS in the baseline
+environment, though its specific use will vary as described here.
+At some busy arrival airports, TBFM will be adapted for arrival metering operations (see Figure 1-2) to
+pre-condition flights to terminal airspace. These TBM operations will end at the MF on the en
+route/terminal airspace boundary with MF STAs helping to pre-condition flows to terminal airspace. This
+preconditioning improves lateral conformance to the en-route portions of the Standard Terminal Arrival
+Routes (STARs) as well as reduces the need for path-lengthening maneuvers inside terminal airspace.
+PBN procedures have been designed and implemented to support effective arrival metering operations,
+meaning STARs have altitude and speed restrictions to support flow control through consistent flight
+times and to provide input to TBFM for better trajectory predictions and improved ETA accuracy [29].
+TBFM DSTs, like the Delay Countdown Timer (DCT), which is the difference in a flight’s ETA and STA at
+the MF, and TBFM-calculated speed advisories may be used to manage flights to their STAs at the MFs.
+In the baseline environment, TBFM may be used throughout the day and across all demand levels. 14
+Where appropriate, TBFM may also be adapted to use Extended Metering/Coupled Scheduling [6] and
+Adjacent Center Metering functionality [30] to allow TBM operations to begin earlier in en route
+airspace (i.e., extended metering in Figure 1-2). This enables schedule delay, which is needed to
+deconflict flights at downstream meter arcs and MFs, to be absorbed over longer distances using speed
+changes instead of less-efficient, path-lengthening maneuvers. In these cases, TBFM-generated speed
+advisories and DCT values will be presented to ATC to assist them in managing flights to meet their STAs
+
+
+14
+  Today, TBO objectives include more regular use of TBFM across demand periods. As later described, the RTA and
+IM concepts rely on the TBFM schedule to inform the flight-deck clearances. Therefore, regular use of TBFM is
+important for maximizing the use of the flight-deck capabilities.
+
+
+
+
+                                                      13
+Integrated RTA and IM Concept of Operations                                                              Version: 1.0
+
+
+at downstream meter arcs and MFs. When schedule delay cannot be absorbed with speed changes
+alone, ground-based automation will propose path stretch solutions to meet STAs [31]. A path stretch
+solution combines a new navigation route, defined as a two-leg route extension (i.e., turn-out and rejoin
+legs), with a speed along the path. Compared to an ATC-issued vector to absorb delay, the path stretch
+capability improves the accuracy of DSTs used to assist ATC in delivering aircraft to their STAs since the
+ground-based automation knows the aircraft’s new navigation route. In the baseline operation, path
+stretch is assumed to be limited to level flight segments prior to Top of Descent (TOD).15
+In the assumed baseline operation, some terminal operations will use terminal metering DSTs to
+continue managing flights to STAs inside terminal airspace (see terminal metering in Figure 1-2).16
+Terminal metering functions provide a higher-fidelity representation of RNAV and RNP procedures in the
+terminal, including modeling RNP Radius to Fix (RF) approaches and assigning those flights that are
+equipped to fly them to those approaches. TMPs placed at merge points, or other scheduling constraint
+points in the terminal, identify points where STAs should be deconflicted. Terminal metering operations
+provide additional efficiency benefits by scheduling flights to the procedures for which they are best
+equipped and pre-conditioning flights such that ATC can manage flights in the terminal along their
+planned routes using speed changes alone. In the assumed baseline operation, all PBN procedures at
+airports conducting terminal metering operations have been updated to connect STARs to Instrument
+Approach Procedures (IAPs), providing a fully defined path and clearance to the runway17 [29, 32]. In
+arrival airports not using terminal metering DSTs, other ATC tools like the Converging Runway Display
+Aid (CRDA) may be used to assist controllers in managing mixed PBN-equipage flights (i.e., some flights
+are capable of flying the RNP RF approach procedures and others are not equipped) [33, 34].
+TBFM Departure Scheduling is also used to schedule departures to busy arrival airports. TBFM may
+schedule departures directly to the arrival timeline (i.e., to the MF). These operations are referred to as
+internal departures. Improvements to departure scheduling operations through use of the Integrated
+Departure/Arrival Capability (IDAC) [35], which automates coordination between the ARTCC Traffic
+Management Unit (TMU) and the departure airport tower, are in place across the NAS in the baseline
+operation.18 In airports that have TFDM, surface metering can be used to comply with the TBFM-
+calculated departure times. When TMIs are in effect, departure times calculated by FMDS and TBFM are
+appropriately coordinated to reduce ground-based delays.
+
+
+
+
+15
+  TBFM and ERAM enhancements to enable path stretch were previously included in the TBFM Enhancement 2
+investment but were removed when that investment was rescoped. Path stretch is expected to improve the use of
+TBFM over ATC-determined vectors for delay absorption as the path stretch route is known to the automation,
+thereby improving ETA accuracy at a downstream point. In comparison, when ATC vectors an aircraft off its route,
+TBFM applies route rejoin logic to calculate the flight's route and ETA. The TBFM-assumed route is often
+inconsistent with the aircraft’s actual route, degrading the ETA accuracy and TBFM DSTs.
+16
+  Terminal metering operations were enabled by the Terminal Sequencing and Spacing (TSAS) enhancements to
+TBFM. Operational implementation of these enhancements has been indefinitely delayed.
+17
+  At a minimum, STARs should be connected to IAPs to provide an unambiguous two-dimensional (2D) path (i.e.,
+resulting in no discontinuity in the FMS route) to the runway. Altitude restrictions may be used to improve the
+predictability of the three-dimensional (3D) trajectory. Lastly, speed restrictions on the STAR and IAP further
+improve the predictability and consistency of flight times on those route segments via a fully defined 4D trajectory.
+18
+  TBFM Departure Scheduling and IDAC are in regular use at several ARTCCs today with plans to deploy IDAC at
+additional sites.
+
+
+                                                         14
+Integrated RTA and IM Concept of Operations                                                              Version: 1.0
+
+
+2.2    Use of Flight-deck Capabilities
+In the baseline operation, several flight-deck capabilities are also assumed to be available and in use.
+The ADS-B In Cockpit Display of Traffic (CDTI)-Assisted Visual Separation (CAVS) capability is used to
+conduct CDTI-Assisted Separation (CAS) operations. CAS operations extend the use of pilot-applied
+visual-like separation into weather conditions previously excluded [36]. In the baseline operation, CAS is
+assumed to be used on final approach to yield visual-like throughput when conditions prevent continual
+flight crew visual tracking of the leading aircraft going to the same runway. CAS operations are expected
+to yield improved airport throughput in weather conditions when pilot-applied visual separation would
+normally be discontinued.
+Data link communications technologies are assumed to be in use for more complex ATC clearances like
+path stretch, which may use ground-based automation-calculated points (e.g., defined by
+latitude/longitude or place-bearing-distance formats).19 Otherwise, ATC and pilot communications are
+conducted primarily via voice, and voice communications always exist as a backup to data link
+communications in this environment.
+In the baseline operation, improved data connectivity on the flight deck has also led to increased use of
+advanced Electronic Flight Bag applications to improve airline operations.20 These include the use of
+improved weather forecast information (i.e., wind and temperatures) in trajectory prediction in the FMS
+and other flight-deck avionics.
+
+
+
+
+19
+  Some aircraft are equipped with Future Air Navigation System (FANS) 1/A systems today, which allows flight
+crews to receive and send messages defined in RTCA DO-305A. Path stretch clearances can be sent using the FANS
+1/A message set.
+20
+  As described in Section 3.4.3 of reference [25], several airlines are already using mobile applications to improve
+access to weather information as well as to improve the efficiency of flight operations.
+
+
+                                                         15
+Integrated RTA and IM Concept of Operations                                                   Version: 1.0
+
+
+
+3. Justification of Changes
+Figure 3-1 shows a general depiction of enabling technologies that support ATC PBN procedure
+conformance as airport demand increases based on the research in [37]. At lower airport demand levels
+(e.g., less than 40% of its maximum capacity), ATC can pre-condition flights such that most flights may
+remain on their planned routes, as defined by their RNAV STARS, without ATC-issued off-path
+maneuvers (i.e., vectors). At medium airport demand levels (e.g., between 40% and 70% of its maximum
+capacity), ground-based TBM automation (i.e., scheduling automation and DSTs) is needed to keep
+flights on their planned routes without vectoring. Reference [37] posits a 30-second (95%) MF delivery
+accuracy supports keeping flights on their planned routes and conflict-free crossing times at the MF
+when demand is between 40% and 70% of maximum capacity. The 30-second delivery accuracy has
+been proposed as the operational goal for TBM operations in the initial TBO timeframe. At higher airport
+demand levels (e.g., exceeding 70% of maximum capacity), additional precision is needed to keep
+aircraft on their planned routes without vectoring and to prevent conflicting crossing times at the MF.
+Without this increased precision at the MF, controllers will need to vector aircraft more frequently to
+prevent conflicts, reducing flight efficiencies during the initial descent to the MF. As such, flight-deck
+capabilities like TOAC and FIM are proposed to enable improvements in delivery accuracies beyond 30
+seconds (95%).
+
+
+
+
+                Figure 3-1. Enabling Technologies to Support ATC PBN Procedure Conformance.
+
+The 30-second (95%) MF delivery accuracy has also been shown via modeling, fast-time simulation, and
+Human-in-the-Loop studies to support terminal metering operations. Flights must be accurately
+delivered to their MF STAs to ensure flights can remain on their planned routes in the terminal using
+speed changes alone [38, 39, 40]. However, greater precision may be required for some TRACONs when
+the distance between the MF and runway is relatively short (e.g., Los Angeles International Airport [LAX]
+arrivals from the east require less than 30-second (95%) delivery accuracies to achieve terminal path
+conformance rates of 95%) [41].
+RTA and IM operations enable additional precision beyond what can be achieved using ground-based
+TBM capabilities alone. Performance requirements in DO-361A Change 1 specify that IM Aircraft must
+achieve their spacing goal by the CP in 95% of operations and, when in the maintain stage, must stay
+within 10 seconds of their ASG for 95% of the operation. Similarly, RTA Aircraft must cross the RTA point
+within 10 seconds of the RTA for descent fixes and 30 seconds for en-route fixes in 95% of operations.
+When STAs are met more precisely, fewer aircraft need to be vectored off their intended arrival routes
+to avoid conflicts, as shown in [37], and terminal metering operations are more likely to be successful.
+The benefits of improved delivery accuracy are illustrated in Figure 3-2 using a model, based on the
+work in [37], to relate delivery accuracy to the rate of controller interventions needed to prevent
+conflicts between successive arrivals at the MF. STAs at the MF are assumed to be uniformly spaced
+
+
+                                                    16
+Integrated RTA and IM Concept of Operations                                                           Version: 1.0
+
+
+based on the demand rate (i.e., aircraft are closer together for higher demand). For each demand rate,
+the frequency with which successive arrivals would be within 5 Nautical Miles (NM) at the MF is
+calculated assuming different delivery accuracies at the MF. As controllers monitor separation during
+these operations, this rate is related to the controller intervention rate. The horizontal axis shows the
+assumed delivery accuracy for 95% of operations.21 The vertical axis shows the number of operations
+that would require ATC intervention because of poor delivery accuracy at the MF. Each of the lines
+represents different demand rates, in aircraft/hour (ac/hr), over a MF.
+
+
+
+
+                        Figure 3-2. Rate of Intervention for Different Delivery Accuracies.
+
+As the MF demand increases, the frequency of ATC intervention also increases. As the delivery accuracy
+improves (moving toward the left on the horizontal axis), the frequency of ATC intervention decreases.
+For example, on a STAR with a demand of 40 ac/hr, a 30-second (95%) delivery accuracy would result in
+a controller intervention once every 18 minutes on average. In contrast, a 10-second (95%) delivery
+accuracy would result in a controller intervention fewer than once in every 1,500 hours on average.22
+Decreased vectoring results in more fuel-efficient arrivals [37] and can also, in some cases, decrease
+controller workload.
+In addition to the flight efficiency benefits resulting from improved delivery to the MF, runway
+throughput improvements are also expected when IM operations continue into the terminal domain.
+Reduced delays resulting from increased runway arrival throughput have been quantified as part of FAA
+ADS-B In benefits assessments and are described in [18, 42].
+
+
+
+21
+  The 95% delivery accuracy value is used in the modeling for consistency with how the avionics performance is
+defined (see Sections 1.2.2.2 and 1.2.3.2). The modeling approach extends easily to allow other confidence
+intervals (e.g., a 99.9% bound on the delivery accuracy).
+22
+   For a delivery accuracy of 30 seconds (95%) and a 40 ac/hr flow rate, the number of operations with less than
+minimum separation at the MF (without controller intervention) is 3.32/hr or one intervention every 0.30 hours (or
+18 minutes). For a delivery accuracy of 10 seconds (95%) and the same flow rate, the number of operations with
+less than minimum separation at the MF is 6.43x10 -4/hr, or one intervention every 1,556 hours.
+
+
+                                                        17
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+
+4. Use of Flight-deck Capabilities in TBM Operations
+4.1   Assumptions
+Table 4-1 lists the assumptions associated with this ConOps.
+                       Table 4-1. Assumptions for the Integrated RTA and IM ConOps.
+
+
+          ASSUMPTION                                              RATIONALE
+
+ TBM operations using the TBFM       The use of RTA and IM operations in a TBO environment relies on
+ system are in regular use           the TBFM-generated schedule to determine RTAs and ASGs,
+                                     respectively. To achieve the flight-deck-enabled benefits, facilities
+                                     must be using TBM operations regularly.
+
+ PBN procedures have been            Consistent with TBO objectives, the flight-deck capabilities must
+ designed for successful TBM         support speed changes along the cleared navigation procedures to
+ operations                          achieve spacing objectives. PBN procedures must be designed to
+                                     balance trajectory predictability (i.e., procedures include altitude
+                                     and speed restrictions from which TBFM and the FMS produce
+                                     consistent trajectories) with an ability for the aircraft to adjust its
+                                     speed along its path.
+
+ RTA operations are only used in     Previous RTA research studying the use of RTA operations during
+ en route airspace                   busy arrival operations was limited to en route airspace (for level
+                                     flight and initial descent to the MF) due to TOAC implementation
+                                     variability and integration with path stretch. There has been no
+                                     research evaluating the use of RTA operations during terminal
+                                     metering operations and in mixed-equipage environments during
+                                     high-demand periods. As such, the use of RTA operations is limited
+                                     to en-route operations in this document.
+
+ The frequency of rescheduling       For IM to deliver the full range of intended operational benefits,
+ events after the schedule has       the frequency with which the IM operation must be cancelled
+ been frozen (and the sequence       early due to rescheduling events causing changes in the lead
+ at each runway has been             aircraft is low.
+ established) is low.
+
+ In this ConOps, RTA and IM          Successful use of RTA and IM operations in a TBO environment
+ operations are only used when       rely on using RTAs and ASGs, respectively, that are consistent with
+ directed by ATC through             the TBFM-generated schedule. Therefore, the RTA and IM
+ provision of a clearance            operations are only initiated and executed when ATC provides a
+                                     clearance to do so.
+
+
+
+
+                                                    18
+Integrated RTA and IM Concept of Operations                                                     Version: 1.0
+
+
+
+          ASSUMPTION                                              RATIONALE
+
+ The TOAC and FIM speed              The TOAC and FIM speeds are designed to achieve the operational
+ guidance is equivalent to an        objectives specified by the ATC-issued RTA and IM clearances,
+ ATC speed instruction               respectively. As such, flight crews comply with the ATC-issued
+                                     clearance when implementing the TOAC and FIM speeds unless
+                                     otherwise directed by ATC.
+                                     Avionics standards, air traffic orders (e.g., JO7110.65), and the FAA
+                                     Aeronautical Information Manual (AIM) [43] would need to be
+                                     aligned before these operations may be deployed in the NAS.
+
+ The TOAC and FIM capabilities       The use of RTA and IM operations should be consistent from an
+ described in this document are      ATC perspective meaning TOAC and FIM speed changes are similar
+ informed by their published         in magnitude as an RTA or IM operation progresses. From a flight
+ avionics standards,                 crew perspective, the implementation of an RTA or IM clearance
+ respectively, but changes may       should be consistent in terms of entering the clearance
+ be warranted to harmonize RTA       information, executing the speed guidance, and monitoring the
+ and IM operations from ATC          operation. As such, changes to avionics standards may be needed
+ and flight crew perspectives.       to harmonize the performance of TOAC and FIM capabilities.
+
+ The data communications             In the baseline operation, some aircraft may be equipped with
+ messages defined in the             data communications technologies (a discussion of the specific
+ Aeronautical                        links is outside the scope of this document). The ATN B2 messages,
+ Telecommunications Network          including RTA clearances with RTAs defined to 1-second precision
+ (ATN) Baseline 2 (B2) standards     and IM clearances, are assumed.
+ are available to provide RTA
+ and IM clearances to
+ appropriately equipped aircraft
+
+4.2   Constraints
+Table 4-2 lists the constraints associated with this ConOps.
+                        Table 4-2. Constraints for the Integrated RTA and IM ConOps.
+
+
+           CONSTRAINT                                             RATIONALE
+
+ ADS-B In reception range is 70      ADS-B In reception range is based on expected spectrum
+ NM in areas with high spectrum      congestion. Analysis suggests ADS-B In range is expected to be at
+ congestion (e.g., the Northeast     least 70 NM in areas with high spectrum congestion like the
+ Corridor) and 90 NM elsewhere       Northeast Corridor. In less congested areas, the ADS-B In range is
+                                     expected to be at least 90 NM [44].
+
+
+
+
+                                                    19
+Integrated RTA and IM Concept of Operations                                                          Version: 1.0
+
+
+
+           CONSTRAINT                                                RATIONALE
+
+ For RTA+IM-capable aircraft           Past IM research found 8 to 10 elements was the maximum
+ without data link                     number of IM clearance elements over voice communications in
+ communications capability,            the en route environment. Four to 7 elements may be a more
+ operations are limited to             reasonable number of elements based on past IM research and
+ clearances that can be                given that the Lead Aircraft Intended Flight Path Information (IFPI)
+ communicated via voice                is one of most challenging elements in the clearance [45].
+                                       In the absence of data link communications capabilities, strategies
+                                       have been identified to reduce the complexity of voice
+                                       communications. These include the use of named waypoints
+                                       rather than latitude/longitude, and including clearance
+                                       information in defined procedures (e.g., the PCP can be included
+                                       on the navigation chart).
+
+ TBM operations including RTA          This ConOps will consider RTA-capable, IM-capable, RTA+IM-
+ and IM operation must                 capable flights in addition to flights with no flight-deck spacing
+ accommodate mixed flight-             capability. ATC will use DSTs, as described in the baseline
+ deck equipage                         operation, to manage unequipped flights.
+
+
+4.3     Concept of Operations
+This ConOps describes the envisioned operation using flight-deck capabilities when fully integrated with
+TBM automation and TBO. The ground-based automation functionality, described in the following
+sections and needed to enable the RTA and IM operations in the NAS, is not currently deployed, and the
+FAA does not currently have funding allocated for such enhancements.
+4.3.1    Roles and Responsibilities
+The RTA and IM operations described in this document are similar in several ways. The RTA and IM
+operations are only conducted when cleared by ATC. ATC provides the flight crew with a clearance
+comprising the necessary information to achieve ATC’s operational objective. The flight crew enters the
+clearance information in the TOAC or FIM capability, which then provides speeds to achieve the
+clearance. The flight crew is responsible for executing the TOAC or FIM speeds in a timely manner.23 The
+flight crew monitors the progress of the operation and notifies ATC if they cannot implement the TOAC
+or FIM speeds for any reason (e.g., turbulence limiting the available speed envelope).
+For both operations, the controller is always responsible for the separation of aircraft executing RTA or
+IM operations. The controller is not responsible for ensuring the RTA or ASG are met within the
+expected operational performance tolerances as described in Sections 1.2.2.1 and 1.2.3.1, respectively.
+
+
+
+
+23
+  The TOAC capability is integrated in the FMS and the speed guidance is automatically implemented by the flight
+guidance system. Therefore, the flight crew is responsible for monitoring progress of the operation and ensuring
+the desired speed is achieved (e.g., adding drag when needed). The FIM capability has requirements for notifying
+the flight crew via an aural advisory when the aircraft’s selected speed is not conforming with the FIM speed.
+
+
+                                                       20
+Integrated RTA and IM Concept of Operations                                                          Version: 1.0
+
+
+4.3.2   Standalone RTA Operations
+The RTA operational goal is to improve the delivery accuracy at MRPs using the aircraft's TOAC
+capability. In a TBO environment, RTAs are consistent with the STAs at those points.24
+The RTA operation can begin as soon as an aircraft crosses a TBFM scheduling freeze horizon and TBFM
+assigns an STA for the downstream MRP. For those flights that are RTA capable, ATC can issue an RTA
+clearance to the flight crew to use the TOAC capability to meet their STA (i.e., the RTA in the clearance)
+at the MRP (i.e., the RTA point in the clearance).
+RTA operations are executed along a flight’s cleared navigation route. If the STA cannot be met along
+the flight’s current route using speed changes alone, the en route controller will need to first issue a
+new navigation clearance, reflecting the path stretch calculated by the automation, to absorb the delay.
+An RTA clearance may then be issued along the new route to precisely meet the STA at the RTA point.
+ATC may also provide a combined path-stretch solution and RTA clearance.
+The flight crew executes the RTA clearance until crossing the RTA point. ATC can cancel an RTA
+operation at any time and use the TBFM DSTs to determine speed changes, altitude assignments, and
+path changes to meet the STA at the MRP.
+The high-level RTA concept is depicted in Figure 4-1. First, the TBFM-generated schedule is determined
+(left-most figure). A notional controller meter list with advisories display, prototyped as part of previous
+RTA research, shows which flights are RTA capable. Controllers can issue RTA clearances, path stretches,
+and/or use TBFM-generated speeds, as appropriate. The flight crew enters the RTA clearance, speed,
+and/or new route clearance (determined by the path stretch function in the ground-based automation)
+in the flight-deck system. The flight guidance system executes the controller-issued clearance, and ATC
+monitors each flight as it progresses to its MRP.
+
+
+
+
+24
+  Past research has explored how to determine the RTA if there is no navigation point on the TBFM meter arc. In
+those cases, the RTA value may be adjusted to be equivalent to providing the STA on the TBFM meter arc. More
+details may be found in [54].
+
+
+                                                       21
+Integrated RTA and IM Concept of Operations                                                   Version: 1.0
+
+
+
+
+                       Figure 4-1. RTA Operational Concept Utilizing TBFM Capabilities.
+
+4.3.2.1   Operational Overview
+This section provides a summary of initiating, executing, and canceling RTA operations with an emphasis
+on the role of ground-based automation in an arrival TBO environment.
+Pre-Initiation: The decision to employ RTA operations includes factors such as the expected traffic flows
+and capacity and demand. RTA operations will only be used after coordination with the facility, training,
+and at the direction of the Traffic Management Coordinator (TMC).
+RTA Clearance Initiation: Based on the TBFM MRP schedule and aircraft capabilities, the ground
+automation will determine whether an RTA clearance is feasible. If an RTA clearance is not feasible along
+an aircraft’s current route, a path stretch solution may be computed. If the RTA-capable flight is also
+data link communications-capable, a combined path-stretch/RTA clearance may be uplinked to the
+flight. Otherwise, the path stretch may be issued first and followed by an RTA clearance once the flight
+crew has entered the new navigation route.
+Figure 4-1 shows a notional meter list display for ATC. This display provides speed advisories and/or path
+stretch solutions for non-RTA Aircraft. RTA-capable flights are denoted, and in those cases, path stretch
+solutions are also shown when speed changes alone are insufficient. When issuing RTA clearances,
+controllers can use the speed advisory information to estimate the initial speed change they might see
+once the RTA is executed.
+Execution and Monitoring: Once the RTA clearance has been communicated to the flight crew, the flight
+is labeled in the automation and on the controller displays as being in an active RTA operation.
+The pilot will input the RTA clearance information, including the RTA and RTA point, into the TOAC
+capability. The system provides an initial speed change required to achieve the RTA. If the flight crew
+accepts the initial speed, they execute the operation so the flight guidance system can begin to control
+
+
+                                                     22
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+the aircraft to the TOAC speed. TOAC speeds will vary over the course of the flight in response to
+operational uncertainties, such as forecast wind and temperature errors, not known at the time of the
+initial speed calculation.
+During the RTA operation, ATC’s traffic awareness is supported by ground-based automation, as needed.
+As the RTA operation progresses, TBFM continues to calculate the difference between the ETA and STA
+at the MRP and provides the controller with the meet-time error at that point (i.e., the DCT).
+On the flight-deck, the FMS will continue to adjust the speed to keep the FMS-calculated ETA at the
+crossing point equal to the RTA (within tolerance). The flight crew can monitor any speed changes.
+Cancellation: At any time, ATC has the option to cancel an active RTA clearance which will clear the
+active RTA indication on the controller display. This will allow for the subsequent issuance of a new RTA
+clearance, speed, or path stretch.
+On the flight deck, once an RTA is completed (either cancelled early by ATC or cancelled when crossing
+the RTA point), the FMS will prompt the crew to select a new speed. The FMS will maintain the last
+TOAC speed until a new speed is selected (either manually or by the navigation procedure).
+4.3.2.2   RTA Cruise and Arrival Operations
+The use of RTA operations in TBO environments is limited to en route airspace. Previous research has
+studied RTA operations in extended metering environments to manage flights to en-route meter arcs
+(i.e., level flight and crossing multiple sectors) and during descent to the MF, as illustrated in Figure 4-2.
+
+
+
+
+                 Figure 4-2. Depiction of RTA Operations During Cruise and Arrival Operations.
+
+In extended metering operations, RTA operations may be used to manage flights to their STAs at en-
+route meter arcs more precisely than when using ground automation DSTs alone. The TOAC speed
+guidance is responsive to changing ETAs resulting from changing wind conditions, reducing ATC
+interventions to account for those operational uncertainties. The RTA clearance may be issued in a
+sector upstream of the MRP. Therefore, ground automation must support ATC awareness of which
+flights are conducting RTA operations as flights are handed off across sector boundaries.
+The RTA point issued in the RTA clearance must be a point known to the FMS navigation database. In the
+absence of a named waypoint on the flight’s route and coinciding with the TBFM MRP, ATC may issue
+the RTA point in a place-bearing-distance format, which defines a point relative to a named waypoint.
+This format may be communicated to the flight crew by voice or a Data Comm ATN B2 message.
+In arrival operations to the MF, RTA operations may be used to precisely meet their MF STAs. The RTA
+clearance would be provided prior to TOD and the RTA operation would terminate at the MF.
+
+
+
+                                                      23
+Integrated RTA and IM Concept of Operations                                                  Version: 1.0
+
+
+4.3.2.3    Ground-based Automation System Functions
+Figure 4-3 illustrates the various air and ground system components comprising RTA operations in a TBO
+environment, the information flows between each, and the method of information sharing. Ground-
+based automation is envisioned to implement RTA-related functions to set up and help controllers
+monitor the conduct of RTA operations. An extended and arrival metering environment, including path
+stretch, is expected to provide a baseline environment in which RTA-capable flights may be cleared to
+conduct RTA operations. This environment provides a set of DSTs that help manage RTA-capable flights
+in the same environment as unequipped flights being managed to their STAs by ATC.
+
+
+
+
+                    Figure 4-3. System Diagram of RTA Operations in a TBO Environment.
+
+4.3.3     Standalone IM Operations
+IM uses ground automation, flight-deck capabilities, and procedures to support the flight crew-managed
+relative spacing of aircraft. In this context, relative spacing refers to directly managing the interval
+between two aircraft, as opposed to specifying crossing times over static points (i.e., an STA for each
+aircraft, such as in a metering operation). An IM operation involves ATC, assisted by automation,
+clearing an IM-capable aircraft to achieve and/or maintain a desired ASG, based on the TBFM-generated
+schedule, relative to a Lead Aircraft. The ASG is achieved at the CP and/or maintained for a specified
+route segment to the PCP.
+
+
+
+                                                   24
+Integrated RTA and IM Concept of Operations                                                               Version: 1.0
+
+
+The IM clearance information for IM-capable flights is displayed to ATC and controllers may
+communicate the IM clearance to the flight crew of the IM Aircraft via voice or data link
+communications, when available. The flight crew on the IM Aircraft confirms then enters the IM
+clearance information into the FIM capability or direct loads it from the data link communications
+system. If the FIM capability determines the IM clearance is valid (e.g., the data in the Lead Aircraft’s
+ADS-B Out message must be of sufficient quality), FIM speeds are displayed to the flight crew, who then
+begin implementing them.25 The IM operation continues until reaching the PCP or until canceled by ATC.
+The FIM capability must support different IM clearance types, which govern the IM Aircraft’s spacing
+behavior. Flight crews will input the IM clearance type issued by the controller. FIM capability functional
+behavior with respect to each type is described in detail in DO-328B [20]. The two26 of interest to this
+document are:
+       •   Cross. Used when a particular spacing value is desired at a specific location (i.e., the CP) for any
+           route geometry. If desired, spacing can be maintained after that location (when the IM and Lead
+           Aircraft are on the same route or parallel routes) until the PCP.
+       •   Maintain. Used when a particular spacing value is desired as soon as practical and then
+           maintained. The controller can either clear the IM Aircraft to maintain a specific ASG or its
+           current spacing relative to the Lead Aircraft. This clearance type only applies to aircraft pairs on
+           common, parallel, or near parallel27 routes.
+Due to the increased spacing precision afforded by IM, the candidate IM Aircraft’s STAs are scheduled
+closer in time to the candidate Lead Aircraft than they would otherwise be if IM were not used (this is
+referred to as IM-aware scheduling). This decreased spacing is a key feature in enabling higher
+throughput to the runway. Other advantages include increased predictability of the overall arrival flow,
+which should increase the number of aircraft that remain on their planned routes, as defined by their
+RNAV arrival and approach procedures. Additionally, IM should reduce the number of trajectory
+interventions needed to manage the arrivals, thereby reducing communications loading and workload.
+4.3.3.1      Operational Overview
+New procedures and phraseology will be required to implement IM operations. The aircraft-centric
+steps to initiate, execute, monitor, and terminate IM operations are described in detail in DO-328B [20].
+This section provides a summary with an emphasis on the role of ground-based automation in an arrival
+TBO environment.
+Pre-Initiation: The decision to employ IM operations considers factors such as the expected traffic flow,
+capacity and demand, current and forecast environmental conditions, and facility adaptations. Various
+
+
+25
+   Retrofit FIM capabilities have required the flight crew to manually enter the FIM speeds into the flight guidance
+system. Future forward-fit capabilities may directly integrate the FIM speeds with the flight guidance system,
+allowing more frequent FIM speed changes.
+26
+  DO-328B defines three additional clearance types: IM Turn, Final Approach Spacing, and Capture th en Maintain.
+IM Turn is not likely to be used in the United States and is thus not considered within the scope of this ConOps.
+The Final Approach Spacing clearance is only designed to be used on the intermediate final approach segment and
+thus past the point where RTA operations are likely to terminate. It therefore does not need to be specifically
+considered for an integrated RTA and IM operation. Capture then Maintain clearance is a particular case of
+Maintain, and all the considerations for Maintain described here apply. Therefore, it also does not need to be
+specifically addressed in this document.
+27
+     Near-parallel routes are defined in DO-328B as having a 10-degree or less course angle difference.
+
+
+                                                          25
+Integrated RTA and IM Concept of Operations                                                     Version: 1.0
+
+
+parameters are adapted in the ground automation, including which arrival flows will use IM, which
+runway configurations and separation standards will be employed, and spacing buffer values used for
+IM-aware scheduling. The ground automation accounts for aircraft capabilities when building an arrival
+schedule, identifying pairings, and preconditioning arrival flows.
+IM Initiation: The ground automation will propose IM clearances at the appropriate level of complexity
+for the communications medium (i.e., voice or data link). It also identifies and displays the appropriate
+IM clearance information. When the controller determines that the proposed clearance is consistent
+with their operational objectives, they provide it to the flight crew via voice or data link communications
+(when available and required or desired).
+The necessary IM clearance information depends on the clearance issued and operational objective.
+Individual elements described earlier include the IM clearance type, Lead Aircraft, ASG, and CP. Other
+elements are:
+    •   Traffic Reference Point (TRP). A point where the Lead Aircraft’s ETA is calculated as part of the
+        spacing interval calculation for the Cross clearance type. This point is required when the IM and
+        Lead Aircraft are on non-coincident (non-merging) routes for the entire IM operation.
+    •   Lead Aircraft IFPI. Lead Aircraft route information used by the FIM capability to generate a
+        predicted trajectory for the Lead Aircraft.
+    •   PCP. The point on the IM Aircraft’s flight path where the IM operation is specified to normally
+        end.
+
+Points such as the CP, TRP, and PCP can be conveyed via the IM clearance, published procedure, or
+defaulted by the FIM capability (as defined in [20]).
+Figure 4-4 depicts one possible approach for providing IM clearance information on an en route
+controller’s En Route Automation Modernization (ERAM) display. Sometimes referred to as an IM
+clearance window, it includes all clearance elements a controller would need to provide to the IM
+Aircraft. The left-to-right order of the elements is intended to be consistent with the order of the
+elements issued in the IM clearance. The window also indicates the state of an aircraft given an IM
+operation (i.e., eligible for a clearance, actively executing a clearance, waiting to be provided an ASG
+[pending], or suspended). The window also provides interactive functionality that allows a controller to
+accept, suspend, or cancel clearances. A full description of this functionality, and a similar approach to
+presenting IM information on a STARS display, is available in [46].
+
+
+
+
+                       Figure 4-4. Notional IM Clearance Window on an ERAM Display.
+
+When ATC provides the IM clearance and the flight crew accepts, the IM operation can begin
+immediately with no further communications required. Alternatively, a controller may issue an Expect
+
+
+                                                    26
+Integrated RTA and IM Concept of Operations                                                             Version: 1.0
+
+
+IM clearance28 and withhold the ASG (to avoid unintentional premature initiation of the IM operation).
+This allows a flight crew to prepare the FIM capability before IM is intended to begin and allows IM
+clearance information to be communicated during a less busy time for the controller and flight crew.
+Then, at the desired start of the IM operation, ATC provides the ASG over voice. Flight crew acceptance
+of this message constitutes acceptance of the IM clearance, and the IM operation begins. An Expect IM
+clearance can be provided to an IM Aircraft already executing an IM operation; however, only a single
+Partial IM clearance can be accommodated by the FIM capability at a time.
+While many IM applications will be possible using clearances delivered using voice communications, IM-
+related data link communications messages, including IM clearance and flight crew response messages,
+have been defined in the RTCA/EUROCAE avionics standards for Data Comm ATN B2. The use of data
+link communications also allows for the direct loading of IM message information into the FIM capability
+as well as support for the population and generation of downlink messages. The timeline for
+implementation of Data Comm ATN B2 messages is currently undefined.
+Execution and Monitoring: Once initiated, the FIM capability provides FIM speeds to the flight crew
+until cancellation at the PCP. The flight crew is required to follow the FIM speeds and not modify them
+based on other information. If they are unable to fly a FIM speed based on safety or operational
+considerations (e.g., turbulence), the flight crew notifies ATC. The controller will then determine
+whether to suspend the operation until conditions change or amend or cancel the IM clearance.
+Controller surveillance displays will provide IM status information to ATC as well as additional functions
+to suspend, resume, or cancel an IM operation.
+When an IM clearance is being executed in a TBO environment, the controller manages the IM Aircraft
+to the STA by ensuring the Lead Aircraft is compliant with its STA. Concurrently, ground automation
+monitors IM operational progress and if conditions change (e.g., due to a TBFM rescheduling event),
+automation will either suggest a clearance amendment to the controller or recommend the operation
+be cancelled.
+Cancellation: The IM operation is nominally terminated when the IM Aircraft reaches its PCP, prompting
+the FIM capability to remove the FIM speed from flight-deck displays. ATC can cancel IM at any time and
+resume conventional control prior to the PCP. This might result from, for example, a Lead Aircraft route
+change, a TBFM reschedule event, or traffic conflicts. If cancelling early, the controller provides a speed
+and/or navigation instruction to the flight crew, updates the ground automation as needed, and returns
+to non-IM operations.
+4.3.3.2   IM Cruise Operations
+IM can be performed in cruise and arrival and approach phases of flight to increase overall flow
+efficiency. IM operations will enable more precise spacing between aircraft, which can increase
+throughput. In addition to the throughput benefits, ATC workload will be reduced as inter-aircraft
+spacing does not need to be actively managed from the ground. In general, during the en route cruise
+phase of flight, IM can help achieve a time-based spacing objective based on the TBFM schedule.
+
+
+
+
+28
+  The FIM avionics standards use the term “Partial IM Clearance” to represent a specific communication by a
+controller of all IM Clearance information except the ASG. Controllers routinely prepare flight crews for eventual
+ATC instructions with “expect” communications. In this document, “Expect IM clearance” is used to refer to the
+controller communication while “Partial IM clearance” is used to refer to accommodation of the Expect IM
+Clearance in the avionics for future use.
+
+
+                                                         27
+Integrated RTA and IM Concept of Operations                                                             Version: 1.0
+
+
+Aircraft equipped with IM can be given clearances to merge with a desired time-based spacing objective
+at a desired location (typically a route merge or an en-route MRP).
+In metering operations, IM may be used to manage flights to en-route meter arcs more precisely than
+when using ground-based automation DSTs alone. The closed-loop nature of IM allows for more speed
+adjustments to be made for a given flight segment to achieve a desired spacing interval than can be
+reasonably provided by ATC. The use of the FIM capability is expected to result in more precise spacing
+than is possible in the current environment, where the frequency of trajectory corrections that can be
+communicated by the controller (in response to uncertainties that arise) is constrained due to workload.
+IM operations can begin as soon as an IM Aircraft crosses a TBFM scheduling freeze horizon and TBFM
+has assigned an STA at the MRP for both the IM-capable aircraft and the candidate Lead Aircraft (leading
+aircraft in sequence at the subject MRP). IM operations may be used when aircraft are on the same or
+different routes if both aircraft are scheduled to the same MRP. When specific initiation criteria are
+satisfied (e.g., the desired spacing may be satisfied with speed changes alone and the aircraft are within
+ADS-B In range), the ground automation will present a complete IM clearance on to the controller. The
+ASG will be the difference in the STAs of the IM and Lead Aircraft at the MRP. At their discretion, ATC
+may issue an IM clearance to the flight crew to use the FIM capability to achieve the desired spacing at
+the MRP.
+The FIM capability requires the Lead Aircraft’s IFPI. Due to the nature of routes crossing meter arcs, the
+Lead Aircraft’s IFPI as well as the definition of CPs, PCPs, and TRPs (as applicable) may be complex.
+Complex IM clearances are expected to only be provided using data link communications (not voice). In
+these cases, the ground automation will inhibit proposal of complex clearances to controllers for IM
+Aircraft that have not filed as data link communications capable.
+A TBFM rescheduling event may result in changes to the aircraft sequence or differences in an IM pair’s
+ASG. Controllers will be notified if the automation recommends a change to an active IM clearance or if
+a clearance is no longer valid due to changes in STAs or the sequence and should be canceled. If a
+change is proposed, the controller may choose to cancel, amend, or continue the IM operation.
+Controllers may cancel IM operations any time their objectives change or if they prefer another method
+to achieve their objectives.
+4.3.3.3   IM Arrival and Approach Operations
+IM applications are typically defined by IM clearance type, desired initiation and termination locations,
+route and runway (if applicable) geometries, and the available ground automation. As shown in Figure
+4-5, IM arrival and approach applications can support spacing from a Lead Aircraft going to the same
+corner post for operations ending in en-route airspace29, the same runway, a dependent parallel
+runway, and crossing or converging runways. IM operations to dependent parallel and crossing and
+converging runway configurations are called Dependent Staggered Approaches (DSA) and Dependent
+Crossing and Converging Runways (DCCR), respectively.
+
+
+
+
+29
+  In Figure 4-5, the location of the CP, used by the FIM capability, is shown in the logical location based on the
+operational application. In the Same Corner Post example in the upper-left panel, the CP is shown at what would
+be the MF on the en-route/terminal boundary.
+
+
+                                                        28
+Integrated RTA and IM Concept of Operations                                                     Version: 1.0
+
+
+
+
+                 Figure 4-5. Illustration of the Range of IM Operations Supported by DO-361A.
+
+A detailed description of an initial, integrated IM and terminal metering operation to same runway
+arrivals is available in [47]. A research summary and operational description of arrivals to dependent
+parallel runways is available in [48].
+IM arrival and approach operations are expected to be deployed in environments that contain multiple
+arrival routes entering a terminal airspace and wherein extended and arrival metering and possibly
+terminal metering operations are in effect. An aircraft pair must be within ADS-B In range at the time
+the controller provides the IM clearance. However, the IM Aircraft and Lead Aircraft can be on different
+routes and do not require a common route segment. IM clearances will be proposed by ground
+automation based on the Lead and IM Aircraft routes and adapted rules.
+FIM speeds are provided so the IM Aircraft will cross the CP at a time interval equal to the ASG after the
+Lead Aircraft crossed the CP (or TRP if on non-coincident routes). Because the IM Aircraft and Lead
+Aircraft may be on different routes prior to the CP (and TRP, if applicable), the FIM speeds are based on
+the predicted spacing at the CP. Between the CP and the PCP, FIM speeds are provided to precisely
+maintain the ASG.
+4.3.3.4   Ground-based Automation System Functions
+Figure 4-6 illustrates the various air and ground system components comprising IM operations in a TBO
+environment, the information flows between each, and the method of information sharing. Ground-
+based automation systems are envisioned to implement IM-related functions to set up and help
+controllers monitor the conduct of IM operations. Note that the Lead Aircraft only broadcasts ADS-B Out
+and does not need to be aware of its involvement in an IM operation.
+
+
+
+
+                                                     29
+Integrated RTA and IM Concept of Operations                                                     Version: 1.0
+
+
+
+
+                     Figure 4-6. System Diagram of IM Operations in a TBO Environment.
+
+Within the ground system, the IM clearance generation function proposes compatible aircraft pairs for
+IM operations based on relevant factors including applicable runway configuration, aircraft capabilities,
+applicable separation standard, and whether speed changes alone are sufficient to achieve the spacing
+goal. The ASG is equivalent to the difference in STAs between the Lead and IM Aircraft at the applicable
+MRP. For IM operations continuing into the terminal, this is expected to be near the Final Approach Fix
+(FAF). The ground automation generates an IM clearance and checks whether the initiation criteria, such
+as the IM Aircraft being within ADS-B range of the Lead Aircraft, are met. If so, the IM clearance
+information is proposed to ATC via the appropriate controller display system. IM clearance amendments
+are presented to ATC, as needed.
+4.3.4   Integrated RTA and IM Operations
+This ConOps describes the use of RTA and IM operations in the same airspace, meaning some flights
+may be conducting RTA operations, some flights may be conducting IM operations, and some flights
+may be managed without the use of flight-deck capabilities to achieve their STAs. In all cases, the
+operational objective is to keep flights on their planned routes as often as possible during higher-density
+operations, thereby improving throughput at airspace constraint points, flight efficiency, and flight
+predictability.
+
+
+
+
+                                                    30
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+4.3.4.1   Criteria for Selecting RTA versus IM Operations
+For RTA+IM-capable flights, the choice of one operation versus the other is based on several criteria.
+These include the availability of the operation (i.e., RTA is only available in en route airspace while IM is
+available in en route and terminal airspace), the initial distance between an RTA+IM-capable aircraft and
+its Lead Aircraft, the complexity of the clearance information and the means of communicating the
+clearance (e.g., voice vs. data link communications), and the demand at an MRP.
+Figure 4-7 illustrates a notional flow chart for determining when an RTA operation or an IM operation is
+appropriate when aircraft are capable of both operations.
+
+
+
+
+Figure 4-7. Logical Flow Chart to Determine Whether to Use RTA or IM Operations for RTA+IM-Capable Aircraft.
+
+As an example of the criteria selection, if an aircraft is more than 90 NM (or 70 NM in airspace with high
+spectrum congestion like the Northeast Corridor) from its preceding aircraft, starting an RTA operation
+may be preferred over waiting until the leading aircraft is within ADS-B In range to initiate an IM
+operation. Or, if the leading aircraft for an RTA+IM-capable flight has complex IFPI (e.g., it is currently on
+a path stretch) and ATC must communicate the clearance by voice, an RTA operation may be preferred
+over IM, at least until the Lead Aircraft’s IFPI is simpler. In both cases, an Expect IM clearance may be
+used to set-up a follow-on IM operation after the completion of the RTA operation and the aircraft are
+within range (the flight-deck interface will support entry of a Partial IM Clearance during an active RTA
+or IM operation). As another example, during high-demand periods, ATC may prefer using IM operations
+
+
+
+
+                                                     31
+Integrated RTA and IM Concept of Operations                                                           Version: 1.0
+
+
+so that the trailing aircraft is responsive to the Lead Aircraft’s behavior reducing the likelihood of ATC
+interventions between the IM and Lead Aircraft.
+As shown in Figure 4-7 and described previously, RTA and IM clearances may also be combined with
+path stretch. For IM operations supported by data link communications, ATC may incorporate the Lead
+Aircraft’s path stretch route into its IFPI. However, if only voice communications are available, ATC may
+wait until the Lead Aircraft is direct to a named waypoint on a procedure before issuing the IM
+clearance. In another case, a candidate IM Aircraft may require a path stretch to absorb excess delay. In
+any of these cases, an IM clearance may be delayed, and an RTA operation may be considered instead,
+with a possible transition to IM afterwards.
+A transition from an RTA operation to an IM operation could happen by first clearing an RTA+IM-capable
+flight for an RTA operation in en-route airspace (e.g., before its proposed Lead Aircraft for an IM
+operation is in ADS-B In range). That flight then receives an IM clearance when the Lead Aircraft is in
+range, or the RTA operation is cancelled when the IM-capable aircraft sequences the MF and an IM
+clearance is then issued in the terminal.
+4.3.4.2   Aircraft Roles
+In this envisioned environment, a flight conducting an RTA operation may also serve as a Lead Aircraft in
+an IM operation. Conversely, an RTA operation may follow an aircraft conducting an IM operation,
+which may comprise a single IM pair or the end of a string of IM operations (i.e., comprising multiple IM
+pairs). Figure 4-8 illustrates different cases when the leading and trailing aircraft are conducting RTA and
+IM operations. Limits on the TOAC and FIM speed guidance are based on requirements in the applicable
+avionics standards, DO-236() and DO-361()30, respectively, and FAA regulatory documents (e.g., TSOs).
+Avionics standards, FAA regulatory documents, air traffic orders, and the AIM would need to be aligned
+before these operations may be deployed in the NAS.
+
+
+
+
+30
+  The () notation is used to refer to the latest version of the avionics standards. As the TOAC and FIM standards
+may be updated based on this ConOps, the current standards may not yet reflect final requirements on TOAC and
+FIM speed guidance limits.
+
+
+                                                       32
+Integrated RTA and IM Concept of Operations                                                      Version: 1.0
+
+
+
+
+                     Figure 4-8. Combinations of Leading/Trailing RTA and IM Operations.
+
+In Cases 1 and 2, the leading aircraft is conducting an RTA operation, and the trailing aircraft is
+performing an IM operation. In both cases, the IM Aircraft will be responsive to speed changes made by
+the RTA Aircraft. If the leading aircraft adheres to the PBN speed restrictions, as captured in Case 1, the
+trailing aircraft should be able to meet the ASG within tolerance because it can more accurately predict
+the Lead Aircraft’s trajectory and the leading aircraft’s speeds will not exceed the IM Aircraft’s speed
+limits as imposed by the FIM capability. However, if ATC waives the PBN speed restrictions, as shown in
+Case 2, then the IM Aircraft may not meet the ASG within tolerance if the RTA Aircraft’s speed profile
+deviates significantly from the published PBN speed restrictions and exceeds the speed limits imposed
+by the FIM capability.
+In Case 3, the Lead Aircraft is conducting an IM operation, and the trailing aircraft is performing an RTA
+operation. The IM Aircraft’s Lead may be conducting an IM operation as well, meaning the RTA Aircraft
+is following the last aircraft in a string of IM operations. In this case, the RTA Aircraft will attempt to
+meet its STA regardless of what the preceding aircraft does. If the IM Aircraft’s Lead is on schedule, the
+IM Aircraft will also be on schedule and should present no conflict with the succeeding RTA Aircraft.
+However, if the IM Aircraft’s Lead Aircraft is behind schedule, the IM Aircraft will also be behind
+
+
+                                                     33
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+schedule and the RTA will not adjust for this difference, potentially causing an undesirable closure
+between the two aircraft. In cases where the IM Aircraft is performing a Cross clearance (which
+attempts to meet the spacing goal by the CP and not before it), there may also be issues for a following
+RTA Aircraft as the IM Aircraft attempts to meet the spacing over the course of the operation and not
+right away. Potential variabilities in how TOAC speeds are calculated to meet the RTA at a downstream
+point could cause undesirable closure rates in some cases. This should be the subject of further analysis.
+In Cases 4 and 5, RTA and IM operations follow ATC-managed flights, respectively. In Case 4, the RTA
+operation is independent of the leading aircraft, whereas the IM operation in Case 5 will be responsive
+to the leading aircraft’s speed changes.
+Consistent speed limits on the TOAC and FIM speeds help ensure spacing objectives can be met. In the
+case of an IM operation following an RTA operation, the IM operation will be feasible unless the RTA
+Aircraft exceeds the upper or lower speed limits on the FIM capability for an extended time. In the case
+of an RTA operation following an IM operation, ATC should not need to intervene in the RTA operation
+unless the IM Aircraft’s Lead Aircraft is excessively late relative to its STA. As noted in Section 4.3.1, ATC
+always remains responsible for separation and is expected to intervene in the RTA and IM operations
+before spacing issues become separation violations.
+4.3.4.3   Concept Areas Requiring Further Harmonization
+While the overall objective of integrated IM and RTA operations is to maximize commonality and
+expected behaviors, there are some inherent conceptual differences that should be reconciled. One of
+the most important is required performance. As noted in Section 1.2.2, the RTA tolerance is 30 seconds
+(95%) for RTA points in level flight (e.g., RTA points at en-route meter arcs) and 10 seconds (95%) for
+RTA points during descent (e.g., RTA points at MFs). As noted in Section 1.2.3, the IM tolerance is 10
+seconds (95%) for all IM operations.
+Another difference is that the FIM standards preclude IM operations during the climb as Lead Aircraft
+trajectories are typically more variable and requirements and algorithms for level and descending flight
+have not been proven to work during climb. Additionally, no clear operational benefits to using IM
+operations during climb were identified during the avionics standards development. RTA operations,
+however, would not be subject to the same problem as they do not require the calculation of a Lead
+Aircraft trajectory. Therefore, it is possible that RTA could be used during the climb phase of flight,
+though this operational use has not yet been defined.
+IM also includes functions for controllers to suspend and resume an active operation and amend an
+active clearance. These functions have not been defined for RTA and controllers will need to be aware of
+potential differences between the operations. For example, as described in DO-328B [20], most
+elements in an IM clearance may be changed by the controller. For example, to be consistent with IM, it
+is recommended that clearance amendments be supported; however, possibly not for the RTA Crossing
+Point (CP) element. If the CP needs to be modified, it would likely be more logical to cancel the RTA
+clearance and issue a new one.
+Relatedly, IM also allows for controllers to change an IM Aircraft’s navigation clearance under some
+conditions without necessarily cancelling the IM operation. In this event, the controller is expected to
+first instruct a suspension of the IM operation and then amend the navigation clearance, amend the IM
+clearance as needed to account for the navigation clearance change, and then clear the IM operation to
+resume. Also, in the IM concept, an ATC speed instruction cancels any active IM operation. If the
+controller does not explicitly communicate the cancellation when providing a speed, the flight crew is
+expected to suspend the IM operation and not resume until ATC clears them to do so. Unlike with IM,
+there is no clearly defined cancellation requirement if a new navigation clearance or ATC speed is issued
+
+
+                                                      34
+Integrated RTA and IM Concept of Operations                                                      Version: 1.0
+
+
+during an active RTA operation. Therefore, it should be considered whether navigation clearance
+changes that would cancel an IM operation should also cancel any active RTA operation.
+RTA and IM operations will also need further considerations on their use of forecast winds and
+temperatures, especially for retrofit FIM implementations. A single flight deck should ideally have the
+same forecast winds and temperatures across all systems. However, forecast winds and temperatures
+need to be entered manually into a CDTI for a retrofit FIM capability. A process may be needed to
+ensure that these forecast winds and temperatures are the same as those used by a TOAC capability
+residing in the FMS.
+Another consideration is that the IM concept defines procedures for flight crews if they are unable to
+comply with the IM clearance. Here, the flight crew’s main obligation is to follow the FIM speeds and
+notify ATC if they have reason to not be able to fly a particular speed or receive an alert telling them
+that the operation has become infeasible (i.e., the FIM capability “infeasibility check” [22]). They are not
+responsible for ensuring they achieve or maintain the ASG within tolerance. The TOAC capability,
+however, is hosted in an FMS with speeds implemented by the flight guidance system. For these
+operations, the flight crews do not manually implement speed adjustments and the FMS TOAC function
+returns an “unable” alert if it determines that the crossing time can no longer be met. This may result in
+differences in how controllers need to monitor and cancel the two operations if needed. Therefore, the
+related operational requirements and cancellation procedures need further definition.
+
+4.4   Supporting Infrastructure
+The necessary infrastructure, summarized here, must be in place to support successful RTA and IM
+operations. As noted previously, the ground-based automation functionality described here is not
+currently deployed, and the FAA does not currently have funding allocated for such enhancements.
+Ground-based automation changes supporting RTA and IM clearance generation and monitoring must
+be in place before RTA and IM operations can be conducted as described in this ConOps. Changes are
+expected to TBFM, ERAM, and STARS, or their equivalent systems, to support the functionality as
+described in Section 4.3 and summarized here. Interim operations, preceding the end-state operations
+described here, may be possible with a sub-set of the ground-based automation changes, but capturing
+these possible operations is out of scope for this document.
+PBN procedures must be in place to support RTA and IM operations. At this time, PBN procedure design
+characteristics that support TBM operations are expected to be sufficient for RTA and IM operations.
+These design characteristics are briefly described in Section 2, but are generally intended to provide
+trajectory predictability using fully defined routes to the runway and procedural altitude and speed
+restrictions to bound uncertainties in the vertical and speed profiles, respectively. Further details on
+recommended procedure design characteristics are provided in [49] and [50].
+To support capability aware scheduling, clearance generation, and controller situation awareness,
+ground-based automation will require knowledge of flight-deck capabilities, which indicate flight-deck
+equipage (data communications, TOAC, and/or FIM capability) as well as flight crew training to execute
+RTA and/or IM operations. ADS-B In flight-deck capability indicators have been defined for Field 18 in
+the International Civil Aviation Organization (ICAO) flight plan [51, 26]. A similar solution has been
+proposed for TOAC [52].
+Automation systems should also consider compatible route elements and other constraints when
+determining candidate IM pairings and clearance information and ensure initiation criteria are met,
+including a route conformance check and a prediction that the clearance is feasible prior to sending
+
+
+
+                                                     35
+Integrated RTA and IM Concept of Operations                                                    Version: 1.0
+
+
+proposed RTA or IM clearances to the display platforms. Awareness of data link communications
+capabilities for an aircraft or facility may be used to filter candidate RTA and IM operations based on
+their clearance complexity. Those clearances that are too complex for voice communications alone must
+be provided via data link communications, and therefore, should be limited to data link
+communications-capable aircraft. Additionally, the ground automation may provide a capability for
+facilities or controllers to adapt preferences for the display of automation-generated speed advisories
+and proposed RTA and IM clearances when all or some may be available, or one is active, for a given
+flight.
+In the event of a rescheduling event, an individual aircraft flight plan amendment or route change (such
+as path stretch), or similar changes to the metering schedule, ground automation should re-evaluate all
+active and pending IM and RTA operations. If any of the active or pending automation-generated
+information elements have changed, an indication and the updated information should be provided to
+the controller display platforms. If the controller cancels the active clearance, new RTA and IM
+clearances may be proposed. As the effect on active operations should be evaluated before any changes
+are made to the schedule, active RTA and IM operations should be identified to TMCs.
+The automation system should provide a capability for controllers to indicate active RTA or IM
+operations (i.e., those in which they provided an RTA or IM clearance to an aircraft) as well as
+capabilities to indicate to a downstream controller active operations and available clearances (i.e., newly
+proposed clearances or those that were rejected or ignored by the previous controller) no later than
+handoff of the aircraft.
+Once an RTA or IM operation is active, the automation system should provide means to indicate a
+clearance has been canceled either by the controller or automatically once the RTA point or IM PCP has
+been sequenced. Once an operation has ended, display indications should be removed, and the
+cancellation should be communicated to other systems monitoring the operation. If new or amended
+information is received from the scheduling system, the controller display system should provide unique
+indications to the controllers that highlight the change in the information. Lastly, terminal controllers
+will need information related to active IM operations that were initiated in en route airspace and
+continue into the terminal. This includes identification of a Lead Aircraft that is part of an active IM
+operation prior to receiving the IM Aircraft.
+
+
+
+
+                                                    36
+Integrated RTA and IM Concept of Operations                                                           Version: 1.0
+
+
+
+5. Operational Scenarios
+5.1       Scenario Assumptions
+The scenario in this section illustrates the combined use of RTA and IM operations and expected
+variations in RTA and IM operations when integrated with extended metering operations (level flight)
+and arrival metering operations (during initial descent) to the TRACON. The scenario contains several
+aircraft to illustrate expected operational conditions resulting from variables like aircraft equipage,
+route geometries, and other traffic. The scenario is designed to provide an overall air traffic operations
+perspective, spanning multiple controller stations, rather than from the perspective of a single flight
+crew or single ATC position.
+The scenario in this section assumes the following about the operational environment:
+      •    Aircraft are assumed to be RTA-capable, IM-capable, RTA+IM-capable, or not capable of either.
+           An aircraft’s flight plan contains information to indicate whether the flight can conduct RTA or
+           IM operations. Ground-based automation systems will accept the flight plan and indicate to
+           controllers if a flight is RTA and/or IM capable. This capability is based on equipage, flight crew
+           training, and any relevant authorizations.
+      •    A path stretch solution will be proposed if speed alone is not sufficient to meet a flight’s STA at
+           an MRP (e.g., a meter arc or MF).31 After a path stretch is executed, any speed solution can be
+           used, including automation-generated speed advisories, RTA operations, or IM operations. If a
+           Lead Aircraft is executing a path stretch and if the IM Aircraft is not equipped with data link
+           communications, ATC may wait until the Lead Aircraft is direct to a named waypoint on a
+           procedure to issue the IM Clearance to the IM Aircraft. This simplifies the Lead Aircraft IFPI that
+           must be communicated in the IM Clearance.
+      •    ATC DSTs, RTA, and IM will all be available to controllers when feasible. Ground-based
+           automation may provide ranked solutions (e.g., see Section 4.3.4.1).32 After controller
+           acceptance of a feasible solution, ground-based automation indicates active operations on all
+           involved aircraft.
+      •    Ground-based automation will only propose an RTA and/or IM clearance to controllers if it
+           determines the clearance will be feasible. Although controllers should check the clearance
+           information for obvious errors or operational incompatibilities, they are not responsible for
+           validating the likelihood of aircraft successfully achieving the goal. For example, it may be
+           difficult for controllers to evaluate the effects of winds on different routes when the IM Aircraft
+           and Lead Aircraft are merging at a downstream point.
+      •    Ground-based automation has the information required to generate RTA clearances, in which
+           the crossing time is equal to the STA at the MRP. Ground-based automation is aware of aircraft
+
+
+31
+  The use of TOAC and FIM capabilities is not dependent on the path stretch capability being available. ATC-issued
+vectors could be used in place of path stretch solutions to absorb delays when speed solutions alone are not
+sufficient. However, RTA and IM operations cannot begin until the aircraft has a defined navigation route, which
+means RTA and IM operations should not start until the aircraft is direct to a named waypoint on its procedure.
+Similarly, if a Lead Aircraft is on an ATC-issued vector, the Lead Aircraft’s IFPI in the IM Clearance must be
+unambiguous and the IM operation cannot begin until the Lead Aircraft is direct to a named waypoint on its
+procedure.
+32
+  Further research is needed on how ground-based automation should display feasible solutions (i.e., an
+automation-calculated speed, an RTA operation, and/or an IM operation) to ATC based on facility preferences and
+other factors.
+
+
+                                                       37
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+           performance capabilities and will ensure there is adequate time prior to the MRP to achieve the
+           RTA using speed adjustments only.
+      •    Ground-based automation has the information required to generate IM ASGs, based on the
+           schedule. Ground-based automation is aware of aircraft performance capabilities and will
+           ensure there is adequate time prior to the CP for the IM Aircraft to achieve the ASG using speed
+           adjustments only.
+      •    The TOAC and FIM capabilities have access to updated forecast wind and temperature
+           information.
+      •    In the event of an off-nominal RTA or IM clearance cancellation, controllers maintain the aircraft
+           sequence with or without the help of ground-based automation.
+      •    All aircraft are broadcasting ADS-B Out.
+      •    The ground-based automation employs RTA- and IM-aware scheduling, as appropriate, such
+           that applicable STAs are scheduled closer together in time than they would otherwise be due to
+           the availability of RTA and IM operations.
+Additional scenario-specific assumptions are described in the following section when relevant.
+
+5.2       RTA and IM Operations in an Extended and Arrival Metering Environment
+This scenario takes place in the cruise and arrival phases of flight, including the descent to the MF. The
+scenario includes both RTA and IM operations in conjunction with the use of path stretch, and an active
+RTA Aircraft participating as the Lead Aircraft in an IM operation. As the RTA and IM operations
+progress, controllers monitor participating aircraft relative to other traffic in their airspace and their
+operational objectives. Controllers may suspend or cancel an RTA or IM operation at any time if the
+situation warrants or their objectives change.
+A generic airspace and metering environment is depicted in Figure 5-1 for aircraft arriving to the
+depicted airport. This scenario ends at the MF (ALLIE) located at the TRACON boundary. Two scheduling
+meter arcs (MRP1 and MRP2) are depicted with corresponding freeze horizons. There are also two
+STARs supporting arrivals that begin at the point depicted by a star (). The airspace is assumed to
+comprise multiple en route sectors, though they are not separately depicted.
+
+
+
+
+                                                      38
+Integrated RTA and IM Concept of Operations                                                        Version: 1.0
+
+
+
+
+                           Figure 5-1. Extended and Arrival Metering Environment.
+
+Table 5-1 summarizes the schedule and operations for each aircraft in the scenario. All times are
+Coordinated Universal Time (UTC). A description of the sequence of events to set up and manage each
+operation for each aircraft in the scenario follows the table. The following general assumptions apply to
+the metering environment and consequently the information in the table.
+    • Distance between meter arcs = 200 NM
+    • Average speed of flights = 500 kt
+    • Average flight time between meter arcs = 24 minutes (min)
+    • Minimum difference in STAs at MRPs = 70 s (equivalent to 9.7 NM)
+    • Delay that can be absorbed using speed alone = 1.5 min (i.e., the maximum flight time = 25.5
+        min)
+                            Table 5-1. Arrival Schedule and En Route Operations.
+
+              STA at       STA at      Same Flight         Diff in STAs at
+ Aircraft                                                                             Operations
+              MRP1         MRP2        Diff in STAs             MRP2
+                                                                             RTA at WILLY; follow-on RTA at
+    1          N/A        1300:00z                              N/A
+                                                                                         ALLIE
+                                                                              RTA at MRP1; required flight
+                                                                              time > 25.5 min; needs path
+                                                            60 s (but no     stretch between MRP 1 and 2;
+    2       1234:00z      1301:00z        27 min           deconfliction       no deconfliction needed at
+                                                             needed)         MRP2 relative to Aircraft 1; IM
+                                                                              to BARLY, followed by IM to
+                                                                                         ALLIE
+
+
+
+
+                                                      39
+Integrated RTA and IM Concept of Operations                                                                Version: 1.0
+
+
+
+              STA at        STA at       Same Flight         Diff in STAs at
+ Aircraft                                                                                    Operations
+              MRP1          MRP2         Diff in STAs             MRP2
+    3        1237:30z      1302:10z      24 min, 40 s             70 s               IM to ALLIE with amendment
+    4        1238:30z      1303:30z         25 min                                    Controller assigned speeds
+    5        1240:00z      1304:50z      24 min, 50 s             80 s                RTA at MRP1; IM to BARLY
+                                                                               Path stretch is needed to MRP 1;
+    6        1241:10z      1306:00z      24 min, 50 s             70 s
+                                                                                  IM to MRP1; IM to BARLY
+    7        1243:00z      1307:10z      24 min, 10 s             70 s                       IM to BARLY
+    8        1244:00z      1309:00z         25 min               110 s               RTA at MRP1; RTA at BARLY
+The aircraft in the scenario illustrate aspects of conducting both RTA and IM operations within the same
+sector and crossing sector boundaries. In real operations, there would be additional aircraft preceding
+Aircraft 1 and following Aircraft 8, but they are removed from the scenario for clarity.
+Figure 5-2 presents the initial conditions for Aircraft 1-3 at the start of the scenario.
+Aircraft 1 illustrates the use of an RTA clearance during level flight to an en route meter arc (WILLY on
+MRP2) and the use of RTA during descent to the MF.
+Aircraft 1 is RTA-capable only and was issued an RTA at WILLY (1300:00z) prior to arrival in the airspace.
+As the controller accepts the hand-off from the issuing facility, the controller recognizes Aircraft 1’s
+active RTA operation on their display and confirms the operation is consistent with their metering
+objectives. No specific action is taken by the controller with respect to the RTA operation.
+
+
+
+
+                                  Figure 5-2. Initial Conditions for Aircraft 1-3.
+
+
+
+
+                                                        40
+Integrated RTA and IM Concept of Operations                                                      Version: 1.0
+
+
+Aircraft 2 illustrates the use of an IM clearance in conjunction with path stretch to meet the required
+spacing behind a Lead Aircraft performing an RTA operation in another sector’s airspace.
+Aircraft 2 is RTA+IM capable and enters with an active RTA to the next MRP (1234:00z at MRP1). The
+controller recognizes the active RTA on the display and confirms the operation is consistent with the
+current metering objectives. Aircraft 2 completes the RTA operation at the MRP1 and is handed off to
+the next sector.
+After Aircraft 2 crosses the MRP1 Arc and the subsequent freeze horizon for the MRP2 Arc (crossing
+waypoint BARLY), an IM clearance is available behind Aircraft 1; however, Aircraft 2 has too much delay
+to absorb with speed alone and a path stretch is proposed to the controller (Figure 5-3).
+The issuance of the path stretch satisfies the IM initiation criteria (i.e., after the path stretch, speed
+alone will achieve the desired spacing), and an automation-proposed IM clearance behind Aircraft 1
+ending at the MF is proposed to the controller. The ground-based automation proposes both RTA and
+IM clearances; however, IM clearances are preferred by the facility and ATC issues the IM clearance
+recommended by the ground automation (see example in Figure 4-7). The controller may reject or
+ignore the IM clearance and retrieve the RTA clearance if desired. Because the CP and PCP are
+co-located and not on the Lead Aircraft’s route, Aircraft 2’s IM clearance includes a TRP. The controller
+sends the following IM clearance information via data link communications to Aircraft 2.
+    •   IM Clearance Type: Cross
+    •   Crossing Point: BARLY
+    •   ASG: 60 seconds
+    •   Lead Aircraft: Aircraft 1
+    •   Lead Aircraft Route: Direct WILLY
+    •   TRP: WILLY
+    •   PCP: BARLY
+
+
+
+
+                     Figure 5-3. Aircraft 2 Path Stretch followed by IM Behind Aircraft 1.
+
+
+                                                      41
+Integrated RTA and IM Concept of Operations                                                          Version: 1.0
+
+
+Once the IM clearance is accepted by the flight crew, the controller indicates the clearance is active
+through their display system and an indication that Aircraft 1 is the Lead in an IM operation is also
+displayed to the controller who is managing Aircraft 1. Details of the clearance, including the sector with
+control of the IM Aircraft, are available to the Lead Aircraft’s controller through the ground automation
+and display systems.
+Aircraft 2 executes the routing change from the path stretch and follows the FIM speeds to achieve the
+desired spacing behind Aircraft 1.
+Aircraft 3 illustrates an IM-capable aircraft with an identified Lead Aircraft who is outside of the
+facility-set ADS-B In range. Aircraft 3 must be managed with automation-generated speed advisories
+until Aircraft 2 is within range and an IM operation can be initiated. Aircraft 3 is later issued an IM
+clearance amendment to modify the ASG behind Aircraft 2.
+Aircraft 3 is IM-capable only and although a Lead Aircraft is identified in the frozen sequence (Aircraft 2),
+the aircraft are not within the facility-set ADS-B In range specified in the ground automation. Therefore,
+the IM clearance is withheld from the controller as the initiation criteria are not satisfied. Controllers
+manage Aircraft 3 with automation-generated speed advisories to achieve the desired arrival time at the
+MRP1 Arc.
+When Aircraft 3’s schedule to the MRP2 Arc is frozen, Aircraft 2, executing a path stretch to absorb
+delay, is now within ADS-B In range (Figure 5-4). Because Aircraft 2 required a route change, an IM
+clearance involving Aircraft 2 could not be initiated until the route was known. In this case, the route
+would be known as soon as Aircraft 2 initiated the assigned path stretch. Prior to initiation of the path
+stretch, the Lead Aircraft IFPI would be incomplete as the point at which the Lead Aircraft leaves the
+assigned route (J1) on a heading to the point assigned in the path stretch is not pre-defined. An IM
+clearance is proposed to the controller for Aircraft 3 that includes the route details of Aircraft 2’s path
+stretch. Because Aircraft 2 and Aircraft 3 are on the same route between BARLY and ALLIE, the ground
+automation proposes an IM clearance with the CP at BARLY and the PCP at ALLIE. The controller sends
+the following IM clearance information via data link communications to Aircraft 3.
+    • IM Clearance Type: Cross
+    • Crossing Point: BARLY
+    • ASG: 70 seconds
+    • Lead Aircraft: Aircraft 2
+    • Lead Aircraft Route: JMO..BARLY33
+    • PCP: ALLIE
+
+The controller with Aircraft 3 indicates the active IM operation in automation and the notification that
+Aircraft 2 is now both a Lead and Trail in IM operations is observed by the controller managing Aircraft
+2. The initiation of Aircraft 2’s path stretch was prior to the initiation of Aircraft 3’s IM operation and no
+coordination is necessary between the controllers. In fact, without the execution of the path stretch, it is
+unlikely the ground automation would have deemed Aircraft 3’s IM operation feasible due to Aircraft 2’s
+excess delay and the IM clearance would not have been proposed
+
+
+
+
+33
+   While there are other points both before and after this provided IFPI, they are excluded from the communicated
+IFPI because the operation starts while the aircraft is direct to JMO and ends at BARLY. Therefore, no other IFPI
+elements are necessary.
+
+
+                                                       42
+Integrated RTA and IM Concept of Operations                                                      Version: 1.0
+
+
+
+
+                           Figure 5-4. Aircraft 3 IM Behind Aircraft 2 (Cross-Sector).
+
+Aircraft 1 completes its RTA operation at WILLY and its schedule at the MF is frozen. The controller
+issues another RTA to Aircraft 1 to arrive at ALLIE on schedule.
+As operations for Aircraft 1-3 progress, Aircraft 4-6 enter the scenario as depicted in Figure 5-5.
+
+
+
+
+                                 Figure 5-5. Initial Conditions for Aircraft 4-6.
+
+Aircraft 4 illustrates the integration of an aircraft that is neither RTA nor IM capable and must be
+managed with automation-generated speed advisories and/or other tactical ATC actions.
+Aircraft 4 arrives in the airspace and the controller notices that it is neither RTA nor IM capable. The
+controller reviews the metering information available on their display and uses the automation-
+
+
+                                                       43
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+generated speed advisories and any required route changes to merge Aircraft 4 behind Aircraft 3 and
+achieve the schedule objectives at BARLY.
+Aircraft 5 illustrates the use of an RTA clearance while an available Lead Aircraft is out of range for IM,
+subsequently initiating IM when the Lead Aircraft is within range.
+Aircraft 5 is RTA+IM capable and as it enters facility airspace, the ground automation has identified an
+IM clearance to the next meter arc (MRP1), but Aircraft 4 is not within the facility-set ADS-B In range.
+Therefore, the automation withholds the IM clearance, and an RTA clearance is presented for the
+controller to consider. As the MRP1 Arc is not near a named fix, the ground automation defines the RTA
+point as a bearing and distance from SRIUS. The controller then reviews and issues via data link
+communications an RTA at the MRP1 Arc, using the newly created point, to Aircraft 5: 1240:00z at
+SRIUS090055. The active indications for the RTA operation are displayed for the controller.
+Aircraft 5 follows the TOAC speed guidance and as it reaches the MRP1 Arc, the RTA operation
+concludes. Aircraft 4 and 5 may come within ADS-B In range prior to the completion of the RTA
+operation; however, the facility has defined system preferences to inhibit the proposal of IM clearances
+for aircraft actively performing an RTA operation. Aircraft 5’s STA at the MRP2 Arc freezes and Aircraft 5
+is then issued a cross-sector IM clearance behind Aircraft 4 (now within ADS-B In range) to BARLY (refer
+to Figure 5-6).
+The controller sends the following IM clearance information via data link communications to Aircraft 5.
+   • IM Clearance Type: Cross
+   • Crossing Point: BARLY
+   • ASG: 80 seconds
+   • Lead Aircraft: Aircraft 4
+   • Lead Aircraft Route: J1.JMO..BARLY
+   • PCP: BARLY
+
+The issuing controller indicates the active IM operation in the automation system and the sector
+controller with Aircraft 4 notices the Lead Aircraft indication and realizes that only speed changes may
+be used without coordination. The controllers monitor the separation of aircraft as well as the active IM
+operations of Aircraft 3 and 5 as they manage the merging and sequencing of Aircraft 3, 4, and 5.
+Eventually, Aircraft 5’s IM operation automatically cancels at BARLY and associated display elements for
+the clearance and Aircraft 4’s and Aircraft 5’s roles are removed.
+
+
+
+
+                                                     44
+Integrated RTA and IM Concept of Operations                                                          Version: 1.0
+
+
+
+
+                    Figure 5-6. Initial Conditions for Aircraft 7-8; IM Clearance for Aircraft 5.
+
+As Aircraft 2 reaches BARLY, it crosses the freeze horizon for the MF, still sequenced behind Aircraft 1,
+and the difference in STAs at the MF is 60 seconds. A new IM operation is proposed to the controller,
+who then sends the following IM clearance information via data link communications to Aircraft 2.
+    •   IM Clearance Type: Cross
+    •   Crossing Point: ALLIE
+    •   ASG: 60 seconds
+    •   Lead Aircraft: Aircraft 1
+    •   Lead Aircraft Route: Direct ALLIE
+    •   PCP: ALLIE
+
+Aircraft 2’s IM operation will automatically cancel at ALLIE and the associated clearance information,
+including indication of its role as an IM Aircraft is removed from the display. However, the indication
+that Aircraft 2 is a Lead Aircraft in an active IM operation with Aircraft 3 is displayed until Aircraft 3’s IM
+operation is cancelled automatically at BARLY, when all display indications for Aircraft 3’s IM operation
+are removed without controller action.
+Aircraft 6 illustrates the use of IM after the trailing aircraft is issued a path stretch specifically to absorb
+delay. Aircraft 6 will perform IM behind a Lead Aircraft that executes an RTA operation to the MRP1 Arc
+and IM to the MRP2 Arc.
+Aircraft 6 is RTA+IM capable and enters the airspace in a virtual tie with Aircraft 5 and is sequenced
+behind Aircraft 5 in the schedule. Aircraft 6 is issued a path stretch to absorb the delay and a subsequent
+IM clearance behind Aircraft 5 to the MRP1 Arc. Because of the necessary route change to absorb delay,
+the IM clearance for Aircraft 6 must be issued after the path stretch. The CP/PCP for the clearance is the
+intersection of Aircraft 6’s route with the MRP1 Arc which is defined in the clearance as an along-track
+distance from (before) the merge at SRIUS. The TRP is calculated by the ground automation as Aircraft
+
+
+
+                                                         45
+Integrated RTA and IM Concept of Operations                                                    Version: 1.0
+
+
+5’s route’s intersection with the same arc (displayed to the controller as an along-track distance from
+the merge at SRIUS). The controller sends the following IM clearance information via data link
+communications to Aircraft 6 and the active indications for the IM operation are displayed.
+     • IM Clearance Type: Cross
+     • Crossing Point: 55 NM before SRIUS
+     • ASG: 70 seconds
+     • Lead Aircraft: Aircraft 5
+     • Lead Aircraft Route: J2.SRIUS
+     • TRP: SRIUS090055
+     • PCP: 55 NM before SRIUS
+
+After crossing the MRP1 arc, the first IM clearance ends, and Aircraft 6’s STA at the second meter arc
+(MRP2) freezes when Aircraft 6 crosses the MRP2 freeze horizon (Figure 5-7). The ground automation
+proposes a new IM clearance to the controller following the same Lead Aircraft. The controller issues
+the new IM clearance, and the operation continues to the MRP2 Arc.
+    •   IM Clearance Type: Maintain
+    •   ASG: 70 seconds
+    •   Lead Aircraft: Aircraft 5
+    •   PCP: BARLY
+
+
+
+
+                                 Figure 5-7. New IM Clearance for Aircraft 6.
+
+Controllers monitor the separation of aircraft as Aircraft 6 merges on the same route behind Aircraft 5.
+The IM operation automatically cancels at BARLY and associated display elements for the clearance are
+removed.
+
+
+
+
+                                                     46
+Integrated RTA and IM Concept of Operations                                                              Version: 1.0
+
+
+Aircraft 7 illustrates the implications of the presence of an RTA+IM capable aircraft with no data link
+communications capability (voice only). In this situation, a complex IM clearance is deferred by the
+automation until initiating conditions permit a simpler IM clearance to be communicated via voice.
+Although Aircraft 7 is RTA+IM capable, it does not have data link communications capability and is
+therefore limited to IM clearances that can be easily communicated via voice. As Aircraft 7 enters, the
+automation has defined an IM clearance with complex Lead Aircraft IFPI due to Aircraft 6’s path stretch.
+This clearance cannot be given via voice and therefore the system does not present it to the controller.
+Based on the controller’s workload and Aircraft 7’s current position, speed, and metering objective, the
+controller opts not to provide an RTA via voice and manages Aircraft 7 with automation-generated
+speed advisories.
+After Aircraft 6 completes the path stretch, the IM clearance is simple enough for voice, however, too
+little time remains before Aircraft 6 crosses the MRP1 Arc and the IM clearance is not presented to the
+controller for Aircraft 7. After Aircraft 7’s STA at the MRP2 Arc freezes, a maintain IM clearance is
+presented and executed via voice as depicted in Figure 5-8.
+              AIRCRAFT 7, MAINTAIN 70 SECONDS BEHIND AIRCRAFT 6, CANCEL AT BARLY.34
+As Aircraft 3 reaches BARLY and its STA at the MF is frozen, the controller amends the ASG to be
+consistent with the difference in Aircraft 2’s and Aircraft 3’s STAs at ALLIE.
+                           AIRCRAFT 3, AMEND IM SPACING GOAL TO 60 SECONDS.
+
+
+
+
+                    Figure 5-8. Delayed IM Initiation for Aircraft 7 and New RTA for Aircraft 8.
+
+Aircraft 8 illustrates an RTA-only aircraft following an active IM Aircraft.
+
+
+
+34
+  Scenario phraseology used here is for illustration purposes only. Final voice phraseology still needs to be
+defined.
+
+
+                                                         47
+Integrated RTA and IM Concept of Operations                                                      Version: 1.0
+
+
+Aircraft 8 is only RTA capable and arrives with an active RTA to the MRP1 Arc. The controller recognizes
+the active RTA operation when accepting the hand-off and confirms it is compatible with their metering
+objectives. As Aircraft 8’s STA is frozen for the MRP2 Arc, a second RTA operation is available for the
+controller to issue: 1309:00z at BARLY.
+The controllers monitor the RTA operation and ensure adequate separation as Aircraft 8 approaches
+BARLY and eventually merges behind Aircraft 7. At this point in the scenario, a series of active IM
+operations are progressing, with Aircraft 7 actively performing an IM operation behind Aircraft 6,
+Aircraft 6 behind Aircraft 5, and Aircraft 5 behind Aircraft 4 (see Figure 5-8). The controllers are only
+issuing speed commands to Aircraft 4 and monitoring Aircraft 5 through 8 as those speeds are generated
+by the FIM and TOAC capabilities.
+After Aircraft 5-7 cross the MRP2 Arc, their STAs at the MF are frozen. Controllers may issue new IM
+clearances to those aircraft to achieve or maintain the spacing relative to their respective Lead Aircraft.
+Because the IM Aircraft and their respective Lead Aircraft are on the same route between BARLY and
+ALLIE, the controller may issue maintain IM clearances.
+
+
+
+
+                                                     48
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+
+6. Summary of Impacts
+The proposed benefits of the RTA and IM operations are made possible by the ground-based
+automation changes described in Section 4.4, changes to air traffic orders (as needed), as well as by
+equipping aircraft with the TOAC and/or FIM capabilities.
+
+RTA and IM operations will impact NAS operations, requiring new procedures, phraseology, and FAA air
+traffic personnel training, likely to include air traffic controllers and TMCs at selected facilities and Air
+Traffic Control System Command Center (ATCSCC) personnel. Expected benefits include increased
+throughput in high-density operations, improved flight efficiencies, increased predictability of aircraft
+flows, and reduced controller workload. Successful operations depend on the TBO foundational
+capabilities, such as TBM and PBN, being in place at busy facilities in the NAS and used regularly.
+
+RTA and IM operations will also impact airlines. To accrue the previously stated benefits, airlines must
+invest in equipping their fleets with TOAC and/or FIM capabilities, train their flight crews to use the
+flight-deck capabilities, and update processes for filing flight plans to indicate RTA, IM, and/or RTA+IM
+capabilities. As described in this ConOps, data link communications can also improve ATC/pilot
+communications when delivering complex clearance information. Therefore, airlines should also
+consider plans for investing in data link communications capabilities to maximize potential benefits.
+
+Summary of Open Research Questions
+
+This document has identified several areas where additional consideration and analysis is needed to
+fully implement integrated RTA and IM operations. These included:
+
+    •   (Section 4.3.4.2) In cases where the IM Aircraft is performing a Cross clearance, there may also
+        be issues for a following RTA Aircraft as the IM Aircraft attempts to meet the spacing over the
+        course of the operation (versus as soon as practicable). Potential variabilities in how TOAC
+        speeds are calculated to meet the RTA at a downstream point could cause undesirable closure
+        rates in some cases, which should be the subject of further analysis. Additionally, differences in
+        how TOAC and FIM speeds are limited on speed-restricted segments of RNAV STARs should also
+        be considered from flight crew and ATC perspectives.
+    •   (Section 4.3.4.3) The potential use of RTA during climb operations needs to be defined, with
+        controller considerations for knowing constraints on the applicable domain use of each
+        application.
+    •   (Section 4.3.4.3) It needs to be considered whether navigation clearance changes that would
+        cancel an IM operation should also cancel any active RTA operation. Overall, the specific
+        operational requirements and controller procedures to suspend and/or cancel each operation
+        needs to be harmonized between the two applications.
+    •   (Section 4.3.4.3) RTA and IM operations will also need further considerations on their use of
+        common forecast wind and temperature information, especially for retrofit IM
+        implementations.
+    •   (Section 4.4) Interim operations, preceding the end-state operations described here, may be
+        possible with a sub-set of the ground-based automation changes. Further work is needed to
+        define instantiations of potential interim phases.
+
+
+
+
+                                                     49
+Integrated RTA and IM Concept of Operations                                                    Version: 1.0
+
+
+
+7. References
+
+
+[1]   Federal Aviation Administration, "NextGen: Vision for Trajectory Based Operations," Washington,
+      DC, 2017.
+
+[2]   Federal Aviation Administration, "Third TBO Industry Day: Operational Analysis and Benefits," 4
+      November 2021. [Online]. Available:
+      https://www.faa.gov/air_traffic/technology/tbo/documents/Media/AJT_3rd%20TBO%20Industry
+      %20Day%20Final_110421_sm.pdf. [Accessed 19 April 2022].
+
+[3]   Federal Aviation Administration, "Charting Aviation's Future: Operations in an Info-Centric
+      National Airspace System," Federal Aviation Administration, Washington, DC, 2022.
+
+[4]   H. Erzberger and W. Nedell, "Design of Automated System for Management of Arrival Traffic,"
+      National Aeronautics and Space Administration, Moffett Field, CA, 1989.
+
+[5]   R. M. Sgorcea, L. A. Weitz, R. W. Huleatt, I. M. Levitt and R. E. Mount, "Integrated Time-Based
+      Management and Performance-Based Navigation Design for Trajectory-Based Operations," in
+      USA/Europe Air Traffic Management Research and Development Seminar, 2019.
+
+[6]   B. Stein, D. Vincent and D. Ceniccola, "TBFM Coupled Scheduling," in 56th Annual ATCA
+      Conference and Exposition, National Harbor, MD, 2011.
+
+[7]   K. E. Witzberger and L. Martin, "Paradigm Changes Related to TSAS: Viewed Through the
+      Perspective of the FAA/NASA Operational Integration Assessment," Journal of Air Traffic Control,
+      vol. Winter, pp. 38-46, 2015.
+
+[8]   S. Raynaud, "WG 85 4D NAV: Operational Assumption Annex," EUROCAE Working Group 85,
+      2010.
+
+[9]   J. K. Klooster and K. D. Wichman, "4D Trajectory and Time-of-Arrival Control to Enable
+      Continuous Descent Arrivals," in AIAA Guidance, Navigation, and Control Conference, Honolulu,
+      HI, 2008.
+
+[10] T. Becher, P. D. MacWilliams, M. Balakrishna and R. Sgorcea, "4D Flight Management System
+     (FMS) Standards Validation and Demonstration Plan," The MITRE Corporation, McLean, VA, 2011.
+
+[11] R. Sgorcea, G. Enea, J. Timberlake, S. Osborne and W. Symionow, "Use of Flight Management
+     System (FMS) Required Time of Arrival (RTA) for Time-Based Management (TBM): Concept of
+     Operations," The MITRE Corporation, McLean, VA, 2017.
+
+[12] RTCA, "Minimum Aviation System Performance Standards (MASPS) for Required Navigation
+     Performance for Area Navigation (DO-236C, Change 1)," RTCA, Washington, DC, 2014.
+
+[13] RTCA, "Minimum Operational Performance Standards (MOPS) for Required Navigation
+     Performance for Area Navigation (DO-283B)," RTCA, Washington, DC, 2015.
+
+[14] Federal Aviation Administration, Aircraft Certification Services, "Technical Standard Order for
+     Required Navigation Performance (RNP) Equipment Using Multi-Sensor Inputs," Department of
+     Transportation, Washington, DC, 2016.
+
+
+
+                                                   50
+Integrated RTA and IM Concept of Operations                                                    Version: 1.0
+
+
+
+[15] Federal Aviation Adminstration , "Advisory Circular (AC) No: 20-138D Airworthiness Approval of
+     Positioning and Navigation Systems," FAA, Washington DC, 2014.
+
+[16] R. M. Sgorcea, J. M. Timberlake, III, C. D. Britan, L. A. Weitz, W. L. Symionow and S. T. Osborne,
+     "Using Required Time of Arrival for Time Based Management: 2018 Human In The Loop
+     Evaluation Report," The MITRE Corporation, McLean, VA, 2018.
+
+[17] G. Enea, R. Sgorcea, J. Timberlake, S. Osborne, W. Symionow and T. Davison, "Operational
+     Integration of Required Time of Arrival (RTA) with Time-Based Management (TBM): Concept of
+     Operations and Human-in-the-Loop Simulation Results," in AIAA AVIATION, Atlanta, GA, 2018.
+
+[18] ADS-B Equip2020 Working Group 4, "ADS-B In Strategy Document: Closing the Loop on the Flight
+     Deck (Version 1.1)," Washington, DC, 2019.
+
+[19] RTCA, "Minimum Operational Performance Standards (MOPS) for Aircraft Surveillance
+     Applications (ASA) System (DO-317C)," RTCA, Washington, DC, 2020.
+
+[20] RTCA, "Safety, Performance and Interoperability Requirements Documents for Airborne Space –
+     Flight Deck Interval Management (ASPA-FIM) (DO-328B)," RTCA, Washington, DC, 2020.
+
+[21] Federal Aviation Administration, "Technical Standard Order: Avionics Supporting Automatic
+     Dependent Surveillance - Broadcast (ADS-B) Aircraft Surveillance Applications (ASA) (TSO-
+     C195b)," Department of Transportation, Washington, DC, 2014.
+
+[22] RTCA, "Minimum Operational Performance Standards (MOPS) for Flight-Deck Interval
+     Management (FIM) (DO-361A)," RTCA, Washington, DC, 2020.
+
+[23] Federal Aviation Administration, Surveillance and Broadcast Services, "Concept of Operations
+     (ConOps) for ADS-B In Advanced Interval Management (A-IM)," Federal Aviation Administration,
+     Washington, DC, 2017.
+
+[24] Federal Aviation Administration, "Phase 1: Same Corner Post Interval Management and ADS-B In
+     Applications Concept of Operations for Final Investment Decision," Federal Aviation
+     Administration, Washington, DC, 2020.
+
+[25] R. M. Sgorcea, L. A. Weitz, W. J. Penhallegon, B. Kay, M. Balakrishna and R. S. Bone, "Strategy to
+     Achieve Flight-Deck-Based Time-Based Management (TBM) Operations: Integrated Operational
+     Services Environment Description," The MITRE Corporation, McLean, VA, 2020.
+
+[26] L. A. Weitz, R. M. Sgorcea, B. Kay and W. J. Penhallegon, "Strategy to Achieve Flight-Deck-Based
+     Time-Based Management (TBM) Operations: Key Actions and Initiatives for Integrating Flight-
+     deck Capabilities into TBM Environments," The MITRE Corporation, McLean, VA, 2020.
+
+[27] L. A. Weitz, R. M. Sgorcea, B. Kay and W. J. Penhallegon, "Strategy to Achieve Flight-Deck-Based
+     Time-Based Management (TBM) Operations: Implementation Roadmap for Integrating Flight-
+     deck Capabilities into TBM Environments," The MITRE Corporation, McLean, VA, 2020.
+
+[28] ADS-B In Commercial Application Technologies Ad-Hoc Team, "NAC Task 20-1 Final Report,"
+     NextGen Advisory Committee, Washington, DC, 2021.
+
+
+
+
+                                                    51
+Integrated RTA and IM Concept of Operations                                                     Version: 1.0
+
+
+
+[29] R. R. Canales, D. J. Elliott, B. W. Kay, R. Kluttz and L. A. Weitz, "Design Guidance for Integrated
+     Performance Based Navigation/Time Based Management Operations," The MITRE Corporation,
+     McLean, 2021.
+
+[30] Federal Aviation Administration, "Air Traffic Organization Policy JO 7210.3CC - Facility Operation
+     and Administration," U.S. Department of Transportation, Washington, DC, 2021.
+
+[31] Federal Aviation Adminstration, "Concept of Operations for Time Based Management Work
+     Package Four v1.2," FAA, Washington DC, 2018.
+
+[32] M. Hickey, J. Daily, R. Kluttz and L. A. Weitz, "Enabling Trajectory Based Operations Entirely on
+     Defined Paths," The MITRE Corporation, McLean, 2019.
+
+[33] A. D. Mundra, "Ghosting: Potential Applications of a New Controller Automation Aid, MP-
+     89WOOO30," The MITRE Corporation, McLean, VA, 1989.
+
+[34] D. B. Kelley, A. Castillo, J. Hopper, J. J. Remmes and J. Richkus, "Standard Terminal Automation
+     Replacement System (STARS) Enhancements 2 and Enhanced Converging Runway Display Aid (E-
+     CRDA) User Engagement Event Description and Results," The MITRE Corporation, McLean, VA,
+     2019.
+
+[35] Federal Aviation Adminstration, "Concept of Operations for Time-Based Flow Management,"
+     ATO, Washington DC, January 19, 2009.
+
+[36] Federal Aviation Administration, American Airlines, and Aviation Communication & Surveillance
+     Systems (ACSS), LLC, "ADS-B In Retrofit Spacing (AIRS) Evaluation CDTI Assisted Separation (CAS)
+     Single Runway Operational Description," Federal Aviation Administration, Washington, DC, 2021.
+
+[37] I. M. Levitt, L. A. Weitz and M. W. Castle, "Modeling delivery accuracy for metering operations to
+     support RNAV arrivals," in Proceedings of the Tenth USA/Europe Air Traffic Management
+     Research and Development Seminar, 2013.
+
+[38] M. Wynnyk and H. Kopald, "Terminal Sequencing and Spacing (TSS) Simulation 2 Post Analysis
+     Report," The MITRE Corporation, McLean, VA, 2013.
+
+[39] N. Lowry and M. Wynnyk, "Terminal Sequencing and Spacing (TSS): Results of Part-Task
+     Evaluations," The MITRE Corporation, McLean, VA, 2013.
+
+[40] M. Bush, M. Enriquez, K. Ference, G. Glover, K. Johnsgard, A. Pusateri and E. Vargo, "Terminal
+     Sequencing and Spacing Fast-Time Modeling: Meter Fix Delivery Accuracy Requirement Analysis,"
+     The MITRE Corporation, McLean, VA, 2014.
+
+[41] L. A. Weitz, E. Lacher, M. Wynnyk and A. Frewin, Los Angeles International Airport (LAX) Terminal
+     Sequencing and Spacing (TSAS) Adaptation Analysis, The MITRE Corporation, 2021.
+
+[42] D. Howell, "ADS-B In Application Business Case: Business Case Overview (Briefing to the ADS-B In
+     NextGen Advisory Committee [NAC] Task Group)," Federal Aviation Administration, Washington,
+     DC, 2021.
+
+[43] Federal Aviation Administration, "Aeronautical Information Manual," 3 November 2022. [Online].
+     Available: https://www.faa.gov/air_traffic/publications/atpubs/aim_html/index.html. [Accessed
+     2022 December 8].
+
+
+                                                    52
+Integrated RTA and IM Concept of Operations                                                      Version: 1.0
+
+
+
+[44] Federal Aviation Administration, "Surveillance Spectrum Congestion Mitigation Alternatives
+     Analysis, Phase 2: Final Report," Federal Aviation Administration, Washington, DC, 2019.
+
+[45] R. S. Bone and K. M. Long, "Flight crew and air traffic controller interactions when conducting
+     interval management utilizing voice and controller pilot data link communications," The MITRE
+     Corporation, McLean, VA, 2014.
+
+[46] W. J. Penhallegon, M. Germain, H. P. Stassen, R. S. Bone and B. Lewis, "Interval Management (IM)
+     Dependent Staggered Approaches (DSA) Human-in-the-Loop (HITL) Simulation: Air Traffic
+     Controller Data Collection Plan," The MITRE Corporation, McLean, VA, 2021.
+
+[47] R. S. Bone and A. S. Mendolia, "Pilot and Air Traffic Controller Use of Interval Management During
+     Terminal Metering Operations," The MITRE Corporation, McLean, VA, 2018.
+
+[48] W. J. Penhallegon, B. A. Lewis, R. S. Bone, H. P. Stassen and M. Germain, "Flight Deck Simulation
+     of Relative Spacing with Complex Communications during Arrivals to Dependent Parallel
+     Runways," The MITRE Corporation, McLean, VA, 2021.
+
+[49] R. R. Canales, D. J. Elliott, B. W. Kay, R. Kluttz and L. A. Weitz, "Design Guidance for Integrated
+     Performance Based Navigation/Time Based Management Operations," The MITRE Corpration,
+     McLean, VA, 2021.
+
+[50] L. A. Weitz and R. M. Sgorcea, "Role of Aircraft Descent Speed Prediction in Achieving Trajectory
+     Based Operations," in AIAA AVIATION, Virtual, 2021.
+
+[51] P. D. Arbuckle, B. Petricel and J. Martensson, "ADS-B Equipage Flight Plan Supplementary
+     Indication Proposal," International Civil Aviation Organization (ICAO), Montreal, Canada, 2016.
+
+[52] R. M. Sgorcea and J. M. Timberlake, III, "Required Time of Arrival (RTA) for Time-Based
+     Management (TBM): Functional Decomposition and Cost Analysis," The MITRE Corporation,
+     McLean, VA, 2018.
+
+[53] W. J. Penhallegon and H. P. Stassen, "Concept of Operations for Advanced Interval Management
+     Applications in an Arrival Metering Environment," in Digital Avionics and Systems Conference,
+     London, 2018.
+
+[54] R. M. Sgorcea and J. M. Timberlake, III, "Required Time of Arrival (RTA) for Time Based
+     Management (TBM): Functional Decomposition and Cost Analysis," The MITRE Corporation,
+     McLean, VA, 2018.
+
+
+
+
+                                                    53
+Integrated RTA and IM Concept of Operations                          Version: 1.0
+
+
+
+Appendix A. Acronyms and Abbreviations
+ AAR               Airport Arrival Rate
+ AC                Advisory Circular
+ ACSS              Aviation Communications & Surveillance Systems
+ ADS-B             Automatic Dependent Surveillance-Broadcast
+ AFP               Airspace Flow Program
+ AFS               FAA Flight Standards Organization
+ AGD               ADS-B Guidance Display
+ AIM               Aeronautical Information Manual
+ AIRS              ADS-B In Retrofit Spacing
+ AIR               FAA Aircraft Certification Organization
+ AJM               FAA Program Management Organization
+ AJV-S             FAA Mission Support-Strategy Organization
+ ARTCC             Air Route Traffic Control Center
+ ASA               Airborne Surveillance Application
+ ASG               Assigned Spacing Goal
+ ATC               Air Traffic Control
+ ATCSCC            Air Traffic Control System Command Center
+ ATM               Air Traffic Management
+ ATN               Aeronautical Telecommunications Network
+ ATPA              Automated Terminal Proximity Alert
+ CAASD             Center for Advanced Aviation System Development
+ CAS               CDTI-Assisted Separation
+ CDTI              Cockpit Display of Traffic Information
+ CDU               Control Display Unit
+ ConOps            Concept of Operations
+ CP                Crossing Point
+ CRDA              Crossing Runway Display Aid
+ DCCR              Dependent Crossing and Converging Runways
+ DCT               Delay Countdown Timer
+ DSA               Dependent Staggered Approaches
+ DST               Decision Support Tool
+ EDC               En Route Departure Capability
+ ERAM              En Route Automation Modernization
+ ETA               Estimated Time of Arrival
+ FAA               Federal Aviation Administration
+ FAF               Final Approach Fix
+ FANS              Future Air Navigation System
+ FDMS              Flow Management Data Services
+ FIM               Flight Deck Interval Management
+ FMS               Flight Management System
+
+
+                                                54
+Integrated RTA and IM Concept of Operations                          Version: 1.0
+
+
+ GDP               Ground Delay Program
+ IAP               Instrument Approach Procedure
+ ICAO              International Civil Aviation Organization
+ IDAC              Integrated Departure/Arrival Capability
+ IFPI              Intended Flight Plan Information
+ I-IM              Initial Interval Management
+ IM                Interval Management
+ JRC               Joint Resources Council
+ kt                Knots
+ LAX               Los Angeles International Airport
+ MASPS             Minimum Aviation System Performance Standards
+ MF                Meter Fix
+ MIT               Miles-in-Trail
+ MOPS              Minimum Operational Performance Standards
+ MRP               Meter Reference Point
+ NAC               NextGen Advisory Committee
+ NAS               National Airspace System
+ NATCA             National Air Traffic Controllers Association
+ NM                Nautical Miles
+ OEM               Original Equipment Manufacturers
+ OpSpec            Operational Specification
+ PBD               Place-Bearing-Distance
+ PBN               Performance Based Navigation
+ PCP               Planned Cancellation Point
+ PHX               Phoenix Sky Harbor International Airport
+ RF                Radius to Fix
+ RNAV              Area Navigation
+ RNP               Required Navigation Performance
+ RTA               Required Time of Arrival
+ SBS               Surveillance Broadcast Services
+ SC                Special Committee
+ SESAR             Single European Sky ATM Research
+ STA               Scheduled Time of Arrival
+ STAR              Standard Terminal Arrival Route
+ STARS             Standard Terminal Automation Replacement System
+ TBFM              Time-Based Flow Management
+ TBM               Time Based Management
+ TBO               Trajectory Based Operations
+ TFDM              Terminal Flight Data Management
+ TFM               Traffic Flow Management
+ TFMS              Traffic Flow Management System
+
+
+
+                                               55
+Integrated RTA and IM Concept of Operations                       Version: 1.0
+
+
+ TMC               Traffic Management Coordinator
+ TMI               Traffic Management Initiative
+ TMP               Terminal Meter Point
+ TMU               Traffic Management Unit
+ TOAC              Time of Arrival Control
+ TOD               Top of Descent
+ TRACON            Terminal Radar Approach Control
+ TRP               Traffic Reference Point
+ TSAS              Terminal Sequencing and Spacing
+ TSO               Technical Standard Order
+ UTC               Coordinated Universal Time
+ VMC               Visual Meteorological Conditions
+ ZAB               Albuquerque Air Route Traffic Control Center
+
+
+
+
+                                                 56
+Integrated RTA and IM Concept of Operations                                                       Version: 1.0
+
+
+
+Appendix B. RTA Capability in Current Fleet
+                     Table B-1. RTA Capability in Current Fleet by Aircraft and FMS Type
+
+
+          Aircraft Type                            FMS                    RTA Capability
+
+                            B717                   Honeywell              Cruise
+
+                            B737-4/NG              General Electric       All phases of flight
+
+                            B747-8                 Honeywell              Cruise
+
+                            B757/767
+                                                   Honeywell              Cruise
+          Boeing            (Pegasus)
+
+                            B757/767 (Classic)     Honeywell              No RTA Function
+
+                            777 (AIMS 1&2)         Honeywell              Cruise
+
+                            B787                   Honeywell              Cruise
+                            A318/319/320/321
+                            FMS1             Honeywell                    No RTA Function
+                            FMS2             Honeywell                    Cruise
+
+                            A318/319/320/321
+                            FMS1             Thales                       No RTA Function
+                            FMS2             Thales                       All phases of flight*
+
+                            A330
+          Airbus
+                            FMS1                   Thales                 No RTA Function
+                            FMS2                   Thales                 Cruise
+                            A330 (Pegasus)         Honeywell              Cruise
+                                                                          Cruise
+                            A340                   Thales                 (manufactured after
+                                                                          2008)
+                            A380                   Honeywell              Cruise
+          Embraer           E170/192               Honeywell              No RTA Function
+          Bombardier        CRJ                    Rockwell Collins       No RTA Function
+          McDonnell
+                            MD80                   Honeywell              No RTA Function
+          Douglas
+          * Thales FMS2 (Rev 2+ and Release 1A) RTA range of capabilities need additional
+          study.
+
+
+
+
+                                                     57
+

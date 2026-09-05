@@ -46,11 +46,12 @@ Workspace/paper2/
 
 # paper4 실행 산출물 (재실행으로 복원 가능하므로 제외, 결과 CSV/JSON은 추적 유지)
 # 2026-09-04 강제 pull 뒤 reset --hard가 실행 중이던 SUMO 파일을 지워 HPO 롤아웃 45건이 소실되었다
-Workspace/paper4/coder/runs/**/*.pt
+# 학습 체크포인트와 프로세스 간 락은 위치를 가리지 않고 전부 제외한다
+Workspace/paper4/**/*.pt
+Workspace/paper4/**/*.lock
+# SUMO 생성물과 텐서보드 로그는 실행 디렉터리에서만 제외한다
+# src/sumo/에는 생성 스크립트 make_sumo_set.py가 함께 있어 디렉터리 단위로 묶지 않는다
 Workspace/paper4/coder/runs/**/sumo/
 Workspace/paper4/coder/runs/**/tb/
-Workspace/paper4/coder/runs/**/*.lock
-Workspace/paper4/coder/results/**/*.pt
 Workspace/paper4/coder/results/**/sumo/
 Workspace/paper4/coder/results/**/tb/
-Workspace/paper4/coder/results/**/*.lock

@@ -55,3 +55,10 @@ Workspace/paper4/coder/runs/**/sumo/
 Workspace/paper4/coder/runs/**/tb/
 Workspace/paper4/coder/results/**/sumo/
 Workspace/paper4/coder/results/**/tb/
+
+# 공용 시나리오 디렉터리의 SUMO 생성물도 제외한다
+# 여러 프로세스가 각자의 조건으로 재생성하여 내용이 계속 바뀌므로 이력에 남길 의미가 없고,
+# 추적 상태로 두면 pull이나 reset이 실행 도중에 측정 조건을 바꿔 버린다
+Workspace/paper4/coder/src/sumo/generated.*
+Workspace/paper4/coder/src/sumo/rsu.poi.xml
+Workspace/paper4/coder/src/sumo/.sumo_gen_signature.json

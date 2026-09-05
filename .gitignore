@@ -43,3 +43,14 @@ __pycache__/
 
 # paper2는 별도 공유 저장소(UAM-Net_Opt)에서 독립 관리
 Workspace/paper2/
+
+# paper4 실행 산출물 (재실행으로 복원 가능하므로 제외, 결과 CSV/JSON은 추적 유지)
+# 2026-09-04 강제 pull 뒤 reset --hard가 실행 중이던 SUMO 파일을 지워 HPO 롤아웃 45건이 소실되었다
+Workspace/paper4/coder/runs/**/*.pt
+Workspace/paper4/coder/runs/**/sumo/
+Workspace/paper4/coder/runs/**/tb/
+Workspace/paper4/coder/runs/**/*.lock
+Workspace/paper4/coder/results/**/*.pt
+Workspace/paper4/coder/results/**/sumo/
+Workspace/paper4/coder/results/**/tb/
+Workspace/paper4/coder/results/**/*.lock

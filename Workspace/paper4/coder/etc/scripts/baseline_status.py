@@ -33,6 +33,17 @@ MODEL_ORDER = [
 ]
 
 
+def _key(name: str) -> str:
+    """모델 이름을 비교용으로 정규화한다.
+
+    진행 CSV 는 클래스 이름으로 쓰이므로 `RES-MAPDDPG` 가 `RESMAPDDPG` 로,
+    `MADDPG-MT` 가 `MADDPGMT` 로 저장된다. 하이픈을 그대로 두고 비교하면 그 모델이
+    끝났는데도 "대기 중"으로 보고된다. 2026-09-11 06:00 보고에서 실제로 그렇게 나왔고,
+    RES-MAPDDPG 가 완료 03:04~05:30 인데 표에 없었다.
+    """
+    return name.replace("-", "").replace("_", "").upper()
+
+
 def _f(row: dict, key: str):
     """CSV 칸을 float 으로. 비었거나 숫자가 아니면 None."""
     v = (row.get(key) or "").strip()
@@ -53,7 +64,7 @@ def read_run(run_dir: Path) -> dict:
         return out
 
     for csv_path in lg.glob("*_progress.csv"):
-        model = csv_path.name[: -len("_progress.csv")]
+        model = _key(csv_path.name[: -len("_progress.csv")])
         try:
             with csv_path.open(newline="") as fh:
                 rows = list(csv.DictReader(fh))
@@ -87,9 +98,9 @@ def render(run_dir: Path, discord: bool) -> str:
     if not st:
         return f"{run_dir.name}: 아직 진행 기록이 없습니다."
 
-    done = [m for m in MODEL_ORDER if m in st and st[m]["episodes"] >= 100]
-    running = [m for m in MODEL_ORDER if m in st and st[m]["episodes"] < 100]
-    waiting = [m for m in MODEL_ORDER if m not in st]
+    done = [m for m in MODEL_ORDER if _key(m) in st and st[_key(m)]["episodes"] >= 100]
+    running = [m for m in MODEL_ORDER if _key(m) in st and st[_key(m)]["episodes"] < 100]
+    waiting = [m for m in MODEL_ORDER if _key(m) not in st]
 
     lines = []
     if discord:
@@ -97,9 +108,9 @@ def render(run_dir: Path, discord: bool) -> str:
         lines.append("```")
         lines.append(f"{'모델':<12}{'에피':>7}{'최고보상':>11}{'손실':>9}{'밀도':>6}")
         for m in MODEL_ORDER:
-            if m not in st:
+            s = st.get(_key(m))
+            if s is None:
                 continue
-            s = st[m]
             lines.append(
                 f"{m:<12}{s['episodes']:>4}/100"
                 f"{fmt(s['best'], '11.4f', '          -')}"
@@ -119,9 +130,9 @@ def render(run_dir: Path, discord: bool) -> str:
     )
     lines.append("  " + "-" * 92)
     for m in MODEL_ORDER:
-        if m not in st:
+        s = st.get(_key(m))
+        if s is None:
             continue
-        s = st[m]
         lines.append(
             f"  {m:<13}{s['episodes']:>5}/100"
             f"{fmt(s['global_step'], '9.0f', '        -')}"

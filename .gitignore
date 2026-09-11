@@ -62,3 +62,9 @@ Workspace/paper4/coder/results/**/tb/
 Workspace/paper4/coder/src/sumo/generated.*
 Workspace/paper4/coder/src/sumo/rsu.poi.xml
 Workspace/paper4/coder/src/sumo/.sumo_gen_signature.json
+
+# 추가된 대용량 파일 및 디렉터리 무시 규칙
+Workspace/ST-MBAN/coder/*.pkl
+Workspace/ST-MBAN/coder/saved_models/
+.gemini/
+.claude/

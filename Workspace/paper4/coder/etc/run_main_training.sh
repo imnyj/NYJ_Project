@@ -59,6 +59,16 @@ DENSITIES=(5 10 15 20 25 30 35)
 EPISODES=100
 STEPS_PER_EPISODE=2000
 
+# HOORL's offline dataset. Checked here rather than let the model die mid-run:
+# the failure costs one baseline out of nine and does not stop the other eight,
+# so it is invisible until the results table is short a row.
+HOORL_DATASET="${CODER_DIR}/../data/hoorl_offline/hoorl_offline.npz"
+if [[ ! -f "$HOORL_DATASET" ]]; then
+    echo "FATAL: HOORL offline dataset not found at ${HOORL_DATASET}" >&2
+    echo "  HOORL cannot run its first stage without it; collect one first." >&2
+    exit 3
+fi
+
 cat > "${RUN_ROOT}/run_config.json" <<EOF
 {
   "arm": "${ARM}",
@@ -114,7 +124,14 @@ while (( attempt < MAX_ATTEMPTS )); do
     # PAPER4_SUMO_DIR gives this run its own generated.net.xml. Without it every
     # concurrent run shares one scenario directory and silently reads whichever
     # network was written last -- no error, wrong numbers.
-    CUDA_VISIBLE_DEVICES="$GPU_LIST" PAPER4_SUMO_DIR="${RUN_ROOT}/sumo" $PY run_all.py \
+    # PAPER4_HOORL_OFFLINE_DATASET is HOORL's offline stage. Without it that one
+    # model dies at construction with OfflineDatasetMissing while the other eight
+    # train normally, so the run looks healthy and the results table is simply
+    # missing a baseline. The 2026-09-10 launch lost HOORL exactly this way: the
+    # HPO launcher had been fixed the day before and this script had not, and the
+    # failure surfaced seventeen hours in.
+    CUDA_VISIBLE_DEVICES="$GPU_LIST" PAPER4_SUMO_DIR="${RUN_ROOT}/sumo" \
+    PAPER4_HOORL_OFFLINE_DATASET="$HOORL_DATASET" $PY run_all.py \
         --episodes "$EPISODES" \
         --steps-per-episode "$STEPS_PER_EPISODE" \
         --seed "$SEED" \

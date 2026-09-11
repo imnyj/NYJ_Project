@@ -1,13 +1,13 @@
 {
-  "model_name": "SAC",
+  "model_name": "SPAMD3QN",
   "status": "completed",
   "episodes_requested": 100,
   "episodes_completed": 100,
   "error_mode": "accumulate",
   "seed": 42,
-  "log_csv_path": "/home/imnyj/Workspace/paper4/coder/runs/accumulate_seed42/lg/SAC_progress.csv",
-  "finished_at": "2026-09-11T16:22:09",
-  "training_steps": 60701,
+  "log_csv_path": "/home/imnyj/Workspace/paper4/coder/runs/accumulate_seed42/lg/SPAMD3QN_progress.csv",
+  "finished_at": "2026-09-11T16:22:10",
+  "training_steps": 43866,
   "mean_recent_loss": 0.0,
   "zero_update_episodes": 0,
   "divergence_monitor": {

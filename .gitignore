@@ -27,6 +27,9 @@ Workspace/paper4/writer/data/oracle_dataset_extreme.csv
 .config/
 .local/
 .nv/
+.npm/
+.antigravitycli/
+.codex/
 .vscode-server/
 .copilot/
 20202020
@@ -40,6 +43,9 @@ simulation_log.txt
 # 기타 임시 파일
 *.log
 __pycache__/
+.pytest_cache/
+.ruff_cache/
+backup/
 
 # paper2는 별도 공유 저장소(UAM-Net_Opt)에서 독립 관리
 Workspace/paper2/

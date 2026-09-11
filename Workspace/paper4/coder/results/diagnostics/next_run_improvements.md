@@ -75,3 +75,31 @@ code path regenerate a scenario, is not: `make_sumo_set.BASE_PATH` is bound at
 import from the environment, so a process that has imported it with the shared
 directory will write there whatever it is told afterwards. That is how the
 pre-flight gate came to overwrite the scenario it then refused to launch over.
+
+## 주기형 배관 플래그의 판정 규칙 (2026-09-11, 본훈련 중 발견)
+
+`i_hamappo.py:105` 가 배관 플래그를 "창 평균이 0.0 이면 결함"으로 판정하라고 적는다.
+**주기형 플래그에는 그 규칙이 그대로 성립하지 않는다.**
+
+본훈련 200,000스텝 로그에서 MA2HDQN 의 `wiring_target_synced` 는 에피소드 평균이
+0.0049 로 설계값 1/200 과 맞는데, **어떤 에피소드에서는 최솟값이 0.0000 이다.**
+그 모델의 에피소드당 갱신이 평균 273회이고 최소 68회이므로, 갱신이 주기 200 에
+못 미친 에피소드에서는 동기화가 한 번도 일어나지 않는다. 정상 실행이 0 을 보고한다.
+
+**고칠 것.** 판정 규칙을 이렇게 좁혀 적는다.
+
+- 조건형(`neighbourhood_used`, `per_sampled`, `task_decomposed`,
+  `global_critic_cooperative`, `behaviour_logp_stored`): 매 갱신에 켜져야 하므로
+  창 평균이 1.0 이 아니면 결함이다.
+- 주기형(`target_synced`, `policy_synced`, `actor_updated`): 창 평균이 1/N 근처여야
+  하고, **갱신 횟수가 주기 N 을 넘는 창에서 0 이면 결함이다.** 갱신이 N 에 못 미친
+  창의 0 은 정상이다.
+
+본훈련 실측(100 에피소드):
+
+    TD3         actor_updated   0.4999   policy_delay 2 의 역수
+    I-HAMAPPO   policy_synced   0.2500   policy_sync_interval 4 의 역수
+    MA2HDQN     target_synced   0.0049   주기 200 의 역수
+
+셋 다 설계값과 일치한다. 지금 고치지 않는 이유는 실행 중 `src/` 를 건드리지 않기
+때문이고, 본훈련이 끝난 뒤 `i_hamappo.py:105` 의 규칙 서술을 위 두 갈래로 나눈다.

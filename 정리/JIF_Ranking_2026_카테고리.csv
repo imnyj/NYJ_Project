@@ -1,0 +1,18 @@
+Unnamed: 0,Unnamed: 1
+고려 가능한 카테고리,적합성 검사
+MATHEMATICS,순수 수학
+"MATHEMATICS, APPLIED","수학적 모델링, 자원 할당 알고리즘 등"
+"MATHEMATICS, INTERDISCIPLINARY APP...",통신/네트워크와 수학의 융합
+COMMUNICATION,"미디어, 신문방송학, 언론학 등"
+"COMPUTER SCIENCE, ARTIFICIAL INTEL...",SAC 등 AI/RL 적용
+"COMPUTER SCIENCE, INFORMATION SYST...","IoT 시스템, 데이터 전송 구조 등"
+"COMPUTER SCIENCE, HARDWARE & ARCHI...","칩 설계, 하드웨어 아키텍쳐 등"
+"COMPUTER SCIENCE, SOFTWARE ENGINEE...","소프트웨어 개발 방법론, 테스팅, 버그 탐지 등"
+"COMPUTER SCIENCE, THEORY & METHODS","계산 복잡도, 양자 컴퓨터 이론 기초, 암호학 등"
+"ENGINEERING, ELECTRICAL & ELECTRON...","안테나, 무선 통신, 신호 처리"
+"ENGINEERING, INDUSTRIAL","제조 공정, 공급망 관리, 인간공학 등"
+TELECOMMUNICATIONS,"통신망 아키텍처, 프로토콜"
+INFORMATION SCIENCE & LIBRARY SCIE...,"문헌정보학, 도서관학 등"
+TRANSPORTATION,"교통경제학, 물류 정책 등"
+TRANSPORTATION SCIENCE & TECHNOLOGY,"자율주행 환경, 차세대 지능형 교통 체계"
+URBAN STUDIES,"도시 정책, 사회학, 행정학 등"

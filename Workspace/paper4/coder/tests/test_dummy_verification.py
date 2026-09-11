@@ -38,7 +38,7 @@ from src.evaluate import (
     instantiate_model,
 )
 from src.heuristic_scheduler import HeuristicScheduler
-from tests.contract_adapters import DummyPolicy
+from tests.contract_adapters import DummyPolicy, sample_hparams
 from src.rl_interface import STATE_DIM
 
 
@@ -138,12 +138,23 @@ class TestShortDummyRunVerification:
     def test_d4_optuna_hpo_single_trial_10_steps(self, tmp_path):
         """D4: Verify Optuna HPO executes 1 trial with 10 steps on real environment and saves CSV."""
         out_dir = str(tmp_path / "hpo_dummy")
+        # `search_space` is REQUIRED for the test double, and that is the change
+        # rather than a workaround for it. `src.hpo.sample_hparams` used to fall
+        # back to a generic three-key space for any name it did not recognise, so
+        # a group list carrying a stray space or a retired baseline produced a
+        # complete-looking study tuned over three knobs instead of seven. It now
+        # refuses an unknown name, and `DummyPolicy` is an unknown name by
+        # construction -- it is a test double, not a baseline. The adapter's own
+        # `sample_hparams` supplies its space and defers to `src.hpo` for
+        # everything else, so this test exercises the real study machinery while
+        # the refusal that protects the real models stays in force.
         study = run_hpo_study(
             model_name="DummyPolicy",
             model_cls=DummyPolicy,
             n_trials=1,
             seeds=[42],
             n_steps=10,
+            search_space=sample_hparams,
         )
 
         csv_path, best_record = save_study_results(study, model_name="DummyPolicy", output_dir=out_dir)

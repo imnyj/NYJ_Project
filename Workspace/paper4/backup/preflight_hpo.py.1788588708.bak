@@ -1,0 +1,448 @@
+#!/usr/bin/env python3
+"""Gate that must pass before the nine-model HPO re-search is allowed to start.
+
+The run costs about nine hours on four GPUs. Every check below exists because
+something in that window has already been lost once, and each failure was only
+visible after the fact -- in a CSV of penalty scores, or in a directory that had
+been quietly overwritten. The point of this script is to move those discoveries
+to the front, where they cost a second instead of a night.
+
+What is checked, and why:
+
+  1. N_ACTIVE_MAX_OBS == 168.0. The contention feature normalised against 100.0
+     saturated at exactly 1.0 for densities 25, 30 and 35, so three of the seven
+     training densities showed the model an identical congestion signal. Any HPO
+     started against the old ceiling tunes for observations the main training run
+     will never see.
+
+  2. The composite objective reads `packet_loss_rate`. It used to read a key that
+     the rollout filled with a constant, which made that whole term a fixed
+     offset and left the search ranking models on three terms instead of four.
+
+  3. Each group gets its OWN SUMO directory, PAPER4_SUMO_DIR actually redirects
+     the scenario path, and the generation lock creates its parent directory. On
+     2026-09-04 the g1 group's scenario directory vanished mid-run; the lock
+     opened its file with O_CREAT into a directory that no longer existed, and
+     the 62 remaining rollouts died on FileNotFoundError. SAC lost all 45 of its
+     rollouts, I-HAMAPPO lost 15 of 45.
+
+  4. The four GPUs are free. The box is shared. Starting on someone's device
+     either evicts them or dies at the first allocation.
+
+  5. The output and log destinations are empty or new. `results/hpo_parallel/` is
+     the control group for this comparison; a run that writes into it destroys
+     the thing it is being compared against, and does so silently.
+
+Usage:
+    etc/preflight_hpo.py --output-root results/hpo_parallel_v2 \\
+        --log-root /home/imnyj/Workspace/paper4/logs/hpo_parallel_v2 \\
+        --sumo-dirs results/hpo_parallel_v2/g0/sumo ... --gpus 0 1 2 3
+
+Exit code is 0 when every check passes and 1 otherwise. The launcher refuses to
+start on a non-zero exit; run it by hand to see the same report.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import inspect
+import os
+import shutil
+import subprocess
+import sys
+import textwrap
+import tempfile
+from typing import Any, Callable, Dict, List, Tuple
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+#: The ceiling the observation normaliser must be using. Derived in
+#: `rl_interface.get_n_active_max_obs` as max(DENSITY_GRID) * rsu_coverage_lane_km()
+#: = 35 * 4.8; restated here so a silent change to either factor is caught rather
+#: than accommodated.
+EXPECTED_N_ACTIVE_MAX_OBS = 168.0
+
+#: Files whose presence means a directory already holds results. `sumo/` is
+#: excluded on purpose: it is a scratch scenario directory, not an artefact.
+RESULT_GLOB_MARKERS = ("optuna_", "hpo_failed_models.csv", ".log")
+
+
+class CheckResult:
+    """One named check, its verdict, and the lines a human needs to act on it."""
+
+    def __init__(self, name: str, passed: bool, detail: List[str]) -> None:
+        self.name = name
+        self.passed = passed
+        self.detail = detail
+
+    def render(self) -> str:
+        mark = "PASS" if self.passed else "FAIL"
+        head = f"[{mark}] {self.name}"
+        body = "\n".join(f"       {line}" for line in self.detail)
+        return f"{head}\n{body}" if body else head
+
+
+# --------------------------------------------------------------------------
+# 1. observation normaliser
+# --------------------------------------------------------------------------
+def check_n_active_max_obs() -> CheckResult:
+    try:
+        from src.rl_interface import N_ACTIVE_MAX_OBS
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(
+            "observation normaliser N_ACTIVE_MAX_OBS",
+            False,
+            [f"could not import src.rl_interface: {type(exc).__name__}: {exc}"],
+        )
+
+    value = float(N_ACTIVE_MAX_OBS)
+    ok = abs(value - EXPECTED_N_ACTIVE_MAX_OBS) < 1e-9
+    detail = [f"N_ACTIVE_MAX_OBS = {value}  (expected {EXPECTED_N_ACTIVE_MAX_OBS})"]
+    if ok:
+        # Show the three densities that used to saturate, so the report says what
+        # the number buys rather than only that it matches.
+        for density in (25.0, 30.0, 35.0):
+            measured = {25.0: 123.0, 30.0: 138.3, 35.0: 141.7}[density]
+            detail.append(
+                f"density {density:>4.0f}: n_active {measured:>5.1f} -> "
+                f"feature {measured / value:.4f} (was 1.0000 at ceiling 100.0)"
+            )
+    else:
+        detail.append(
+            "the contention feature saturates at densities 25, 30 and 35 with the "
+            "old ceiling; HPO run now would tune against observations the main "
+            "training run will not produce."
+        )
+        detail.append(
+            "fix: src/rl_interface.py get_n_active_max_obs(), and check "
+            "src/sumo/make_sumo_set.py DENSITY_GRID and rsu_coverage_lane_km()."
+        )
+    return CheckResult("observation normaliser N_ACTIVE_MAX_OBS", ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 2. objective function
+# --------------------------------------------------------------------------
+def _code_string_literals(func: Callable[..., Any]) -> set:
+    """Every string literal a function actually evaluates, docstring excluded.
+
+    `inspect.getsource` returns comments and the docstring along with the code,
+    and both discuss the metric keys at length here. Parsing keeps only what runs.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    fn = tree.body[0]
+    body = list(getattr(fn, "body", []))
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        body = body[1:]  # drop the docstring
+    literals = set()
+    for stmt in body:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                literals.add(node.value)
+    return literals
+
+
+def check_objective_reads_packet_loss() -> CheckResult:
+    name = "HPO objective reads packet_loss_rate"
+    try:
+        from src.hpo import compute_composite_objective
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, [f"could not import src.hpo: {type(exc).__name__}: {exc}"])
+
+    detail: List[str] = []
+
+    # Read the literals out of the AST rather than grepping the text. The
+    # function's docstring explains at length why the `outage_rate` fallback was
+    # removed, and a substring search cannot tell that explanation apart from the
+    # code it describes. The AST drops comments outright and the docstring is
+    # discarded below, so what is left is what actually executes.
+    reads_key, reads_alias = False, False
+    try:
+        literals = _code_string_literals(compute_composite_objective)
+        reads_key = "packet_loss_rate" in literals
+        reads_alias = "outage_rate" in literals
+        detail.append(f"executable code references 'packet_loss_rate': {reads_key}")
+    except (OSError, SyntaxError, TypeError) as exc:
+        return CheckResult(name, False, detail + [f"could not read the source: {type(exc).__name__}: {exc}"])
+    if reads_alias:
+        detail.append(
+            "executable code still references 'outage_rate'; that alias carries a "
+            "constant, so a fallback onto it would put the constant back in the objective."
+        )
+
+    # Static reading is not proof. Score two metric dicts that differ only in the
+    # loss term and require the objective to move.
+    base: Dict[str, float] = {
+        "mean_error": 1.0, "mean_aoi": 1.0, "avg_power_norm": 0.5,
+        "packet_loss_rate": 0.0,
+    }
+    high = dict(base, packet_loss_rate=0.30)
+    try:
+        v_low = float(compute_composite_objective(base))
+        v_high = float(compute_composite_objective(high))
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, detail + [f"scoring raised {type(exc).__name__}: {exc}"])
+
+    responds = v_high > v_low
+    detail.append(
+        f"packet_loss_rate 0.00 -> objective {v_low:.6f}; "
+        f"0.30 -> {v_high:.6f}; delta {v_high - v_low:+.6f}"
+    )
+    if not responds:
+        detail.append(
+            "the objective does not increase with packet loss, so the loss term is "
+            "constant or absent. fix: src/hpo.py compute_composite_objective()."
+        )
+    ok = reads_key and responds and not reads_alias
+    if reads_alias and reads_key and responds:
+        detail.append("blocked on the lingering 'outage_rate' mention above; inspect it before launching.")
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 3. SUMO isolation and the generation lock
+# --------------------------------------------------------------------------
+def check_sumo_isolation(sumo_dirs: List[str]) -> CheckResult:
+    name = "SUMO scenario directories isolated and self-healing"
+    detail: List[str] = []
+    ok = True
+
+    if not sumo_dirs:
+        return CheckResult(name, False, ["no --sumo-dirs given; nothing to check"])
+
+    # (a) the group directories must be distinct paths.
+    resolved = [os.path.realpath(os.path.abspath(d)) for d in sumo_dirs]
+    duplicates = {p for p in resolved if resolved.count(p) > 1}
+    if duplicates:
+        ok = False
+        detail.append("group SUMO directories are NOT distinct; these repeat:")
+        for p in sorted(duplicates):
+            detail.append(f"  {p}")
+        detail.append(
+            "two processes sharing one directory regenerate the same "
+            "generated.net.xml and silently read a network they did not ask for."
+        )
+    else:
+        detail.append(f"{len(resolved)} group directories, all distinct:")
+        for p in resolved:
+            detail.append(f"  {p}")
+
+    # (b) none of them may sit inside another, which would share a lock file.
+    for i, a in enumerate(resolved):
+        for j, b in enumerate(resolved):
+            if i != j and (a + os.sep).startswith(b + os.sep):
+                ok = False
+                detail.append(f"{a} is nested inside {b}; they would share generated files")
+
+    # (c) PAPER4_SUMO_DIR must actually redirect BASE_PATH. Checked in a
+    #     subprocess because the constant is read at import time.
+    probe_dir = tempfile.mkdtemp(prefix="preflight_sumo_")
+    target = os.path.join(probe_dir, "redirected")
+    env = dict(os.environ, PAPER4_SUMO_DIR=target, PYTHONPATH=ROOT)
+    try:
+        out = subprocess.run(
+            [sys.executable, "-c",
+             "import src.sumo.make_sumo_set as ss; print(ss.BASE_PATH)"],
+            capture_output=True, text=True, timeout=180, env=env, cwd=ROOT,
+        )
+        got = out.stdout.strip().splitlines()[-1] if out.stdout.strip() else ""
+        if os.path.realpath(got) == os.path.realpath(target):
+            detail.append(f"PAPER4_SUMO_DIR redirects BASE_PATH -> {got}")
+        else:
+            ok = False
+            detail.append(f"PAPER4_SUMO_DIR did NOT redirect BASE_PATH: got {got!r}, wanted {target!r}")
+            if out.stderr.strip():
+                detail.append(f"stderr tail: {out.stderr.strip().splitlines()[-1]}")
+    except (OSError, subprocess.SubprocessError) as exc:
+        ok = False
+        detail.append(f"probing PAPER4_SUMO_DIR failed: {type(exc).__name__}: {exc}")
+    finally:
+        shutil.rmtree(probe_dir, ignore_errors=True)
+
+    # (d) the generation lock must create its own parent directory. This is the
+    #     exact failure that killed the g1 group: the directory disappeared under
+    #     a running process and every later rollout raised FileNotFoundError.
+    lock_dir = tempfile.mkdtemp(prefix="preflight_lock_")
+    missing = os.path.join(lock_dir, "vanished", "sumo")
+    try:
+        import src.sumo.make_sumo_set as ss
+        with ss._generation_lock(missing):
+            created = os.path.isdir(missing)
+            has_lock = os.path.exists(os.path.join(missing, ss.GENERATION_LOCK_FILE))
+        if created and has_lock:
+            detail.append("generation lock recreated an absent parent directory and took its flock")
+        else:
+            ok = False
+            detail.append(
+                f"generation lock did not restore the directory "
+                f"(dir={created}, lockfile={has_lock}); a directory lost mid-run "
+                f"would kill every remaining rollout."
+            )
+    except Exception as exc:  # noqa: BLE001
+        ok = False
+        detail.append(
+            f"generation lock raised {type(exc).__name__}: {exc} on an absent "
+            f"parent directory. fix: src/sumo/make_sumo_set.py _generation_lock()."
+        )
+    finally:
+        shutil.rmtree(lock_dir, ignore_errors=True)
+
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 4. GPUs
+# --------------------------------------------------------------------------
+def check_gpus(wanted: List[int]) -> CheckResult:
+    name = "requested GPUs are free"
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "etc"))
+        from gpu_alloc import MAX_UTIL_PCT, MIN_FREE_MIB, probe
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, [f"could not import etc/gpu_alloc.py: {type(exc).__name__}: {exc}"])
+
+    gpus = probe()
+    if not gpus:
+        return CheckResult(name, False, ["nvidia-smi returned nothing; no driver, or the query failed"])
+
+    by_index = {g["index"]: g for g in gpus}
+    detail = [f"thresholds: >= {MIN_FREE_MIB} MiB free and <= {MAX_UTIL_PCT}% utilised"]
+    ok = True
+    for idx in wanted:
+        g = by_index.get(idx)
+        if g is None:
+            ok = False
+            detail.append(f"GPU {idx}: not present on this machine")
+            continue
+        state = "idle" if g["usable"] else g["reason"]
+        detail.append(
+            f"GPU {idx}: {g['memory_used_mib']:>6} / {g['memory_total_mib']} MiB used, "
+            f"{g['utilization_pct']:>3}% util -> {state}"
+        )
+        if not g["usable"]:
+            ok = False
+    if not ok:
+        detail.append(
+            "someone else is on at least one device. Starting anyway either evicts "
+            "their job or dies at the first allocation, hours in."
+        )
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 5. destinations
+# --------------------------------------------------------------------------
+def _existing_artefacts(path: str) -> List[str]:
+    """Files under `path` that look like results, ignoring scratch SUMO dirs."""
+    found: List[str] = []
+    if not os.path.isdir(path):
+        return found
+    for dirpath, dirnames, filenames in os.walk(path):
+        dirnames[:] = [d for d in dirnames if d != "sumo"]
+        for fn in filenames:
+            if any(m in fn for m in RESULT_GLOB_MARKERS):
+                found.append(os.path.relpath(os.path.join(dirpath, fn), path))
+    return sorted(found)
+
+
+def check_destination(path: str, label: str, protect: List[str]) -> CheckResult:
+    name = f"{label} is empty or new"
+    abs_path = os.path.abspath(path)
+    detail = [f"path: {abs_path}"]
+
+    for guarded in protect:
+        g = os.path.abspath(guarded)
+        if abs_path == g or (abs_path + os.sep).startswith(g + os.sep):
+            detail.append(
+                f"this is inside the protected control directory {g}. Those results "
+                f"are the comparison baseline for the new normaliser; writing here "
+                f"destroys what the new run is supposed to be measured against."
+            )
+            detail.append("choose a different --output-root, e.g. results/hpo_parallel_v2.")
+            return CheckResult(name, False, detail)
+
+    if not os.path.exists(abs_path):
+        detail.append("does not exist yet; the launcher will create it")
+        return CheckResult(name, True, detail)
+
+    artefacts = _existing_artefacts(abs_path)
+    if artefacts:
+        detail.append(f"already holds {len(artefacts)} result file(s); the run would overwrite them:")
+        for a in artefacts[:12]:
+            detail.append(f"  {a}")
+        if len(artefacts) > 12:
+            detail.append(f"  ... and {len(artefacts) - 12} more")
+        detail.append("move them aside, or point --output-root/--log-root somewhere new.")
+        return CheckResult(name, False, detail)
+
+    detail.append("exists and holds no result files")
+    return CheckResult(name, True, detail)
+
+
+# --------------------------------------------------------------------------
+def run_checks(args: argparse.Namespace) -> Tuple[List[CheckResult], bool]:
+    checks: List[Callable[[], CheckResult]] = [
+        check_n_active_max_obs,
+        check_objective_reads_packet_loss,
+        lambda: check_sumo_isolation(args.sumo_dirs),
+        lambda: check_gpus(args.gpus),
+        lambda: check_destination(args.output_root, "output root", args.protect),
+        lambda: check_destination(args.log_root, "log root", args.protect),
+    ]
+    results = [c() for c in checks]
+    return results, all(r.passed for r in results)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--output-root", required=True, help="where the group result directories will be written")
+    ap.add_argument("--log-root", required=True, help="where the per-group launcher logs will be written")
+    ap.add_argument("--sumo-dirs", nargs="*", default=[],
+                    help="the PAPER4_SUMO_DIR each group will be given")
+    ap.add_argument("--gpus", nargs="*", type=int, default=[0, 1, 2, 3],
+                    help="GPU indices the run will occupy")
+    ap.add_argument("--protect", nargs="*",
+                    default=["/home/imnyj/Workspace/paper4/coder/results/hpo_parallel",
+                             "/home/imnyj/Workspace/paper4/coder/results/hpo"],
+                    help="directories that must never be written into")
+    ap.add_argument("--skip", nargs="*", default=[],
+                    help="check names to report but not enforce (substring match)")
+    args = ap.parse_args()
+
+    results, _ = run_checks(args)
+
+    print("=" * 78)
+    print("HPO pre-flight")
+    print("=" * 78)
+    failed: List[CheckResult] = []
+    for r in results:
+        skipped = any(s.lower() in r.name.lower() for s in args.skip)
+        if skipped and not r.passed:
+            print(r.render().replace("[FAIL]", "[WARN]", 1))
+            print("       not enforced (--skip)")
+        else:
+            print(r.render())
+            if not r.passed:
+                failed.append(r)
+        print()
+
+    if failed:
+        print("-" * 78)
+        print(f"BLOCKED: {len(failed)} of {len(results)} checks failed. Do not launch.")
+        for r in failed:
+            print(f"  - {r.name}")
+        print("-" * 78)
+        return 1
+
+    print("-" * 78)
+    print(f"CLEAR: all {len(results)} checks passed. Safe to launch.")
+    print("-" * 78)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

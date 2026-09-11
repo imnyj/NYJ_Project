@@ -1,0 +1,10 @@
+model,hours_15_trials,proposed_group,proposed_group_hours,current_group,current_group_hours
+MA2HDQN,3.99,g0,11.27,g3,11.47
+I-HAMAPPO,3.86,g0,11.27,g1,9.26
+SPAM-D3QN,3.42,g0,11.27,g3,11.47
+PPO,6.11,g1,10.68,g0,10.53
+RES-MAPDDPG,4.57,g1,10.68,g2,8.94
+SAC,5.4,g2,9.82,g1,9.26
+MADDPG-MT,4.42,g2,9.82,g0,10.53
+TD3,4.37,g3,8.43,g2,8.94
+HOORL,4.06,g3,8.43,g3,11.47

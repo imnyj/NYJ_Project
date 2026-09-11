@@ -1,0 +1,10 @@
+model,previous_group,adopted_group,trials_recorded,trials_valid,median_trial_s,projected_15trial_h,source
+MADDPG-MT,g0,g0,15,15,1206.4,5.03,measured
+PPO,g0,g0,15,15,1646.1,6.86,measured
+I-HAMAPPO,g1,g1,15,10,1005.4,4.19,measured
+SAC,g1,g1,15,0,1095.6,4.57,ESTIMATE = median of the six off-policy baselines (1095.6s); all 45 SAC rollouts were lost 2026-09-04
+MA2HDQN,g2,g3,15,15,1070.7,4.46,measured
+RES-MAPDDPG,g2,g2,15,15,1312.6,5.47,measured
+TD3,g2,g2,15,15,1119.9,4.67,measured
+HOORL,(replaced CARLTON in g3),g3,1,1,881.5,3.67,"measured 2026-09-06: one seed 293.8 s at the search's 4000-step rollout with the 133405-transition dataset, x3 seeds; offline pre-training 15.4 s per SEED (it runs inside the seed loop), i.e. 5.2% of the trial. results/hoorl_offline/hoorl_trial_cost.csv and pretrain_cost_per_trial.csv. ONE measurement at median hyper-parameters, not a median over a study."
+SPAM-D3QN,g3,g3,15,15,910.5,3.79,measured

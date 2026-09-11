@@ -1,7 +1,12 @@
 # 시뮬레이션 코드 안내서
 
 작성 2026-08-30 · Critic 에이전트 3인 검토 + Claude Code 재확인
+개정 2026-09-05 · 코드 현행에 맞추어 줄 수·결함 현황·`divergence_guard.py` 반영
 대상 독자: 이 코드를 처음 읽으며 구조를 파악하려는 사람
+
+> [!IMPORTANT]
+> **4장의 결함 목록은 2026-08-30 조사분이다.** 이후 2026-09-04 전수 조사에서 새 결함이
+> 다수 발견되었으므로, 결함 현황을 확인할 때는 `review/full_audit_20260904.md`를 함께 볼 것.
 
 이 문서는 두 부분이다. **1~3장**은 어떤 파일이 무엇을 하고 서로 어떻게 연결되는지,
 **4장**은 그 과정에서 발견한 결함이다. 클래스·함수 단위 상세 요약은 `critic/` 아래 3개 파일에 있고
@@ -18,7 +23,7 @@ SUMO가 실제 도로 위 차량을 굴리고, RSU 한 대가 통신 범위 안 
 ```
 run_all.py                    훈련 진입점. 모델 이름을 받아 학습을 건다
    │
-   └── src/hot_swap_trainer.py       ★ 파이프라인의 심장 (2000줄)
+   └── src/hot_swap_trainer.py       ★ 파이프라인의 심장 (4,160줄)
          │   ├── AoiV2IEnv           SUMO 연동 환경. 관측과 보상의 유일한 정본
          │   ├── HotSwapRLScheduler  Act 모델 추론 전담 (관측·보상 안 만듦)
          │   ├── DualModelHotSwapManager  Act/Rest 무중단 교체
@@ -26,6 +31,7 @@ run_all.py                    훈련 진입점. 모델 이름을 받아 학습�
          │   └── run_hot_swap_training  이벤트 구동 SMDP 루프
          │
          ├── src/rl_interface.py     상태 17차원 / 액션 (Δ,ch,p) / SMDP 버퍼의 정본
+         ├── src/divergence_guard.py 학습 발산·기울기 정지 감시 (2026-09-03 신설)
          ├── src/Communications.py   802.11p 물리계층 (경로손실·SINR·에어타임)
          ├── src/dynamics_predictor.py  신호등·앞차 등 차량 동역학 피처 추출
          ├── src/sumo/make_sumo_set.py  SUMO 격자망·차량흐름·신호등 생성
@@ -35,9 +41,14 @@ run_all.py                    훈련 진입점. 모델 이름을 받아 학습�
 평가와 하이퍼파라미터 탐색은 같은 환경을 재사용하는 별도 진입점이다.
 
 ```
-src/evaluate.py   밀도 5종 × 시드 5종 벤치마크        ← 4장 결함 B-1: 현재 9종을 못 돌림
-src/hpo.py        Optuna 하이퍼파라미터 탐색          ← 4장 결함 B-1, B-2
+src/evaluate.py   밀도 5종 × 시드 5종 벤치마크
+src/hpo.py        Optuna 하이퍼파라미터 탐색
 ```
+
+두 파일이 폐기된 옛 모델명을 참조해 9종을 하나도 인스턴스화하지 못하던 시기가 있었으나
+(옛 결함 B-1·B-2), **2026-08-30에 해소되었다.** 지금은 둘 다 `src/baselines/__init__.py`의
+레지스트리에서 목록과 분류를 유도한다(`evaluate.py`와 `hpo.py`가 각각
+`ALL_BASELINES`·`BASELINE_CATEGORIES`·`get_baseline`을 임포트한다). 상세는 4장 A-9와 A-10이다.
 
 ### 데이터가 흐르는 순서 (한 스텝)
 
@@ -56,20 +67,25 @@ src/hpo.py        Optuna 하이퍼파라미터 탐색          ← 4장 결함 B
 
 ## 2. 파일별 역할
 
-### 2-1. 실제로 돌아가는 파일 (8개)
+### 2-1. 실제로 돌아가는 파일 (9개)
+
+줄 수는 2026-09-05 14:56에 `wc -l`로 실측한 값이다. 측정 당시 여러 에이전트가 같은 파일들을
+동시에 수정하고 있어 값이 계속 움직였으므로, 정확한 값이 필요하면 `wc -l`을 다시 실행할 것.
 
 | 파일 | 줄수 | 역할 | 상세 |
 |---|---|---|---|
-| `run_all.py` | 87 | 훈련 진입점. `--models`로 모델 지정, `--no-resume` 지원 | `critic/critic_baselines.md` |
-| `src/hot_swap_trainer.py` | 2024 | 환경·스케줄러·핫스왑·훈련루프 전부 | `critic/critic_core.md` |
-| `src/rl_interface.py` | 700+ | 상태/액션/버퍼의 정본. 모든 상수의 출처 | `critic/critic_core.md` |
-| `src/Communications.py` | 400 | 802.11p PHY. 경로손실·Rayleigh SINR·에어타임 | `critic/critic_physics.md` |
-| `src/dynamics_predictor.py` | 410 | TraCI로 신호등 상태·앞차·정지 임박 추출 | `critic/critic_physics.md` |
-| `src/sumo/make_sumo_set.py` | 499 | 6×6 격자망·차량흐름·신호등 XML 생성 | `critic/critic_physics.md` |
-| `src/heuristic_scheduler.py` | 185 | 규칙 기반 스케줄러. 평가 시 비교군 | `critic/critic_physics.md` |
-| `src/baselines/` | 12개 | 비교 방안 9종 + SB3 래퍼 | `critic/critic_baselines.md` |
+| `run_all.py` | 454 | 훈련 진입점. `--models`로 모델 지정, `--no-resume` 지원 | `critic/critic_baselines.md` |
+| `src/hot_swap_trainer.py` | 4,160 | 환경·스케줄러·핫스왑·훈련루프 전부 | `critic/critic_core.md` |
+| `src/rl_interface.py` | 913 | 상태/액션/버퍼의 정본. 모든 상수의 출처 | `critic/critic_core.md` |
+| `src/divergence_guard.py` | 360 | 학습 발산·기울기 정지 감시 (2026-09-03 신설) | 아래 2-3절 |
+| `src/Communications.py` | 462 | 802.11p PHY. 경로손실·Rayleigh SINR·에어타임 | `critic/critic_physics.md` |
+| `src/dynamics_predictor.py` | 661 | TraCI로 신호등 상태·앞차·정지 임박 추출 | `critic/critic_physics.md` |
+| `src/sumo/make_sumo_set.py` | 668 | 6×6 격자망·차량흐름·신호등 XML 생성 | `critic/critic_physics.md` |
+| `src/heuristic_scheduler.py` | 244 | 규칙 기반 스케줄러. 평가 시 비교군 | `critic/critic_physics.md` |
+| `src/baselines/` | 12개 파일 4,159줄 | 비교 방안 9종 + SB3 래퍼 | `critic/critic_baselines.md` |
 
-`src/evaluate.py`(412줄)와 `src/hpo.py`(593줄)도 있으나 현재 동작하지 않는다. 4장 B-1 참조.
+`src/evaluate.py`(901줄)와 `src/hpo.py`(1,629줄)는 훈련 이후 단계의 진입점이며,
+2026-08-30 레지스트리 연결 복구 이후 9종을 전부 다룬다.
 
 ### 2-2. 치워둔 파일 (2026-08-30, `coder/backup/unused_20260830_172551/`)
 
@@ -95,6 +111,41 @@ src/hpo.py        Optuna 하이퍼파라미터 탐색          ← 4장 결함 B
 실사용 클래스의 anti-mocking 단언문은 `tests/test_hot_swap.py`와 `test_dummy_verification.py`가 계속 커버한다.
 `tests/test_dynamics_predictor.py`는 폐기 모듈에 의존하던 부분만 떼어냈다. 그 과정에서 dead reckoning
 계산이 실사용 코드에 인라인으로만 있던 것을 `rl_interface.estimation_error()`로 뽑아 정본을 하나로 만들었다.
+
+### 2-3. `src/divergence_guard.py` — 발산 감시 (2026-09-03 신설, 360줄)
+
+**왜 생겼는가.** 2026-09-02에 PPO baseline이 100 에피소드 실행의 11번째 에피소드에서 발산했다.
+백그라운드 학습 스레드가 `sb3_ppo.update()`에서 NaN 파라미터 예외를 던지고 죽었는데, 그 스레드를
+지켜보는 것이 파이프라인에 하나도 없었다. 에피소드 루프는 이후 8.8시간 동안 SUMO를 계속 굴려
+89개 에피소드 행을 더 쓰고 체크포인트를 저장한 뒤, `total_steps: 200000, episodes: 100`이라는
+요약을 반환했다. 예약 보고서는 그것을 `done 100/100`으로 불렀다.
+
+**무엇을 하는가.** 손실이 폭주했는가, 기울기 갱신이 아예 멈췄는가, 학습 스레드가 조용히 죽었는가를
+각각 별도로 감시하고, 조건에 걸리면 실행을 중단시킨다. 앞의 둘은 이 파일의 `DivergenceMonitor`가,
+스레드 사망은 `hot_swap_trainer.BackgroundTrainer._worker_loop`가 맡는다.
+
+**두 규칙.** 손실 판정에 절대 규칙과 상대 규칙을 함께 쓴다.
+
+| 규칙 | 상수 | 값 | 왜 이 값인가 |
+|---|---|---|---|
+| 절대 하한 | `DEFAULT_LOSS_ABS_FLOOR` | 1.0e3 | 가장 나쁜 정상 에피소드(12.43)와 가장 약한 발산(285,247) 사이 네 자릿수 공백의 아래쪽 |
+| 워밍업 중앙값 대비 배율 | `DEFAULT_LOSS_RATIO` | 1.0e3 | 모델마다 손실 척도가 네 자릿수 차이 나므로 자기 자신의 초기 중앙값과 비교 |
+| 배율 규칙의 기준 구간 | `DEFAULT_WARMUP_EPISODES` | 5 | PPO는 11번과 17번 에피소드에서 이미 발산했으므로 5는 여유가 있다 |
+| 연속 초과 요구 | `DEFAULT_LOSS_PATIENCE` | 3 | I-HAMAPPO가 한 에피소드 튀었다가 두 에피소드 뒤 회복한 사례가 있어 1회는 근거가 아니다 |
+| 기울기 정지 | `DEFAULT_MAX_ZERO_UPDATE_EPISODES` | 3 | 정상 실행 18건은 이런 에피소드가 0회였고, 실패한 PPO 두 건은 실패 시점부터 끝까지 연속이었다 |
+
+절대 규칙 하나만으로는 부족하다. 모델별 손실 척도가 SPAM-D3QN의 5e-4에서 CARLTON의 12까지
+네 자릿수에 걸쳐 흩어져 있기 때문이다. 반대로 배율 규칙 하나만으로도 부족한데, PPO의 초기 손실
+평균이 -0.09여서 배율만 보면 89.5 같은 평범한 잡음에도 발화하기 때문이다. 두 규칙을 함께 쓰고
+연속 초과를 요구하는 구성이 여기서 나왔다.
+
+> [!IMPORTANT]
+> **기존 산출물에 소급 적용되지 않았다.** 이 모듈은 본훈련이 끝난 뒤에 만들어졌으므로,
+> 그 이전에 생성된 체크포인트와 진척 CSV는 이 감시를 거치지 않았다. 다만 모듈이 torch 상태를
+> 갖지 않고 트레이너에서 아무것도 임포트하지 않기 때문에, 실행 중 판정(`run_hot_swap_training`)과
+> 사후 재생 판정(`etc/report_progress.py`가 진척 CSV를 훑는 경로)이 완전히 같은 규칙을 쓴다.
+> 따라서 **과거 실행도 사후에 같은 기준으로 다시 판정할 수 있다.** 실제로 `review/full_audit_20260904.md`가
+> 그 방식으로 18개 실행을 재판정했다.
 
 ---
 
@@ -167,11 +218,22 @@ Critic 3인이 독립 검토하고, 보고된 항목을 Claude Code가 **전부 
 | ~~B-6~~ | ~~경~~ | **수정 완료.** 옛 값 잔재 전부 정리 |
 | ~~B-7~~ | ~~확인필요~~ | **수정 완료.** 아래 A-15 참조 |
 
-**B절은 비었다. 발견된 결함 전건이 수정되었다.**
+위 표의 B-1부터 B-7까지는 2026-08-30 시점의 목록이며 그 일곱 건은 전부 수정되었다.
+
+> [!WARNING]
+> **"B절은 비었다"고 읽지 말 것.** 이 표가 비어 보이는 것은 2026-08-30 조사에서 나온 결함만
+> 담고 있기 때문이다. 그 뒤 **2026-09-04 전수 조사에서 새 결함이 다수 발견되었고 상당수가 아직
+> 미해결이다.** 예를 들어 보상 오차 항의 mean 팔에서 초당 점수가 침묵에 유리하게 역전되는
+> 문제(C5), 체크포인트가 밀도 5 에피소드에 몰려 선택되는 편향(M9), 발산한 실행이 정상 종료로
+> 보고된 문제 등이 그때 드러났다.
+>
+> **상세 목록과 근거는 `review/full_audit_20260904.md`에 있다.** 이 문서만 보고 "남은 결함이
+> 없다"고 판단하면 오판이므로, 결함 현황을 확인할 때는 반드시 그쪽을 함께 볼 것.
+> 관련 후속 조치는 `review/STOP_NOTICE_20260905.md`에도 기록되어 있다.
 
 ### A-11 상세: 처리량 급락 — 가설 하나가 틀렸고 프로파일이 답을 줬다
 
-측정(밀도 25, 시드 42, warmup 350):
+측정(밀도 25, 시드 42, warmup 350 — 당시의 기본값이며 현행 기본값은 1200이다):
 
 | 스텝 | 망 전체 차량 | 범위 내 | 수정 전 ms/step | 수정 후 ms/step |
 |---|---|---|---|---|
@@ -202,7 +264,7 @@ anti-mocking 단언 2가 `simulationStep()` 직후 어차피 같은 리스트를
 한 스텝에 3번 하던 계산을 1번으로 줄인 것 자체는 타당하다. 다만 **그것이 병목이라는 진단은 틀렸고,
 프로파일 없이 코드만 보고 추측한 결과였다는 점을 기록해 둔다.**
 
-### C. 검증했으나 결함이 아니었던 것### C. 검증했으나 결함이 아니었던 것
+### C. 검증했으나 결함이 아니었던 것
 
 억지로 결함을 만들지 않기 위해 기록한다. 아래는 실제로 확인해서 **정상**으로 판정한 것들이다.
 
@@ -230,4 +292,6 @@ anti-mocking 단언 2가 `simulationStep()` 직후 어차피 같은 리스트를
 | `critic/critic_baselines.md` | baseline 9종 + 진입점 3개 요약, 9종 비교표, 결함 4건 |
 | `idea/design_spec_v2.md` | 설계 확정본. 무엇을 왜 이렇게 만들었는지 |
 | `review/claude_audit_20260828.md` | 8-28에 발견한 결함 6건의 기록 (전부 수정 완료) |
+| `review/full_audit_20260904.md` | **9-04 전수 조사.** 이 문서 4장 이후에 발견된 결함의 정본 |
+| `review/STOP_NOTICE_20260905.md` | 위 조사에 따른 중단 결정과 후속 조치 |
 | `simulation_plan.md` | 실행 계획과 현재 상태 |

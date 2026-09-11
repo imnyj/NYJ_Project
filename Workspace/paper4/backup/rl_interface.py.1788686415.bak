@@ -1,0 +1,1495 @@
+# src/rl_interface.py
+# ============================================================================
+# RL Agent Interface for AoI-aware V2I Uplink Scheduling Pipeline
+#
+# Implements:
+# 1. StateVectorizer: 17-dimensional normalized observation vector in [-1.0, 1.0]
+#    from the RSU perspective without future / ground-truth estimation error leakage.
+# 2. ActionDecoder: Decodes hybrid action space (logits & indices) into valid
+#    grant 3-tuple (Delta in [DELTA_MIN, DELTA_MAX]s, ch in {0..3}, p in [P_MIN, P_MAX]dBm).
+# 3. RetrospectiveReplayBuffer: SMDP retrospective transition buffer with
+#    variable-interval discount gamma^Delta support.
+#
+# This module is the SINGLE SOURCE OF TRUTH for the observation dimension
+# (STATE_DIM) and for the hybrid action bounds (DELTA_MIN/MAX, P_MIN/MAX).
+# Downstream code (hot_swap_trainer, hpo, evaluate, baselines) must read those
+# from here instead of duplicating literals.
+# ============================================================================
+
+from __future__ import annotations
+import math
+import os
+from typing import Any, Dict, List, Optional, Tuple, Union
+import xml.etree.ElementTree as ET
+import numpy as np
+import torch
+
+# ----------------------------------------------------------------------------
+# Canonical design constants (Conversation.md sections 1-2, user-approved).
+# ----------------------------------------------------------------------------
+#: Observation dimension emitted by StateVectorizer.
+#: 18 -> 17 (2026-08-29, design_spec_v2 D4): the hand-synthesised
+#: `stop/start_imminent` feature was removed. It was an arithmetic mean of two
+#: quantities the vector already carries independently (time_to_switch and
+#: dist_to_stopline), i.e. a derived feature that pre-computes for the network
+#: what the network should learn for itself.
+STATE_DIM: int = 21
+
+#: Indices of the RSU-relative position inside the observation vector. They are
+#: the two features `NeighbourhoodView` measures agent-to-agent distance with, and
+#: they must track `StateVectorizer`'s feature list rather than being restated as
+#: literals at the point of use -- a stale index there would silently sort the
+#: neighbours by traffic-light state.
+FEATURE_REL_X: int = 5
+FEATURE_REL_Y: int = 6
+
+#: How many other agents a joint critic is shown for one decision.
+#:
+#: Three baselines take a neighbourhood as input, and NONE of them requires a
+#: fixed width. This comment claimed the opposite until 2026-09-06 -- that
+#: RES-MAPDDPG and I-HAMAPPO "need a FIXED width because they concatenate a
+#: padded tensor" while only MADDPG-MT pools. Checked against the three
+#: implementations, all three pool:
+#:
+#:   res_mapddpg.py:269   (emb * mask).sum(dim=1) / mask.sum(dim=1)
+#:   i_hamappo.py:265     the same masked mean
+#:   maddpg_mt.py         does not take `max_agents` at all
+#:
+#: A masked mean is independent of the padded width, so the cap is not an
+#: architectural requirement of any of them. `self.max_agents` appears in exactly
+#: two operations in each of the two models that accept it -- a slice and a pad
+#: -- and nowhere else, so it allocates a tensor and truncates a list. That is
+#: all it does.
+#:
+#: The wrong version of this comment caused a real error elsewhere in the project:
+#: another session built a distinction between "fixed-width" and "pooling" models
+#: on the strength of it. Corrected here rather than worked around.
+#:
+#: 16 is A CAP, NOT A COUNT, and it is OURS, not the papers'. Every one of the
+#: three assumes a fixed agent population and none says what to do when it
+#: changes, because in their scenarios it does not. Measured 2026-09-06, the
+#: in-coverage population peaks at 167 vehicles at density 30
+#: (`results/hoorl_offline/n_active_saturation.json`), so at the busy end a joint
+#: critic sees the 16 nearest of well over a hundred -- under a tenth of the
+#: neighbourhood. All three papers' contribution is a critic that sees more than
+#: its actor does, so truncating that view cuts at the mechanism being compared.
+#:
+#: THE VALUE IS NOT SETTLED. Raising it is not obviously right either: a wider
+#: masked mean averages over more distant vehicles and may dilute the signal from
+#: the near ones. The offline dataset now stores the neighbourhood BEFORE this
+#: truncation, so the effect of the cap can be measured by re-reading one
+#: collection at several widths instead of collecting once per candidate.
+MAX_NEIGHBOURS: int = 16
+
+#: Divisor for observation feature [11], seconds.
+#:
+#: Named on 2026-09-06. It was a literal 60.0 inside `vectorize_from_dict`, which
+#: meant `observation_constants()` could not read it and had to recover it by
+#: feeding the vectoriser a known value and inverting the answer. A constant that
+#: has to be measured to be known is one an offline dataset can be normalised
+#: against without anybody noticing it moved.
+PHASE_REMAINING_REF_S: float = 60.0
+
+#: Transmit power bounds, dBm.
+#: 23 dBm is the 3GPP TS 36.101 / 38.101 power-class-3 UE maximum transmit power;
+#: 10 dBm is the design-approved lower bound for a usable V2I uplink.
+P_MIN: float = 10.0
+P_MAX: float = 23.0
+
+#: Delta (update interval) minimum, seconds (ETSI EN 302 637-2 CAM T_GenCamMin).
+DELTA_MIN: float = 0.1
+
+
+def scenario_dir(base_path: Optional[str] = None) -> str:
+    """Directory holding the generated SUMO scenario these constants describe.
+
+    `make_sumo_set.resolve_base_path` is the single owner of that decision, so
+    this defers to it rather than deciding again. The three readers below used to
+    hardcode `os.path.dirname(__file__) + "/sumo"`, i.e. the PACKAGE directory,
+    which is not where the scenario is whenever `PAPER4_SUMO_DIR` is set or a
+    caller passes an explicit path. DELTA_MAX, V_LIMIT, V_MAX_OBS and E_REF would
+    then describe a network on disk that the simulation was not running: an
+    isolated process generated its own net.xml and normalised against somebody
+    else's, silently, because the two happen to agree while every run uses the
+    same AV_SPEED and signal plan.
+
+    Falls back to the package directory only when the sumo package cannot be
+    imported, which reproduces the previous behaviour rather than guessing.
+    """
+    try:
+        from src.sumo.make_sumo_set import resolve_base_path
+    except Exception:  # pragma: no cover - only when the sumo package is unavailable
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "sumo")
+    return resolve_base_path(base_path)
+
+
+def get_sumo_max_red_phase_duration(
+    net_file: Optional[str] = None,
+    default_duration: float = 45.0,
+    base_path: Optional[str] = None,
+) -> float:
+    """
+    Dynamically extract the maximum Red traffic light phase duration (seconds)
+    from SUMO's generated network XML file (generated.net.xml) or TraCI.
+
+    Parses all <tlLogic> program definitions in the net file, computes for each
+    signal link across cyclic phases the maximum consecutive duration of 'r'/'R'
+    phases (handling cycle wrap-around), and returns the overall maximum.
+
+    If the network file is not yet generated or cannot be parsed, falls back
+    safely to `default_duration` (45.0 s).
+    """
+    if net_file is None:
+        net_file = os.path.join(scenario_dir(base_path), "generated.net.xml")
+
+    if not os.path.exists(net_file):
+        return default_duration
+
+    try:
+        tree = ET.parse(net_file)
+        root = tree.getroot()
+        max_red = 0.0
+
+        for tl in root.findall("tlLogic"):
+            phases = tl.findall("phase")
+            if not phases:
+                continue
+            durations = [float(p.get("duration", 0.0)) for p in phases]
+            states = [p.get("state", "") for p in phases]
+            if not states or not durations:
+                continue
+            num_links = max(len(s) for s in states)
+            n_phases = len(phases)
+
+            for link_idx in range(num_links):
+                curr_red = 0.0
+                max_link_red = 0.0
+                # Double the cycle to handle cyclic wrap-around
+                for step in range(2 * n_phases):
+                    p_idx = step % n_phases
+                    char = states[p_idx][link_idx] if link_idx < len(states[p_idx]) else "g"
+                    if char in ("r", "R"):
+                        curr_red += durations[p_idx]
+                        if curr_red > max_link_red:
+                            max_link_red = curr_red
+                    else:
+                        curr_red = 0.0
+                total_cycle = sum(durations)
+                max_link_red = min(max_link_red, total_cycle)
+                if max_link_red > max_red:
+                    max_red = max_link_red
+
+        return float(max_red) if max_red > 0.0 else default_duration
+    except Exception:
+        return default_duration
+
+
+#: Delta (update interval) maximum, dynamically extracted from SUMO net XML.
+DELTA_MAX: float = get_sumo_max_red_phase_duration()
+
+
+def get_sumo_max_edge_speed(
+    net_file: Optional[str] = None,
+    default_speed: float = 13.32,
+    base_path: Optional[str] = None,
+) -> float:
+    """
+    Maximum lane speed limit (m/s) declared anywhere in the generated network.
+
+    Read from the net file for the same reason `DELTA_MAX` is: a normalisation
+    constant that is silently inconsistent with the scenario it normalises is a
+    defect waiting to happen. `make_sumo_set.py` randomises each edge's speed
+    around `AV_SPEED` with +/- `DEL_SPEED`, so the effective limit is a property
+    of the generated network, not a literal anyone can restate correctly.
+
+    Falls back to `default_speed` (the 40 km/h + 20 % case) when the network has
+    not been generated yet.
+    """
+    if net_file is None:
+        net_file = os.path.join(scenario_dir(base_path), "generated.net.xml")
+
+    if not os.path.exists(net_file):
+        return default_speed
+
+    try:
+        tree = ET.parse(net_file)
+        root = tree.getroot()
+        speeds = []
+        for edge in root.findall("edge"):
+            # Internal junction edges inherit their speed from the corner limit
+            # and would drag the maximum down; they are not where vehicles cruise.
+            if edge.get("function") == "internal":
+                continue
+            for lane in edge.findall("lane"):
+                v = lane.get("speed")
+                if v is not None:
+                    speeds.append(float(v))
+        return float(max(speeds)) if speeds else default_speed
+    except Exception:
+        return default_speed
+
+
+#: Scenario speed limit (m/s), derived from the generated network.
+V_LIMIT: float = get_sumo_max_edge_speed()
+
+
+def get_sumo_max_speed_factor(rou_file: Optional[str] = None,
+                              default_factor: float = 1.0,
+                              base_path: Optional[str] = None) -> float:
+    """Upper bound of the `speedFactor` distribution declared in the route file.
+
+    SUMO's DEFAULT_VEHTYPE draws `speedFactor` from a truncated normal
+    `normc(1, 0.1, 0.2, 2)`, so vehicles legitimately exceed the lane speed limit.
+    Measured on this scenario: the fastest observed vehicle ran at 14.768 m/s
+    against a lane limit of 13.32 m/s (+11 %), and 8.62 % of all observations were
+    clipped to exactly 1.0 in the normalised speed feature -- i.e. the fastest
+    vehicles, which are precisely the ones whose constant-velocity extrapolation
+    decays quickest, were indistinguishable from each other in the observation.
+
+    `make_sumo_set.py` therefore declares an explicit `<vType>` with a *bounded*
+    speedFactor, and this reads that bound back so the normaliser is a property of
+    the scenario on disk rather than a literal. Falls back to 1.0 (no headroom)
+    when no explicit vType is declared, which reproduces the pre-existing
+    behaviour rather than silently inventing headroom.
+    """
+    if rou_file is None:
+        rou_file = os.path.join(scenario_dir(base_path), "generated.rou.xml")
+
+    if not os.path.exists(rou_file):
+        return default_factor
+
+    try:
+        tree = ET.parse(rou_file)
+        root = tree.getroot()
+        best = 0.0
+        for vtype in root.findall("vType"):
+            spec = vtype.get("speedFactor")
+            if spec is None:
+                continue
+            text = str(spec).strip()
+            if text.lower().startswith("normc"):
+                # normc(mean, dev, min, max) -- the fourth field is the hard cap.
+                inner = text[text.find("(") + 1: text.rfind(")")]
+                parts = [p.strip() for p in inner.split(",")]
+                if len(parts) >= 4:
+                    best = max(best, float(parts[3]))
+                elif parts:
+                    best = max(best, float(parts[0]))
+            else:
+                best = max(best, float(text))
+        return float(best) if best > 0.0 else default_factor
+    except Exception:
+        return default_factor
+
+
+#: Highest speed a vehicle can actually reach in this scenario (m/s).
+#:
+#: Kept separate from `V_LIMIT` on purpose. `V_LIMIT` is the *road's* declared
+#: limit and is what `E_REF` means ("one second of travel at the scenario speed
+#: limit"), so moving it would silently rescale the reward. `V_MAX_OBS` is the
+#: observable ceiling and is only ever used to normalise the speed/velocity
+#: features, which is where the saturation was.
+V_MAX_OBS: float = V_LIMIT * get_sumo_max_speed_factor()
+
+#: RSU communication range (m). `src/sumo/make_sumo_set.py` owns this value --
+#: it is what actually builds the network geometry (EDGE_LENGTH is derived from
+#: it) -- so every consumer must read it from there instead of restating 300.0.
+#: A literal here would go stale the moment anyone sweeps the range, and the
+#: mismatch would be silent: observations would normalise distances against one
+#: radius while the environment admitted vehicles using another.
+try:
+    from src.sumo.make_sumo_set import RSU_RANGE as _SS_RSU_RANGE
+    RSU_RANGE: float = float(_SS_RSU_RANGE)
+except Exception:  # pragma: no cover - only when the sumo package is unavailable
+    RSU_RANGE = 300.0
+
+
+def get_n_active_max_obs(default_max: float = 100.0) -> float:
+    """Highest vehicle count the RSU's ledger can hold in this scenario.
+
+    Normaliser for observation feature [13] (`n_active`, the contention level).
+    It was the literal 100.0, and the measured in-range counts run 22.2, 36.7,
+    68.2, 91.5, 123.0, 138.3, 141.7 across the density grid 5..35, so the feature
+    was pinned to exactly 1.0 at densities 25, 30 and 35 -- three of the seven
+    training densities, about 43 % of all episodes, and precisely the congested
+    regime the scheduler exists to handle. The congestion signal died where
+    congestion mattered.
+
+    Same treatment as `V_MAX_OBS`, which removed the 8.62 % saturation in the
+    speed feature: the ceiling is derived from the scenario rather than restated.
+    Here it is the road capacity inside the coverage disc at the busiest density
+    the study is defined over,
+
+        max(DENSITY_GRID) [veh/km/lane] * rsu_coverage_lane_km() [km-lane]
+
+    = 35 * 4.8 = 168 vehicles. Both factors are owned by `make_sumo_set.py`, so a
+    swept RSU_RANGE, NUM_LANES or density grid moves this with them. Against the
+    measured maximum of 141.7 that leaves the feature unsaturated everywhere
+    while still using 84 % of its range at the top of the grid.
+
+    Falls back to the historical 100.0 only when the sumo package cannot be
+    imported, which reproduces the previous behaviour instead of inventing a
+    ceiling.
+    """
+    try:
+        from src.sumo.make_sumo_set import DENSITY_GRID, rsu_coverage_lane_km
+    except Exception:  # pragma: no cover - only when the sumo package is unavailable
+        return float(default_max)
+    grid = [float(d) for d in DENSITY_GRID if float(d) > 0.0]
+    lane_km = float(rsu_coverage_lane_km())
+    if not grid or lane_km <= 0.0:
+        return float(default_max)
+    return max(grid) * lane_km
+
+
+#: Observable ceiling of the contention feature (vehicles). See the function.
+N_ACTIVE_MAX_OBS: float = get_n_active_max_obs()
+
+def refresh_scenario_constants(base_path: Optional[str] = None) -> Dict[str, float]:
+    """Re-read the scenario-derived constants from the generated network.
+
+    DELTA_MAX, V_LIMIT and E_REF describe the network on disk, not this module.
+    They are computed once at import, which is wrong the moment `make_sumo_files()`
+    writes a different network afterwards -- a changed signal plan moves DELTA_MAX,
+    a changed AV_SPEED moves V_LIMIT and E_REF, and nothing would notice. The
+    environment calls this right after generating its network, so the constants
+    describe the scenario actually being simulated.
+
+    Consumers must read these through a live lookup rather than capturing them in
+    a default argument, which binds at definition time. `ActionDecoder` and
+    `StateVectorizer` take 0.0 to mean "resolve now"; `norm_sq_error` reads the
+    module global on every call.
+
+    `base_path` says WHICH scenario directory to describe. `AoiV2IEnv` passes the
+    directory it generated into, so a process running an isolated scenario does
+    not normalise against the shared one.
+    """
+    global DELTA_MAX, V_LIMIT, V_MAX_OBS, E_REF
+    # One resolved directory for all three reads, so the signal plan, the lane
+    # limit and the speedFactor bound cannot come from different scenarios.
+    target_dir = scenario_dir(base_path)
+    DELTA_MAX = get_sumo_max_red_phase_duration(base_path=target_dir)
+    V_LIMIT = get_sumo_max_edge_speed(base_path=target_dir)
+    V_MAX_OBS = V_LIMIT * get_sumo_max_speed_factor(base_path=target_dir)
+    E_REF = V_LIMIT * 1.0
+    return {"DELTA_MAX": DELTA_MAX, "V_LIMIT": V_LIMIT,
+            "V_MAX_OBS": V_MAX_OBS, "E_REF": E_REF}
+
+
+#: Estimation-error reference scale (metres), design_spec_v2 D5.
+#:
+#: One second of travel at the scenario speed limit. The point of dividing a
+#: position error by a speed is that it converts metres into an *equivalent age*:
+#: `e = E_REF` means the RSU's belief about this vehicle is as wrong as if it had
+#: simply not heard from it for one second. That is the natural unit for an AoI
+#: paper, and unlike a bare literal it follows the scenario automatically -- raise
+#: `AV_SPEED` in make_sumo_set.py and this tracks it.
+#:
+#: NOT the RSU communication range: `e` is a positioning error, the range is a
+#: link-budget quantity, and normalising one by the other pushes the error term
+#: roughly two orders of magnitude below the power term. Since `hpo.py` normalises
+#: w1..w4 to sum to 1, no weight Optuna can sample recovers from that.
+E_REF: float = V_LIMIT * 1.0
+
+
+def extrapolate(last_pos: Tuple[float, float],
+                last_vel: Tuple[float, float],
+                age: float) -> Tuple[float, float]:
+    """The RSU's dead-reckoned belief: last reported position carried forward.
+
+        p_hat(t) = p_last + v_last * age
+
+    Constant-velocity extrapolation is deliberate, not a simplification to
+    apologise for: it is what makes a stopped vehicle's stale record stay exact
+    (v = 0 so the belief never drifts) while a manoeuvring one decays. That
+    asymmetry is the whole premise of scheduling updates by need.
+    """
+    return (float(last_pos[0]) + float(last_vel[0]) * float(age),
+            float(last_pos[1]) + float(last_vel[1]) * float(age))
+
+
+def estimation_error(true_pos: Tuple[float, float],
+                     last_pos: Tuple[float, float],
+                     last_vel: Tuple[float, float],
+                     age: float) -> float:
+    """Euclidean distance between ground truth and the RSU's extrapolation.
+
+    This is `e` in the reward: the quantity `norm_sq_error` squashes and the
+    quantity `I_redundant` thresholds. One definition, one function, so the
+    paper's symbol and the code cannot drift apart.
+    """
+    ex, ey = extrapolate(last_pos, last_vel, age)
+    return math.hypot(float(true_pos[0]) - ex, float(true_pos[1]) - ey)
+
+
+def norm_sq_error(err_m: float, e_ref: float = 0.0) -> float:
+    """Normalise a squared position error into [0, 1) -- design_spec_v2 D5.
+
+        Norm(e^2) = e^2 / (e^2 + e_ref^2)
+
+    Chosen over `min(1, e^2 / e_max^2)` because the clipped form has zero
+    gradient everywhere past `e_max`. With Delta reaching 45 s a moving vehicle
+    leaves that region within about a second, so the clipped form would stop
+    distinguishing "slightly stale" from "hopelessly stale" exactly where the
+    scheduling decision matters. This form is strictly monotone in `e`, equals
+    0.5 at `e = e_ref`, and never saturates.
+    """
+    ref = float(e_ref) if e_ref and e_ref > 0.0 else E_REF
+    e2 = float(err_m) ** 2
+    return float(e2 / (e2 + ref * ref)) if (e2 + ref * ref) > 0.0 else 0.0
+
+
+class StateVectorizer:
+    """
+    Normalized State Vectorizer; the width is STATE_DIM, never a literal.
+
+    Transforms raw vehicle kinematics, RSU spatial metrics, TraCI TLS signal states,
+    and channel congestion indicators into a normalized feature vector in [-1.0, 1.0].
+
+    Features:
+    [0]  Last prediction error, normalized: norm_sq_error(e_last) in [0.0, 1.0).
+         How wrong the RSU's dead reckoning was at this vehicle's most recent
+         update. Replaces the former normalized-age slot, which is identically
+         zero at every SMDP decision epoch and therefore carried no signal.
+    [1]  Normalized Vx: clip(vx / v_max, -1.0, 1.0)
+    [2]  Normalized Vy: clip(vy / v_max, -1.0, 1.0)
+    [3]  Normalized Speed: clip(speed / v_max, 0.0, 1.0)
+    [4]  Normalized Acceleration: clip(accel / a_max, -1.0, 1.0)
+    [5]  Relative X: clip(dx / rsu_range, -1.0, 1.0)
+    [6]  Relative Y: clip(dy / rsu_range, -1.0, 1.0)
+    [7]  Normalized Distance: clip(dist / rsu_range, 0.0, 1.0)
+    [8]  TLS Red one-hot: 1.0 if red else 0.0
+    [9]  TLS Yellow one-hot: 1.0 if yellow else 0.0
+    [10] TLS Green one-hot: 1.0 if green else 0.0
+    [11] Phase remaining time: clip(time_to_switch / 60.0, 0.0, 1.0)
+    [12] Distance to stopline: clip(dist_to_stopline / rsu_range, 0.0, 1.0)
+    [13] Active vehicles in cell: clip(n_active / n_active_max, 0.0, 1.0), where
+         n_active_max is N_ACTIVE_MAX_OBS (the coverage disc's road capacity at
+         the busiest density in the grid), NOT a literal 100
+    [14] MEAN channel busy ratio over the subchannels: clip(cbr, 0.0, 1.0).
+         Named `cbr_mean_channels` in the feature table. It is the ABSOLUTE
+         congestion level; [17..20] carry the per-channel deviation from it, and
+         the two are not interchangeable. Calling this one simply "cbr" is how
+         it went unnoticed that the reward charges a decision against a SINGLE
+         channel's occupancy while the observation only ever showed their
+         average.
+    [15] n_queue (Conversation.md S1): normalized number of vehicles queued ahead in the
+         same lane -- clip(n_queue / queue_max, 0.0, 1.0)
+    [16] heading (Conversation.md S1): signed approach/recede indicator w.r.t. the RSU --
+         cos(angle between velocity vector and the vehicle->RSU vector) in [-1.0, 1.0].
+         +1.0 = driving straight at the RSU, -1.0 = driving straight away, 0.0 = stopped
+         or moving tangentially.
+    [17..20] PER-SUBCHANNEL busy ratio RELATIVE TO THE MEAN:
+         subchannel_cbr[k] / mean(subchannel_cbr) for k = 0..3, and 1.0 for every
+         k when that mean is zero. Added 2026-09-06.
+
+         WHY THESE EXIST WHEN [14] ALREADY REPORTS CONGESTION. Because [14] is
+         the MEAN over the subchannels and the action space contains a discrete
+         subchannel choice. The reward charges that choice against the occupancy
+         of the ONE channel it used (`hot_swap_trainer._close_interval`, via
+         `subchannel_cbr[ch_idx] / CBR_REF`), so the policy was being penalised
+         on a quantity it could not observe: every channel looked equally busy to
+         it because it only ever saw their average.
+
+         THE SPREAD IS NOT SMALL. Measured 2026-09-06 over 4,200 environment
+         steps across the density grid
+         (`etc/scripts/measure_observation_gaps.py`,
+         `results/hoorl_offline/observation_gaps_by_cell.csv`): the gap between
+         the busiest and the idlest subchannel averages 1.81x to 3.20x the mean
+         occupancy itself, and that is under a policy choosing channels at
+         random. Averaged over a whole episode the four channels are used
+         equally, which is why [14] looks stable; at any given instant they are
+         not, and the instant is when the decision is made.
+
+         [14] IS KEPT rather than replaced by these four. The mean is what the
+         Delta and power decisions need -- a network-wide congestion level -- and
+         removing it would change the learning conditions of those two axes at
+         the same time as adding the four, leaving no way to attribute a change
+         in results to either.
+    """
+
+    #: Canonical observation dimension (module-level single source of truth).
+    STATE_DIM: int = STATE_DIM
+
+    def __init__(
+        self,
+        rsu_range: float = 0.0,
+        v_max: float = 0.0,
+        a_max: float = 5.0,
+        queue_max: float = 20.0,
+        n_active_max: float = 0.0,
+    ) -> None:
+        # 0 means "derive from the scenario", same convention as v_max below.
+        self.rsu_range = float(rsu_range) if rsu_range and rsu_range > 0.0 else RSU_RANGE
+        # 0 means "derive from the scenario". The former literal 30.0 m/s was
+        # 2.3x the fastest lane in the generated network, so the speed features
+        # only ever used the bottom 44 % of their range.
+        #
+        # V_MAX_OBS, not V_LIMIT: vehicles exceed the lane limit by their
+        # `speedFactor`, and normalising by the limit clipped 8.62 % of all
+        # observations to exactly 1.0 -- the fastest vehicles, the ones this
+        # paper most needs to tell apart. E_REF stays on V_LIMIT so the reward
+        # scale is untouched by this fix.
+        self.v_max = float(v_max) if v_max and v_max > 0.0 else V_MAX_OBS
+        self.a_max = float(a_max)
+        self.queue_max = max(1.0, float(queue_max))
+        # 0 means "derive from the scenario", same convention as v_max. The
+        # former literal 100.0 saturated feature [13] at densities 25, 30 and 35
+        # (measured in-range counts 123.0, 138.3, 141.7), i.e. in 43 % of the
+        # training episodes the contention input was the constant 1.0.
+        self.n_active_max = (
+            float(n_active_max) if n_active_max and n_active_max > 0.0 else N_ACTIVE_MAX_OBS
+        )
+
+    @property
+    def state_dim(self) -> int:
+        """Dimension of the emitted observation vector. Read this instead of hardcoding."""
+        return STATE_DIM
+
+    # ------------------------------------------------------------------
+    # Feature helpers for the two design-mandated features (n_queue, heading)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _extract_queue_count(*sources: Optional[Dict[str, Any]]) -> float:
+        """
+        Recover the number of vehicles queued ahead in the same lane from whatever
+        telemetry the dynamics/TLS feature dicts expose.
+
+        Preferred keys are a real halting count published by the SUMO layer
+        (TraCI lane.getLastStepHaltingNumber). If none is present, fall back to the
+        leader-vehicle signal already produced by dynamics_predictor.extract_tls_features:
+        a stopped/crawling leader within a plausible queue gap implies at least one
+        vehicle queued ahead.
+        """
+        for src in sources:
+            if not src:
+                continue
+            for key in ("n_queue", "queue_length", "lane_halting_number", "halting_number"):
+                val = src.get(key)
+                if val is not None:
+                    try:
+                        return max(0.0, float(val))
+                    except (TypeError, ValueError):
+                        continue
+        for src in sources:
+            if not src:
+                continue
+            gap = src.get("leader_gap")
+            lspd = src.get("leader_speed")
+            if gap is None or lspd is None:
+                continue
+            try:
+                gap_f, lspd_f = float(gap), float(lspd)
+            except (TypeError, ValueError):
+                continue
+            if math.isfinite(gap_f) and gap_f <= 30.0 and lspd_f <= 1.0:
+                return 1.0
+            return 0.0
+        return 0.0
+
+    @staticmethod
+    def _compute_heading(vx: float, vy: float, dx: float, dy: float) -> float:
+        """
+        Signed approach/recede indicator in [-1.0, 1.0].
+
+        dx, dy are the RSU-relative coordinates of the vehicle (vehicle - RSU), so the
+        vehicle->RSU direction is (-dx, -dy). Returns the normalized dot product of the
+        velocity vector with that direction: +1 approaching head-on, -1 receding,
+        0 when stopped or exactly at the RSU.
+        """
+        speed = math.hypot(vx, vy)
+        dist = math.hypot(dx, dy)
+        if speed < 1e-6 or dist < 1e-6:
+            return 0.0
+        cos_theta = (vx * (-dx) + vy * (-dy)) / (speed * dist)
+        return float(np.clip(cos_theta, -1.0, 1.0))
+
+    def vectorize(
+        self,
+        vehicle_node: Any,
+        rsu_node: Any,
+        current_time: float,
+        tls_info: Optional[Dict[str, Any]] = None,
+        cbr: float = 0.0,
+        n_active: int = 1,
+        n_queue: Optional[float] = None,
+    ) -> np.ndarray:
+        """Node-object adapter over `vectorize_from_dict`. Not the production path.
+
+        There used to be two independent implementations of the same 17-dim
+        layout, which violated design principle P1 ("the observation vector is
+        built in exactly one place") and had already drifted apart: this one
+        resolved `n_queue` by looking at the TLS feature dict FIRST, and that
+        dict's `n_queue` is `dynamics_predictor.extract_queue_features`, i.e. a
+        live `lane.getLastStepVehicleIDs` + `vehicle.getSpeed` measurement that no
+        real roadside unit can make. `vectorize_from_dict` looks at the state dict
+        first, and the environment puts its ledger-reconstructed count there (D3),
+        so the production path was safe while this one was a dormant leak.
+
+        It is now a translation layer: it builds a state dict and defers, so there
+        is one implementation of the layout, and `n_queue` is taken from the
+        explicit argument or from the vehicle node itself -- never from the TLS
+        dict, which is privileged information.
+        """
+        vec = np.zeros(STATE_DIM, dtype=np.float32)
+        if vehicle_node is None or rsu_node is None:
+            return vec
+
+        vel = getattr(vehicle_node, "vel", (0.0, 0.0))
+        if hasattr(vehicle_node, "speed"):
+            spd_val = vehicle_node.speed() if callable(vehicle_node.speed) else vehicle_node.speed
+        else:
+            spd_val = math.hypot(vel[0], vel[1])
+
+        tls = tls_info or {}
+        if not tls and hasattr(vehicle_node, "_state_dict"):
+            tls = (vehicle_node._state_dict() or {}).get("tls_features", {})
+
+        if n_queue is None:
+            # Vehicle-owned telemetry only. The TLS dict is deliberately NOT a
+            # source here (see docstring).
+            q_cnt = self._extract_queue_count(getattr(vehicle_node, "__dict__", None))
+        else:
+            q_cnt = max(0.0, float(n_queue))
+
+        rsu_pos = getattr(rsu_node, "pos", (0.0, 0.0))
+        state_dict: Dict[str, Any] = {
+            "pos": getattr(vehicle_node, "pos", (0.0, 0.0)),
+            "vel": vel,
+            "speed": float(spd_val),
+            "accel": float(getattr(vehicle_node, "accel", 0.0)),
+            "current_time": current_time,
+            "last_pred_err": float(getattr(vehicle_node, "last_pred_err", 0.0)),
+            "tls_features": tls,
+            "cbr": cbr,
+            "n_active": n_active,
+            "n_queue": q_cnt,
+        }
+        return self.vectorize_from_dict(state_dict, tuple(rsu_pos))
+
+    def vectorize_from_dict(self, state_dict: Dict[str, Any], rsu_pos: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+        """
+        Convenience method to vectorize directly from a state dictionary.
+        """
+        vec = np.zeros(STATE_DIM, dtype=np.float32)
+        pos = state_dict.get("pos", (0.0, 0.0))
+        vel = state_dict.get("vel", (0.0, 0.0))
+        speed = state_dict.get("speed", math.hypot(vel[0], vel[1]))
+        accel = state_dict.get("accel", 0.0)
+        # [0] Quality of the RSU's last prediction for this vehicle.
+        #
+        # This slot used to hold normalized age. Under the SMDP formulation age
+        # is structurally zero at every decision epoch -- the RSU decides right
+        # after an update lands -- so the feature reached the policy as a
+        # constant and carried nothing. Measured: 1 unique value over a full run.
+        #
+        # What the RSU does know at that instant, for free, is how wrong its
+        # dead-reckoned belief turned out to be just before the report arrived.
+        # That is a direct read on how far this particular vehicle can be trusted
+        # to stay predictable, which is exactly what choosing Delta needs.
+        vec[0] = norm_sq_error(float(state_dict.get("last_pred_err", 0.0)))
+        vec[1] = np.clip(vel[0] / self.v_max, -1.0, 1.0)
+        vec[2] = np.clip(vel[1] / self.v_max, -1.0, 1.0)
+        vec[3] = np.clip(float(speed) / self.v_max, 0.0, 1.0)
+        vec[4] = np.clip(float(accel) / self.a_max, -1.0, 1.0)
+
+        dx = float(pos[0] - rsu_pos[0])
+        dy = float(pos[1] - rsu_pos[1])
+        dist = state_dict.get("dist_to_rsu", math.hypot(dx, dy))
+        vec[5] = np.clip(dx / self.rsu_range, -1.0, 1.0)
+        vec[6] = np.clip(dy / self.rsu_range, -1.0, 1.0)
+        vec[7] = np.clip(float(dist) / self.rsu_range, 0.0, 1.0)
+
+        tls = state_dict.get("tls_features", state_dict)
+        state = str(tls.get("state", "g")).lower()
+        vec[8] = 1.0 if state in ["r", "red"] else 0.0
+        vec[9] = 1.0 if state in ["y", "yellow"] else 0.0
+        vec[10] = 1.0 if state in ["g", "green"] else 0.0
+        # [11] and [12] when there is NO SIGNAL AHEAD.
+        #
+        # `getNextTLS` returns nothing for 2.63 % of observations (measured
+        # 2026-09-06 over 352,980 samples), and `extract_tls_features` reports
+        # that as state "none" with an infinite distance. The two slots used to
+        # be filled with 30.0 s and `self.rsu_range`, which normalise to 0.5 and
+        # 1.0 -- and both of those are values a REAL reading produces. A signal
+        # thirty seconds from switching and a stop line at the coverage edge are
+        # ordinary situations, so the observation asserted a specific traffic
+        # situation for a vehicle that had no signal at all.
+        #
+        # BOTH ARE NOW 0.0, and the point is that they AGREE rather than that 0.0
+        # is the true value. There is no true value; what a policy has to learn is
+        # "when [8], [9] and [10] are all zero, ignore [11] and [12]", and that
+        # rule is simplest when the ignored slots hold one constant. 0.0 is chosen
+        # because it is the value least likely to arise legitimately alongside an
+        # all-zero signal one-hot: a signal switching in zero seconds is red,
+        # yellow or green by definition, and a stop line at zero metres likewise.
+        #
+        # NO SEPARATE VALIDITY FLAG. The all-zero one-hot at [8..10] already is
+        # one -- it occurs only in this case -- so a twenty-second feature would
+        # carry information the vector already holds, at the cost of invalidating
+        # every checkpoint.
+        #
+        # `self.rsu_range` as the `.get` default was dead code and is gone. The
+        # key is always present (`extract_tls_features` always sets it, to `inf`
+        # when there is no signal), so the default never fired; it merely looked
+        # like the fallback while `inf` was silently clipping to the same 1.0.
+        tts = tls.get("time_to_switch", None)
+        dts = tls.get("dist_to_stopline", None)
+        has_signal = bool(vec[8] or vec[9] or vec[10])
+        if not has_signal:
+            vec[11] = 0.0
+            vec[12] = 0.0
+        else:
+            vec[11] = np.clip(
+                (float(tts) if tts is not None and np.isfinite(float(tts)) else 0.0)
+                / PHASE_REMAINING_REF_S, 0.0, 1.0)
+            vec[12] = np.clip(
+                (float(dts) if dts is not None and np.isfinite(float(dts))
+                 else self.rsu_range) / self.rsu_range, 0.0, 1.0)
+
+        # [13] Contention. Normalised by the coverage disc's road capacity at the
+        # busiest density in the grid (N_ACTIVE_MAX_OBS = 168 vehicles here), not
+        # by a literal 100: measured in-range counts reach 141.7, so /100 clipped
+        # this feature to exactly 1.0 at densities 25, 30 and 35.
+        vec[13] = np.clip(float(state_dict.get("n_active", 1)) / self.n_active_max, 0.0, 1.0)
+        vec[14] = np.clip(float(state_dict.get("cbr", 0.0)), 0.0, 1.0)
+
+        # [15] n_queue: vehicles queued ahead in the same lane (design S1).
+        # Prefer an explicit count on the state dict, then the TLS/dynamics feature
+        # dict, then the leader-vehicle fallback.
+        q_cnt = self._extract_queue_count(state_dict, tls)
+        vec[15] = np.clip(q_cnt / self.queue_max, 0.0, 1.0)
+
+        # [16] heading: signed approach (+) / recede (-) indicator w.r.t. the RSU (design S1)
+        vec[16] = self._compute_heading(float(vel[0]), float(vel[1]), dx, dy)
+
+        # [17..20] Per-subchannel busy ratio. `subchannel_cbr` is the raw
+        # occupancy of each channel at this instant, the same list the reward
+        # indexes with the chosen channel, so the policy now observes the
+        # quantity it is charged against.
+        #
+        # ABSENT IS NOT ZERO. A caller that supplies no per-channel list gets the
+        # MEAN broadcast across the four slots, not zeros. Zero would assert
+        # "these channels were idle", which is a claim; the mean asserts "no finer
+        # information than [14] was available", which is the truth. The same
+        # reasoning is why the offline dataset refuses to default a missing
+        # behaviour log-probability or action index.
+        # RELATIVE to the mean, not absolute. `cbr_ch / mean(cbr)`.
+        #
+        # WHY NOT THE ABSOLUTE OCCUPANCY. Because the two quantities answer
+        # different questions and therefore need different scales. Feature [14]
+        # answers "how busy is the network", and its absolute value is the right
+        # answer there -- 0.005 is genuinely what this scenario produces. These
+        # four answer "WHICH channel is quieter", and that lives entirely in the
+        # differences between them.
+        #
+        # Those differences are tiny in absolute terms. Occupancy moves in steps
+        # of 0.00448, one frame's airtime over one 0.1 s step, so the whole
+        # feature takes about ten discrete values below 0.045. Asking a network to
+        # separate 0.00448 from 0.00896 inside a [0, 1] input means asking it to
+        # learn very large weights for that input alone. Dividing by the mean puts
+        # the same information around 1.0 where it is legible.
+        #
+        # IT ALSO REMOVES A REDUNDANCY. Four absolute occupancies contain their
+        # own mean, so [14] would have been recoverable from [17..20] and the five
+        # features would have overlapped. Four RATIOS cannot reconstruct the mean,
+        # so [14] and these carry strictly different information: absolute level
+        # and relative deviation.
+        #
+        # ALL FOUR ARE 1.0 WHEN NOTHING TRANSMITTED (about 1.7 % of steps). The
+        # ratio is undefined there, and 1.0 states "every channel equals the
+        # mean", which is true when all four are zero. No validity flag is needed
+        # because [14] is then 0 and already says so -- the same structure as the
+        # all-zero signal one-hot standing in for "no traffic light".
+        #
+        # The RANGE is left alone deliberately. Four channels means the ratio can
+        # reach 4.0 if one channel carries everything; a random policy was measured
+        # between 0.5 and 2.0, and a trained one may spread further. Whether to
+        # clip at 4, divide by 4, or leave it is a decision for data from a trained
+        # policy. The offline dataset stores the ABSOLUTE occupancies, so that
+        # decision can be revisited by re-reading rather than recollecting.
+        per_ch = state_dict.get("subchannel_cbr")
+        if per_ch is None:
+            # No per-channel information at all. Every slot is 1.0, i.e. "equal to
+            # the mean", which is the same claim the all-zero case makes and is
+            # the weakest one available: it asserts no channel is preferable.
+            for k in range(4):
+                vec[17 + k] = 1.0
+        else:
+            values = [float(c) for c in per_ch]
+            mean_cbr = float(np.mean(values)) if values else 0.0
+            for k in range(4):
+                if mean_cbr <= 0.0:
+                    vec[17 + k] = 1.0
+                else:
+                    v_k = values[k] if k < len(values) else mean_cbr
+                    vec[17 + k] = float(v_k) / mean_cbr
+
+        return vec
+
+
+class ActionDecoder:
+    """
+    Hybrid Action Space Decoder.
+    
+    Decodes raw model logits or tensor outputs into a concrete uplink grant 3-tuple:
+    (Delta in [0.1, 45.0]s, ch in {0, 1, 2, 3}, power in [10.0, 23.0]dBm).
+
+    These bounds are the user-approved design (Conversation.md S2) and are the SINGLE
+    SOURCE OF TRUTH for the action space. Rationale for the record:
+      * p_max = 23 dBm -- 3GPP TS 36.101/38.101 power-class-3 UE maximum transmit power.
+      * delta_min = 0.1 s -- ETSI EN 302 637-2 CAM minimum generation interval
+        (T_GenCamMin); generating faster than this is not standards-compliant.
+      * delta_max = 45.0 s -- worst-case standstill duration in the actual SUMO
+        scenario (generated.net.xml tlLogic: green 42 s + yellow 3 s => 45 s red per
+        approach), i.e. the longest interval over which a stopped vehicle's mobility
+        state provably need not be refreshed.
+
+    Delta mapping is GEOMETRIC, not linear. The Delta range spans a factor of 450, so a
+    linear interpolation of sigmoid(logit) would need u ~= 0.0089 just to emit 0.5 s and
+    would destroy all resolution in the short-interval regime. Instead:
+
+        u     = sigmoid(raw_delta)                              in [0, 1]
+        delta = delta_min * (delta_max / delta_min) ** u        (inverse: u = log(d/d_min)/log(d_max/d_min))
+
+    which gives uniform *relative* resolution across u. Power stays linear: dBm is
+    already a logarithmic unit.
+
+    Downstream code must read delta_min/delta_max/p_min/p_max off the decoder
+    instance rather than duplicating the literals.
+    """
+
+    def __init__(
+        self,
+        num_channels: int = 4,
+        delta_min: float = DELTA_MIN,
+        delta_max: float = 0.0,
+        p_min: float = P_MIN,
+        p_max: float = P_MAX,
+    ) -> None:
+        self.num_channels = int(num_channels)
+        self.delta_min = float(delta_min)
+        # 0.0 means "resolve from the scenario on every read". A snapshot taken
+        # here is wrong whenever the decoder outlives the network it was built
+        # against: `run_hot_swap_training` constructs the nine models (and their
+        # decoders) BEFORE `AoiV2IEnv._init_sumo` writes the network and calls
+        # `refresh_scenario_constants()`, so a model built at import time held a
+        # stale DELTA_MAX while the environment asserted against the fresh one.
+        # `norm_sq_error` already reads its module global per call; this matches.
+        self._delta_max_fixed: Optional[float] = (
+            float(delta_max) if delta_max and delta_max > 0.0 else None
+        )
+        self.p_min = float(p_min)
+        self.p_max = float(p_max)
+
+    @property
+    def delta_max(self) -> float:
+        """Upper Delta bound: the pinned value, else the live scenario constant."""
+        return self._delta_max_fixed if self._delta_max_fixed is not None else DELTA_MAX
+
+    @delta_max.setter
+    def delta_max(self, value: float) -> None:
+        self._delta_max_fixed = float(value) if value and float(value) > 0.0 else None
+
+    @property
+    def _log_delta_ratio(self) -> float:
+        """log(delta_max / delta_min): the geometric span used by the Delta mapping.
+
+        Guarded so a degenerate delta_min == delta_max decoder still works.
+        """
+        d_max = self.delta_max
+        if self.delta_min > 0.0 and d_max > self.delta_min:
+            return math.log(d_max / self.delta_min)
+        return 0.0
+
+    def delta_from_unit(self, u: float) -> float:
+        """Geometric map u in [0, 1] -> Delta in [delta_min, delta_max]."""
+        u = min(max(float(u), 0.0), 1.0)
+        if self._log_delta_ratio <= 0.0:
+            # Degenerate range: fall back to linear interpolation.
+            return self.delta_min + u * (self.delta_max - self.delta_min)
+        if u <= 0.0:
+            return self.delta_min
+        if u >= 1.0:
+            return self.delta_max
+        return self.delta_min * math.exp(u * self._log_delta_ratio)
+
+    def unit_from_delta(self, delta: float) -> float:
+        """Inverse geometric map Delta -> u in [0, 1]."""
+        d = min(max(float(delta), self.delta_min), self.delta_max)
+        if self._log_delta_ratio <= 0.0:
+            return (d - self.delta_min) / max(1e-6, self.delta_max - self.delta_min)
+        return math.log(d / self.delta_min) / self._log_delta_ratio
+
+    @staticmethod
+    def _sigmoid(x: float) -> float:
+        if x < -50.0:
+            return 0.0
+        if x > 50.0:
+            return 1.0
+        return 1.0 / (1.0 + math.exp(-x))
+
+    @staticmethod
+    def _logit(p: float) -> float:
+        p_clamped = min(max(p, 1e-6), 1.0 - 1e-6)
+        return math.log(p_clamped / (1.0 - p_clamped))
+
+    def decode_action(self, raw_action: Any) -> Tuple[float, int, float]:
+        """
+        Decodes raw action into (delta_s, channel_idx, power_dbm).
+        """
+        if isinstance(raw_action, dict):
+            raw_delta = raw_action.get("delta", raw_action.get("delta_raw", 0.0))
+            raw_ch = raw_action.get("ch", raw_action.get("channel_idx", 0))
+            raw_p = raw_action.get("power", raw_action.get("tx_power_dbm", 0.0))
+        elif isinstance(raw_action, (list, tuple, np.ndarray, torch.Tensor)):
+            if isinstance(raw_action, torch.Tensor):
+                raw_action = raw_action.detach().cpu().numpy().flatten()
+            raw_list = list(raw_action)
+            if len(raw_list) >= 3:
+                raw_delta, raw_ch, raw_p = raw_list[0], raw_list[1], raw_list[2]
+            elif len(raw_list) == 2:
+                raw_delta, raw_ch, raw_p = raw_list[0], 0, raw_list[1]
+            elif len(raw_list) == 1:
+                raw_delta, raw_ch, raw_p = raw_list[0], 0, 0.0
+            else:
+                raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
+        else:
+            raw_delta, raw_ch, raw_p = 0.0, 0, 0.0
+
+        # Continuous delta mapping, GEOMETRIC over [delta_min, delta_max].
+        # This used to be a linear interpolation of the sigmoid, which contradicted
+        # this class's own docstring and `delta_from_unit`. The two disagree by an
+        # order of magnitude in the region the scheduler lives in: at logit 0 the
+        # linear form emits 22.55 s where the geometric one emits 2.12 s. Every
+        # baseline calls `delta_from_unit` directly, so the linear form never
+        # reached a run -- but it was one fallback away from silently halving the
+        # resolution of the short-interval regime the paper is about.
+        sig_d = self._sigmoid(float(raw_delta))
+        delta = self.delta_from_unit(sig_d)
+
+        # Discrete channel mapping {0..num_channels-1}
+        ch = int(round(float(raw_ch))) % self.num_channels
+
+        # Continuous power mapping [p_min, p_max]
+        sig_p = self._sigmoid(float(raw_p))
+        power = self.p_min + sig_p * (self.p_max - self.p_min)
+
+        return (float(delta), int(ch), float(power))
+
+    def encode_action(self, delta: float, ch: int, power: float) -> np.ndarray:
+        """Inverse of `decode_action`: (delta, ch, power) back to raw logits.
+
+        Delta inverts through `unit_from_delta` so the pair stays geometric on
+        both sides. Power stays linear because dBm is already a log unit.
+        """
+        norm_d = self.unit_from_delta(delta)
+        norm_p = (power - self.p_min) / max(1e-6, self.p_max - self.p_min)
+        raw_d = self._logit(norm_d)
+        raw_p = self._logit(norm_p)
+        return np.array([raw_d, float(ch), raw_p], dtype=np.float32)
+
+
+#: SUMO signal characters, encoded as small integers so a raw character survives
+#: into a numeric dataset column. Measured 2026-09-06 over 352,980 observations,
+#: the generated networks emit only these five, and `none` -- meaning
+#: `getNextTLS` returned nothing, i.e. no upcoming signal -- accounts for 2.63 %:
+#:
+#:     r 51.22 %   G 29.21 %   g 13.26 %   y 3.68 %   none 2.63 %
+#:
+#: `s`, `u`, `o` and `O` do NOT occur here, although SUMO defines them. That was
+#: worth measuring rather than assuming: the three-way one-hot at [8..10] leaves
+#: three zeros for anything outside {r, y, g}, and the working hypothesis had been
+#: that those zeros were unmapped characters needing a mapping rule. They are not.
+#: Every one of them is "no traffic light ahead", which is a different fact and
+#: needs a different remedy.
+#:
+#: -1 is reserved for a character this table does not list, so a future network
+#: that does emit `s` shows up as -1 in the data instead of being silently folded
+#: into an existing class.
+TLS_STATE_CODES: Dict[str, int] = {
+    "none": 0, "r": 1, "y": 2, "g": 3, "G": 4, "s": 5, "u": 6, "o": 7, "O": 8,
+}
+
+
+def tls_state_code(char: Any) -> int:
+    """The integer code for a SUMO signal character. -1 for anything unlisted."""
+    return TLS_STATE_CODES.get(str(char), -1)
+
+
+#: The raw fields stored beside every observation, in this order. Each one is a
+#: value that `StateVectorizer` clips, collapses or averages away.
+#: EVERY feature that divides by a constant is represented, not only the ones
+#: thought likely to change. The selection rule is "does this feature use a
+#: normalising constant", not "will that constant move": on 2026-09-06 alone,
+#: `N_ACTIVE_MAX_OBS` went from a literal 100 to a scenario-derived 168 and
+#: `CBR_REF` from 0.25 to 0.60, and both had been treated as settled. Judgements
+#: about what will not change have a poor record in this file.
+#:
+#: By that rule the constants in play are `E_REF` at [0], `V_MAX_OBS` at
+#: [1][2][3], `a_max` at [4], `rsu_range` at [5][6][7] and [12],
+#: `PHASE_REMAINING_REF_S` at [11], `N_ACTIVE_MAX_OBS` at [13] and `queue_max` at
+#: [15]. Only the signal one-hot [8..10] and the heading cosine [16] use none, so
+#: only those two cannot be rebuilt -- and neither has a constant to move.
+RAW_OBSERVATION_FIELDS: Tuple[str, ...] = (
+    "last_pred_err_m",           # [0] squashed by norm_sq_error against E_REF
+    "vx_mps", "vy_mps", "speed_mps",   # [1][2][3] divided by V_MAX_OBS
+    "accel_mps2",                # [4] divided by a_max
+    "rel_x_m", "rel_y_m", "dist_to_rsu_m",   # [5][6][7] divided by rsu_range
+    "time_to_switch_s",          # [11] divided by PHASE_REMAINING_REF_S
+    "dist_to_stopline_m",        # [12] divided by rsu_range and clipped
+    "dist_to_stopline_measured",  # 1.0 if SUMO reported one, 0.0 if there is none
+    "tls_state_code",            # see TLS_STATE_CODES; [8..10] lose the character
+    "n_active",                  # [13] divided by N_ACTIVE_MAX_OBS and clipped
+    "n_queue",                   # [15] divided by queue_max and clipped
+    "cbr_ch0", "cbr_ch1", "cbr_ch2", "cbr_ch3",  # [17..20] clip, [14] averages
+    "n_neighbours",              # in-coverage vehicles other than this one
+)
+
+
+def raw_observation_fields(state_dict: Dict[str, Any],
+                           rsu_pos: Tuple[float, float] = (0.0, 0.0)) -> np.ndarray:
+    """The pre-normalisation values, in `RAW_OBSERVATION_FIELDS` order.
+
+    `dist_to_stopline_measured` exists because the distance alone cannot be read.
+    `extract_tls_features` reports `inf` when there is no upcoming signal, and
+    `StateVectorizer` maps that to the same 1.0 as a stop line exactly
+    `rsu_range` away -- the default and a real reading are the same number, which
+    is the fourth time that pattern has hidden a fact in this project. The flag
+    separates them, so a consumer never has to infer "no signal" from a value.
+    """
+    tls = state_dict.get("tls_features") or {}
+    d = tls.get("dist_to_stopline", None)
+    measured = d is not None and np.isfinite(float(d))
+    per_ch = state_dict.get("subchannel_cbr") or []
+    mean_cbr = float(state_dict.get("cbr", 0.0))
+    pos = state_dict.get("pos", (0.0, 0.0))
+    vel = state_dict.get("vel", (0.0, 0.0))
+    dx = float(pos[0]) - float(rsu_pos[0])
+    dy = float(pos[1]) - float(rsu_pos[1])
+    tts = tls.get("time_to_switch", None)
+    q = state_dict.get("n_queue", None)
+    if q is None:
+        q = tls.get("n_queue", None)
+    out = [
+        float(state_dict.get("last_pred_err", 0.0)),
+        float(vel[0]), float(vel[1]),
+        float(state_dict.get("speed", math.hypot(vel[0], vel[1]))),
+        float(state_dict.get("accel", 0.0)),
+        dx, dy,
+        float(state_dict.get("dist_to_rsu", math.hypot(dx, dy))),
+        # NaN, not a substitute number: `time_to_switch` is absent exactly when
+        # there is no signal, and any finite stand-in here would be
+        # indistinguishable from a real reading of that value.
+        float(tts) if tts is not None and np.isfinite(float(tts)) else float("nan"),
+        float(d) if measured else float("nan"),
+        1.0 if measured else 0.0,
+        float(tls_state_code(tls.get("state", "none"))),
+        float(state_dict.get("n_active", 0)),
+        float(q) if q is not None else float("nan"),
+    ]
+    out += [float(per_ch[k]) if k < len(per_ch) else mean_cbr for k in range(4)]
+    # The neighbourhood SIZE, not its contents. Storing the neighbour states
+    # themselves was considered and rejected: the offline dataset is read only by
+    # HOORL, HOORL does not consume `neighbour_state`, and the three baselines
+    # that do have no offline stage -- so the rows would be 168 MB to 1.7 GB that
+    # nothing could ever read. The count is what a decision about `MAX_NEIGHBOURS`
+    # actually needs, and it costs four bytes.
+    n_nb = state_dict.get("n_active", None)
+    out.append(float(max(0.0, float(n_nb) - 1.0)) if n_nb is not None else float("nan"))
+    return np.asarray(out, dtype=np.float32)
+
+
+class NeighbourhoodView:
+    """Fixed-width view of the other in-range agents at ONE decision instant.
+
+    WHY THIS EXISTS. Three of the nine baselines are multi-agent methods whose
+    published contribution is a critic that sees more than the acting agent's own
+    observation: MADDPG-MT's global critic (Parvini et al., IEEE TVT 72(8), 2023),
+    I-HAMAPPO's joint critic and RES-MAPDDPG's centralised critic. All three
+    already accepted a neighbourhood tensor; nothing in the pipeline produced one,
+    so all three trained with the zero context and degenerated into their
+    single-agent counterparts. This class is the producer.
+
+    WHAT IS OURS AND WHAT IS THE PAPERS'. The pooling, masking and truncation are
+    OURS. All three papers assume a FIXED agent population -- platoons, or a fixed
+    vehicle set -- so a fixed-width concatenation is well defined for them and the
+    question never arises. Our population changes every step as vehicles cross the
+    300 m RSU boundary, so a fixed-width input needs a padding convention and a
+    validity mask, and a cap needs a rule for WHICH agents to keep. Those three
+    decisions are additions and are recorded here because they belong in the
+    paper's statement of how far each baseline was ported.
+
+    NO INFORMATION IS INVENTED AND NONE IS BORROWED FROM THE FUTURE. The rows are
+    the observation vectors the environment emitted for THIS step and nothing
+    else, so a neighbour row is identical to what that neighbour's own transition
+    stored, and a view built from the step-k observation dict cannot contain a
+    quantity from step k+1. The transition for a closed interval pairs the view
+    taken when the interval OPENED with the view taken when it CLOSED, matching
+    `state` and `next_state` exactly.
+
+    It is built once per environment step and queried per vehicle. Building it per
+    vehicle instead would put a Python loop over all in-range vehicles inside a
+    loop over all in-range vehicles, which is the exact shape of the O(V^2)
+    regression that cost this pipeline a 7x slowdown once already (CODE_GUIDE A-11).
+    """
+
+    __slots__ = ("vids", "max_neighbours", "state_dim", "_index", "_matrix", "_pos")
+
+    def __init__(
+        self,
+        obs: Dict[str, Any],
+        max_neighbours: int = MAX_NEIGHBOURS,
+        state_dim: int = STATE_DIM,
+    ) -> None:
+        self.max_neighbours = max(1, int(max_neighbours))
+        self.state_dim = int(state_dim)
+        # Sorted, so a distance tie resolves identically in every process and the
+        # buffer's contents do not depend on dictionary insertion order.
+        self.vids: List[str] = sorted(obs)
+        self._index: Dict[str, int] = {vid: i for i, vid in enumerate(self.vids)}
+        if self.vids:
+            self._matrix = np.stack(
+                [np.asarray(obs[v], dtype=np.float32).reshape(-1) for v in self.vids]
+            )
+            self._pos = self._matrix[:, (FEATURE_REL_X, FEATURE_REL_Y)]
+        else:
+            self._matrix = np.zeros((0, self.state_dim), dtype=np.float32)
+            self._pos = np.zeros((0, 2), dtype=np.float32)
+
+    def __len__(self) -> int:
+        return len(self.vids)
+
+    def view(self, ego_vid: str) -> Tuple[np.ndarray, np.ndarray]:
+        """(max_neighbours, state_dim) padded rows and a (max_neighbours,) 0/1 mask.
+
+        The rows are the other agents CLOSEST TO THE EGO VEHICLE, nearest first,
+        padded with zeros; the mask is 1 on a real row and 0 on padding, so a
+        consumer that pools under the mask cannot read a padding artefact as an
+        agent. A vehicle that is alone in range, or that is not in `obs` at all,
+        gets an all-zero mask, which every one of the three consumers already
+        treats as "no neighbourhood".
+
+        Nearest-first is a modelling choice and is ours. The cap bites at the busy
+        end of the density grid, so *which* agents are kept has to be decided;
+        the nearest are the ones whose transmissions contend for the same airtime
+        and whose positions the ego vehicle's own error term is most coupled to.
+        Distance is computed between the RSU-relative positions the observation
+        already carries, so no quantity is introduced that the critic could not
+        have derived from its own inputs.
+        """
+        rows = np.zeros((self.max_neighbours, self.state_dim), dtype=np.float32)
+        mask = np.zeros((self.max_neighbours,), dtype=np.float32)
+        i = self._index.get(ego_vid)
+        if i is None or len(self.vids) <= 1:
+            return rows, mask
+        d2 = np.sum((self._pos - self._pos[i]) ** 2, axis=1)
+        d2[i] = np.inf  # a vehicle is not its own neighbour
+        n_take = min(self.max_neighbours, len(self.vids) - 1)
+        order = np.argsort(d2, kind="stable")[:n_take]
+        rows[:n_take] = self._matrix[order]
+        mask[:n_take] = 1.0
+        return rows, mask
+
+
+def _as_f32(arr: Optional[Any]) -> Optional[np.ndarray]:
+    """Contiguous float32 copy, or None. Used for the optional batch columns."""
+    if arr is None:
+        return None
+    return np.ascontiguousarray(np.asarray(arr, dtype=np.float32))
+
+
+class RetrospectiveReplayBuffer:
+    """
+    SMDP Retrospective Replay Buffer with variable-interval discount gamma^Delta support.
+    """
+
+    def __init__(self, capacity: int = 10000, gamma: float = 0.99) -> None:
+        self.capacity = int(capacity)
+        self.gamma = float(gamma)
+        self.buffer: List[Dict[str, Any]] = []
+        self.position = 0
+        #: Raw priority per slot, read ONLY by `sample_prioritized`. Kept as a
+        #: dense array rather than inside the item dicts so that the uniform
+        #: path does not touch it at all.
+        self._priorities = np.zeros(self.capacity, dtype=np.float64)
+        self._max_priority = 1.0
+
+    def push(
+        self,
+        state: Union[np.ndarray, torch.Tensor, List[float]],
+        action: Union[np.ndarray, torch.Tensor, List[float], Tuple[float, ...]],
+        reward: float,
+        next_state: Union[np.ndarray, torch.Tensor, List[float]],
+        done: bool,
+        delta_t: float,
+        action_idx: Optional[int] = None,
+        behaviour_log_prob: Optional[float] = None,
+        reward_terms: Optional[Union[np.ndarray, List[float], Tuple[float, ...]]] = None,
+        neighbour_state: Optional[np.ndarray] = None,
+        neighbour_mask: Optional[np.ndarray] = None,
+        next_neighbour_state: Optional[np.ndarray] = None,
+        next_neighbour_mask: Optional[np.ndarray] = None,
+    ) -> None:
+        """
+        Push a transition tuple (s, a, r, s', done, delta_t) into buffer.
+
+        action_idx (optional): the combined *discrete* action index that a
+        discrete-action agent (e.g. DuelingQAoI, whose grid is
+        interval_idx * num_channels + channel_idx) actually selected. It is
+        stored verbatim so that credit assignment in update() targets the true
+        action instead of a lossy reconstruction from the decoded continuous
+        action. Agents with purely continuous / factorized action heads simply
+        leave it as None; sample() then omits the "action_idx" key entirely,
+        so batch contents are unchanged for every other baseline.
+
+        behaviour_log_prob (optional): log pi_behaviour(a | s) UNDER THE POLICY
+        THAT ACTUALLY EMITTED `action`, i.e. the Act model as of the last
+        hot-swap, evaluated at selection time. It exists for the same reason
+        `action_idx` does -- the value is known exactly at the moment of the
+        decision and is unrecoverable afterwards -- and the two travel the same
+        route from `select_action` through the streamer to here.
+
+        Why it matters: this buffer is off-policy in shape (uniformly sampled
+        stale transitions), so the two PPO-family baselines need the true
+        importance weight pi_new / pi_behaviour. Without it they were reduced to
+        recomputing the denominator from the CURRENT policy, which makes the
+        ratio identically 1 on the first inner epoch and therefore disables
+        clipping altogether -- a clip-free policy-gradient step on stale data,
+        which is how both models diverged (results/hpo/onpolicy_fix_check.csv).
+        Off-policy baselines ignore the key; agents that never report a
+        log-probability leave it None and `sample()` omits the key entirely.
+
+        reward_terms (optional): the interval reward SPLIT INTO ITS SIGNED,
+        WEIGHTED COMPONENTS, in the environment's own order
+        (-w1*e^2, -w2*P_tx, -w3*C_freq, -w4*I_redundant). They sum to `reward`
+        exactly and the environment asserts that before handing them over
+        (`AoiV2IEnv._finalize_interval`). MADDPG-MT's task decomposition -- one
+        value head per term, which is the headline contribution of Parvini et al.
+        -- is only active when this column is present; without it the four heads
+        are trained on shares of the same scalar, become copies of one another,
+        and the paper's contribution is inert while the loss log says nothing.
+
+        neighbour_state / neighbour_mask (optional): the padded observations of
+        the other in-range agents at the instant this interval OPENED, with a 0/1
+        validity mask, as produced by `NeighbourhoodView`. `next_neighbour_*` is
+        the same view at the instant it CLOSED, so the pair lines up with
+        `state` / `next_state`. The joint critics of MADDPG-MT, I-HAMAPPO and
+        RES-MAPDDPG read them; without them all three see a zero context and
+        collapse to their single-agent equivalents. Every other baseline ignores
+        the keys, and `sample()` omits them unless every transition in the batch
+        carries one, so no batch can mix a real neighbourhood with a fabricated
+        empty one.
+        """
+        s_arr = np.array(state, dtype=np.float32) if not isinstance(state, np.ndarray) else state.astype(np.float32)
+        if isinstance(action, torch.Tensor):
+            a_arr = action.detach().cpu().numpy().astype(np.float32)
+        elif isinstance(action, (list, tuple)):
+            a_arr = np.array(action, dtype=np.float32)
+        else:
+            a_arr = np.array(action, dtype=np.float32)
+
+        ns_arr = np.array(next_state, dtype=np.float32) if not isinstance(next_state, np.ndarray) else next_state.astype(np.float32)
+
+        item = {
+            "state": s_arr,
+            "action": a_arr,
+            "reward": float(reward),
+            "next_state": ns_arr,
+            "done": float(done),
+            "delta_t": float(delta_t),
+            "action_idx": None if action_idx is None else int(action_idx),
+            "behaviour_log_prob": (
+                None
+                if behaviour_log_prob is None or not np.isfinite(float(behaviour_log_prob))
+                else float(behaviour_log_prob)
+            ),
+            "reward_terms": (
+                None if reward_terms is None
+                else np.asarray(reward_terms, dtype=np.float32).reshape(-1)
+            ),
+            "neighbour_state": _as_f32(neighbour_state),
+            "neighbour_mask": _as_f32(neighbour_mask),
+            "next_neighbour_state": _as_f32(next_neighbour_state),
+            "next_neighbour_mask": _as_f32(next_neighbour_mask),
+        }
+
+        if len(self.buffer) < self.capacity:
+            self.buffer.append(item)
+        else:
+            self.buffer[self.position] = item
+        # A transition nothing has evaluated yet enters at the highest priority
+        # seen so far, so the prioritized sampler is guaranteed to show it at
+        # least once (Schaul et al.'s convention). Nothing reads this unless a
+        # model asks for `sample_prioritized`, so the uniform path is unaffected.
+        self._priorities[self.position] = self._max_priority
+        self.position = (self.position + 1) % self.capacity
+
+    def sample(self, batch_size: int) -> Dict[str, torch.Tensor]:
+        """
+        Sample a random batch of transitions as PyTorch Tensors.
+        Raises ValueError if buffer is empty.
+        """
+        if len(self.buffer) == 0:
+            raise ValueError("Cannot sample from an empty buffer.")
+
+        batch_size = min(batch_size, len(self.buffer))
+        indices = np.random.choice(len(self.buffer), batch_size, replace=False)
+        return self._batch_from_indices(indices)
+
+    def _batch_from_indices(self, indices: np.ndarray) -> Dict[str, torch.Tensor]:
+        """Assemble the batch dict for already-chosen buffer slots.
+
+        Split out of `sample()` so the uniform and the prioritized draw build
+        IDENTICAL batches and differ only in how the slots were chosen. Two
+        copies of this assembly would be two places for an optional key to be
+        forgotten.
+        """
+        batch = [self.buffer[i] for i in indices]
+
+        states = np.array([b["state"] for b in batch], dtype=np.float32)
+        actions = np.array([b["action"] for b in batch], dtype=np.float32)
+        rewards = np.array([[b["reward"]] for b in batch], dtype=np.float32)
+        next_states = np.array([b["next_state"] for b in batch], dtype=np.float32)
+        dones = np.array([[b["done"]] for b in batch], dtype=np.float32)
+        delta_ts = np.array([[b["delta_t"]] for b in batch], dtype=np.float32)
+        discounts = np.power(self.gamma, delta_ts).astype(np.float32)
+
+        out = {
+            "state": torch.from_numpy(states),
+            "action": torch.from_numpy(actions),
+            "reward": torch.from_numpy(rewards),
+            "next_state": torch.from_numpy(next_states),
+            "done": torch.from_numpy(dones),
+            "delta_t": torch.from_numpy(delta_ts),
+            "discount": torch.from_numpy(discounts),
+        }
+
+        # Optional discrete action indices. Emitted only when EVERY sampled
+        # transition carries one, so batches for continuous-action baselines
+        # keep exactly the legacy key set / tensor shapes.
+        idx_list = [b.get("action_idx") for b in batch]
+        if len(idx_list) > 0 and all(i is not None for i in idx_list):
+            out["action_idx"] = torch.from_numpy(np.array(idx_list, dtype=np.int64))
+
+        # Optional behaviour log-probabilities, same all-or-nothing rule: a batch
+        # in which only some transitions know their behaviour policy cannot form a
+        # consistent importance ratio, so the key is withheld and the consumer
+        # takes its (loudly reported) fallback for the whole batch.
+        logp_list = [b.get("behaviour_log_prob") for b in batch]
+        if len(logp_list) > 0 and all(p is not None for p in logp_list):
+            out["behaviour_log_prob"] = torch.from_numpy(
+                np.array([[p] for p in logp_list], dtype=np.float32)
+            )
+
+        # Optional multi-task reward decomposition and neighbourhood context.
+        # Same all-or-nothing rule as the two keys above, and for the same reason:
+        # a batch in which only some rows know their neighbours would have the
+        # others silently padded with an empty neighbourhood, which is not
+        # "unknown" but a positive claim that the vehicle was alone in range.
+        self._emit_optional_stack(out, batch, "reward_terms")
+        self._emit_optional_stack(out, batch, "neighbour_state")
+        self._emit_optional_stack(out, batch, "neighbour_mask")
+        self._emit_optional_stack(out, batch, "next_neighbour_state")
+        self._emit_optional_stack(out, batch, "next_neighbour_mask")
+
+        return out
+
+    @staticmethod
+    def _emit_optional_stack(
+        out: Dict[str, torch.Tensor], batch: List[Dict[str, Any]], key: str
+    ) -> None:
+        """Stack `key` across the batch, but only when every row carries it."""
+        values = [b.get(key) for b in batch]
+        if not values or any(v is None for v in values):
+            return
+        out[key] = torch.from_numpy(np.stack(values).astype(np.float32))
+
+    # ------------------------------------------------------------------
+    # Prioritized sampling (Schaul et al. 2016), used by SPAM-D3QN only
+    # ------------------------------------------------------------------
+    def sample_prioritized(
+        self, batch_size: int, alpha: float = 0.6, beta: float = 0.4
+    ) -> Dict[str, torch.Tensor]:
+        """Draw in proportion to priority^alpha and return the matching IS weights.
+
+        WHY A SECOND ENTRY POINT RATHER THAN A FLAG. The buffer is owned by the
+        pipeline and shared by all nine baselines, and the comparison is only
+        meaningful while the other eight see exactly the replay distribution they
+        have always seen. `sample()` above is untouched -- same uniform draw, same
+        `replace=False`, same key set, same RNG calls -- and a model gets this
+        path only by overriding `BaseRLModel.sample_batch`, which exactly one
+        model does. A flag on the buffer would have put the two behaviours on one
+        code path where a default could drift.
+
+        The returned batch is the same dict `sample()` builds plus two keys:
+        `weights`, the importance-sampling correction (N * P(i))^-beta normalised
+        by its maximum, which is what makes the non-uniform draw unbiased; and
+        `indices`, the buffer slots drawn, which `update_priorities` needs to
+        write the new TD errors back to.
+
+        Sampling is WITH replacement, as in Schaul et al.: the point is to revisit
+        informative transitions, and the duplicate rate for a batch of 32 against
+        a buffer of thousands is negligible in any case.
+        """
+        if len(self.buffer) == 0:
+            raise ValueError("Cannot sample from an empty buffer.")
+        n = len(self.buffer)
+        batch_size = min(int(batch_size), n)
+        scaled = np.power(np.maximum(self._priorities[:n], 1e-12), float(alpha))
+        total = scaled.sum()
+        if not np.isfinite(total) or total <= 0.0:
+            # Degenerate priorities are not a reason to stop training; fall back
+            # to the uniform draw and say so rather than emitting NaN weights.
+            probs = np.full(n, 1.0 / n)
+        else:
+            probs = scaled / total
+        indices = np.random.choice(n, batch_size, replace=True, p=probs)
+        weights = np.power(np.maximum(n * probs[indices], 1e-12), -float(beta))
+        weights = weights / max(float(weights.max()), 1e-12)
+
+        out = self._batch_from_indices(indices)
+        out["weights"] = torch.from_numpy(weights.astype(np.float32))
+        out["indices"] = torch.from_numpy(indices.astype(np.int64))
+        return out
+
+    def update_priorities(
+        self,
+        indices: Union[np.ndarray, List[int]],
+        priorities: Union[np.ndarray, List[float]],
+    ) -> None:
+        """Write freshly measured RAW priorities (|TD| + eps) onto those slots.
+
+        RAW, not raised to alpha: the exponent is applied by `sample_prioritized`,
+        so it has exactly one application point and cannot be squared by a caller
+        that also applies it.
+
+        Out-of-range indices are dropped rather than raising. The ring can wrap
+        between a draw and a write-back in principle; in the training loop it
+        cannot, because the same thread drains the streamer, samples and updates,
+        but a caller that does something else should not crash the run over it.
+        """
+        idx = np.asarray(indices, dtype=np.int64).reshape(-1)
+        pri = np.asarray(priorities, dtype=np.float64).reshape(-1)
+        if idx.size != pri.size:
+            raise ValueError(
+                f"update_priorities: {idx.size} indices against {pri.size} priorities"
+            )
+        keep = (idx >= 0) & (idx < len(self.buffer)) & np.isfinite(pri)
+        idx, pri = idx[keep], np.maximum(pri[keep], 1e-12)
+        if idx.size == 0:
+            return
+        self._priorities[idx] = pri
+        self._max_priority = max(self._max_priority, float(pri.max()))
+
+    def is_ready(self, batch_size: int) -> bool:
+        return len(self.buffer) >= batch_size
+
+    def clear(self) -> None:
+        self.buffer.clear()
+        self.position = 0
+        self._priorities[:] = 0.0
+        self._max_priority = 1.0
+
+    def __len__(self) -> int:
+        return len(self.buffer)

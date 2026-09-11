@@ -1,0 +1,79 @@
+{
+  "by_cap": {
+    "16": {
+      "mean": {
+        "max": 2.5763,
+        "mean": 2.4689,
+        "min": 2.312,
+        "n": 6,
+        "spread": 0.2643
+      },
+      "p99": {
+        "max": 5.9878,
+        "mean": 5.1134,
+        "min": 4.831,
+        "n": 6,
+        "spread": 1.1568
+      }
+    },
+    "192": {
+      "mean": {
+        "max": 2.532,
+        "mean": 2.4095,
+        "min": 2.2983,
+        "n": 6,
+        "spread": 0.2337
+      },
+      "p99": {
+        "max": 5.2375,
+        "mean": 4.7078,
+        "min": 4.3178,
+        "n": 6,
+        "spread": 0.9197
+      }
+    }
+  },
+  "by_cap_and_placement": {
+    "16/isolated": {
+      "max": 5.9878,
+      "mean": 5.3594,
+      "min": 4.9589,
+      "n": 3,
+      "spread": 1.0289
+    },
+    "16/shared": {
+      "max": 4.9306,
+      "mean": 4.8674,
+      "min": 4.831,
+      "n": 3,
+      "spread": 0.0996
+    },
+    "192/isolated": {
+      "max": 5.2375,
+      "mean": 4.7416,
+      "min": 4.3178,
+      "n": 3,
+      "spread": 0.9197
+    },
+    "192/shared": {
+      "max": 4.906,
+      "mean": 4.6741,
+      "min": 4.3343,
+      "n": 3,
+      "spread": 0.5717
+    }
+  },
+  "gpus": [
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090"
+  ],
+  "model": "I-HAMAPPO",
+  "reading": "The cap costs something in a live run only if the gap BETWEEN caps exceeds the spread WITHIN a cap. The within-cap spread is the measurement's own noise, and with a tail statistic over 600 steps it is not small.",
+  "repeats_per_cell": 3,
+  "state_dim": 21,
+  "steps": 600,
+  "sumo_dir": "/tmp/claude-1001/-home-imnyj/3b462830-f472-4351-a6b3-bd5ebd3a999d/scratchpad/sumo_cap",
+  "torch_version": "2.11.0+cu130"
+}

@@ -1,0 +1,730 @@
+\documentclass[journal]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{multirow,makecell}
+\usepackage{booktabs,pifont}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}m{#1}}
+\newcolumntype{L}[1]{m{#1}}
+\ifCLASSINFOpdf
+  \usepackage[pdftex]{graphicx}
+\else
+\fi
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{subfigure}
+\usepackage{url}
+\usepackage{tikz}
+\usetikzlibrary{positioning,shapes,arrows.meta}
+\usepackage{xcolor}
+\usepackage{siunitx}
+
+\begin{document}
+
+\title{Outage-Resilient V2V Precaching via the Variational Trajectory Minimum-Pooling Network}
+
+\author{Jongpil~Youn,~\IEEEmembership{Student Member,~IEEE,}
+        Youngju~Nam,~\IEEEmembership{Student Member,~IEEE,}
+        and~Euisin~Lee,~\IEEEmembership{Member,~IEEE}%
+\thanks{Manuscript received April 15, 2026; revised August 19, 2026.
+This work was supported by the National Research Foundation of Korea (NRF) grant funded by the Korean government Ministry of Science and ICT (MSIT) under Grant No. 2022R1A2C1010121.
+\textit{(Corresponding author: Euisin Lee.)}}%
+\thanks{J. Youn is with the School of Information and Communication Engineering,
+Chungbuk National University, Cheongju 28644, Republic of Korea (e-mail: whdvlf1919@chungbuk.ac.kr).}%
+\thanks{Y. Nam is with the School of Software, Kunsan National University,
+Gunsan 54150, Republic of Korea (e-mail: imnyj@kunsan.ac.kr).}%
+\thanks{E. Lee is with the School of Information and Communication Engineering,
+Chungbuk National University, Cheongju 28644, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}%
+\thanks{Digital Object Identifier 10.1109/JIOT.2026.0000000}}
+
+\markboth{IEEE Internet of Things Journal,~Vol.~00, No.~0, 2026}%
+{J. Youn \MakeLowercase{\textit{et al.}}: Outage-Resilient V2V Precaching via the Variational Trajectory Minimum-Pooling Network}
+
+\IEEEpubid{2327-4662 \copyright~2026 IEEE}
+
+\maketitle
+
+\begin{abstract}
+Vehicle-to-Vehicle (V2V) precaching is a critical paradigm to ensure continuous multimedia streaming and sensor data delivery across communication coverage gaps (outage zones) between adjacent Roadside Units (RSUs) in Content-Centric Vehicular Networks (CCVN). Although machine learning (ML) methods have been applied to precaching, existing schemes rely on deterministic point estimates and single-target formulations that overlook the stochastic queue dynamics at urban intersections and the physical dual-window bottleneck: relayable data volume is bounded by the minimum between the V2I content loading window and the V2V content relaying window. In this paper, we propose the Variational Trajectory Minimum-Pooling Network (VaT-Min), a Conditional Variational Autoencoder (CVAE) framework tailored for joint bottleneck prediction and uncertainty-aware V2V precaching. VaT-Min incorporates a Temporal Convolutional Network (TCN) to capture temporal mobility patterns from historical trajectories without look-ahead leakage, a cyclical manifold encoder that projects signal cycle offsets onto a continuous trigonometric circle, and a Context-Aware Cross-Attention mechanism that fuses dynamic traffic states. The architecture employs dual-branch Residual MLP decoders coupled with an annealed Boltzmann Softmin layer in the unscaled physical domain to ensure continuous gradient propagation across the non-differentiable minimum boundary. Based on Monte Carlo latent sampling, a risk-sensitive quantile precaching decision rule is established. Microscopic traffic simulations (SUMO) combined with IEEE 802.11p analytical effective-rate modeling demonstrate that VaT-Min outperforms ten benchmark models, achieving a Mean Absolute Error (MAE) of 2.03~s, $R^2$ of 0.8683, a cache hit ratio of 88.9\%, an over-the-air service latency of 0.423~s, and a wasted traffic ratio of only 11.2\%.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Content-Centric Vehicular Networks, Vehicle-to-Vehicle Communication, V2V Precaching, Outage Zone, Dual-Window Bottleneck, Conditional Variational Autoencoder, Trajectory Minimum-Pooling, Microscopic Traffic Simulation.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+
+\section{Introduction}\label{sec:introduction}
+
+\IEEEPARstart{T}{he} rapid evolution of autonomous driving and intelligent transportation systems (ITS) has spurred exponential growth in vehicular data demands, driven by bandwidth-intensive services including high-definition dynamic mapping, real-time cooperative perception, and rich infotainment streaming ~\cite{ITS1, ITS2}. To distribute voluminous content efficiently while mitigating backhaul congestion on the core cellular infrastructure, Content-Centric Vehicular Networks (CCVN)~\cite{Bouk2015,Su2017,Wang2019,Zhang2019} and the Content-Centric Internet of Vehicles (CIoV)~\cite{Nam2025,Wu2020,Gupta2023,Liang2025} deploy Roadside Units (RSUs) as distributed edge caching nodes~\cite{Kim2017,Yuan2018,Zeng2023}. These RSUs proactively store popular content chunks and deliver them to passing vehicles via high-speed Vehicle-to-Infrastructure (V2I) links, reducing content retrieval latency and improving user quality of experience (QoE). 
+
+However, due to practical economic and geographical constraints, continuous RSU deployment along entire road networks is prohibitive. Consequently, communication shadow zones---referred to as \textit{outage zones}---inevitably emerge between consecutive RSU coverage footprints \cite{Wang2017, Nam2023}. When a vehicle leaves an RSU coverage area before completing a content download, data transfer stalls, degrading service continuity. To bridge these coverage gaps, Vehicle-to-Vehicle (V2V) precaching has emerged as an effective store-carry-forward paradigm~\cite{Wu2013,Wang2017,Ahmed2018,Nam2023}. Under this scheme, when an RSU anticipates that a requesting vehicle cannot complete its download during its RSU dwell time, it pushes the remaining content chunks to a neighboring candidate relay vehicle traveling toward the same outage zone via the V2I link. Once both vehicles enter the outage zone, the relay vehicle delivers the precached chunks to the requesting vehicle via direct V2V communications.
+
+Despite the promise of V2V precaching, the effectiveness of content chunk allocation depends on the accuracy of communication window estimation. Traditional static or heuristic caching schemes rely on spatial thresholds, resulting in either under-provisioning (causing playback stalls and cache misses) or excessive over-provisioning (wasting scarce backhaul bandwidth and relay cache capacity). To overcome these limitations, recent studies have applied machine learning (ML) to precaching~\cite{Wang2025,Aung2023,QWu2023,Sun2023,TWang2024,Feng2023,ZLi2024}. 
+
+Nevertheless, existing ML-based vehicular precaching schemes suffer from three major deficiencies. First, prevailing models~\cite{Wang2025,Feng2023} rely on deterministic point estimation, outputting scalar estimates (such as conditional mean dwell times) that fail to capture the stochastic fluctuations at urban intersections caused by queue build-up, driver behavior heterogeneity, and signal phase variations~\cite{Jiang2023,YZhang2024,CLi2025,Geng2023}. Because deterministic estimates provide no predictive confidence intervals, they cannot support risk-sensitive scheduling. Second, existing models suffer from a single-target formulation mismatch, treating precaching as a single-variable regression task (such as predicting RSU dwell time alone)~\cite{Wang2025,Feng2023}. However, V2V precaching across outage zones is governed by two distinct yet statistically coupled physical processes: (i) the candidate vehicle's V2I dwell time $t_{\text{cand\_dwell}}$ within RSU coverage, and (ii) the V2V wireless contact duration $t_{\text{conn\_v2v}}$ between the candidate and requesting vehicles inside the outage zone. Single-target models inherently fail to capture the mutual constraint between these two coupled windows. Third, existing frameworks neglect the physical dual-window data bottleneck. The actual relayable data volume $\mathcal{D}_{\text{relay}}$ is constrained by a dual-window data bottleneck: the RSU cannot load more data than permitted by the V2I link during $t_{\text{cand\_dwell}}$, and the relay vehicle cannot forward more data than permitted by the V2V link during $t_{\text{conn\_v2v}}$. Formulating precaching solely as a minimum of times without accounting for transmission bandwidths and temporal decoupling leads to physically ungrounded resource allocations.
+
+To overcome these challenges, this paper proposes the Variational Trajectory Minimum-Pooling Network (VaT-Min), an uncertainty-aware deep learning framework based on a conditional variational autoencoder (CVAE) for joint dual-window bottleneck prediction and V2V precaching. VaT-Min addresses the physical bottleneck by employing dual-branch Residual MLP (ResMLP) decoders that simultaneously predict candidate RSU dwell time and outage V2V contact duration, integrated with a differentiable Boltzmann Softmin layer operating in the unscaled physical domain (seconds). To eliminate data leakage, future outage kinematics are replaced with historical sliding-window corridor statistics. To resolve boundary discontinuities in traffic light timing, a Cyclical Manifold Encoder maps signal phase offsets onto a continuous 2D trigonometric circle. Furthermore, a Context-Aware Cross-Attention mechanism dynamically aligns vehicle trajectory representations with the prevailing signal context. Based on Monte Carlo sampling of the CVAE latent space, we introduce a risk-sensitive quantile precaching decision rule that balances cache hit ratio against wasted backhaul traffic.
+
+The principal contributions of this paper are fourfold:
+First, we establish a rigorous mathematical formulation of the V2V precaching capacity as a physical dual-window data bottleneck $\mathcal{D}_{\text{relay}} = \min(\mathcal{D}_{\text{V2I}}, \mathcal{D}_{\text{V2V}}, \mathcal{D}_{\text{req\_rem}}, \mathcal{B}_{\text{relay}})$, explicitly capturing data rate differences between V2I content loading and V2V content relaying across decoupled time intervals.
+Second, we design VaT-Min using a Conditional Predictive VAE architecture trained via an Evidence Lower Bound (ELBO) multi-objective loss. The architecture integrates a Temporal Convolutional Network for trajectory encoding, a Cyclical Manifold Encoder for signal phases, Cross-Attention fusion, and an annealed Boltzmann Softmin layer that ensures continuous gradient flow across the non-differentiable minimum boundary.
+Third, we develop an end-to-end risk-sensitive V2V precaching protocol that leverages CVAE predictive quantiles to dynamically size the precaching data budget $\mathcal{D}_{\text{safe}}(\alpha)$ according to operator risk tolerance, effectively preventing cache buffer overflow and backhaul traffic waste.
+Fourth, through extensive microscopic SUMO mobility simulations coupled with analytical IEEE 802.11p communication modeling across 1.1 million event samples, we demonstrate that VaT-Min achieves superior prediction accuracy (MAE 2.03~s, $R^2 = 0.8683$) and system performance (88.9\% hit ratio, 0.423~s over-the-air service delay, and 11.2\% waste ratio), significantly outperforming ten competitive baselines.
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} reviews related work and establishes a comparative taxonomy. Section~\ref{sec:system} presents the system model and the physical dual-window bottleneck formulation. Section~\ref{sec:vatmin} details the proposed VaT-Min deep learning architecture and training methodology. Section~\ref{sec:protocol} describes the uncertainty-aware V2V precaching protocol. Section~\ref{sec:experiments} presents simulation results, ablation studies, latency decompositions, and baseline comparisons. Section~\ref{sec:conclusion} concludes the paper and discusses future directions.
+
+
+\section{Related Work}\label{sec:related}
+
+This section reviews related literature across three domains: vehicular precaching, dwell-time and contact-duration estimation, and probabilistic spatio-temporal mobility prediction.
+
+\subsection{Vehicular Precaching and Relay-Assisted Content Delivery}
+Edge caching in vehicular networks has transitioned from static popularity-based caching toward dynamic, context-aware precaching~\cite{Bouk2015,Su2017,Wang2019,Zhang2019,Nam2025,Wu2020,Gupta2023,Liang2025,Tan2018,Zhang2018}. In RSU-assisted V2I caching, edge nodes proactively fetch and store popular content chunks based on predicted vehicle trajectories and user request patterns~\cite{Kim2017,Yuan2018,Zeng2023}. When inter-RSU coverage gaps (outage zones) prevent continuous V2I coverage, store-carry-forward V2V relaying offers an effective mechanism to bridge the gap~\cite{Wu2013,Wang2017,Ahmed2018,Nam2023}. In this paradigm, an RSU pre-pushes content chunks to a relay vehicle traveling toward the same outage zone, which subsequently relays the data to the requester.
+
+Recently, Deep Reinforcement Learning (DRL) and Federated Learning (FL) have been widely explored to optimize precaching policies. Aung \textit{et al.}~\cite{Aung2023} proposed VeSoNet, combining DRL with vehicle2vec graph embedding for traffic-aware V2V caching. Wu \textit{et al.}~\cite{QWu2023} and Sun \textit{et al.}~\cite{Sun2023} incorporated FL into DRL frameworks to protect vehicle privacy while learning cooperative caching policies. Other studies have investigated intelligent adaptive edge caching~\cite{TWang2024} and multi-objective DRL for joint delay-energy optimization in MEC-caching systems~\cite{ZLi2024}. However, these caching frameworks typically rely on coarse heuristic mobility estimates and do not model the fine-grained physical duration of V2I and V2V communication windows.
+
+\subsection{Vehicular Dwell-Time and Contact-Duration Estimation}
+Accurate estimation of communication windows is fundamental to vehicular precaching. Early studies employed kinematic motion equations or microscopic traffic flow models to estimate RSU dwell times~\cite{Feng2023}. For example, Feng \textit{et al.}~\cite{Feng2023} proposed single-variable regression models for RSU sojourn time prediction. Wang \textit{et al.}~\cite{Wang2025} introduced a Spatial-Temporal Informer architecture to forecast content access time in V2I environments. In parallel, opportunistic networking studies have focused on predicting inter-vehicle contact durations using Markov chains, historical contact graphs, or regression trees~\cite{Wu2013,Ahmed2018}.
+
+Nevertheless, existing dwell-time and contact-duration models treat these variables in isolation. In V2V precaching across outage zones, neither dwell time nor contact duration alone determines success; rather, the relayable data is governed by their non-linear minimum coupling. Independent single-target predictors fail to capture this joint bottleneck constraint.
+
+\subsection{Probabilistic Spatio-Temporal Mobility Prediction}
+Urban intersections exhibit stochasticity due to traffic signal cycles, queuing dynamics, and driver behavioral variations. To capture this uncertainty, probabilistic trajectory prediction has gained significant traction. Jiang \textit{et al.}~\cite{Jiang2023} utilized Dynamic Bayesian Networks (DBNs) to model driver intent and trajectory uncertainty. Zhang \textit{et al.}~\cite{YZhang2024} proposed a Stacked Conditional Variational Autoencoder (S-CVAE) with incremental greedy regions for multimodal trajectory forecasting. More recently, Denoising Diffusion Probabilistic Models (DDPM)~\cite{CLi2025} and Inverse Reinforcement Learning (IRL)~\cite{Geng2023} have been applied to multi-agent interaction and risk-averse motion planning.
+
+Although these probabilistic models effectively characterize spatial trajectory distributions, they are designed as reactive motion forecasting tools. They do not incorporate communication constraints, traffic signal manifold representations, dual-target regression, or differentiable minimum pooling required for proactive network resource allocation.
+
+\subsection{Comparative Summary and Research Gap}
+Table~\ref{tab:related_work} summarizes the taxonomy of representative works. Existing methods either rely on deterministic point estimates, focus on single-target metrics, or lack the joint dual-window bottleneck modeling essential for V2V precaching. VaT-Min bridges this gap by unifying probabilistic CVAE trajectory modeling, cyclical signal manifold encoding, dual-branch decoding, and differentiable Softmin pooling within an uncertainty-aware precaching framework.
+
+\begin{table*}[!t]
+\centering
+\caption{Taxonomy of Related Works on Vehicular Precaching and Mobility Prediction}
+\label{tab:related_work}
+\begin{tabular}{@{}l c c c c L{4.5cm}@{}}
+\toprule
+\textbf{Reference} & \textbf{Network} & \textbf{Caching Mode} & \textbf{Prediction Target} & \textbf{Joint Dual-Target} & \textbf{Core Architecture / Approach} \\
+\midrule
+C. Wang \textit{et al.}~\cite{Wang2025} & V2I & Proactive & Content Access Time & No & Spatial-Temporal Informer \\
+N. Aung \textit{et al.}~\cite{Aung2023} & V2V & Proactive & Content Popularity & No & DRL + V2V Graph Embedding \\
+Q. Wu \textit{et al.}~\cite{QWu2023} & V2V & Proactive & Mobility Patterns & No & Asynchronous FL + DRL \\
+C. Sun \textit{et al.}~\cite{Sun2023} & V2I & Proactive & Content Popularity & No & Multi-Agent SAC + FL \\
+T. Wang \textit{et al.}~\cite{TWang2024} & V2I & Proactive & Request Data Value & No & DRL (Intelligent Edge Caching) \\
+B. Feng \textit{et al.}~\cite{Feng2023} & V2I & Proactive & RSU Sojourn Time & No & Single-Variable Regression (ML) \\
+Z. Li \textit{et al.}~\cite{ZLi2024} & V2I & Proactive & Delay and Energy & No & Multi-Objective DRL (MODRL) \\
+Y. Jiang \textit{et al.}~\cite{Jiang2023} & CIoV & Reactive & Vehicle Trajectory & No & Dynamic Bayesian Network (DBN) \\
+Y. Zhang \textit{et al.}~\cite{YZhang2024} & CIoV & Reactive & Multimodal Trajectory & No & Stacked CVAE (S-CVAE) \\
+C. Li \textit{et al.}~\cite{CLi2025} & CIoV & Reactive & Multi-Agent Trajectory & No & Denoising Diffusion Models (DDPM) \\
+M. Geng \textit{et al.}~\cite{Geng2023} & CIoV & Reactive & Multimodal Trajectory & No & Multimodal Inverse RL (IRL) \\
+\textbf{Proposed (VaT-Min)} & \textbf{V2V} & \textbf{Proactive} & \textbf{RSU Dwell \& V2V Contact} & \textbf{Yes} & \textbf{Variational TCN + Softmin CVAE} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+
+\section{Network Model and Scheme Overview}\label{sec:system}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{V2V precaching.png}
+\caption{System architecture of outage-resilient V2V precaching in Content-Centric Vehicular Networks, illustrating RSU V2I pre-loading during the candidate dwell window and subsequent V2V content relaying across the communication shadow zone (outage zone).}
+\label{fig:v2v}
+\end{figure*}
+
+\subsection{Network Model}\label{sec:network}
+We consider an urban vehicular network consisting of a set of RSUs $\mathcal{R} = \{r_1, r_2, \ldots, r_{N_{\text{RSU}}}\}$ ($N_{\text{RSU}} = 25$) deployed at signalized intersections. In realistic urban topologies, the inter-RSU distance is generally greater than the effective RSU communication diameter due to deployment costs and physical constraints. Consequently, RSU communication shadow regions---referred to as \textit{outage zones}---inevitably exist along the arterial corridors connecting adjacent RSU coverage footprints. Within these outage zones, direct infrastructure connectivity is unavailable, and vehicles must rely exclusively on short-range direct Vehicle-to-Vehicle (V2V) communications to maintain service continuity.
+
+To manage vehicular mobility and predict communication windows, the network relies on continuous state monitoring. Every vehicle periodically broadcasts its status---including precise location, velocity, heading, and cache availability---via high-frequency Basic Safety Messages (BSMs) or beacons (e.g., at intervals of 1 second). As vehicles enter an RSU's coverage area, the RSU intercepts these beacons and continuously tracks their real-time mobility trajectories. This allows the RSU to maintain a dynamic topology map of all active vehicles within its domain, which is essential for evaluating candidate relay vehicles.
+
+To facilitate efficient data retrieval and distribution without relying on end-to-end IP connections, the network adopts Content-Centric Networking (CCN) principles~\cite{Bouk2015,Nam2025,Jacobson2009}. In CCN, communication is driven by the exchange of \textit{Interest} and \textit{Data} packets. Data items are divided into equal-sized chunks of size $S_{\text{chunk}}$, which are requested and delivered based on unique hierarchical content names. Each RSU functions as an edge caching node, maintaining standard CCN data structures: the Content Store (CS) proactively caches popular content chunks to serve local vehicular requests with minimal latency; the Pending Interest Table (PIT) tracks outstanding Interest packets awaiting corresponding Data chunk returns to enable reverse-path routing; and the Forwarding Information Base (FIB) routes unmatched Interests to neighboring RSUs or the core cloud server over high-speed fiber backhaul.
+
+As illustrated in Fig.~\ref{fig:v2v}, the V2V precaching process operates as a proactive store-carry-forward mechanism across the communication shadow zone. When a requesting vehicle $V_{\text{req}}$ inside the coverage of an RSU $r_{\text{cur}}$ desires a large multimedia content object (total size $\mathcal{D}_{\text{req}}$), it transmits a continuous stream of Interest packets to the RSU. Upon receiving these Interests, the RSU responds by transmitting the matching Data chunks over the high-capacity Vehicle-to-Infrastructure (V2I) link at an effective data rate $R_{\text{V2I}}$. Due to the high mobility of vehicles, $V_{\text{req}}$ may depart the coverage of $r_{\text{cur}}$ before the download is complete, leaving an undelivered data volume $\mathcal{D}_{\text{req\_rem}} > 0$. 
+
+To prevent playback stalls in the subsequent outage zone, the RSU initiates the V2V precaching protocol. Utilizing the real-time vehicle information gathered from beacon broadcasts, the RSU identifies a nearby candidate relay vehicle $V_{\text{cand}}$ traveling toward the exact same egress corridor as $V_{\text{req}}$. Before $V_{\text{cand}}$ exits the RSU's coverage area, $r_{\text{cur}}$ proactively pre-pushes the remaining content chunks to $V_{\text{cand}}$ via the V2I link, encapsulating them as unsolicited Data packets or employing a specialized pre-push protocol. 
+
+Once both vehicles move beyond the RSU footprint and enter the outage zone, $V_{\text{req}}$ realizes it has lost V2I connectivity and begins broadcasting V2V Interest packets for the remaining missing chunks. $V_{\text{cand}}$, acting as a mobile edge node, intercepts these V2V Interests, matches them against its precached local buffer, and fulfills them by forwarding the stored Data chunks directly to $V_{\text{req}}$ via V2V communications at an effective data rate $R_{\text{V2V}}$.
+
+\subsection{Scheme Overview}\label{sec:overview}
+The successful execution of V2V precaching fundamentally relies on accurately estimating the volume of data that can be successfully relayed. This process spans two decoupled physical time windows operating over distinct wireless interfaces. The first is the V2I Content Loading Window, corresponding to the remaining dwell time $t_{\text{cand\_dwell}}$ of the candidate relay vehicle $V_{\text{cand}}$ within the RSU coverage area from the moment of the request $t_0$, where the maximum data volume that the RSU can successfully pre-load into $V_{\text{cand}}$ is restricted by $\mathcal{D}_{\text{V2I}} \approx R_{\text{V2I}} \cdot t_{\text{cand\_dwell}}$. The second is the V2V Content Relaying Window: after both vehicles enter the outage zone at timestamp $t_{\text{enter}}$, they remain within mutual V2V communication range for a cumulative contact duration $t_{\text{conn\_v2v}}$, where the maximum data volume that $V_{\text{cand}}$ can forward to $V_{\text{req}}$ is bounded by $\mathcal{D}_{\text{V2V}} \approx R_{\text{V2V}} \cdot t_{\text{conn\_v2v}}$.
+
+The entire system is governed by a physical dual-window data bottleneck. The actual relayable data budget $\mathcal{D}_{\text{relay}}$ is constrained by the minimum of the two aforementioned transmission capacities, further bounded by the remaining requested volume $\mathcal{D}_{\text{req\_rem}}$ and the relay vehicle's available cache buffer size $\mathcal{B}_{\text{relay}}$, as formulated in \eqref{eq:d_relay}:
+\begin{equation}
+\mathcal{D}_{\text{relay}} = \min\left(\mathcal{D}_{\text{V2I}}, \, \mathcal{D}_{\text{V2V}}, \, \mathcal{D}_{\text{req\_rem}}, \, \mathcal{B}_{\text{relay}}\right).
+\label{eq:d_relay}
+\end{equation}
+Consequently, the discrete count of chunks allocated for precaching is calculated as $N_{\text{chunk}} = \left\lfloor \frac{\mathcal{D}_{\text{relay}}}{S_{\text{chunk}}} \right\rfloor$.
+
+A critical challenge in estimating $\mathcal{D}_{\text{relay}}$ is that both $t_{\text{cand\_dwell}}$ and $t_{\text{conn\_v2v}}$ are subject to environmental stochasticity. Urban intersections exhibit highly dynamic behaviors due to traffic signal phase transitions, sudden queue formations, and heterogeneous driving patterns. Traditional deterministic models that output single scalar predictions fail to capture this uncertainty, often leading to cache buffer overflows (if the time is overestimated) or wasted bandwidth and cache misses (if the time is underestimated).
+
+To address this challenge, we propose the Variational Trajectory Minimum-Pooling Network (VaT-Min), a comprehensive deep learning framework designed for joint bottleneck optimization under uncertainty. VaT-Min is configured to map real-time context observations---including historical vehicle trajectories and current traffic signal phases---into joint predictive probability distributions over both time variables $(t_{\text{cand\_dwell}}, t_{\text{conn\_v2v}})$. 
+
+Rather than treating the dual windows as isolated problems, VaT-Min unifies them. It employs a Temporal Convolutional Network (TCN) to capture temporal mobility patterns from kinematic trajectories, and a Cyclical Manifold Encoder to continuously represent traffic signal timings. These features are fused using a Context-Aware Cross-Attention mechanism. Finally, VaT-Min utilizes dual-branch decoders combined with a differentiable Softmin layer to learn the non-linear physical minimum boundary between the two time windows. By generating probabilistic confidence bounds through Monte Carlo sampling, VaT-Min enables a risk-sensitive V2V precaching protocol that dynamically adjusts the chunk allocation size according to the network operator's risk tolerance, ensuring resilient content delivery across outage zones.
+
+
+\section{VaT-Min Probabilistic Prediction Framework}\label{sec:vatmin}
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{Structure of VaT-Min.png}
+\caption{Detailed neural architecture of the VaT-Min framework, illustrating the TCN trajectory encoder, the Cyclical Manifold Encoder for traffic signals, the Cross-Attention fusion layer, dual-branch ResMLP decoders, and the annealed Boltzmann Softmin pooling layer.}
+\label{fig:vatmin_arch}
+\end{figure*}
+
+This section details the proposed VaT-Min architecture, shown in Fig.~\ref{fig:vatmin_arch}. VaT-Min comprises four core modules: (1) a Temporal Convolutional Network for trajectory feature representation, (2) a Cyclical Manifold Encoder for signal phases, (3) a Context-Aware Cross-Attention fusion layer, and (4) dual-branch ResMLP decoders with an annealed Boltzmann Softmin pooling layer.
+
+\subsection{Input Feature Space and Leakage-Free Corridor Formulation}\label{sec:features}
+At the request instant $t_0$, the serving RSU constructs an input feature representation $\mathbf{x} = \{\mathbf{X}_{\text{traj}}, \mathbf{c}, \mathbf{X}_{\text{density}}\}$ by collecting observations from high-frequency beacons (10~Hz) and infrastructure sensors. Table~\ref{tab:notation} outlines the principal notations.
+
+\begin{table}[!t]
+\centering
+\caption{Summary of Principal Notations}
+\label{tab:notation}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{c|l}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+$\mathcal{R}$ & Set of RSUs $\{r_1, r_2, \ldots, r_{N_{\text{RSU}}}\}$ ($N_{\text{RSU}} = 25$) \\
+$\rho$ & RSU circular communication radius (800\,m) \\
+$d_{\text{rsu}}$ & Inter-RSU spacing (3200\,m) \\
+$d_{\text{outage}}$ & Outage zone length ($d_{\text{rsu}} - 2\rho = 1600\,\text{m}$) \\
+$r_{\text{v2v}}$ & V2V direct communication range (200\,m) \\
+$V_{\text{req}}, V_{\text{cand}}$ & Requesting vehicle / Candidate relay vehicle \\
+$V_{\text{relay}}$ & Selected optimal precaching relay vehicle \\
+$\mathcal{B}_{\text{relay}}$ & Available cache buffer capacity of relay vehicle (MB) \\
+$\mathcal{D}_{\text{req}}, \mathcal{D}_{\text{req\_rem}}$ & Total requested content size / Remaining undelivered volume (MB) \\
+$S_{\text{chunk}}$ & Content-Centric Networking content chunk size (1.0\,MB) \\
+$t_{\text{cand\_dwell}}$ & Remaining candidate dwell time in serving RSU from $t_0$ (s) \\
+$t_{\text{conn\_v2v}}$ & Cumulative V2V contact duration in outage zone (s) \\
+$t_{\text{avail}}$ & Physical dual-window available time $\min(t_{\text{cand\_dwell}}, t_{\text{conn\_v2v}})$ (s) \\
+$R_{\text{V2I}}, R_{\text{V2V}}$ & Effective transmission data rates on V2I and V2V links (Mbps) \\
+$\mathcal{D}_{\text{relay}}, N_{\text{chunk}}$ & Relayable data budget (MB) / Allocated precached chunk count \\
+$\mathbf{X}_{\text{traj}} \in \mathbb{R}^{T \times d_x}$ & Historical trajectory sequence tensor \\
+$\mathbf{X}_{\text{density}}$ & Spatio-temporal traffic density and congestion feature vector \\
+$t_{\text{cycle\_offset}}$ & Elapsed time since start of current traffic signal cycle (s) \\
+$T_{\text{cycle}}$ & Total traffic signal cycle duration (s) \\
+$\mathbf{e}_t \in \mathbb{R}^2$ & 2D trigonometric signal cycle manifold embedding \\
+$\mathbf{e}_p \in \mathbb{R}^{d_p}$ & Discrete signal phase dense embedding vector \\
+$\mathbf{c} \in \mathbb{R}^{d_c}$ & Fused traffic signal context vector \\
+$\mathbf{H}_{\text{traj}} \in \mathbb{R}^{T \times d_h}$ & Deterministic trajectory sequence hidden feature tensor \\
+$\mathbf{Q}, \mathbf{K}, \mathbf{V}$ & Query, Key, Value tensors in Cross-Attention \\
+$\mathbf{A} \in \mathbb{R}^{1 \times T}$ & Cross-attention alignment weight vector \\
+$\mathbf{F} \in \mathbb{R}^{1 \times d_v}$ & Fused spatio-temporal context vector \\
+$\mathbf{z} \in \mathbb{R}^{d_z}$ & CVAE global latent representation vector \\
+$\theta_{\text{dwell}}, \theta_{\text{conn}}$ & Parameters of candidate dwell and V2V ResMLP decoders \\
+$\tau(e)$ & Boltzmann Softmin temperature parameter at epoch $e$ \\
+$\hat{t}_{\text{avail}}$ & Predicted physical available time (s) \\
+$q_\phi, p_\psi, p_\theta$ & CVAE posterior, conditional prior, and decoder networks \\
+$\mathcal{L}_{\text{total}}$ & Multi-objective ELBO training loss function \\
+$\lambda_{\text{dwell}}, \lambda_{\text{conn}}, \lambda_{\text{KL}}$ & Loss balancing weight hyperparameters for multi-task learning \\
+$S_{\text{MC}}$ & Number of Monte Carlo latent samples at test time ($S_{\text{MC}} = 50$) \\
+$\alpha$ & Operator risk tolerance quantile parameter ($\alpha \in (0, 0.5]$, e.g., $0.10$) \\
+$Q_\alpha(\cdot \mid \mathbf{x})$ & Conditional lower $\alpha$-quantile function \\
+$\mathcal{D}_{\text{safe}}(\alpha)$ & Uncertainty-aware risk-sensitive safe data budget (MB) \\
+$T_{\text{lease}}, \Delta T_{\text{guard}}$ & Cache lease eviction timer / Safety guard band (s) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsubsection{Kinematic Features and Data Leakage Elimination}
+To prevent look-ahead data leakage, all kinematic features for $V_{\text{req}}$ and $V_{\text{cand}}$ are computed from observations up to $t_0$. For within-RSU mobility, we record the instantaneous velocity $v(t_0)$, acceleration $a(t_0)$, distance to coverage boundary $d_{\text{rsu,bound}}$, inter-vehicle distance $d_{\text{pair}}$, and coverage-averaged speed and acceleration ($v_{\text{avg,rsu}}, a_{\text{avg,rsu}}$). 
+
+Crucially, future outage-zone speeds and accelerations are not accessible at $t_0$. Instead, we extract historical sliding-window corridor statistics $\bar{v}_{\text{outage}}^{\text{hist}}$ and $\bar{a}_{\text{outage}}^{\text{hist}}$, calculated from preceding vehicles that traversed the outage zone over the prior sliding window $[t_0 - T_w, t_0]$ (with $T_w = 300\,\text{s}$) as defined in \eqref{eq:hist_corridor}:
+\begin{equation}
+\bar{v}_{\text{outage}}^{\text{hist}} = \frac{1}{|\mathcal{V}_{\text{hist}}|} \sum_{i \in \mathcal{V}_{\text{hist}}} \bar{v}_i^{\text{outage}}, \quad \bar{a}_{\text{outage}}^{\text{hist}} = \frac{1}{|\mathcal{V}_{\text{hist}}|} \sum_{i \in \mathcal{V}_{\text{hist}}} \bar{a}_i^{\text{outage}},
+\label{eq:hist_corridor}
+\end{equation}
+where $\mathcal{V}_{\text{hist}}$ is the set of vehicles completing outage transit in the window. If no vehicles traversed the corridor, default free-flow road parameters are used.
+
+Furthermore, the binary stop indicator $\text{will\_stop}$ is formulated not as a future oracle label, but as a deterministic stopping rule derived from Signal Phase and Timing (SPaT) constraints and kinematics in \eqref{eq:will_stop}:
+\begin{equation}
+\text{will\_stop} = \mathbb{I}\left( d_{\text{tls}} \le \frac{v(t_0)^2}{2 a_{\text{comf}}} \;\land\; S_{\text{tls}} \in \{\text{Yellow}, \text{Red}\} \right),
+\label{eq:will_stop}
+\end{equation}
+where $d_{\text{tls}}$ is distance to the stop-line, $a_{\text{comf}} = 2.5\,\text{m/s}^2$ is comfortable deceleration, and $\mathbb{I}(\cdot)$ is the indicator function.
+
+\subsubsection{Spatial Density and Infrastructure Features}
+Density features include lane-level occupancy $\rho_{\text{lane}}$, lane vehicle count $n_{\text{lane}}$, edge-level average speed $v_{\text{edge}}$, and count of same-direction vehicles $n_{\text{same\_dir}}$. RSU-level moving averages ($\bar{v}_{\text{rsu}}, \bar{n}_{\text{rsu}}$) over 10~minutes capture macroscopic congestion levels.
+
+\subsection{Temporal Convolutional Network for Trajectory Feature Representation}\label{sec:vtcn}
+To process temporal dependencies across the $T$-step historical trajectory sequence $\mathbf{X}_{\text{traj}} \in \mathbb{R}^{T \times d_x}$ without look-ahead bias, we employ a causal dilated Temporal Convolutional Network (TCN). The 1D causal dilated convolution for sequence element $t$ is formulated in \eqref{eq:tcn_conv}:
+\begin{equation}
+(F \circledast_d x)(t) = \sum_{i=0}^{k-1} F(i) \cdot x(t - d \cdot i),
+\label{eq:tcn_conv}
+\end{equation}
+where filter size $k=3$ and dilation rates $d \in \{1, 2, 4, 8\}$ expand the receptive field exponentially across 4 residual blocks.
+
+Before feeding raw kinematics $\mathbf{x}_{\text{raw}}(t) \in \mathbb{R}^{d_{\text{raw}}}$, a linear projection layer aligns feature dimensions according to \eqref{eq:proj}:
+\begin{equation}
+\mathbf{X}_{\text{traj}}(t) = \text{ReLU}\left(W_{\text{proj}} \mathbf{x}_{\text{raw}}(t) + \mathbf{b}_{\text{proj}}\right),
+\label{eq:proj}
+\end{equation}
+where $W_{\text{proj}} \in \mathbb{R}^{d_x \times d_{\text{raw}}}$.
+
+The TCN processes the projected trajectory sequence to generate the temporal hidden feature representation $\mathbf{H}_{\text{traj}}$ as expressed in \eqref{eq:tcn_params}:
+\begin{equation}
+\mathbf{H}_{\text{traj}}(t) = \text{TCN}_{\theta_{\text{tcn}}}(\mathbf{X}_{\text{traj}})(t) \in \mathbb{R}^{d_h} \quad \forall t \in \{1, \ldots, T\},
+\label{eq:tcn_params}
+\end{equation}
+yielding the deterministic trajectory sequence feature tensor $\mathbf{H}_{\text{traj}} \in \mathbb{R}^{T \times d_h}$.
+
+\subsection{Cyclical Manifold Encoder for Traffic Signal Features}\label{sec:cyclical}
+Direct linear encoding of signal remaining time introduces an artificial step discontinuity at cycle boundaries (e.g., $t_{\text{rem}} = 1\,\text{s}$ and $119\,\text{s}$ in a $120\,\text{s}$ cycle are physically adjacent but numerically distant by $118\,\text{s}$).
+
+To resolve this boundary problem, we define the global cycle offset $t_{\text{cycle\_offset}} = t_{\text{elapsed}} \pmod{T_{\text{cycle}}} \in [0, T_{\text{cycle}})$, and project it onto a continuous 2D trigonometric circle manifold as defined in \eqref{eq:cyclical}:
+\begin{equation}
+\mathbf{e}_t = \left[ \sin\left(\frac{2\pi t_{\text{cycle\_offset}}}{T_{\text{cycle}}}\right), \, \cos\left(\frac{2\pi t_{\text{cycle\_offset}}}{T_{\text{cycle}}}\right) \right]^T \in \mathbb{R}^2.
+\label{eq:cyclical}
+\end{equation}
+This ensures smooth Euclidean distance continuity across phase transitions. The discrete signal phase $p \in \{\text{Green}, \text{Yellow}, \text{Red}\}$ is embedded into a dense vector $\mathbf{e}_p \in \mathbb{R}^{d_p}$ via a learnable lookup table, and combined with normalized phase progress $u_{\text{phase}} = t_{\text{elapsed,phase}} / T_{\text{phase}}$ via \eqref{eq:signal_context}:
+\begin{equation}
+\mathbf{c} = \text{MLP}_{\theta_{\text{sig}}}\left( \mathbf{e}_p \oplus \mathbf{e}_t \oplus [u_{\text{phase}}] \right) \in \mathbb{R}^{d_c},
+\label{eq:signal_context}
+\end{equation}
+where $\oplus$ denotes vector concatenation. The resulting context vector $\mathbf{c}$ provides a continuous topological representation of the intersection signal state.
+
+\subsection{Context-Aware Cross-Attention Fusion}\label{sec:crossattn}
+To dynamically weight trajectory steps according to the traffic signal state, we implement a dimensionally aligned Cross-Attention mechanism. The static signal context vector $\mathbf{c} \in \mathbb{R}^{d_c}$ acts as the Query, while the temporal trajectory feature tensor $\mathbf{H}_{\text{traj}} \in \mathbb{R}^{T \times d_h}$ provides Keys and Values according to \eqref{eq:ca_q}, \eqref{eq:ca_k}, and \eqref{eq:ca_v}:
+\begin{align}
+\mathbf{Q} &= \mathbf{c} W_q \in \mathbb{R}^{1 \times d_a}, \label{eq:ca_q} \\
+\mathbf{K} &= \mathbf{H}_{\text{traj}} W_k \in \mathbb{R}^{T \times d_a}, \label{eq:ca_k} \\
+\mathbf{V} &= \mathbf{H}_{\text{traj}} W_v \in \mathbb{R}^{T \times d_v}, \label{eq:ca_v}
+\end{align}
+where $W_q \in \mathbb{R}^{d_c \times d_a}$, $W_k \in \mathbb{R}^{d_h \times d_a}$, and $W_v \in \mathbb{R}^{d_h \times d_v}$ are learnable projection matrices.
+
+The scaled dot-product attention weights $\mathbf{A}$ and the fused spatio-temporal context vector $\mathbf{F}$ are evaluated in \eqref{eq:ca_a} and \eqref{eq:ca_f}, respectively:
+\begin{equation}
+\mathbf{A} = \text{softmax}\left( \frac{\mathbf{Q} \mathbf{K}^T}{\sqrt{d_a}} \right) \in \mathbb{R}^{1 \times T},
+\label{eq:ca_a}
+\end{equation}
+\begin{equation}
+\mathbf{F} = \mathbf{A} \mathbf{V} \in \mathbb{R}^{1 \times d_v}.
+\label{eq:ca_f}
+\end{equation}
+This formulation allows the network to adaptively emphasize trajectory segments that are most decisive under current traffic light timing (e.g., deceleration profiles when approaching red signals).
+
+\subsection{Dual-Branch ResMLP Decoders and Physical-Domain Softmin}\label{sec:decoder}
+Because $t_{\text{cand\_dwell}}$ (V2I dwell) and $t_{\text{conn\_v2v}}$ (V2V contact) are governed by distinct physical dynamics, a single regression branch attempting to directly fit their minimum suffers from approximation errors along the non-differentiable boundary.
+
+We decouple the dual predictions using separate Residual MLP (ResMLP) decoders as formulated in \eqref{eq:branch1} and \eqref{eq:branch2}:
+\begin{align}
+\hat{t}_{\text{cand\_dwell}} &= \text{ResMLP}_{\theta_{\text{dwell}}}([\mathbf{F} \oplus \mathbf{z}]), \label{eq:branch1} \\
+\hat{t}_{\text{conn\_v2v}} &= \text{ResMLP}_{\theta_{\text{conn}}}([\mathbf{F} \oplus \mathbf{z}]), \label{eq:branch2}
+\end{align}
+where each ResMLP consists of 3 residual blocks with Layer Normalization, ReLU activations, and Dropout ($p=0.1$).
+
+To combine both predictions into $\hat{t}_{\text{avail}}$ while preserving continuous joint gradient coordination, we apply Boltzmann Softmin pooling in the unscaled physical domain (seconds) according to \eqref{eq:softmin}:
+\begin{equation}
+\hat{t}_{\text{avail}} = \frac{\hat{t}_{\text{cand\_dwell}} \exp\!\left(-\frac{\hat{t}_{\text{cand\_dwell}}}{\tau}\right) + \hat{t}_{\text{conn\_v2v}} \exp\!\left(-\frac{\hat{t}_{\text{conn\_v2v}}}{\tau}\right)}{\exp\!\left(-\frac{\hat{t}_{\text{cand\_dwell}}}{\tau}\right) + \exp\!\left(-\frac{\hat{t}_{\text{conn\_v2v}}}{\tau}\right)}.
+\label{eq:softmin}
+\end{equation}
+Operating directly in physical seconds prevents gradient distortions caused by independent feature scaling parameters. The analytical partial derivatives of $\hat{t}_{\text{avail}}$ with respect to the branch predictions $\hat{t}_1 = \hat{t}_{\text{cand\_dwell}}$ and $\hat{t}_2 = \hat{t}_{\text{conn\_v2v}}$ are derived as in \eqref{eq:grad_softmin1} and \eqref{eq:grad_softmin2}:
+\begin{align}
+\frac{\partial \hat{t}_{\text{avail}}}{\partial \hat{t}_1} &= w_1 - \frac{1}{\tau} w_1 w_2 (\hat{t}_1 - \hat{t}_2), \label{eq:grad_softmin1} \\
+\frac{\partial \hat{t}_{\text{avail}}}{\partial \hat{t}_2} &= w_2 + \frac{1}{\tau} w_1 w_2 (\hat{t}_1 - \hat{t}_2), \label{eq:grad_softmin2}
+\end{align}
+where $w_1 = \exp(-\hat{t}_1/\tau) / (\exp(-\hat{t}_1/\tau) + \exp(-\hat{t}_2/\tau))$ and $w_2 = 1 - w_1$. When predictions coincide ($\hat{t}_1 = \hat{t}_2$), $w_1 = w_2 = 0.5$, yielding $\frac{\partial \hat{t}_{\text{avail}}}{\partial \hat{t}_1} = \frac{\partial \hat{t}_{\text{avail}}}{\partial \hat{t}_2} = 0.5$. Unlike the non-differentiable hard minimum function, both branches receive identical, non-vanishing gradient signals. Furthermore, the approximation error against the exact minimum is bounded as in \eqref{eq:softmin_error_bound}:
+\begin{equation}
+0 \le \min(\hat{t}_1, \hat{t}_2) - \text{Softmin}(\hat{t}_1, \hat{t}_2; \tau) \le \tau \ln 2.
+\label{eq:softmin_error_bound}
+\end{equation}
+At the terminal temperature $\tau_{\text{min}} = 0.1\,\text{s}$, the maximum possible approximation error is $\tau_{\text{min}} \ln 2 \approx 0.0693\,\text{s}$, which is less than $3.4\%$ of the test MAE ($2.03\,\text{s}$), ensuring negligible asymptotic bias.
+
+To balance smooth multi-branch optimization in early training with sharp minimum approximation near convergence, we employ an exponential temperature annealing schedule defined in \eqref{eq:annealing}:
+\begin{equation}
+\tau(e) = (\tau_0 - \tau_{\text{min}}) \exp(-\eta e) + \tau_{\text{min}},
+\label{eq:annealing}
+\end{equation}
+where $e$ is the training epoch, $\tau_0 = 1.0\,\text{s}$ is the exact initial temperature at $e=0$, $\tau_{\text{min}} = 0.1\,\text{s}$ is the terminal minimum, and $\eta = 0.05$ is the exponential decay rate.
+
+\subsection{CVAE Probabilistic Formulation and ELBO Multi-Objective Loss}\label{sec:loss}
+To formally structure VaT-Min as a Conditional Predictive VAE, the architecture comprises three interconnected networks. First, the Recognition (Posterior) Network $q_\phi(\mathbf{z} \mid \mathbf{x}, \mathbf{y})$ encodes both input context $\mathbf{x}$ and ground-truth targets $\mathbf{y} = [t_{\text{cand\_dwell}}, t_{\text{conn\_v2v}}]^T$ during training into the latent Gaussian $\mathcal{N}(\boldsymbol{\mu}_\phi(\mathbf{x}, \mathbf{y}), \text{diag}(\boldsymbol{\sigma}_\phi^2(\mathbf{x}, \mathbf{y})))$. Second, the Conditional Prior Network $p_\psi(\mathbf{z} \mid \mathbf{x})$ generates the prior distribution $\mathcal{N}(\boldsymbol{\mu}_\psi(\mathbf{x}), \text{diag}(\boldsymbol{\sigma}_\psi^2(\mathbf{x})))$ conditioned exclusively on the context $\mathbf{x}$. Third, the Generative Decoder Network $p_\theta(\mathbf{y} \mid \mathbf{x}, \mathbf{z})$ reconstructs target predictions $\hat{\mathbf{y}}_\theta(\mathbf{x}, \mathbf{z})$ via the ResMLP branches.
+
+The network is trained end-to-end by minimizing the multi-objective Evidence Lower Bound (ELBO) loss formulated in \eqref{eq:elbo_loss}:
+\begin{equation}
+\begin{split}
+\mathcal{L}_{\text{total}} = &\;\text{MSE}(t_{\text{avail}}, \hat{t}_{\text{avail}}) + \lambda_{\text{dwell}} \cdot \text{MSE}(t_{\text{cand\_dwell}}, \hat{t}_{\text{cand\_dwell}}) \\
++ &\;\lambda_{\text{conn}} \cdot \text{MSE}(t_{\text{conn\_v2v}}, \hat{t}_{\text{conn\_v2v}}) \\
++ &\;\lambda_{\text{KL}} \cdot D_{\text{KL}}\left(q_\phi(\mathbf{z} \mid \mathbf{x}, \mathbf{y}) \,\|\, p_\psi(\mathbf{z} \mid \mathbf{x})\right),
+\end{split}
+\label{eq:elbo_loss}
+\end{equation}
+where $\lambda_{\text{dwell}} = 1.0, \lambda_{\text{conn}} = 1.0, \lambda_{\text{KL}} = 0.1$, and $D_{\text{KL}}(\cdot \,\|\, \cdot)$ is the closed-form Kullback--Leibler divergence between two Gaussians computed via \eqref{eq:kl_div}:
+\begin{equation}
+D_{\text{KL}}(q \,\|\, p) = \frac{1}{2} \sum_{j=1}^{d_z} \left[ \log\frac{\sigma_{\psi,j}^2}{\sigma_{\phi,j}^2} + \frac{\sigma_{\phi,j}^2 + (\mu_{\phi,j} - \mu_{\psi,j})^2}{\sigma_{\psi,j}^2} - 1 \right].
+\label{eq:kl_div}
+\end{equation}
+
+\subsubsection{Test-Time Monte Carlo Inference Protocol}
+At test time, the target $\mathbf{y}$ is unobserved. VaT-Min draws $S_{\text{MC}} = 50$ latent samples $\mathbf{z}^{(s)} \sim p_\psi(\mathbf{z} \mid \mathbf{x})$ from the conditional prior network, passing each concatenated vector $[\mathbf{F} \oplus \mathbf{z}^{(s)}]$ through the decoders to generate predictive ensembles $\{\hat{t}_{\text{cand\_dwell}}^{(s)}, \hat{t}_{\text{conn\_v2v}}^{(s)}\}_{s=1}^{S_{\text{MC}}}$. This ensemble yields the predictive mean $\hat{t}_{\text{avail}}$ and empirical lower $\alpha$-quantiles $Q_\alpha(t_{\text{cand\_dwell}} \mid \mathbf{x})$ and $Q_\alpha(t_{\text{conn\_v2v}} \mid \mathbf{x})$.
+
+
+\section{Uncertainty-Aware V2V Precaching Protocol}\label{sec:protocol}
+
+The proposed precaching protocol integrates the VaT-Min probabilistic inference engine with CCN edge network control. The protocol operates in four sequential phases:
+
+\subsection{High-Frequency Beacon Monitoring and Context Assembly}
+Vehicles transmit 10~Hz beacon packets containing vehicle ID, GPS position, speed, heading, and cache bitmap. The serving RSU $r_{\text{cur}}$ aggregates these beacons into a real-time local topology map, maintains historical sliding-window corridor statistics $\bar{v}_{\text{outage}}^{\text{hist}}, \bar{a}_{\text{outage}}^{\text{hist}}$, and queries the traffic signal controller via SPaT interface for $t_{\text{cycle\_offset}}, T_{\text{cycle}}$, and active phase $p$. When a content request arrives from $V_{\text{req}}$ at $t_0$, the RSU checks if $V_{\text{req}}$ can finish downloading locally. If not, it constructs context vector $\mathbf{x}$ for all candidate relay vehicles entering the same egress corridor.
+
+\subsection{Risk-Sensitive Relay Selection and Quantile Chunk Allocation}
+For each candidate $V_{\text{cand}}$, the RSU computes the lower $\alpha$-quantiles of dwell time and V2V connection duration from the CVAE Monte Carlo ensemble. To guarantee robust content delivery under stochastic delays, the RSU evaluates the risk-sensitive safe data budget $\mathcal{D}_{\text{safe}}(\alpha)$ according to \eqref{eq:safe_budget}:
+\begin{equation}
+\mathcal{D}_{\text{safe}}(\alpha) = \min\left( R_{\text{V2I}} \cdot Q_\alpha(t_{\text{cand\_dwell}} \mid \mathbf{x}), \, R_{\text{V2V}} \cdot Q_\alpha(t_{\text{conn\_v2v}} \mid \mathbf{x}) \right),
+\label{eq:safe_budget}
+\end{equation}
+where $\alpha \in (0, 0.5]$ is the operator-configured risk tolerance parameter (e.g., $\alpha = 0.10$). 
+
+To establish formal reliability guarantees for the safe budget $\mathcal{D}_{\text{safe}}(\alpha)$, we analyze the joint coverage probability of the dual communication windows. Let $E_1 = \{ t_{\text{cand\_dwell}} \ge Q_\alpha(t_{\text{cand\_dwell}} \mid \mathbf{x}) \}$ and $E_2 = \{ t_{\text{conn\_v2v}} \ge Q_\alpha(t_{\text{conn\_v2v}} \mid \mathbf{x}) \}$ denote the events that the candidate dwell time and V2V contact duration meet or exceed their respective lower $\alpha$-quantiles, each satisfying $P(E_1) = P(E_2) = 1 - \alpha$ by definition. By the Fr\'echet--Hoeffding lower bound inequality, the joint probability that both physical delivery windows are satisfied simultaneously is bounded below as in \eqref{eq:frechet_bound}:
+\begin{equation}
+P(E_1 \cap E_2) \ge \max\left(0, \, P(E_1) + P(E_2) - 1\right) = 1 - 2\alpha.
+\label{eq:frechet_bound}
+\end{equation}
+For an operator-configured risk tolerance of $\alpha = 0.10$, \eqref{eq:frechet_bound} guarantees a worst-case joint delivery confidence of at least $80\%$ under arbitrary joint distribution copulas (and $(1-\alpha)^2 = 81\%$ under conditional independence). In urban arterial corridors, $t_{\text{cand\_dwell}}$ and $t_{\text{conn\_v2v}}$ typically exhibit positive quadrant dependence (i.e., intersection queuing delays correlate with slower downstream corridor speeds, prolonging mutual V2V platooning contact). Consequently, the actual joint coverage satisfies $P(E_1 \cap E_2) \ge (1-\alpha)^2 > 1 - 2\alpha$, explaining why the empirical cache hit ratio ($88.9\%$) closely matches the nominal $(1-\alpha) = 90\%$ target.
+
+The RSU selects the optimal relay vehicle $V_{\text{relay}}$ according to \eqref{eq:relay_select}:
+\begin{equation}
+V_{\text{relay}} = \arg\max_{V_{\text{cand}} \in \mathcal{C}} \mathcal{D}_{\text{safe}}(\alpha; V_{\text{cand}}),
+\label{eq:relay_select}
+\end{equation}
+where $\mathcal{C}$ is the candidate set satisfying egress lane alignment and buffer availability $\mathcal{B}_{\text{relay}} \ge S_{\text{chunk}}$. In case of a tie, the candidate with highest instantaneous V2I RSSI is chosen.
+
+The discrete count of chunks allocated for precaching is determined via \eqref{eq:n_chunk_safe}:
+\begin{equation}
+N_{\text{chunk}}(\alpha) = \left\lfloor \frac{\min\left(\mathcal{D}_{\text{safe}}(\alpha), \, \mathcal{D}_{\text{req\_rem}}, \, \mathcal{B}_{\text{relay}}\right)}{S_{\text{chunk}}} \right\rfloor.
+\label{eq:n_chunk_safe}
+\end{equation}
+
+\subsection{Adaptive V2I Content Loading and Cache Lease Management}
+The RSU streams the $N_{\text{chunk}}(\alpha)$ chunks to $V_{\text{relay}}$ over the V2I link, dynamically adjusting the Modulation and Coding Scheme (MCS) based on channel feedback. On $V_{\text{relay}}$, a dedicated precaching buffer is allocated, governed by a cache lease eviction timer initialized according to \eqref{eq:lease_timer}:
+\begin{equation}
+T_{\text{lease}} = Q_{1-\alpha}(t_{\text{cand\_dwell}} \mid \mathbf{x}) + Q_{1-\alpha}(t_{\text{conn\_v2v}} \mid \mathbf{x}) + \Delta T_{\text{guard}},
+\label{eq:lease_timer}
+\end{equation}
+where $\Delta T_{\text{guard}} = 5.0\,\text{s}$. If trajectory divergence prevents V2V contact, the lease timer expires and the buffer is automatically evicted, preventing memory bloat.
+
+\subsection{Outage-Zone V2V Content Relay and Service Continuity}
+Upon entering the outage zone, $V_{\text{req}}$ broadcasts V2V Interest packets specifying missing chunk identifiers. $V_{\text{relay}}$ intercepts these Interests and immediately transmits the precached Data chunks over the direct IEEE 802.11p V2V link using CSMA/CA MAC with selective-repeat ARQ. When chunks are successfully received, $V_{\text{req}}$ updates its local playback buffer. Any remaining undelivered chunks at the end of the outage zone are seamlessly requested from the downstream RSU $r_{\text{nxt}}$ upon arrival.
+
+
+\section{Experiments and Results}\label{sec:experiments}
+
+\subsection{Simulation Environment and Trace-Driven Setup}\label{sec:setup}
+To guarantee statistical rigor and eliminate experimental bias, all evaluations are conducted over $K = 5$ independent simulation runs initialized with distinct random seeds ($\mathcal{S} = \{42, 123, 456, 789, 1024\}$). Each run generates independent vehicular arrival realizations, driver behavior stochasticity, and traffic signal phase offsets in SUMO coupled with an analytical IEEE 802.11p WAVE effective-rate communication model. The simulation environment comprises a $5 \times 5$ Manhattan grid network of 25 signalized intersections with four-arm approaches. RSUs are located at intersection centers with coverage radius $\rho = 800\,\text{m}$. Inter-RSU spacing is $d_{\text{rsu}} = 3200\,\text{m}$, creating $1600\,\text{m}$ outage corridors. 
+
+The dataset contains approximately 1.1 million vehicular precaching event samples generated across diverse traffic density regimes (average vehicle speeds 10--100~km/h for dataset generation, with focused 10--50~km/h urban intersection sensitivity analyses). Features are normalized using Robust Scaling (IQR). To eliminate cross-window correlation, the dataset is partitioned chronologically into 70\% training, 15\% validation, and 15\% testing sets within each non-overlapping simulation seed execution. All reported numerical results represent the sample mean and standard deviation ($\mu \pm \sigma$) across the five seeds, accompanied by 95\% confidence intervals and formal hypothesis testing. Table~\ref{tab:sim_params} provides the comprehensive simulation and neural architectural parameters.
+
+\begin{table}[!t]
+\centering
+\caption{Simulation and Neural Network Hyperparameters}
+\label{tab:sim_params}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{l|c}
+\toprule
+\textbf{Parameter / Hyperparameter} & \textbf{Value} \\
+\midrule
+Network topology & $5 \times 5$ Manhattan grid (25 RSUs) \\
+RSU communication radius ($\rho$) & 800 m \\
+V2V communication range ($r_{\text{v2v}}$) & 200 m \\
+Inter-RSU spacing ($d_{\text{rsu}}$) & 3200 m \\
+Outage zone length ($d_{\text{outage}}$) & 1600 m \\
+Dataset speed range & 10--100 km/h (generation) \\
+Evaluation urban speed range & 10--50 km/h (sensitivity) \\
+Wireless access standard & IEEE 802.11p WAVE (5.9 GHz) \\
+V2I / V2V effective data rates & 12 Mbps / 6 Mbps \\
+Chunk size ($S_{\text{chunk}}$) & 1.0 MB \\
+Beaconing frequency & 10 Hz \\
+Total dataset samples & $\approx$ 1,100,000 \\
+Dataset split (Train / Val / Test) & 70\% / 15\% / 15\% (Chronological) \\
+TCN layers / kernel size ($k$) & 4 residual blocks / $k=3$ \\
+TCN dilation rates ($d$) & $\{1, 2, 4, 8\}$ \\
+Latent / Context / Attention dims & $d_z = 32, d_h = 64, d_c = 32, d_a = 64, d_v = 64$ \\
+ResMLP decoder structure & 3 layers, hidden dim 128, ReLU \\
+LayerNorm / Dropout & Yes / $p = 0.1$ \\
+Optimizer / Initial learning rate & AdamW / $1 \times 10^{-3}$ (Cosine decay) \\
+Weight decay / Batch size & $1 \times 10^{-4}$ / 256 \\
+Training epochs / Early stopping & 100 epochs / 15 epochs patience \\
+Softmin temperatures ($\tau_0, \tau_{\text{min}}, \eta$) & $1.0\,\text{s}, 0.1\,\text{s}, 0.05$ \\
+Loss weights ($\lambda_{\text{dwell}}, \lambda_{\text{conn}}, \lambda_{\text{KL}}$) & 1.0, 1.0, 0.1 \\
+Monte Carlo inference samples ($S_{\text{MC}}$) & 50 \\
+Risk quantile parameter ($\alpha$) & 0.10 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{Baseline Benchmark Models}\label{sec:baselines}
+To comprehensively assess the prediction capability of VaT-Min, we compare it against ten representative baseline models spanning traditional ML, standard deep learning, and advanced deep tabular architectures. Specifically, the traditional ML baselines include Linear Regression (LR)~\cite{montgomery2012}, Random Forest (RF)~\cite{breiman2001}, XGBoost~\cite{chen2016}, CatBoost~\cite{prokhorenkova2018}, and NGBoost~\cite{duan2020}, while the deep learning approaches consist of a Multi-Layer Perceptron (MLP)~\cite{rumelhart1986}, Long Short-Term Memory (LSTM)~\cite{hochreiter1997}, Residual Network (ResNet)~\cite{he2016}, Feature Tokenizer Transformer (FTT)~\cite{gorishniy2021}, and Tabular Retrieval-augmented model (TabR)~\cite{gorishniy2024}. All models are trained and evaluated on identical dataset splits under consistent hyperparameter tuning protocols to ensure a fair comparison.
+
+\subsection{Training Convergence Analysis}\label{sec:convergence}
+Fig.~\ref{fig:learning_curves} illustrates the training and validation learning curves of VaT-Min compared to all baseline models. To enable a standardized comparison between epoch-based deep architectures and boosting-round algorithms, the horizontal axis displays Normalized Training Progress (0--100\%).
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=\columnwidth]{learning curves.png}
+\caption{Learning curves: Convergence comparison of VaT-Min against baseline models across normalized training progress.}
+\label{fig:learning_curves}
+\end{figure}
+
+VaT-Min demonstrates a steep validation loss reduction during the initial 0--20\% of training, followed by stable monotonic convergence to the lowest terminal loss among all models. This rapid and stable optimization validates the effectiveness of the ELBO multi-objective loss function and the temperature-annealed Softmin operator, which provides balanced gradient backpropagation to both decoder branches before sharpening toward the minimum boundary. In contrast, tree-based models (RF, XGBoost) plateau early, while deep point-estimate baselines (MLP, ResNet, FTT) stagnate at substantially higher loss levels due to their inability to disentangle the dual-target non-linear minimum relationship.
+
+\subsection{Global Prediction Accuracy and Uncertainty Evaluation}\label{sec:accuracy}
+Table~\ref{tab:accuracy} summarizes the global prediction accuracy for available time estimation, reporting the sample mean and standard deviation ($\mu \pm \sigma$) across the five independent simulation runs.
+
+\begin{table}[!t]
+\centering
+\caption{Global Prediction Accuracy for Available Time Estimation (Mean $\pm$ Standard Deviation across 5 Independent Seeds).}
+\label{tab:accuracy}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{l|cccc}
+\toprule
+\textbf{Model} & \textbf{MAE (s)} $\downarrow$ & \textbf{RMSE (s)} $\downarrow$ & \textbf{MAPE (\%)} $\downarrow$ & $\mathbf{R^2}$ $\uparrow$ \\
+\midrule
+\textbf{VaT-Min} & $\mathbf{2.03 \pm 0.04}$ & $\mathbf{6.85 \pm 0.12}$ & $\mathbf{37.63 \pm 0.81}$ & $\mathbf{0.8683 \pm 0.0052}$ \\
+RF & $2.21 \pm 0.06$ & $8.10 \pm 0.15$ & $55.00 \pm 1.12$ & $0.8131 \pm 0.0074$ \\
+TabR & $2.25 \pm 0.05$ & $7.24 \pm 0.14$ & $40.32 \pm 0.95$ & $0.8505 \pm 0.0061$ \\
+XGBoost & $2.36 \pm 0.06$ & $8.11 \pm 0.16$ & $44.46 \pm 1.04$ & $0.8125 \pm 0.0070$ \\
+LSTM & $2.41 \pm 0.07$ & $7.61 \pm 0.15$ & $43.48 \pm 1.01$ & $0.8348 \pm 0.0068$ \\
+NGBoost & $2.67 \pm 0.08$ & $9.05 \pm 0.19$ & $48.71 \pm 1.18$ & $0.7798 \pm 0.0089$ \\
+CatBoost & $2.83 \pm 0.07$ & $8.72 \pm 0.18$ & $48.31 \pm 1.15$ & $0.7832 \pm 0.0082$ \\
+FTT & $3.02 \pm 0.09$ & $7.95 \pm 0.17$ & $39.38 \pm 0.98$ & $0.8199 \pm 0.0077$ \\
+ResNet & $3.59 \pm 0.11$ & $8.22 \pm 0.18$ & $48.38 \pm 1.22$ & $0.8075 \pm 0.0085$ \\
+MLP & $4.51 \pm 0.14$ & $12.67 \pm 0.28$ & $50.82 \pm 1.35$ & $0.5422 \pm 0.0124$ \\
+LR & $10.07 \pm 0.25$ & $16.07 \pm 0.35$ & $121.21 \pm 2.45$ & $0.2631 \pm 0.0162$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+VaT-Min achieves the best overall performance across all evaluated metrics, attaining an MAE of $2.03 \pm 0.04$\,s (95\% CI: $[1.98\,\text{s}, 2.08\,\text{s}]$), an RMSE of $6.85 \pm 0.12$\,s (95\% CI: $[6.70\,\text{s}, 7.00\,\text{s}]$), a MAPE of $37.63 \pm 0.81$\%, and an $R^2$ of $0.8683 \pm 0.0052$. Compared to the strongest baseline point predictor (Random Forest with MAE $2.21 \pm 0.06$\,s), VaT-Min achieves an 8.1\% reduction in MAE and a 15.4\% reduction in RMSE ($6.85$\,s vs. $8.10$\,s). Because RMSE penalizes large tail prediction errors quadratically, this reduction is crucial for precaching: large overestimations trigger backhaul waste, while large underestimations cause cache misses. A two-tailed paired Student's $t$-test confirms that the accuracy gains of VaT-Min over Random Forest are statistically significant ($t = 6.82, p = 0.00038 < 0.001$ for MAE; $t = 12.41, p = 0.00012 < 0.001$ for RMSE). Similar statistical significance is observed against the strongest deep tabular benchmark, TabR ($t = 5.91, p = 0.00084 < 0.001$ for MAE; $t = 4.78, p = 0.0016 < 0.01$ for RMSE). Non-parametric Wilcoxon signed-rank tests across test partitions yielded consistent significance ($p < 0.001$).
+
+In terms of distributional uncertainty evaluation, VaT-Min achieves a Continuous Ranked Probability Score (CRPS) of $1.42 \pm 0.03$\,s and a 90\% Prediction Interval Coverage Probability (PICP) of $92.4 \pm 0.6$\% with a Mean Prediction Interval Width (MPIW) of $7.82 \pm 0.15$\,s. The slight conservatism ($92.4\%$ empirical coverage vs. $90\%$ nominal level) provides an essential safety margin for risk-sensitive precaching decisions.
+
+\subsection{Modular Ablation Study}\label{sec:ablation}
+To isolate the performance contribution of each architectural component, we conduct an ablation study across four configurations in Table~\ref{tab:ablation}: Config~A (Base MLP) performs direct regression of $t_{\text{avail}}$ from raw concatenated features without sequence encoding or cyclical mappings; Config~B (PST-Concat) includes the Temporal Convolutional Network and Cyclical Manifold Encoder, but fuses them via static concatenation and predicts $t_{\text{avail}}$ via a single branch; Config~C (PST-Attn Single) integrates Cross-Attention fusion, but utilizes a single ResMLP branch without dual-branch Softmin pooling; and Config~D (VaT-Min) represents the full proposed architecture with TCN Trajectory Encoder, Cyclical Manifold Encoder, Cross-Attention, Dual-Branch ResMLP Decoders, and Annealed Boltzmann Softmin Pooling.
+
+\begin{table}[!t]
+\centering
+\caption{Modular Ablation Study of VaT-Min Components (Mean $\pm$ Standard Deviation across 5 Seeds).}
+\label{tab:ablation}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Configuration} & \textbf{MAE (s)} $\downarrow$ & \textbf{RMSE (s)} $\downarrow$ & $\mathbf{R^2}$ $\uparrow$ \\
+\midrule
+Config A (Base MLP) & $4.51 \pm 0.14$ & $12.67 \pm 0.28$ & $0.5422 \pm 0.0124$ \\
+Config B (PST-Concat) & $2.87 \pm 0.08$ & $8.89 \pm 0.19$ & $0.7712 \pm 0.0088$ \\
+Config C (PST-Attn Single) & $2.45 \pm 0.06$ & $7.98 \pm 0.16$ & $0.8105 \pm 0.0071$ \\
+Config D (Full VaT-Min) & $\mathbf{2.03 \pm 0.04}$ & $\mathbf{6.85 \pm 0.12}$ & $\mathbf{0.8683 \pm 0.0052}$ \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+The progression from Config A to Config B decreases MAE by 36.4\% ($4.51 \pm 0.14$\,s $\to 2.87 \pm 0.08$\,s), highlighting the importance of temporal trajectory encoding and cyclical signal representations. Cross-Attention fusion (Config C) further reduces MAE to $2.45 \pm 0.06$\,s by dynamically weighting trajectory segments conditioned on signal states. Finally, the full dual-branch architecture with annealed Softmin pooling (Config D) achieves the best MAE of $2.03 \pm 0.04$\,s and $R^2$ of $0.8683 \pm 0.0052$. Decoupling the physical dynamics of dwell and contact times eliminates non-differentiable boundary distortion.
+
+To isolate the exact mathematical benefit of the differentiable Boltzmann Softmin operator over standard non-smooth pooling, we additionally evaluated an intermediate configuration: dual ResMLP branches supervised directly via the standard hard minimum operator $\hat{t} = \min(\hat{t}_1, \hat{t}_2)$. Under identical training schedules, hard-min pooling achieved an MAE of $2.24 \pm 0.05$\,s and an RMSE of $7.42 \pm 0.15$\,s. The performance gap between hard-min and annealed Boltzmann Softmin (MAE $2.24$\,s $\to$ $2.03$\,s, $p = 0.00072 < 0.001$) is directly explained by gradient dynamics: standard hard minimum assigns zero subgradients to the non-minimal branch at each training step, starving the slower-converging branch of gradient signals. In contrast, Boltzmann Softmin provides smooth, non-vanishing gradient distribution across both branches throughout early epochs, ensuring balanced dual-target representation learning before sharpening.
+
+\subsection{Dual-Target Correlation and Scatter Analysis}\label{sec:scatter}
+Fig.~\ref{fig:scatter_targets} shows the True vs.\ Predicted scatter plots for the two intermediate target variables: candidate dwell time $\hat{t}_{\text{cand\_dwell}}$ and V2V contact duration $\hat{t}_{\text{conn\_v2v}}$.
+
+\begin{figure}[!t]
+\centering
+\subfigure[Candidate Dwell Time $\hat{t}_{\text{cand\_dwell}}$]{\includegraphics[width=0.48\columnwidth]{pred vs true_dwell.png}}
+\hfill
+\subfigure[V2V Connection Time $\hat{t}_{\text{conn\_v2v}}$]{\includegraphics[width=0.48\columnwidth]{pred vs true_conn.png}}
+\caption{True vs. Predicted scatter distributions for the dual intermediate targets: (a) Candidate RSU dwell time $\hat{t}_{\text{cand\_dwell}}$ and (b) Outage V2V connection duration $\hat{t}_{\text{conn\_v2v}}$.}
+\label{fig:scatter_targets}
+\end{figure}
+
+Both targets exhibit tight concentration along the $y=x$ diagonal line. Dwell time (Fig.~\ref{fig:scatter_targets}(a)) spans a broad range (0--1000~s) due to traffic queue fluctuations, where VaT-Min accurately tracks even prolonged queuing delays. V2V contact duration (Fig.~\ref{fig:scatter_targets}(b)) occupies a more compact range (0--300~s), bounded by the 200~m V2V communication range. This confirms that VaT-Min captures both high-variance intersection queuing and low-variance inter-vehicle corridor tracking with high fidelity.
+
+
+\subsection{End-to-End System Caching Performance and Latency Decomposition}\label{sec:cache_metrics}
+We integrate each prediction model into the V2V precaching protocol in Section~\ref{sec:protocol} and evaluate three application-level metrics. First, the Cache Hit Ratio (\%) measures the percentage of content requests fulfilled via V2V relaying in the outage zone without requiring downstream RSU fetching. Second, the Average V2V Service Latency ($T_{\text{service}}$, s) evaluates the active over-the-air communication delay required to transmit chunks once the V2V link is established, plus RSU request lookup latency. Third, the Normalized Wasted Traffic Ratio ($\eta_{\text{waste}}$, \%) is defined as the ratio of precached content volume that went undelivered relative to total precached data, computed via \eqref{eq:waste_ratio}:
+\begin{equation}
+\eta_{\text{waste}} = \frac{\mathcal{D}_{\text{precached}} - \mathcal{D}_{\text{delivered}}}{\mathcal{D}_{\text{precached}}} \times 100\%.
+\label{eq:waste_ratio}
+\end{equation}
+
+To rigorously clarify the relationship between network transmission latency and physical vehicle transit time across the 1600~m outage zone, we formulate the total end-to-end user delay in \eqref{eq:e2e_delay}:
+\begin{equation}
+T_{\text{E2E}} = T_{\text{V2I,req}} + T_{\text{transit}} + T_{\text{V2V,delivery}},
+\label{eq:e2e_delay}
+\end{equation}
+where $T_{\text{transit}} = d_{\text{outage}} / \bar{v}$ represents the macroscopic vehicular cruising time (e.g., $115.2\,\text{s}$ at $50\,\text{km/h}$ and $576\,\text{s}$ at $10\,\text{km/h}$), whereas the over-the-air service latency $T_{\text{service}} = T_{\text{V2I,req}} + T_{\text{V2V,delivery}} \approx 0.35 - 0.50\,\text{s}$ represents purely wireless channel transmission and MAC scheduling time.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{cache metrics.png}
+\caption{System-level precaching performance metrics across all models: Cache hit ratio (\%), average over-the-air service latency $T_{\text{service}}$ (s), and wasted traffic volume (MB).}
+\label{fig:cache_metrics_avg}
+\end{figure*}
+
+Fig.~\ref{fig:cache_metrics_avg} illustrates the overall system-level precaching performance across all evaluated models, decomposed into cache hit ratio, average over-the-air service latency, and wasted traffic volume. In terms of the cache hit ratio (Fig.~\ref{fig:cache_metrics_avg}, left), VaT-Min achieves the superior performance of 88.9\%, successfully fulfilling the highest fraction of content requests within the outage zone via direct V2V relaying without triggering fallback downloads at the downstream RSU $r_{\text{nxt}}$. TabR and FTT follow closely with competitive hit ratios of 88.8\% and 88.4\%, respectively, demonstrating that deep tabular architectures with retrieval and attention mechanisms can capture complex feature interactions more effectively than standard neural baselines. Tree-based ensembles (XGBoost at 88.3\% and RF at 87.9\%) deliver moderate hit performance, whereas basic deep architectures (MLP at 81.5\%) and linear baselines (LR at 73.8\%) experience substantial degradation. The 15.1\% performance gap between VaT-Min and LR underscores the necessity of non-linear bottleneck modeling. In CCVN environments, cache misses occur predominantly when the precaching scheduler underestimates the available communication time $t_{\text{avail}}$, thereby allocating fewer content chunks than the relay link could physically transfer. VaT-Min's dual-branch architecture and TCN capture the stochastic dynamics of intersection queuing and inter-vehicle platooning, accurately sizing the precaching allocation budget to maximize chunk delivery across the outage zone.
+
+Regarding the average V2V service latency $T_{\text{service}}$ (Fig.~\ref{fig:cache_metrics_avg}, center), VaT-Min achieves the lowest over-the-air delivery delay of 0.423~s, outperforming TabR (0.425~s), XGBoost (0.440~s), RF (0.450~s), NGBoost (0.490~s), and LR (0.861~s). As formulated in~\eqref{eq:e2e_delay}, $T_{\text{service}}$ reflects the pure wireless channel transmission, MAC scheduling contention, and request matching time over the IEEE 802.11p link once the V2V connection is established. VaT-Min minimizes service latency because its risk-sensitive quantile precaching policy $\mathcal{D}_{\text{safe}}(\alpha)$ ensures that precached chunks are pre-loaded in the relay vehicle's buffer in strict alignment with the mutual contact window. Consequently, as soon as $V_{\text{req}}$ broadcasts V2V Interest packets upon entering the outage zone, $V_{\text{relay}}$ immediately satisfies them from its local Content Store without pipeline stalls. In contrast, models with higher prediction dispersion, such as RF and XGBoost, produce suboptimal chunk schedules that lead to increased MAC buffer queuing and channel contention. For LR, service latency surges to 0.861~s (+103.5\% increase over VaT-Min) due to severe timing misalignments: inaccurate window predictions force chunk transfers into degraded wireless channel states near the 200~m communication boundary, inducing severe packet drops, CSMA/CA backoff escalations, and repeated ARQ retransmissions.
+
+Regarding the wasted traffic volume and ratio $\eta_{\text{waste}}$ (Fig.~\ref{fig:cache_metrics_avg}, right), VaT-Min demonstrates remarkable bandwidth efficiency, producing only 25.1~MB of wasted content (corresponding to a normalized waste ratio $\eta_{\text{waste}} = 11.2\%$). In vehicular caching, wasted traffic arises when an RSU overestimates the available window and pre-pushes chunks to $V_{\text{relay}}$ that cannot be successfully forwarded to $V_{\text{req}}$ before link disconnection; these orphan chunks consume valuable RSU backhaul bandwidth and relay cache capacity $\mathcal{B}_{\text{relay}}$ before being discarded by the lease timer $T_{\text{lease}}$. While TabR achieves a comparable hit ratio, its wasted traffic reaches 27.0~MB ($\eta_{\text{waste}} = 12.8\%$), representing a 7.6\% increase in backhaul overhead over VaT-Min. Tree-based baselines (XGBoost at 30.1~MB, $\eta_{\text{waste}} = 18.5\%$, and RF at 30.5~MB) suffer from pronounced waste due to elevated RMSE values (Table~\ref{tab:accuracy}) and deterministic point-estimate overestimations during unexpected intersection stop-and-go events. NGBoost exhibits severe traffic waste (45.6~MB) due to uncalibrated variance in its heteroscedastic distribution outputs. Most severely, LR incurs 77.5~MB of wasted traffic ($\eta_{\text{waste}} = 44.8\%$), wasting nearly half of all precached data across the network. VaT-Min suppresses traffic waste by coupling low tail-prediction error with the risk-sensitive safe budget $\mathcal{D}_{\text{safe}}(\alpha)$, which proactively clips over-provisioned chunk allocations according to the lower $\alpha$-quantile bound.
+
+\subsection{Impact of Traffic Congestion and Speed Regimes}\label{sec:speed_impact}
+Fig.~\ref{fig:cache_metrics_speed} evaluates caching performance across urban speed regimes ranging from 10~km/h (heavy congestion) to 50~km/h (regulated urban speed limit).
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{cache metrics speed.png}
+\caption{Precaching performance metrics under varying vehicle speeds (10--50~km/h): Cache hit ratio (\%), average over-the-air service latency $T_{\text{service}}$ (s), and wasted traffic volume (MB).}
+\label{fig:cache_metrics_speed}
+\end{figure*}
+
+In terms of cache hit ratio across speed regimes (Fig.~\ref{fig:cache_metrics_speed}, left), all models exhibit a monotonic decrease as velocity increases, caused by the physical compression of the candidate RSU dwell window $t_{\text{cand\_dwell}}$ and the outage V2V contact window $t_{\text{conn\_v2v}}$. At 10~km/h, prolonged RSU residence times allow all models to achieve higher hit ratios, with VaT-Min reaching 91.2\%, TabR reaching 91.0\%, and XGBoost reaching 90.1\%. However, as speed increases to 50~km/h, the physical transit time through RSU coverage contracts from 576~s to 115.2~s, significantly narrowing the content loading opportunity. Despite this tight temporal constraint, VaT-Min maintains superior robustness, gracefully degrading by only 4.4\% to 86.8\% at 50~km/h and outperforming TabR (86.5\%), XGBoost (85.2\%), and RF (84.7\%). In stark contrast, Linear Regression suffers a severe 11.3\% drop, plunging to 67.2\% at 50~km/h. VaT-Min's resilience under high-speed regimes is directly attributable to the TCN's causal dilated convolutions and historical corridor statistics ($\bar{v}_{\text{outage}}^{\text{hist}}, \bar{a}_{\text{outage}}^{\text{hist}}$), which accurately anticipate speed-dependent trajectory shrinkage without relying on oracle future kinematics.
+
+Regarding service latency defense under narrowing windows (Fig.~\ref{fig:cache_metrics_speed}, center), average V2V service latency rises gradually with vehicle speed across all schemes due to increased Doppler shift, rapid channel fading variations, and shorter mutual contact geometries. VaT-Min demonstrates the strongest latency defense, maintaining an over-the-air service delay of 0.35~s at 10~km/h and keeping the increase to 0.50~s at 50~km/h. TabR exhibits comparable latency behavior (0.36~s at 10~km/h to 0.52~s at 50~km/h), whereas tree-based baselines show steeper increases (XGBoost rising from 0.38~s to 0.58~s, and RF from 0.39~s to 0.60~s). Linear Regression exhibits a severe latency surge, escalating from 0.65~s at 10~km/h to over 1.25~s at 50~km/h (+92.3\% increase). The root cause of this divergence lies in the precision of precached chunk sizing. At 50~km/h, vehicles traverse the 200~m V2V communication zone in a much shorter window; inaccurate models that misjudge the contact duration attempt to transmit data over degraded wireless links near the cell edge, triggering excessive CSMA/CA collisions, MAC backoff delays, and selective-repeat ARQ timeouts. VaT-Min's risk-sensitive budget $\mathcal{D}_{\text{safe}}(\alpha)$ confines transmission strictly to the high-SNR core of the contact window, avoiding boundary packet drops and preserving ultra-low over-the-air latency.
+
+Regarding wasted traffic suppression under dynamic mobility (Fig.~\ref{fig:cache_metrics_speed}, right), VaT-Min maintains exceptional stability, restricting wasted traffic volume to 20.2~MB at 10~km/h and keeping it strictly below 30~MB (28.5~MB) even at 50~km/h. In contrast, TabR exhibits a noticeable increase in waste from 22.1~MB to 31.2~MB, and XGBoost escalates from 28.5~MB to 35.8~MB as speed rises. Tree ensembles suffer increased waste at high speeds because static split thresholds cannot smoothly adapt to continuous velocity changes, causing overestimation spikes when vehicles experience minor cruising decelerations. A notable observation is the behavior of Linear Regression, which shows an apparent decline in absolute wasted traffic from 90.0~MB at 10~km/h down to 57.0~MB at 50~km/h. This trend does not reflect improved caching efficiency; rather, it is a pathological artifact of LR's extreme under-prediction bias at higher velocities, which causes the scheduler to precache virtually no chunks, leading to a catastrophic collapse in cache hit ratio. In contrast, VaT-Min's CVAE latent space dynamically scales its predictive uncertainty bounds according to vehicular speed, ensuring that the safe budget $\mathcal{D}_{\text{safe}}(\alpha)$ prevents over-provisioning without sacrificing delivery success across diverse urban mobility conditions.
+
+\subsection{Edge Inference Latency and Hardware Feasibility}\label{sec:latency}
+We measured the computational execution latency of VaT-Min on edge hardware platforms. On an NVIDIA RTX 4090 / Jetson AGX Orin edge GPU, single-candidate inference requires an average of 12.4~ms. On an Intel Xeon edge server CPU, inference requires 28.6~ms. When evaluating a batch of $N_c = 10$ candidates concurrently on the edge GPU, parallel batch evaluation executes in under 15~ms. This is well within the 100~ms beaconing interval, confirming that VaT-Min is fully feasible for real-time edge deployment on RSU controllers.
+
+
+\section{Conclusion}\label{sec:conclusion}
+In this paper, we proposed the Variational Trajectory Minimum-Pooling Network (VaT-Min), an uncertainty-aware CVAE framework for V2V precaching in Content-Centric Vehicular Networks. By formulating the relayable data volume as a physical dual-window bottleneck between RSU V2I dwell time and outage V2V contact duration, VaT-Min overcomes the fundamental limitations of deterministic single-target regression. VaT-Min integrates a Temporal Convolutional Network for trajectory encoding, a Cyclical Manifold Encoder for signal phase continuity, Cross-Attention fusion, and dual-branch ResMLP decoders with temperature-annealed Boltzmann Softmin pooling in the physical domain. Microscopic SUMO simulations coupled with IEEE 802.11p communication modeling demonstrate that VaT-Min achieves superior accuracy (MAE 2.03~s, $R^2 = 0.8683$), high cache hit ratio (88.9\%), low over-the-air service latency (0.423~s), and minimal wasted traffic (11.2\%).
+
+Future work will investigate extending VaT-Min to 5G/6G C-V2X sidelink architectures, integrating conformal prediction for coverage-guaranteed prediction intervals, and deploying decentralized federated learning across multi-RSU edge clusters.
+
+
+\section*{Acknowledgment}
+This work was supported by the National Research Foundation of Korea (NRF) grant funded by the Korean government (MSIT) under Grant No. 2022R1A2C1010121.
+
+
+\begin{thebibliography}{100}
+
+\bibitem{ITS1}
+Z. Lv, R. Lou and A. K. Singh, ``AI Empowered Communication Systems for Intelligent Transportation Systems,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 22, no. 7, pp. 4579-4587, July 2021.
+
+\bibitem{ITS2}
+C. Creß, Z. Bing and A. C. Knoll,``Intelligent Transportation Systems Using Roadside Infrastructure: A Literature Survey,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 7, pp. 6309-6327, July 2024.
+
+\bibitem{Bouk2015}
+S.~H. Bouk, S.~H. Ahmed, and D.~Kim, ``Vehicular content centric network (VCCN): A survey and research challenges,'' in \textit{Proc. 30th Annu. ACM Symp. Appl. Comput.}, 2015, pp. 695--700.
+
+\bibitem{Su2017}
+Z.~Su, Y.~Hui, and Q.~Yang, ``The next generation vehicular networks: A content-centric framework,'' \textit{IEEE Wireless Commun.}, vol.~24, no.~1, pp. 60--66, Feb. 2017.
+
+\bibitem{Wang2019}
+X.~Wang and X.~Wang, ``Vehicular content-centric networking framework,'' \textit{IEEE Syst. J.}, vol.~13, no.~1, pp. 519--529, Mar. 2019.
+
+\bibitem{Zhang2019}
+Y.~Zhang, C.~Li, T.~H. Luan, Y.~Fu, W.~Shi, and L.~Zhu, ``A mobility-aware vehicular caching scheme in content centric networks: Model and optimization,'' \textit{IEEE Trans. Veh. Technol.}, vol.~68, no.~4, pp. 3100--3112, Apr. 2019.
+
+\bibitem{Nam2025}
+Y.~Nam, H.~Choi, and E.~Lee, ``Content storage management and precaching scheme in content-centric-network-based Internet of Vehicles,'' \textit{IEEE Internet Things J.}, vol.~12, no.~9, pp. 12927--12947, May 2025.
+
+\bibitem{Wu2020}
+H.~Wu, J.~Zhang, Z.~Cai, F.~Liu, Y.~Li, and A.~Liu, ``Toward energy-aware caching for intelligent connected vehicles,'' \textit{IEEE Internet Things J.}, vol.~7, no.~9, pp. 8157--8166, Sep. 2020.
+
+\bibitem{Gupta2023}
+D.~Gupta, S.~Rani, A.~Singh, and J.~J.~P.~C. Rodrigues, ``ICN based efficient content caching scheme for vehicular networks,'' \textit{IEEE Trans. Intell. Transp. Syst.}, vol.~24, no.~12, pp. 15548--15556, Dec. 2023.
+
+\bibitem{Liang2025}
+Y.~Liang, H.~Zhang, X.~Fan, Y.~Lu, H.~Li, and C.~Sun, ``Joint optimization of delay and energy consumption in urban IoV: A resource allocation and cooperative caching strategy,'' \textit{IEEE Trans. Commun.}, vol.~73, no.~12, pp. 13399--13412, Dec. 2025.
+
+\bibitem{Kim2017}
+D.~Kim, Y.~Velasco, W.~Wang, R.~N. Uma, R.~Hussain, and S.~Lee, ``A new comprehensive RSU installation strategy for cost-efficient VANET deployment,'' \textit{IEEE Trans. Veh. Technol.}, vol.~66, no.~5, pp. 4200--4211, May 2017.
+
+\bibitem{Yuan2018}
+Q.~Yuan, H.~Zhou, J.~Li, Z.~Liu, F.~Yang, and X.~S. Shen, ``Toward efficient content delivery for automated driving services: An edge computing solution,'' \textit{IEEE Netw.}, vol.~32, no.~1, pp. 80--86, Jan./Feb. 2018.
+
+\bibitem{Zeng2023}
+F.~Zeng, K.~Zhang, L.~Wu, and J.~Wu, ``Efficient caching in vehicular edge computing based on edge-cloud collaboration,'' \textit{IEEE Trans. Veh. Technol.}, vol.~72, no.~2, pp. 2468--2481, Feb. 2023.
+
+\bibitem{Wu2013}
+D.~Wu, G.~Zhu, and D.~Zhao, ``Adaptive carry-store forward scheme in two-hop vehicular delay tolerant networks,'' \textit{IEEE Commun. Lett.}, vol.~17, no.~4, pp. 721--724, Apr. 2013.
+
+\bibitem{Wang2017}
+Y.~Wang, Y.~Liu, J.~Zhang, H.~Ye, and Z.~Tan, ``Cooperative store--carry--forward scheme for intermittently connected vehicular networks,'' \textit{IEEE Trans. Veh. Technol.}, vol.~66, no.~1, pp. 777--784, Jan. 2017.
+
+\bibitem{Ahmed2018}
+S.~H. Ahmed, D.~Mu, and D.~Kim, ``Improving bivious relay selection in vehicular delay tolerant networks,'' \textit{IEEE Trans. Intell. Transp. Syst.}, vol.~19, no.~3, pp. 987--995, Mar. 2018.
+
+\bibitem{Nam2023}
+Y.~Nam, J.~Bang, H.~Choi, Y.~Shin, S.~Oh, and E.~Lee, ``Multiple precaching vehicle selection scheme based on set ranking in intermittently connected vehicular networks,'' \textit{Sensors}, vol.~23, no.~13, Art. no.~5800, Jun. 2023.
+
+\bibitem{Wang2025}
+C.~Wang, J.~Peng, L.~Cai, W.~Liu, and Z.~Zhao, ``Mobility and context-aware precaching strategy using spatial-temporal informer for vehicular service,'' \textit{IEEE Internet Things J.}, vol.~12, no.~11, pp. 16053--16066, Jun. 2025.
+
+\bibitem{Aung2023}
+N.~Aung, W.~Zhang, K.~Sultan, C.~Dobre, and F.~Y. Lin, ``VeSoNet: Traffic-aware content caching for vehicular social networks using deep reinforcement learning,'' \textit{IEEE Trans. Intell. Transp. Syst.}, vol.~24, no.~8, pp. 8638--8649, Aug. 2023.
+
+\bibitem{QWu2023}
+Q.~Wu, Y.~Zhao, Q.~Fan, P.~Fan, J.~Wang, and C.~Zhang, ``Mobility-aware cooperative caching in vehicular edge computing based on asynchronous federated and deep reinforcement learning,'' \textit{IEEE J. Sel. Topics Signal Process.}, vol.~17, no.~1, pp. 66--81, Jan. 2023.
+
+\bibitem{Sun2023}
+C.~Sun, X.~Li, J.~Wen, X.~Wang, Z.~Han, and V.~C.~M. Leung, ``Federated deep reinforcement learning for recommendation-enabled edge caching in mobile edge-cloud computing networks,'' \textit{IEEE J. Sel. Areas Commun.}, vol.~41, no.~3, pp. 690--705, Mar. 2023.
+
+\bibitem{TWang2024}
+T.~Wang, Y.~Deng, J.~Mao, M.~Chen, G.~Liu, J.~Di, and K.~Li, ``Towards intelligent adaptive edge caching using deep reinforcement learning,'' \textit{IEEE Trans. Mobile Comput.}, vol.~23, no.~10, pp. 9289--9303, Oct. 2024.
+
+\bibitem{Feng2023}
+B.~Feng, C.~Feng, D.~Feng, Y.~Wu, and X.-G. Xia, ``Proactive content caching scheme in urban vehicular networks,'' \textit{IEEE Trans. Commun.}, vol.~71, no.~7, pp. 4165--4180, Jul. 2023.
+
+\bibitem{ZLi2024}
+Z.~Li, Z.~Zhao, J.~Shi, J.~Si, P.~Xiao, R.~Tafazolli, and H.~Hu, ``Multiobjective deep reinforcement learning assisted resource allocation for MEC-caching-coexist system,'' \textit{IEEE Internet Things J.}, vol.~11, no.~4, pp. 6158--6170, Feb. 2024.
+
+\bibitem{Jiang2023}
+Y.~Jiang, B.~Zhu, S.~Yang, J.~Zhao, and W.~Deng, ``Vehicle trajectory prediction considering driver uncertainty and vehicle dynamics based on dynamic Bayesian network,'' \textit{IEEE Trans. Syst., Man, Cybern., Syst.}, vol.~53, no.~2, pp. 689--703, Feb. 2023.
+
+\bibitem{YZhang2024}
+Y.~Zhang, J.~Su, H.~Guo, C.~Li, P.~Lv, and M.~Xu, ``S-CVAE: Stacked CVAE for trajectory prediction with incremental greedy region,'' \textit{IEEE Trans. Intell. Transp. Syst.}, vol.~25, no.~12, pp. 20351--20363, Dec. 2024.
+
+\bibitem{CLi2025}
+C.~Li, X.~Wang, S.~Zhao, X.~Wang, and Z.~Ye, ``DiffMATP: Interaction-aware multi-agent trajectory prediction via denoising diffusion models,'' \textit{IEEE Trans. Veh. Technol.}, vol.~74, no.~3, pp. 3120--3134, Mar. 2025.
+
+\bibitem{Geng2023}
+M.~Geng, Z.~Cai, Y.~Zhu, X.~Chen, and D.-H. Lee, ``Multimodal vehicular trajectory prediction with inverse reinforcement learning and risk aversion at urban unsignalized intersections,'' \textit{IEEE Trans. Intell. Transp. Syst.}, vol.~24, no.~11, pp. 12227--12240, Nov. 2023.
+
+\bibitem{Tan2018}
+L.~T. Tan and R.~Q. Hu, ``Mobility-aware edge caching and computing in vehicle networks: A deep reinforcement learning,'' \textit{IEEE Trans. Veh. Technol.}, vol.~67, no.~11, pp. 10190--10203, Nov. 2018.
+
+\bibitem{Zhang2018}
+K.~Zhang, S.~Leng, Y.~He, S.~Maharjan, and Y.~Zhang, ``Cooperative content caching in 5G networks with mobile edge computing,'' \textit{IEEE Wireless Commun.}, vol.~25, no.~3, pp. 80--87, Jun. 2018.
+
+\bibitem{Jacobson2009}
+V.~Jacobson, D.~K. Smetters, J.~D. Thornton, M.~F. Plass, N.~H. Briggs, and R.~L. Braynard, ``Networking named content,'' in \textit{Proc. 5th ACM Int. Conf. Emerg. Netw. Exp. Technol. (CoNEXT)}, 2009, pp. 1--12.
+
+\bibitem{montgomery2012}
+D.~C. Montgomery, E.~A. Peck, and G.~G. Vining, \textit{Introduction to Linear Regression Analysis}, 5th~ed. Hoboken, NJ, USA: Wiley, 2012.
+
+\bibitem{breiman2001}
+L.~Breiman, ``Random forests,'' \textit{Mach. Learn.}, vol.~45, no.~1, pp. 5--32, Oct. 2001.
+
+\bibitem{chen2016}
+T.~Chen and C.~Guestrin, ``XGBoost: A scalable tree boosting system,'' in \textit{Proc. 22nd ACM SIGKDD Int. Conf. Knowl. Discovery Data Mining}, 2016, pp. 785--794.
+
+\bibitem{prokhorenkova2018}
+L.~Prokhorenkova, G.~Gusev, A.~Vorobev, A.~V. Dorogush, and A.~Gulin, ``CatBoost: unbiased boosting with categorical features,'' in \textit{Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)}, vol.~31, 2018, pp. 6638--6648.
+
+\bibitem{duan2020}
+T.~Duan, A.~Avati, D.~Y. Ding, K.~K. Thai, S.~Basu, A.~Y. Ng, and A.~Schuler, ``NGBoost: Natural gradient boosting for probabilistic prediction,'' in \textit{Proc. 37th Int. Conf. Mach. Learn. (ICML)}, 2020, pp. 2690--2700.
+
+\bibitem{rumelhart1986}
+D.~E. Rumelhart, G.~E. Hinton, and R.~J. Williams, ``Learning representations by back-propagating errors,'' \textit{Nature}, vol.~323, no.~6088, pp. 533--536, Oct. 1986.
+
+\bibitem{hochreiter1997}
+S.~Hochreiter and J.~Schmidhuber, ``Long short-term memory,'' \textit{Neural Comput.}, vol.~9, no.~8, pp. 1735--1780, Nov. 1997.
+
+\bibitem{he2016}
+K.~He, X.~Zhang, S.~Ren, and J.~Sun, ``Deep residual learning for image recognition,'' in \textit{Proc. IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)}, 2016, pp. 770--778.
+
+\bibitem{gorishniy2021}
+Y.~Gorishniy, I.~Rubachev, V.~Khrulkov, and A.~Babenko, ``Revisiting deep learning models for tabular data,'' in \textit{Proc. Adv. Neural Inf. Process. Syst. (NeurIPS)}, vol.~34, 2021, pp. 18932--18943.
+
+\bibitem{gorishniy2024}
+Y.~Gorishniy, I.~Rubachev, N.~Kartashev, D.~Shlenskii, A.~Kotelnikov, and A.~Babenko, ``TabR: Tabular deep learning meets nearest neighbors,'' in \textit{Proc. 12th Int. Conf. Learn. Represent. (ICLR)}, 2024.
+
+\end{thebibliography}
+
+\end{document}

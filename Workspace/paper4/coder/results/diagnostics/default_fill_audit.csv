@@ -1,0 +1,398 @@
+file,line,form,key,default,collision_risk,source
+src/Communications.py,437,conditional default,latest > 0.0,0.0,COLLIDES,"starts = {i: _shadow_rng.uniform(0.0, latest) if latest > 0.0 else 0.0 for i in ids}"
+src/baselines/hoorl.py,398,conditional default,self.phase == 'offline',1.0,COLLIDES,"scale = self.offline_lr_scale if self.phase == ""offline"" else 1.0"
+src/baselines/i_hamappo.py,426,conditional default,ratio.numel() > 1,0.0,COLLIDES,ratio_std = float(ratio.std().item()) if ratio.numel() > 1 else 0.0
+src/baselines/i_hamappo.py,455,conditional default,behaviour_stored,0.0,COLLIDES,"""behaviour_logp_stored"": 1.0 if behaviour_stored else 0.0,"
+src/baselines/sb3_ppo.py,289,conditional default,ratio.numel() > 1,0.0,COLLIDES,first_ratio_std = float(ratio.std().item()) if ratio.numel() > 1 else 0.0
+src/baselines/sb3_ppo.py,325,conditional default,behaviour_stored,0.0,COLLIDES,"""behaviour_logp_stored"": 1.0 if behaviour_stored else 0.0,"
+src/dynamics_predictor.py,169,".get(key, default)",where,0,COLLIDES,"FALLBACK_COUNTS[where] = FALLBACK_COUNTS.get(where, 0) + 1"
+src/dynamics_predictor.py,635,".get(key, default)",'extract_tls_features',0,COLLIDES,"FALLBACK_COUNTS[""extract_tls_features""] = FALLBACK_COUNTS.get(""extract_tls_features"", 0) + 1"
+src/evaluate.py,542,x or default,bundle.get('training_steps'),0,COLLIDES,"checkpoint_training_steps=int(bundle.get(""training_steps"") or 0),"
+src/evaluate.py,779,conditional default,c == 'total_energy_joules',4,COLLIDES,"out[c] = out[c].round(6 if c == ""total_energy_joules"" else 4)"
+src/hoorl_offline.py,442,conditional default,origin == 'scenario',1e-09,COLLIDES,"rel_tol = SCENARIO_CONSTANT_REL_TOL if origin == ""scenario"" else 1e-9"
+src/hoorl_offline.py,505,".get(key, default)",'num_channels',4,COLLIDES,"dataset.metadata.get(""num_channels"", 4)))"
+src/hoorl_offline.py,539,conditional default,delta_s.size,0.0,COLLIDES,"""fraction_dropped"": float((~keep).mean()) if delta_s.size else 0.0,"
+src/hoorl_offline.py,1045,conditional default,CONSTANT_ORIGIN.get(key) == 'scenario',1e-09,COLLIDES,rel_tol=(SCENARIO_CONSTANT_REL_TOL
+src/hot_swap_trainer.py,536,conditional default,self.swap_latencies_ms,0.0,COLLIDES,mean_lat = float(np.mean(self.swap_latencies_ms)) if self.swap_latencies_ms else 0.0
+src/hot_swap_trainer.py,537,conditional default,self.swap_latencies_ms,0.0,COLLIDES,max_lat = float(np.max(self.swap_latencies_ms)) if self.swap_latencies_ms else 0.0
+src/hot_swap_trainer.py,1100,".get(key, default)",key,0,COLLIDES,"seen = int(self._ep_flag_counts.get(key, 0))"
+src/hot_swap_trainer.py,1130,conditional default,recent_losses,0.0,COLLIDES,"float(np.mean([entry[""loss""] for entry in recent_losses if ""loss"" in entry]))"
+src/hot_swap_trainer.py,1423,".get(key, default)",'gamma',0.99,COLLIDES,"getattr(self.rest_model, ""gamma"", self.hparams.get(""gamma"", 0.99))"
+src/hot_swap_trainer.py,1742,".get(key, default)",'training_steps',0,COLLIDES,"self.background_trainer.training_steps = int(checkpoint.get(""training_steps"", 0))"
+src/hot_swap_trainer.py,1743,".get(key, default)",'swap_count',0,COLLIDES,"self.hot_swap_manager.swap_count = int(checkpoint.get(""swap_count"", 0))"
+src/hot_swap_trainer.py,2342,".get(key, default)",'last_pred_err',0.0,COLLIDES,"""last_pred_err"": float(self.vehicle_tracks.get(vid, {}).get(""last_pred_err"", 0.0)),"
+src/hot_swap_trainer.py,2367,conditional default,with_queue,0,COLLIDES,"self._ledger_queue_count(vid, {""tls_features"": tls_info})"
+src/hot_swap_trainer.py,2447,conditional default,float(err_at_update_m) <= self.REDUNDANT_ERR_EPS_M,0.0,COLLIDES,return 1.0 if float(err_at_update_m) <= self.REDUNDANT_ERR_EPS_M else 0.0
+src/hot_swap_trainer.py,2462,".get(key, default)",'speed',0.0,COLLIDES,"""was_stopped"": bool(float(st.get(""speed"", 0.0)) <= self.REDUNDANT_SPEED_EPS_MPS),"
+src/hot_swap_trainer.py,2526,".get(key, default)",vid,0.0,COLLIDES,"r_err_accum = float(self.interval_accum.get(vid, 0.0))"
+src/hot_swap_trainer.py,2534,conditional default,channel is not None,0,COLLIDES,ch_idx = int(channel) if channel is not None else 0
+src/hot_swap_trainer.py,3010,".get(key, default)",'err_at_tx',0.0,COLLIDES,"e_upd = float(item.get(""err_at_tx"", 0.0))"
+src/hot_swap_trainer.py,3046,".get(key, default)",'speed',0.0,COLLIDES,"float((st_after or {}).get(""speed"", 0.0)) <= self.REDUNDANT_SPEED_EPS_MPS"
+src/hot_swap_trainer.py,3057,".get(key, default)",'retries',0,COLLIDES,"grant[""retries""] = int(grant.get(""retries"", 0)) + 1"
+src/hot_swap_trainer.py,3186,conditional default,float(r_info['error']) <= self.REDUNDANT_ERR_EPS_M,0.0,COLLIDES,"exp_red = 1.0 if float(r_info[""error""]) <= self.REDUNDANT_ERR_EPS_M else 0.0"
+src/hot_swap_trainer.py,3287,conditional default,self.recorded_aois,0.0,COLLIDES,mean_aoi = float(np.mean(self.recorded_aois)) if self.recorded_aois else 0.0
+src/hot_swap_trainer.py,3289,conditional default,all_peaks,0.0,COLLIDES,peak_aoi = float(np.max(all_peaks)) if all_peaks else 0.0
+src/hot_swap_trainer.py,3290,conditional default,self.peak_aois,0.0,COLLIDES,mean_peak_aoi = float(np.mean(self.peak_aois)) if self.peak_aois else 0.0
+src/hot_swap_trainer.py,3293,conditional default,self.recorded_errors,0.0,COLLIDES,mean_err = float(np.mean(self.recorded_errors)) if self.recorded_errors else 0.0
+src/hot_swap_trainer.py,3294,conditional default,self.recorded_errors,0.0,COLLIDES,max_err = float(np.max(self.recorded_errors)) if self.recorded_errors else 0.0
+src/hot_swap_trainer.py,3354,conditional default,self.recorded_update_errors,0.0,COLLIDES,"float(np.mean(self.recorded_update_errors)) if self.recorded_update_errors else 0.0, 4"
+src/hot_swap_trainer.py,3368,conditional default,self.recorded_cbrs,0.0,COLLIDES,"""mean_cbr"": round(float(np.mean(self.recorded_cbrs)) if self.recorded_cbrs else 0.0, 6),"
+src/hot_swap_trainer.py,3369,conditional default,self.recorded_cbrs,0.0,COLLIDES,"""max_cbr"": round(float(np.max(self.recorded_cbrs)) if self.recorded_cbrs else 0.0, 6),"
+src/hot_swap_trainer.py,4263,".get(key, default)",'n_observations',0,COLLIDES,"if not has_data or metrics.get(""n_observations"", 0) == 0:"
+src/hot_swap_trainer.py,4445,conditional default,val_result is not None,0,COLLIDES,"""val_n_intervals_closed"": val_n_intervals if val_result is not None else 0,"
+src/hot_swap_trainer.py,4480,conditional default,ep_deltas,0.0,COLLIDES,"""mean_delta"": round(float(np.mean(ep_deltas)), 4) if ep_deltas else 0.0,"
+src/hot_swap_trainer.py,4519,".get(key, default)",_key,0,COLLIDES,"ep_record[f""wiring_{_key}_n""] = int(ep_wiring[""flag_counts""].get(_key, 0))"
+src/hot_swap_trainer.py,4632,conditional default,episodic_records,0.0,COLLIDES,"""mean_step_reward"": round(float(np.nanmean([r[""reward_per_sec_selected""] for r in episodic_records])), 6)"
+src/hot_swap_trainer.py,4659,conditional default,episodic_records,0.0,COLLIDES,"""mean_aoi"": round(float(np.mean([r[""mean_aoi""] for r in episodic_records])), 4)"
+src/hot_swap_trainer.py,4662,conditional default,episodic_records,0.0,COLLIDES,"""mean_scheduled_delta"": round(float(np.mean([r[""mean_delta""] for r in episodic_records])), 4)"
+src/hpo.py,608,conditional default,study.trials,1.0,COLLIDES,"round(1.0 - n_usable / len(study.trials), 4) if study.trials else 1.0"
+src/hpo.py,845,".get(key, default)",'mean_error',0.0,COLLIDES,"""error"": float(w_error) * float(metrics.get(""mean_error"", 0.0)),"
+src/hpo.py,846,".get(key, default)",'mean_aoi',0.0,COLLIDES,"""aoi"": float(w_aoi) * float(metrics.get(""mean_aoi"", 0.0)),"
+src/hpo.py,847,".get(key, default)",'packet_loss_rate',0.0,COLLIDES,"""loss"": float(w_loss) * float(metrics.get(""packet_loss_rate"", 0.0)),"
+src/hpo.py,848,".get(key, default)",'avg_power_norm',0.5,COLLIDES,"""power"": float(w_power) * float(metrics.get(""avg_power_norm"", 0.5)),"
+src/hpo.py,1297,".get(key, default)",LEGACY_OUTAGE_METRIC_KEY,0.0,COLLIDES,"metrics[""outage_rate""] = metrics.get(LEGACY_OUTAGE_METRIC_KEY, 0.0)"
+src/hpo.py,1428,".get(key, default)",'offline_updates',0.0,COLLIDES,"float(offline_summary.get(""offline_updates"", 0.0)),"
+src/hpo.py,1432,".get(key, default)",'wall_clock_s',0.0,COLLIDES,"float(offline_summary.get(""wall_clock_s"", 0.0)),"
+src/hpo.py,1449,x or default,"metrics.get('n_update_failures', 0)",0,COLLIDES,"n_update_failures += int(metrics.get(""n_update_failures"", 0) or 0)"
+src/hpo.py,1449,".get(key, default)",'n_update_failures',0,COLLIDES,"n_update_failures += int(metrics.get(""n_update_failures"", 0) or 0)"
+src/hpo.py,1461,".get(key, default)",'steps_completed',0,COLLIDES,"""steps_completed"": int(metrics.get(""steps_completed"", 0)),"
+src/hpo.py,1462,".get(key, default)",'n_grad_updates',0,COLLIDES,"""n_grad_updates"": int(metrics.get(""n_grad_updates"", 0)),"
+src/hpo.py,1466,x or default,"metrics.get('n_observations', 0)",0,COLLIDES,"trial.set_user_attr(f""n_observations_seed{seed}"", int(metrics.get(""n_observations"", 0) or 0))"
+src/hpo.py,1466,".get(key, default)",'n_observations',0,COLLIDES,"trial.set_user_attr(f""n_observations_seed{seed}"", int(metrics.get(""n_observations"", 0) or 0))"
+src/hpo.py,1467,x or default,"metrics.get('tx_attempts', 0)",0,COLLIDES,"trial.set_user_attr(f""tx_attempts_seed{seed}"", int(metrics.get(""tx_attempts"", 0) or 0))"
+src/hpo.py,1467,".get(key, default)",'tx_attempts',0,COLLIDES,"trial.set_user_attr(f""tx_attempts_seed{seed}"", int(metrics.get(""tx_attempts"", 0) or 0))"
+src/hpo.py,1469,x or default,"metrics.get('n_grad_updates', 0)",0,COLLIDES,"trial.set_user_attr(f""n_grad_updates_seed{seed}"", int(metrics.get(""n_grad_updates"", 0) or 0))"
+src/hpo.py,1469,".get(key, default)",'n_grad_updates',0,COLLIDES,"trial.set_user_attr(f""n_grad_updates_seed{seed}"", int(metrics.get(""n_grad_updates"", 0) or 0))"
+src/hpo.py,1470,x or default,"metrics.get('steps_completed', 0)",0,COLLIDES,"trial.set_user_attr(f""steps_completed_seed{seed}"", int(metrics.get(""steps_completed"", 0) or 0))"
+src/hpo.py,1470,".get(key, default)",'steps_completed',0,COLLIDES,"trial.set_user_attr(f""steps_completed_seed{seed}"", int(metrics.get(""steps_completed"", 0) or 0))"
+src/hpo.py,1521,".get(key, default)",k,0.0,COLLIDES,"avg_metrics[k] = round(float(np.mean([m.get(k, 0.0) for m in seed_metrics])), 4)"
+src/hpo.py,1880,".get(key, default)",'n_usable_trials',0,COLLIDES,"if record.get(""n_usable_trials"", 0) < record.get(""n_trials"", 0):"
+src/hpo.py,1880,".get(key, default)",'n_trials',0,COLLIDES,"if record.get(""n_usable_trials"", 0) < record.get(""n_trials"", 0):"
+src/hpo.py,1901,".get(key, default)",'n_diverged_trials',0,COLLIDES,"flat_row[""n_diverged_trials""] = int(record.get(""n_diverged_trials"", 0))"
+src/hpo.py,2005,conditional default,failed,0,COLLIDES,return 1 if failed else 0
+src/rl_interface.py,148,".get(key, default)",'duration',0.0,COLLIDES,"durations = [float(p.get(""duration"", 0.0)) for p in phases]"
+src/rl_interface.py,430,conditional default,e2 + ref * ref > 0.0,0.0,COLLIDES,return float(e2 / (e2 + ref * ref)) if (e2 + ref * ref) > 0.0 else 0.0
+src/rl_interface.py,662,".get(key, default)",'accel',0.0,COLLIDES,"accel = state_dict.get(""accel"", 0.0)"
+src/rl_interface.py,674,".get(key, default)",'last_pred_err',0.0,COLLIDES,"vec[0] = norm_sq_error(float(state_dict.get(""last_pred_err"", 0.0)))"
+src/rl_interface.py,689,conditional default,"state in ['r', 'red']",0.0,COLLIDES,"vec[8] = 1.0 if state in [""r"", ""red""] else 0.0"
+src/rl_interface.py,690,conditional default,"state in ['y', 'yellow']",0.0,COLLIDES,"vec[9] = 1.0 if state in [""y"", ""yellow""] else 0.0"
+src/rl_interface.py,691,conditional default,"state in ['g', 'green']",0.0,COLLIDES,"vec[10] = 1.0 if state in [""g"", ""green""] else 0.0"
+src/rl_interface.py,692,".get(key, default)",'time_to_switch',30.0,COLLIDES,"vec[11] = np.clip(float(tls.get(""time_to_switch"", 30.0)) / 60.0, 0.0, 1.0)"
+src/rl_interface.py,699,".get(key, default)",'n_active',1,COLLIDES,"vec[13] = np.clip(float(state_dict.get(""n_active"", 1)) / self.n_active_max, 0.0, 1.0)"
+src/rl_interface.py,700,".get(key, default)",'cbr',0.0,COLLIDES,"vec[14] = np.clip(float(state_dict.get(""cbr"", 0.0)), 0.0, 1.0)"
+src/rl_interface.py,848,".get(key, default)",'delta_raw',0.0,COLLIDES,"raw_delta = raw_action.get(""delta"", raw_action.get(""delta_raw"", 0.0))"
+src/rl_interface.py,849,".get(key, default)",'channel_idx',0,COLLIDES,"raw_ch = raw_action.get(""ch"", raw_action.get(""channel_idx"", 0))"
+src/rl_interface.py,850,".get(key, default)",'tx_power_dbm',0.0,COLLIDES,"raw_p = raw_action.get(""power"", raw_action.get(""tx_power_dbm"", 0.0))"
+src/rl_interface.py,951,".get(key, default)",'cbr',0.0,COLLIDES,"mean_cbr = float(state_dict.get(""cbr"", 0.0))"
+src/rl_interface.py,954,conditional default,measured,0.0,COLLIDES,"1.0 if measured else 0.0,"
+src/rl_interface.py,956,".get(key, default)",'n_active',0,COLLIDES,"float(state_dict.get(""n_active"", 0)),"
+src/Communications.py,241,x or default,prev is None,decorr_m <= 0.0,UNKNOWN,if prev is None or decorr_m <= 0.0:
+src/baselines/base_agent.py,96,conditional default,list(self.parameters()),torch.device('cpu'),UNKNOWN,"device = next(self.parameters()).device if list(self.parameters()) else torch.device(""cpu"")"
+src/baselines/hoorl.py,289,conditional default,value_lr is None,value_lr,UNKNOWN,self._value_lr = float(critic_lr if value_lr is None else value_lr)
+src/baselines/hoorl.py,291,conditional default,offline_algorithm is None,str(offline_algorithm),UNKNOWN,self.offline_algorithm = None if offline_algorithm is None else str(offline_algorithm)
+src/baselines/i_hamappo.py,207,conditional default,use_old,self.actor_trunk,UNKNOWN,trunk = self.old_actor_trunk if use_old else self.actor_trunk
+src/baselines/i_hamappo.py,208,conditional default,use_old,self.ch_head,UNKNOWN,ch_head = self.old_ch_head if use_old else self.ch_head
+src/baselines/i_hamappo.py,209,conditional default,use_old,self.cont_head,UNKNOWN,cont_head = self.old_cont_head if use_old else self.cont_head
+src/baselines/i_hamappo.py,210,conditional default,use_old,self.log_std,UNKNOWN,log_std = self.old_log_std if use_old else self.log_std
+src/baselines/i_hamappo.py,344,".get(key, default)",'neighbour_state',batch.get('neighbor_state'),UNKNOWN,"neighbour_states = batch.get(""neighbour_state"", batch.get(""neighbor_state""))"
+src/baselines/i_hamappo.py,345,".get(key, default)",'neighbour_mask',batch.get('neighbor_mask'),UNKNOWN,"neighbour_mask = batch.get(""neighbour_mask"", batch.get(""neighbor_mask""))"
+src/baselines/i_hamappo.py,346,".get(key, default)",'next_neighbour_state',batch.get('next_neighbor_state'),UNKNOWN,"next_neighbour_states = batch.get(""next_neighbour_state"", batch.get(""next_neighbor_state""))"
+src/baselines/i_hamappo.py,347,".get(key, default)",'next_neighbour_mask',batch.get('next_neighbor_mask'),UNKNOWN,"next_neighbour_mask = batch.get(""next_neighbour_mask"", batch.get(""next_neighbor_mask""))"
+src/baselines/ma2hdqn.py,257,conditional default,use_target,self.q_trunk,UNKNOWN,trunk = self.q_trunk_target if use_target else self.q_trunk
+src/baselines/ma2hdqn.py,258,conditional default,use_target,self.q_value_head,UNKNOWN,v_head = self.q_value_head_target if use_target else self.q_value_head
+src/baselines/ma2hdqn.py,259,conditional default,use_target,self.q_adv_head,UNKNOWN,a_head = self.q_adv_head_target if use_target else self.q_adv_head
+src/baselines/maddpg_mt.py,283,conditional default,use_target,self.actor,UNKNOWN,out = (self.actor_target if use_target else self.actor)(state)
+src/baselines/maddpg_mt.py,313,x or default,others is None,others.numel() == 0,UNKNOWN,if others is None or others.numel() == 0:
+src/baselines/maddpg_mt.py,323,conditional default,use_target,self.others_encoder,UNKNOWN,encoder = self.others_encoder_target if use_target else self.others_encoder
+src/baselines/maddpg_mt.py,403,".get(key, default)",'others',batch.get('neighbour_state'),UNKNOWN,"others = batch.get(""others"", batch.get(""neighbour_state""))"
+src/baselines/maddpg_mt.py,404,".get(key, default)",'others_mask',batch.get('neighbour_mask'),UNKNOWN,"others_mask = batch.get(""others_mask"", batch.get(""neighbour_mask""))"
+src/baselines/maddpg_mt.py,405,".get(key, default)",'next_others',"batch.get('next_neighbour_state', others)",UNKNOWN,"next_others = batch.get(""next_others"", batch.get(""next_neighbour_state"", others))"
+src/baselines/maddpg_mt.py,405,".get(key, default)",'next_neighbour_state',others,UNKNOWN,"next_others = batch.get(""next_others"", batch.get(""next_neighbour_state"", others))"
+src/baselines/maddpg_mt.py,406,".get(key, default)",'next_others_mask',"batch.get('next_neighbour_mask', others_mask)",UNKNOWN,next_others_mask = batch.get(
+src/baselines/maddpg_mt.py,407,".get(key, default)",'next_neighbour_mask',others_mask,UNKNOWN,"""next_others_mask"", batch.get(""next_neighbour_mask"", others_mask)"
+src/baselines/res_mapddpg.py,281,conditional default,use_target,self.neighbour_encoder,UNKNOWN,encoder = self.neighbour_encoder_target if use_target else self.neighbour_encoder
+src/baselines/res_mapddpg.py,282,conditional default,use_target,self.critic,UNKNOWN,critic = self.critic_target if use_target else self.critic
+src/baselines/res_mapddpg.py,345,".get(key, default)",'neighbour_state',batch.get('neighbor_state'),UNKNOWN,"neighbour_states = batch.get(""neighbour_state"", batch.get(""neighbor_state""))"
+src/baselines/res_mapddpg.py,346,".get(key, default)",'neighbour_mask',batch.get('neighbor_mask'),UNKNOWN,"neighbour_mask = batch.get(""neighbour_mask"", batch.get(""neighbor_mask""))"
+src/baselines/res_mapddpg.py,347,".get(key, default)",'next_neighbour_state',batch.get('next_neighbor_state'),UNKNOWN,"next_neighbour_states = batch.get(""next_neighbour_state"", batch.get(""next_neighbor_state""))"
+src/baselines/res_mapddpg.py,348,".get(key, default)",'next_neighbour_mask',batch.get('next_neighbor_mask'),UNKNOWN,"next_neighbour_mask = batch.get(""next_neighbour_mask"", batch.get(""next_neighbor_mask""))"
+src/baselines/sb3_ppo.py,113,conditional default,hidden_dim is None,int(hidden_dim),UNKNOWN,self.hidden_dim = None if hidden_dim is None else int(hidden_dim)
+src/baselines/sb3_sac.py,77,conditional default,hidden_dim is None,int(hidden_dim),UNKNOWN,self.hidden_dim = None if hidden_dim is None else int(hidden_dim)
+src/baselines/sb3_sac.py,164,conditional default,log_prob is None,float(log_prob.detach().cpu().reshape(-1)[0]),UNKNOWN,"""log_prob"": None if log_prob is None else float(log_prob.detach().cpu().reshape(-1)[0]),"
+src/baselines/sb3_td3.py,89,conditional default,hidden_dim is None,int(hidden_dim),UNKNOWN,self.hidden_dim = None if hidden_dim is None else int(hidden_dim)
+src/baselines/sb3_td3.py,113,conditional default,channel_noise_sigma is None,float(channel_noise_sigma),UNKNOWN,float(self.wrapper.channel_bin_width)
+src/baselines/spam_d3qn.py,270,conditional default,use_target,self.trunk,UNKNOWN,trunk = self.target_trunk if use_target else self.trunk
+src/baselines/spam_d3qn.py,271,conditional default,use_target,self.value_head,UNKNOWN,v_head = self.target_value_head if use_target else self.value_head
+src/baselines/spam_d3qn.py,272,conditional default,use_target,self.adv_head,UNKNOWN,a_head = self.target_adv_head if use_target else self.adv_head
+src/baselines/spam_d3qn.py,475,x or default,indices is None,not callable(writer),UNKNOWN,if indices is None or not callable(writer):
+src/baselines/spam_d3qn.py,479,conditional default,"isinstance(indices, torch.Tensor)",np.asarray(indices),UNKNOWN,"idx = indices.detach().cpu().numpy() if isinstance(indices, torch.Tensor) else np.asarray(indices)"
+src/dynamics_predictor.py,113,x or default,dist_to_stopline <= 40.0,waiting_time > 0.0,UNKNOWN,if dist_to_stopline <= 40.0 or waiting_time > 0.0:
+src/dynamics_predictor.py,277,conditional default,sumo_conn is not None,sumo,UNKNOWN,driver = sumo_conn if sumo_conn is not None else sumo
+src/dynamics_predictor.py,278,x or default,driver is None,not tls_id,UNKNOWN,if driver is None or not tls_id:
+src/dynamics_predictor.py,336,conditional default,sumo_conn is not None,sumo,UNKNOWN,driver = sumo_conn if sumo_conn is not None else sumo
+src/dynamics_predictor.py,375,conditional default,sumo_conn is not None,sumo,UNKNOWN,driver = sumo_conn if sumo_conn is not None else sumo
+src/dynamics_predictor.py,471,conditional default,sumo_conn is not None,sumo,UNKNOWN,driver = sumo_conn if sumo_conn is not None else sumo
+src/dynamics_predictor.py,548,conditional default,with_queue,"extract_lane_position(driver, vid)",UNKNOWN,"extract_queue_features(driver, vid) if with_queue"
+src/dynamics_predictor.py,661,x or default,i_stop >= 0.5,i_start >= 0.5,UNKNOWN,"return (i_stop >= 0.5 or i_start >= 0.5), i_stop, i_start"
+src/evaluate.py,80,".get(key, default)",_group,_group,UNKNOWN,"MODEL_CATEGORIES[_n] = _CATEGORY_LABELS.get(_group, _group)"
+src/evaluate.py,246,x or default,"getattr(name, '__name__', None)",type(name).__name__,UNKNOWN,"return getattr(name, ""__name__"", None) or type(name).__name__"
+src/evaluate.py,250,".get(key, default)",clean,name,UNKNOWN,"return _CANONICAL_BY_CLEAN.get(clean, name)"
+src/evaluate.py,295,conditional default,inspect.isclass(target),target,UNKNOWN,func = target.__init__ if inspect.isclass(target) else target
+src/evaluate.py,350,x or default,not checkpoint_dir,not os.path.isdir(checkpoint_dir),UNKNOWN,if not checkpoint_dir or not os.path.isdir(checkpoint_dir):
+src/evaluate.py,370,x or default,latest,best_path,UNKNOWN,return latest or best_path
+src/evaluate.py,371,x or default,best_path,latest,UNKNOWN,return best_path or latest
+src/evaluate.py,510,x or default,conflicting,csv_only,UNKNOWN,if conflicting or csv_only:
+src/evaluate.py,801,conditional default,models is not None,CANONICAL_EVAL_MODELS,UNKNOWN,target_models = models if models is not None else CANONICAL_EVAL_MODELS
+src/evaluate.py,802,conditional default,densities is not None,DEFAULT_DENSITIES,UNKNOWN,target_densities = densities if densities is not None else DEFAULT_DENSITIES
+src/evaluate.py,803,conditional default,seeds is not None,DEFAULT_SEEDS,UNKNOWN,target_seeds = seeds if seeds is not None else DEFAULT_SEEDS
+src/evaluate.py,821,".get(key, default)",canonical_name,'Baseline',UNKNOWN,"category = MODEL_CATEGORIES.get(canonical_name, ""Baseline"")"
+src/hoorl_offline.py,441,".get(key, default)",key,'code',UNKNOWN,"origin = CONSTANT_ORIGIN.get(key, ""code"")"
+src/hoorl_offline.py,504,x or default,decoder,"ActionDecoder(num_channels=int(dataset.metadata.get('num_channels', 4)))",UNKNOWN,decoder = decoder or ActionDecoder(num_channels=int(
+src/hoorl_offline.py,778,x or default,repo_dir,os.path.dirname(os.path.dirname(os.path.abspath(__file__))),UNKNOWN,repo_dir = repo_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+src/hoorl_offline.py,792,x or default,commit,'unknown',UNKNOWN,"""commit"": commit or ""unknown"","
+src/hoorl_offline.py,793,conditional default,status is None,bool(status.strip()),UNKNOWN,"""dirty"": None if status is None else bool(status.strip()),"
+src/hoorl_offline.py,794,x or default,"_run(['git', 'rev-parse', '--abbrev-ref', 'HEAD'])",'unknown',UNKNOWN,"""branch"": _run([""git"", ""rev-parse"", ""--abbrev-ref"", ""HEAD""]) or ""unknown"","
+src/hoorl_offline.py,913,conditional default,error_mode is None,str(error_mode),UNKNOWN,error_mode = DEFAULT_ERROR_MODE if error_mode is None else str(error_mode)
+src/hoorl_offline.py,925,x or default,not densities,not seeds,UNKNOWN,if not densities or not seeds:
+src/hoorl_offline.py,1102,".get(key, default)",vid,"np.full(len(RAW_OBSERVATION_FIELDS), np.nan)",UNKNOWN,env.last_raw_observation.get(
+src/hoorl_offline.py,1127,conditional default,rec.get('transmitted'),CLOSE_REASON_COVERAGE_EXIT,UNKNOWN,close_reason=(CLOSE_REASON_TRANSMITTED
+src/hoorl_offline.py,1132,".get(key, default)",vid,"np.full(len(RAW_OBSERVATION_FIELDS), np.nan)",UNKNOWN,next_state_raw=env.last_raw_observation.get(
+src/hoorl_offline.py,1148,".get(key, default)",vid,"np.full(len(RAW_OBSERVATION_FIELDS), np.nan)",UNKNOWN,env.last_raw_observation.get(
+src/hoorl_offline.py,1197,".get(key, default)",'done',False,UNKNOWN,"columns, prev, rec, s2, bool(rec.get(""done"", False)),"
+src/hoorl_offline.py,1198,conditional default,rec.get('transmitted'),CLOSE_REASON_EPISODE_BOUNDARY,UNKNOWN,close_reason=(CLOSE_REASON_TRANSMITTED
+src/hoorl_offline.py,1203,".get(key, default)",vid,"np.full(len(RAW_OBSERVATION_FIELDS), np.nan)",UNKNOWN,next_state_raw=env.last_raw_observation.get(
+src/hoorl_offline.py,1328,conditional default,road_seed is None,int(road_seed),UNKNOWN,"""road_seed"": None if road_seed is None else int(road_seed),"
+src/hoorl_offline.py,1358,conditional default,max_transitions is None,int(max_transitions),UNKNOWN,"""max_transitions_requested"": None if max_transitions is None else int(max_transitions),"
+src/hoorl_offline.py,1359,conditional default,per_cell_cap is None,int(per_cell_cap),UNKNOWN,"""per_cell_transition_cap"": None if per_cell_cap is None else int(per_cell_cap),"
+src/hoorl_offline.py,1363,conditional default,sumo_dir is None,os.path.abspath(sumo_dir),UNKNOWN,"""sumo_dir"": None if sumo_dir is None else os.path.abspath(sumo_dir),"
+src/hoorl_offline.py,1384,conditional default,num_threads is None,int(num_threads),UNKNOWN,"""num_threads"": None if num_threads is None else int(num_threads),"
+src/hot_swap_trainer.py,368,conditional default,vectorizer is not None,StateVectorizer(),UNKNOWN,vec = vectorizer if vectorizer is not None else StateVectorizer()
+src/hot_swap_trainer.py,441,x or default,update_lock,threading.Lock(),UNKNOWN,self.update_lock = update_lock or threading.Lock()
+src/hot_swap_trainer.py,443,conditional default,act_device is not None,next(act_model.parameters()).device if list(act_model.parameters()) else torch.device('cpu'),UNKNOWN,torch.device(act_device)
+src/hot_swap_trainer.py,445,conditional default,list(act_model.parameters()),torch.device('cpu'),UNKNOWN,else next(act_model.parameters()).device
+src/hot_swap_trainer.py,450,conditional default,rest_device is not None,next(rest_model.parameters()).device if list(rest_model.parameters()) else torch.device('cpu'),UNKNOWN,torch.device(rest_device)
+src/hot_swap_trainer.py,452,conditional default,list(rest_model.parameters()),torch.device('cpu'),UNKNOWN,else next(rest_model.parameters()).device
+src/hot_swap_trainer.py,457,conditional default,swap_lock is not None,threading.Lock(),UNKNOWN,self.swap_lock = swap_lock if swap_lock is not None else threading.Lock()
+src/hot_swap_trainer.py,471,x or default,torch.isnan(p).any(),torch.isinf(p).any(),UNKNOWN,if torch.isnan(p).any() or torch.isinf(p).any():
+src/hot_swap_trainer.py,474,x or default,torch.isnan(b).any(),torch.isinf(b).any(),UNKNOWN,if torch.isnan(b).any() or torch.isinf(b).any():
+src/hot_swap_trainer.py,624,conditional default,action_idx is None,int(action_idx),UNKNOWN,"""action_idx"": None if action_idx is None else int(action_idx),"
+src/hot_swap_trainer.py,626,conditional default,behaviour_log_prob is None,float(behaviour_log_prob),UNKNOWN,None if behaviour_log_prob is None else float(behaviour_log_prob)
+src/hot_swap_trainer.py,629,conditional default,reward_terms is None,"np.asarray(reward_terms, dtype=np.float32).reshape(-1)",UNKNOWN,None if reward_terms is None
+src/hot_swap_trainer.py,648,conditional default,max_items is not None,self.queue.qsize() + 100,UNKNOWN,limit = max_items if max_items is not None else self.queue.qsize() + 100
+src/hot_swap_trainer.py,730,x or default,rest_device,next(rest_model.parameters()).device if list(rest_model.parameters()) else torch.device('cpu'),UNKNOWN,self.rest_device = rest_device or (
+src/hot_swap_trainer.py,731,conditional default,list(rest_model.parameters()),torch.device('cpu'),UNKNOWN,"next(rest_model.parameters()).device if list(rest_model.parameters()) else torch.device(""cpu"")"
+src/hot_swap_trainer.py,854,conditional default,callable(sampler),self.replay_buffer.sample(self.batch_size),UNKNOWN,"sampler(self.replay_buffer, self.batch_size) if callable(sampler)"
+src/hot_swap_trainer.py,860,conditional default,"isinstance(v, torch.Tensor)",v,UNKNOWN,"batch = {k: v.to(self.rest_device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}"
+src/hot_swap_trainer.py,1022,x or default,self.worker_thread is None,not self.worker_thread.is_alive(),UNKNOWN,if self.worker_thread is None or not self.worker_thread.is_alive():
+src/hot_swap_trainer.py,1063,x or default,not self._worker_started,self.stop_event.is_set(),UNKNOWN,if not self._worker_started or self.stop_event.is_set():
+src/hot_swap_trainer.py,1114,conditional default,len(ordered) % 2,0.5 * (ordered[mid - 1] + ordered[mid]),UNKNOWN,median_loss = (ordered[mid] if len(ordered) % 2
+src/hot_swap_trainer.py,1168,x or default,vectorizer,StateVectorizer(rsu_range=rsu_range),UNKNOWN,self.vectorizer = vectorizer or StateVectorizer(rsu_range=rsu_range)
+src/hot_swap_trainer.py,1170,x or default,decoder,ActionDecoder(),UNKNOWN,self.decoder = decoder or ActionDecoder()
+src/hot_swap_trainer.py,1343,conditional default,"isinstance(model_name, str)","getattr(model_name, '__name__', 'CustomModel')",UNKNOWN,"self.model_name = str(model_name) if isinstance(model_name, str) else getattr(model_name, ""__name__"", ""CustomModel"")"
+src/hot_swap_trainer.py,1348,conditional default,state_dim is not None,infer_state_dim(),UNKNOWN,self.state_dim = int(state_dim) if state_dim is not None else infer_state_dim()
+src/hot_swap_trainer.py,1375,conditional default,act_device is not None,default_act_dev,UNKNOWN,self.act_device = torch.device(act_device) if act_device is not None else default_act_dev
+src/hot_swap_trainer.py,1376,conditional default,rest_device is not None,default_rest_dev,UNKNOWN,self.rest_device = torch.device(rest_device) if rest_device is not None else default_rest_dev
+src/hot_swap_trainer.py,1733,x or default,skipped,missing,UNKNOWN,if skipped or missing:
+src/hot_swap_trainer.py,2289,x or default,not self.is_running,vid not in self._active_vehicle_ids(),UNKNOWN,if not self.is_running or vid not in self._active_vehicle_ids():
+src/hot_swap_trainer.py,2328,".get(key, default)",'t_update',self.sim_time,UNKNOWN,"last_upd = self.vehicle_tracks.get(vid, {}).get(""t_update"", self.sim_time)"
+src/hot_swap_trainer.py,2408,x or default,other == vid,other_pos <= float(lane_pos),UNKNOWN,if other == vid or other_pos <= float(lane_pos):
+src/hot_swap_trainer.py,2410,x or default,age <= self.LEDGER_FRESH_S,was_stopped and lane_is_red,UNKNOWN,if age <= self.LEDGER_FRESH_S or (was_stopped and lane_is_red):
+src/hot_swap_trainer.py,2427,".get(key, default)",'was_stopped',False,UNKNOWN,"bool(rec.get(""was_stopped"", False)),"
+src/hot_swap_trainer.py,2428,".get(key, default)",'t_update',self.sim_time,UNKNOWN,"self.sim_time - float(rec.get(""t_update"", self.sim_time)),"
+src/hot_swap_trainer.py,2455,conditional default,is_initial,self.sim_time - self.step_length,UNKNOWN,"""t_update"": self.sim_time if is_initial else self.sim_time - self.step_length,"
+src/hot_swap_trainer.py,2575,conditional default,close_t is None,close_t,UNKNOWN,t_close = float(self.sim_time if close_t is None else close_t)
+src/hot_swap_trainer.py,2576,".get(key, default)",vid,t_close,UNKNOWN,"t0 = float(self.interval_start_t.get(vid, t_close))"
+src/hot_swap_trainer.py,2752,x or default,"hasattr(libsumo.simulation, 'getLoadedNumber')","hasattr(libsumo.simulation, 'getTime')",UNKNOWN,"assert hasattr(libsumo.simulation, ""getLoadedNumber"") or hasattr(libsumo.simulation, ""getTime""), ("
+src/hot_swap_trainer.py,3004,".get(key, default)",'t_update',t_fire,UNKNOWN,"last_t = float(self.vehicle_tracks.get(vid, {}).get(""t_update"", t_fire))"
+src/hot_swap_trainer.py,3198,conditional default,not self.allow_custom_reward_weights,-(self.w1 * re_ + self.w2 * rp_ + self.w3 * rc_ + self.w4 * ir_),UNKNOWN,expected = -(
+src/hot_swap_trainer.py,3295,conditional default,self.low_speed_errors,mean_err,UNKNOWN,low_spd_err = float(np.mean(self.low_speed_errors)) if self.low_speed_errors else mean_err
+src/hot_swap_trainer.py,3296,conditional default,self.high_speed_errors,mean_err,UNKNOWN,high_spd_err = float(np.mean(self.high_speed_errors)) if self.high_speed_errors else mean_err
+src/hot_swap_trainer.py,3302,conditional default,self.tx_powers,"float(getattr(self.decoder, 'p_min', 10.0))",UNKNOWN,float(np.mean(self.tx_powers))
+src/hot_swap_trainer.py,3641,x or default,not os.path.exists(csv_path),os.path.getsize(csv_path) == 0,UNKNOWN,write_header = not os.path.exists(csv_path) or os.path.getsize(csv_path) == 0
+src/hot_swap_trainer.py,3738,conditional default,"isinstance(model_name, str)","getattr(model_name, '__name__', 'CustomModel')",UNKNOWN,"model_name_str = model_name if isinstance(model_name, str) else getattr(model_name, ""__name__"", ""CustomModel"")"
+src/hot_swap_trainer.py,3854,conditional default,validation_density is not None,resolve_validation_density(density_schedule),UNKNOWN,float(validation_density) if validation_density is not None
+src/hot_swap_trainer.py,3865,conditional default,validation_steps,steps_per_ep,UNKNOWN,"val_steps = max(10, int(validation_steps) if validation_steps else steps_per_ep)"
+src/hot_swap_trainer.py,4232,x or default,trainer_metrics.get('fatal_error'),bg.worker_is_dead(),UNKNOWN,"if abort is None and (trainer_metrics.get(""fatal_error"") or bg.worker_is_dead()):"
+src/hot_swap_trainer.py,4234,x or default,trainer_metrics.get('fatal_kind'),ABORT_TRAINER_CRASH,UNKNOWN,"kind=trainer_metrics.get(""fatal_kind"") or ABORT_TRAINER_CRASH,"
+src/hot_swap_trainer.py,4236,x or default,trainer_metrics.get('fatal_error'),'the background training thread is no longer alive; no further gradient update can happen in this run',UNKNOWN,"reason=trainer_metrics.get(""fatal_error"") or ("
+src/hot_swap_trainer.py,4263,x or default,not has_data,"metrics.get('n_observations', 0) == 0",UNKNOWN,"if not has_data or metrics.get(""n_observations"", 0) == 0:"
+src/hot_swap_trainer.py,4363,conditional default,due_for_validation,contextlib.nullcontext(),UNKNOWN,with trainer.background_trainer.paused() if due_for_validation else contextlib.nullcontext():
+src/hot_swap_trainer.py,4412,x or default,(ep + 1) % 10 == 0,ep + 1 == episodes,UNKNOWN,if (ep + 1) % 10 == 0 or (ep + 1) == episodes:
+src/hot_swap_trainer.py,4489,conditional default,abort is not None,'ok',UNKNOWN,"""run_status"": abort.kind if abort is not None else ""ok"","
+src/hot_swap_trainer.py,4581,conditional default,abort is None,abort.kind,UNKNOWN,"""status"": STATUS_COMPLETED if abort is None else abort.kind,"
+src/hot_swap_trainer.py,4611,conditional default,abort is None,abort.kind,UNKNOWN,"""status"": STATUS_COMPLETED if abort is None else abort.kind,"
+src/hpo.py,109,".get(key, default)",g,g,UNKNOWN,"n: _CATEGORY_LABELS.get(g, g)"
+src/hpo.py,137,x or default,"getattr(name, '__name__', None)",type(name).__name__,UNKNOWN,"return getattr(name, ""__name__"", None) or type(name).__name__"
+src/hpo.py,140,".get(key, default)",clean,stripped,UNKNOWN,"return _CANONICAL_BY_CLEAN.get(clean, stripped)"
+src/hpo.py,830,x or default,run_is_empty(metrics),run_diverged(metrics),UNKNOWN,if run_is_empty(metrics) or run_diverged(metrics):
+src/hpo.py,1002,conditional default,reward_weights,DEFAULT_REWARD_WEIGHTS,UNKNOWN,effective_weights = reward_weights if reward_weights else DEFAULT_REWARD_WEIGHTS
+src/hpo.py,1084,conditional default,s2 is not None,True,UNKNOWN,"done = rec[""done""] if s2 is not None else True"
+src/hpo.py,1104,conditional default,callable(sampler),buffer.sample(batch_size=16),UNKNOWN,"batch = (sampler(buffer, 16) if callable(sampler)"
+src/hpo.py,1178,x or default,not watch_divergence,loss_tracker.max_seen_nonfinite == 0,UNKNOWN,if not watch_divergence or loss_tracker.max_seen_nonfinite == 0:
+src/hpo.py,1247,".get(key, default)",'avg_tx_power_dbm',0.5 * (P_MIN + P_MAX),UNKNOWN,"avg_p = metrics.get(""avg_tx_power_dbm"", 0.5 * (P_MIN + P_MAX))"
+src/hpo.py,1490,conditional default,scores,FAILED_RUN_PENALTY,UNKNOWN,mean_score = float(np.mean(scores)) if scores else FAILED_RUN_PENALTY
+src/hpo.py,1599,conditional default,search_space is not None,sample_hparams,UNKNOWN,sample_space = search_space if search_space is not None else sample_hparams
+src/hpo.py,1609,conditional default,"isinstance(model_name, str)","getattr(model_cls, '__name__', 'CustomModel')",UNKNOWN,"canonical_name = normalize_model_name(model_name) if isinstance(model_name, str) else getattr(model_cls, ""__name__"", ""CustomModel"")"
+src/hpo.py,1610,conditional default,seeds is not None,list(HPO_TUNING_SEEDS),UNKNOWN,eval_seeds = seeds if seeds is not None else list(HPO_TUNING_SEEDS)
+src/hpo.py,1626,x or default,study_name,f'hpo_{canonical_name}',UNKNOWN,"study_name=study_name or f""hpo_{canonical_name}"","
+src/hpo.py,1693,conditional default,summary['n_penalised_trials'],logger.info,UNKNOWN,"log = logger.warning if summary[""n_penalised_trials""] else logger.info"
+src/hpo.py,1760,".get(key, default)",'diverged',False,UNKNOWN,"best_diverged = bool(study.best_trial.user_attrs.get(""diverged"", False))"
+src/hpo.py,1767,".get(key, default)",'divergence_reason','(no reason recorded)',UNKNOWN,"study.best_trial.user_attrs.get(""divergence_reason"", ""(no reason recorded)""),"
+src/hpo.py,1787,".get(key, default)",canonical_name,'Baseline',UNKNOWN,"""category"": MODEL_CATEGORIES.get(canonical_name, ""Baseline""),"
+src/hpo.py,1794,".get(key, default)",'diverged',False,UNKNOWN,"1 for t in study.trials if t.user_attrs.get(""diverged"", False)"
+src/hpo.py,1822,x or default,models,CANONICAL_MODEL_NAMES,UNKNOWN,target_models = [normalize_model_name(m) for m in (models or CANONICAL_MODEL_NAMES)]
+src/hpo.py,1823,x or default,seeds,list(HPO_TUNING_SEEDS),UNKNOWN,eval_seeds = seeds or list(HPO_TUNING_SEEDS)
+src/hpo.py,1900,".get(key, default)",'best_trial_diverged',False,UNKNOWN,"flat_row[""best_trial_diverged""] = bool(record.get(""best_trial_diverged"", False))"
+src/rl_interface.py,150,x or default,not states,not durations,UNKNOWN,if not states or not durations:
+src/rl_interface.py,161,conditional default,link_idx < len(states[p_idx]),'g',UNKNOWN,"char = states[p_idx][link_idx] if link_idx < len(states[p_idx]) else ""g"""
+src/rl_interface.py,173,conditional default,max_red > 0.0,default_duration,UNKNOWN,return float(max_red) if max_red > 0.0 else default_duration
+src/rl_interface.py,218,conditional default,speeds,default_speed,UNKNOWN,return float(max(speeds)) if speeds else default_speed
+src/rl_interface.py,271,conditional default,best > 0.0,default_factor,UNKNOWN,return float(best) if best > 0.0 else default_factor
+src/rl_interface.py,331,x or default,not grid,lane_km <= 0.0,UNKNOWN,if not grid or lane_km <= 0.0:
+src/rl_interface.py,428,conditional default,e_ref and e_ref > 0.0,E_REF,UNKNOWN,ref = float(e_ref) if e_ref and e_ref > 0.0 else E_REF
+src/rl_interface.py,507,conditional default,rsu_range and rsu_range > 0.0,RSU_RANGE,UNKNOWN,self.rsu_range = float(rsu_range) if rsu_range and rsu_range > 0.0 else RSU_RANGE
+src/rl_interface.py,517,conditional default,v_max and v_max > 0.0,V_MAX_OBS,UNKNOWN,self.v_max = float(v_max) if v_max and v_max > 0.0 else V_MAX_OBS
+src/rl_interface.py,525,conditional default,n_active_max and n_active_max > 0.0,N_ACTIVE_MAX_OBS,UNKNOWN,float(n_active_max) if n_active_max and n_active_max > 0.0 else N_ACTIVE_MAX_OBS
+src/rl_interface.py,586,x or default,speed < 1e-06,dist < 1e-06,UNKNOWN,if speed < 1e-6 or dist < 1e-6:
+src/rl_interface.py,624,conditional default,callable(vehicle_node.speed),vehicle_node.speed,UNKNOWN,spd_val = vehicle_node.speed() if callable(vehicle_node.speed) else vehicle_node.speed
+src/rl_interface.py,659,".get(key, default)",'pos',"(0.0, 0.0)",UNKNOWN,"pos = state_dict.get(""pos"", (0.0, 0.0))"
+src/rl_interface.py,660,".get(key, default)",'vel',"(0.0, 0.0)",UNKNOWN,"vel = state_dict.get(""vel"", (0.0, 0.0))"
+src/rl_interface.py,661,".get(key, default)",'speed',"math.hypot(vel[0], vel[1])",UNKNOWN,"speed = state_dict.get(""speed"", math.hypot(vel[0], vel[1]))"
+src/rl_interface.py,682,".get(key, default)",'dist_to_rsu',"math.hypot(dx, dy)",UNKNOWN,"dist = state_dict.get(""dist_to_rsu"", math.hypot(dx, dy))"
+src/rl_interface.py,687,".get(key, default)",'tls_features',state_dict,UNKNOWN,"tls = state_dict.get(""tls_features"", state_dict)"
+src/rl_interface.py,688,".get(key, default)",'state','g',UNKNOWN,"state = str(tls.get(""state"", ""g"")).lower()"
+src/rl_interface.py,693,".get(key, default)",'dist_to_stopline',self.rsu_range,UNKNOWN,"vec[12] = np.clip(float(tls.get(""dist_to_stopline"", self.rsu_range)) / self.rsu_range, 0.0, 1.0)"
+src/rl_interface.py,731,conditional default,k < len(values),float(vec[14]),UNKNOWN,"values[k] if k < len(values) else float(vec[14]), 0.0, 1.0"
+src/rl_interface.py,794,conditional default,self._delta_max_fixed is not None,DELTA_MAX,UNKNOWN,return self._delta_max_fixed if self._delta_max_fixed is not None else DELTA_MAX
+src/rl_interface.py,848,".get(key, default)",'delta',"raw_action.get('delta_raw', 0.0)",UNKNOWN,"raw_delta = raw_action.get(""delta"", raw_action.get(""delta_raw"", 0.0))"
+src/rl_interface.py,849,".get(key, default)",'ch',"raw_action.get('channel_idx', 0)",UNKNOWN,"raw_ch = raw_action.get(""ch"", raw_action.get(""channel_idx"", 0))"
+src/rl_interface.py,850,".get(key, default)",'power',"raw_action.get('tx_power_dbm', 0.0)",UNKNOWN,"raw_p = raw_action.get(""power"", raw_action.get(""tx_power_dbm"", 0.0))"
+src/rl_interface.py,955,".get(key, default)",'state','none',UNKNOWN,"float(tls_state_code(tls.get(""state"", ""none""))),"
+src/rl_interface.py,958,conditional default,k < len(per_ch),mean_cbr,UNKNOWN,out += [float(per_ch[k]) if k < len(per_ch) else mean_cbr for k in range(4)]
+src/rl_interface.py,1043,x or default,i is None,len(self.vids) <= 1,UNKNOWN,if i is None or len(self.vids) <= 1:
+src/rl_interface.py,1143,conditional default,"not isinstance(state, np.ndarray)",state.astype(np.float32),UNKNOWN,"s_arr = np.array(state, dtype=np.float32) if not isinstance(state, np.ndarray) else state.astype(np.float32)"
+src/rl_interface.py,1151,conditional default,"not isinstance(next_state, np.ndarray)",next_state.astype(np.float32),UNKNOWN,"ns_arr = np.array(next_state, dtype=np.float32) if not isinstance(next_state, np.ndarray) else next_state.astype(np.float32)"
+src/rl_interface.py,1160,conditional default,action_idx is None,int(action_idx),UNKNOWN,"""action_idx"": None if action_idx is None else int(action_idx),"
+src/rl_interface.py,1162,conditional default,behaviour_log_prob is None or not np.isfinite(float(behaviou,float(behaviour_log_prob),UNKNOWN,None
+src/rl_interface.py,1163,x or default,behaviour_log_prob is None,not np.isfinite(float(behaviour_log_prob)),UNKNOWN,if behaviour_log_prob is None or not np.isfinite(float(behaviour_log_prob))
+src/rl_interface.py,1167,conditional default,reward_terms is None,"np.asarray(reward_terms, dtype=np.float32).reshape(-1)",UNKNOWN,None if reward_terms is None
+src/rl_interface.py,1263,x or default,not values,any((v is None for v in values)),UNKNOWN,if not values or any(v is None for v in values):
+src/rl_interface.py,1300,x or default,not np.isfinite(total),total <= 0.0,UNKNOWN,if not np.isfinite(total) or total <= 0.0:
+src/Communications.py,396,".get(key, default)",gid,float('inf'),DISTINCT,"str(gid), moved_of.get(gid, float(""inf"")), shadowing_sigma_db),"
+src/Communications.py,406,".get(key, default)",gid,(),DISTINCT,"allowed = set(interferers_of.get(gid, ()))"
+src/baselines/hoorl.py,632,conditional default,key,None,DISTINCT,"method = getattr(self, f""_offline_update_{key}"", None) if key else None"
+src/baselines/sb3_ppo.py,217,conditional default,sb3.clip_range_vf is not None,None,DISTINCT,clip_range_vf = float(sb3.clip_range_vf(1.0)) if sb3.clip_range_vf is not None else None
+src/baselines/sb3_wrapper.py,273,conditional default,policy_kwargs,{},DISTINCT,kwargs = dict(policy_kwargs) if policy_kwargs else {}
+src/baselines/sb3_wrapper.py,329,conditional default,opt is not None,[],DISTINCT,return [opt] if opt is not None else []
+src/evaluate.py,291,x or default,hparams,{},DISTINCT,params = dict(hparams or {})
+src/evaluate.py,368,conditional default,episodes,None,DISTINCT,"latest = max(episodes, key=lambda c: c[0])[1] if episodes else None"
+src/evaluate.py,379,conditional default,m,-1,DISTINCT,return int(m.group(1)) if m else -1
+src/evaluate.py,421,conditional default,hparams is not None,{},DISTINCT,params = dict(hparams) if hparams is not None else {}
+src/evaluate.py,487,x or default,checkpoint_dir,'',DISTINCT,"path = find_checkpoint(checkpoint_dir or """", canonical_name, select=checkpoint_select)"
+src/evaluate.py,500,x or default,bundle.get('hparams'),{},DISTINCT,"ckpt_hparams = bundle.get(""hparams"") or {}"
+src/evaluate.py,504,x or default,hparams,{},DISTINCT,csv_hparams = dict(hparams or {})
+src/evaluate.py,822,".get(key, default)",canonical_name,{},DISTINCT,"hparams = hparams_map.get(canonical_name, {})"
+src/hoorl_offline.py,388,".get(key, default)",'state_dim',-1,DISTINCT,"stored_dim = int(self.metadata.get(""state_dim"", -1))"
+src/hoorl_offline.py,430,".get(key, default)",'observation_constants',{},DISTINCT,"stored_norm = self.metadata.get(""observation_constants"", {})"
+src/hoorl_offline.py,641,".get(key, default)",key,float('nan'),DISTINCT,"math.isclose(float(current.get(key, float(""nan""))), float(value),"
+src/hoorl_offline.py,731,conditional default,float(probe[11]) > 0.0,float('nan'),DISTINCT,"phase_ref = 1.0 / float(probe[11]) if float(probe[11]) > 0.0 else float(""nan"")"
+src/hoorl_offline.py,787,conditional default,out.returncode == 0,None,DISTINCT,return out.stdout.strip() if out.returncode == 0 else None
+src/hoorl_offline.py,1229,".get(key, default)",'mean_aoi',float('nan'),DISTINCT,"""mean_aoi"": float(metrics.get(""mean_aoi"", float(""nan""))),"
+src/hoorl_offline.py,1230,".get(key, default)",'mean_update_error',float('nan'),DISTINCT,"""mean_update_error"": float(metrics.get(""mean_update_error"", float(""nan""))),"
+src/hoorl_offline.py,1425,conditional default,0 <= ch < len(raw),float('nan'),DISTINCT,"columns[""cbr_used_channel""].append(float(raw[ch]) if 0 <= ch < len(raw) else float(""nan""))"
+src/hoorl_offline.py,1426,conditional default,raw,float('nan'),DISTINCT,"columns[""cbr_max_channel""].append(float(max(raw)) if raw else float(""nan""))"
+src/hot_swap_trainer.py,337,x or default,hparams,{},DISTINCT,"for key, value in (hparams or {}).items():"
+src/hot_swap_trainer.py,819,x or default,"getattr(rest_model, 'WIRING_FLAG_KEYS', ())",(),DISTINCT,"getattr(rest_model, ""WIRING_FLAG_KEYS"", ()) or ()"
+src/hot_swap_trainer.py,882,conditional default,"isinstance(loss_dict, dict)",None,DISTINCT,"loss_value = loss_dict.get(""loss"") if isinstance(loss_dict, dict) else None"
+src/hot_swap_trainer.py,886,conditional default,"isinstance(loss_dict, dict)",None,DISTINCT,"value = loss_dict.get(key) if isinstance(loss_dict, dict) else None"
+src/hot_swap_trainer.py,1102,conditional default,seen > 0,None,DISTINCT,means[key] = (self._ep_flag_sums[key] / seen) if seen > 0 else None
+src/hot_swap_trainer.py,1128,conditional default,self.loss_history,[],DISTINCT,recent_losses = list(self.loss_history)[-50:] if self.loss_history else []
+src/hot_swap_trainer.py,1254,conditional default,math.isfinite(logp),None,DISTINCT,behaviour_log_prob = logp if math.isfinite(logp) else None
+src/hot_swap_trainer.py,1573,x or default,getter(),[],DISTINCT,"for i, opt in enumerate(getter() or []):"
+src/hot_swap_trainer.py,1719,x or default,checkpoint.get('rest_optimizer_state'),{},DISTINCT,"opt_states = checkpoint.get(""rest_optimizer_state"") or {}"
+src/hot_swap_trainer.py,2328,".get(key, default)",vid,{},DISTINCT,"last_upd = self.vehicle_tracks.get(vid, {}).get(""t_update"", self.sim_time)"
+src/hot_swap_trainer.py,2342,".get(key, default)",vid,{},DISTINCT,"""last_pred_err"": float(self.vehicle_tracks.get(vid, {}).get(""last_pred_err"", 0.0)),"
+src/hot_swap_trainer.py,2393,x or default,st.get('tls_features'),{},DISTINCT,"tls = st.get(""tls_features"") or {}"
+src/hot_swap_trainer.py,2396,x or default,not lane_id,lane_pos is None,DISTINCT,if not lane_id or lane_pos is None:
+src/hot_swap_trainer.py,2399,".get(key, default)",'state','',DISTINCT,"lane_is_red = str(tls.get(""state"", """")).lower() in (""r"", ""red"")"
+src/hot_swap_trainer.py,2407,".get(key, default)",lane_id,(),DISTINCT,"for other, other_pos, was_stopped, age in self._lane_index.get(lane_id, ()):"
+src/hot_swap_trainer.py,2422,x or default,not lane,pos is None,DISTINCT,if not lane or pos is None:
+src/hot_swap_trainer.py,2460,x or default,st.get('tls_features'),{},DISTINCT,"""lane_id"": (st.get(""tls_features"") or {}).get(""lane_id""),"
+src/hot_swap_trainer.py,2461,x or default,st.get('tls_features'),{},DISTINCT,"""lane_position"": (st.get(""tls_features"") or {}).get(""lane_position""),"
+src/hot_swap_trainer.py,2699,".get(key, default)",vid,math.inf,DISTINCT,"if self.sim_time < self.next_update_t.get(vid, math.inf):"
+src/hot_swap_trainer.py,2963,".get(key, default)",gid,{},DISTINCT,"cur = self.vehicle_tracks.get(gid, {}).get(""pos"")"
+src/hot_swap_trainer.py,3004,".get(key, default)",vid,{},DISTINCT,"last_t = float(self.vehicle_tracks.get(vid, {}).get(""t_update"", t_fire))"
+src/hot_swap_trainer.py,3036,x or default,(st_after or {}).get('tls_features'),{},DISTINCT,"tls_after = (st_after or {}).get(""tls_features"") or {}"
+src/hot_swap_trainer.py,3036,x or default,st_after,{},DISTINCT,"tls_after = (st_after or {}).get(""tls_features"") or {}"
+src/hot_swap_trainer.py,3046,x or default,st_after,{},DISTINCT,"float((st_after or {}).get(""speed"", 0.0)) <= self.REDUNDANT_SPEED_EPS_MPS"
+src/hot_swap_trainer.py,3141,".get(key, default)",c,[],DISTINCT,"min(1.0, len(pending_transmissions.get(c, [])) * air / max(self.step_length, 1e-9))"
+src/hot_swap_trainer.py,3463,conditional default,math.isfinite(as_float),None,DISTINCT,return as_float if math.isfinite(as_float) else None
+src/hot_swap_trainer.py,3606,conditional default,has_data,float('nan'),DISTINCT,"""reward_per_sec"": float(sum(rewards_seen) / total_delta) if has_data else float(""nan""),"
+src/hot_swap_trainer.py,3607,conditional default,rewards_seen,float('nan'),DISTINCT,"""reward_per_decision"": float(np.mean(rewards_seen)) if rewards_seen else float(""nan""),"
+src/hot_swap_trainer.py,3613,".get(key, default)",'mean_aoi',float('nan'),DISTINCT,"""mean_aoi"": float(metrics.get(""mean_aoi"", float(""nan""))),"
+src/hot_swap_trainer.py,3614,".get(key, default)",'mean_update_error',float('nan'),DISTINCT,"""mean_update_error"": float(metrics.get(""mean_update_error"", float(""nan""))),"
+src/hot_swap_trainer.py,3615,".get(key, default)",'coverage_outage_rate',float('nan'),DISTINCT,"""coverage_outage_rate"": float(metrics.get(""coverage_outage_rate"", float(""nan""))),"
+src/hot_swap_trainer.py,3814,conditional default,model_cls is not None,"model_name if callable(model_name) and (not isinstance(model_name, str)) else None",DISTINCT,"model_cls=model_cls if model_cls is not None else (model_name if callable(model_name) and not isinstance(model_name, str) else None),"
+src/hot_swap_trainer.py,3814,conditional default,"callable(model_name) and (not isinstance(model_name, str))",None,DISTINCT,"model_cls=model_cls if model_cls is not None else (model_name if callable(model_name) and not isinstance(model_name, str) else None),"
+src/hot_swap_trainer.py,4198,conditional default,has_data,float('nan'),DISTINCT,"ep_reward_per_sec = float(sum(ep_rewards) / total_delta) if has_data else float(""nan"")"
+src/hot_swap_trainer.py,4199,conditional default,ep_rewards,float('nan'),DISTINCT,"ep_reward_per_decision = float(np.mean(ep_rewards)) if ep_rewards else float(""nan"")"
+src/hot_swap_trainer.py,4440,conditional default,math.isfinite(val_reward_per_sec),float('nan'),DISTINCT,"""val_reward_per_sec"": (round(val_reward_per_sec, 6)"
+src/hot_swap_trainer.py,4442,conditional default,math.isfinite(val_reward_per_decision),float('nan'),DISTINCT,"""val_reward_per_decision"": (round(val_reward_per_decision, 6)"
+src/hot_swap_trainer.py,4444,conditional default,val_result is not None,float('nan'),DISTINCT,"""val_density"": val_density if val_result is not None else float(""nan""),"
+src/hot_swap_trainer.py,4450,conditional default,math.isfinite(best_reward),float('nan'),DISTINCT,"""best_reward_so_far"": (round(best_reward, 6)"
+src/hot_swap_trainer.py,4463,conditional default,ep_wiring['median_loss'] is not None,float('nan'),DISTINCT,"""median_loss"": (ep_wiring[""median_loss""]"
+src/hot_swap_trainer.py,4481,conditional default,ep_deltas_actual,float('nan'),DISTINCT,"""mean_delta_actual"": round(float(np.mean(ep_deltas_actual)), 4) if ep_deltas_actual else float(""nan""),"
+src/hot_swap_trainer.py,4490,conditional default,abort is not None,'',DISTINCT,"""abort_reason"": abort.reason if abort is not None else """","
+src/hot_swap_trainer.py,4517,conditional default,_mean is not None,float('nan'),DISTINCT,"float(_mean) if _mean is not None else float(""nan"")"
+src/hot_swap_trainer.py,4612,conditional default,abort is not None,None,DISTINCT,"""abort_kind"": abort.kind if abort is not None else None,"
+src/hot_swap_trainer.py,4613,conditional default,abort is not None,None,DISTINCT,"""abort_reason"": abort.reason if abort is not None else None,"
+src/hot_swap_trainer.py,4614,conditional default,abort is not None,None,DISTINCT,"""abort_episode"": abort.episode if abort is not None else None,"
+src/hot_swap_trainer.py,4615,conditional default,abort is not None,None,DISTINCT,"""abort_detail"": dict(abort.detail) if abort is not None else None,"
+src/hot_swap_trainer.py,4626,conditional default,episodic_records,float('nan'),DISTINCT,"""mean_reward_per_second"": round(float(np.nanmean([r[""reward_per_sec_selected""] for r in episodic_records])), 6)"
+src/hot_swap_trainer.py,4629,conditional default,episodic_records,float('nan'),DISTINCT,"""mean_reward_per_decision"": round(float(np.nanmean([r[""reward_per_decision""] for r in episodic_records])), 6)"
+src/hot_swap_trainer.py,4694,conditional default,math.isfinite(best_reward),None,DISTINCT,"""best_reward"": best_reward if math.isfinite(best_reward) else None,"
+src/hpo.py,790,".get(key, default)",key,None,DISTINCT,"val = metrics.get(key, None)"
+src/hpo.py,1027,conditional default,train_steps_during_rollout > 0,None,DISTINCT,buffer = RetrospectiveReplayBuffer(capacity=1000) if train_steps_during_rollout > 0 else None
+src/hpo.py,1256,conditional default,verdict is not None,'',DISTINCT,"metrics[""divergence_kind""] = verdict.kind if verdict is not None else """""
+src/hpo.py,1257,conditional default,verdict is not None,'',DISTINCT,"metrics[""divergence_reason""] = verdict.reason if verdict is not None else """""
+src/hpo.py,1259,conditional default,verdict is not None,'',DISTINCT,"str(verdict.detail.get(""rule"", """")) if verdict is not None else """""
+src/hpo.py,1259,".get(key, default)",'rule','',DISTINCT,"str(verdict.detail.get(""rule"", """")) if verdict is not None else """""
+src/hpo.py,1261,conditional default,verdict is not None,-1,DISTINCT,"metrics[""divergence_episode""] = int(verdict.episode) if verdict is not None else -1"
+src/hpo.py,1263,conditional default,verdict is not None and is_finite_number(verdict.detail.get(,float('nan'),DISTINCT,"float(verdict.detail[""mean_loss""])"
+src/hpo.py,1457,".get(key, default)",'divergence_kind','',DISTINCT,"""kind"": metrics.get(""divergence_kind"", """"),"
+src/hpo.py,1458,".get(key, default)",'divergence_rule','',DISTINCT,"""rule"": metrics.get(""divergence_rule"", """"),"
+src/hpo.py,1459,".get(key, default)",'divergence_reason','',DISTINCT,"""reason"": metrics.get(""divergence_reason"", """"),"
+src/hpo.py,1460,".get(key, default)",'divergence_episode',-1,DISTINCT,"""episode"": int(metrics.get(""divergence_episode"", -1)),"
+src/hpo.py,1546,".get(key, default)",'kind','',DISTINCT,"avg_metrics[""divergence_kind""] = (first_divergence or {}).get(""kind"", """")"
+src/hpo.py,1546,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_kind""] = (first_divergence or {}).get(""kind"", """")"
+src/hpo.py,1547,".get(key, default)",'rule','',DISTINCT,"avg_metrics[""divergence_rule""] = (first_divergence or {}).get(""rule"", """")"
+src/hpo.py,1547,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_rule""] = (first_divergence or {}).get(""rule"", """")"
+src/hpo.py,1548,".get(key, default)",'reason','',DISTINCT,"avg_metrics[""divergence_reason""] = (first_divergence or {}).get(""reason"", """")"
+src/hpo.py,1548,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_reason""] = (first_divergence or {}).get(""reason"", """")"
+src/hpo.py,1549,".get(key, default)",'seed',-1,DISTINCT,"avg_metrics[""divergence_seed""] = int((first_divergence or {}).get(""seed"", -1))"
+src/hpo.py,1549,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_seed""] = int((first_divergence or {}).get(""seed"", -1))"
+src/hpo.py,1550,".get(key, default)",'episode',-1,DISTINCT,"avg_metrics[""divergence_pseudo_episode""] = int((first_divergence or {}).get(""episode"", -1))"
+src/hpo.py,1550,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_pseudo_episode""] = int((first_divergence or {}).get(""episode"", -1))"
+src/hpo.py,1551,".get(key, default)",'steps_completed',-1,DISTINCT,"avg_metrics[""divergence_at_env_step""] = int((first_divergence or {}).get(""steps_completed"", -1))"
+src/hpo.py,1551,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_at_env_step""] = int((first_divergence or {}).get(""steps_completed"", -1))"
+src/hpo.py,1552,".get(key, default)",'n_grad_updates',-1,DISTINCT,"avg_metrics[""divergence_at_grad_update""] = int((first_divergence or {}).get(""n_grad_updates"", -1))"
+src/hpo.py,1552,x or default,first_divergence,{},DISTINCT,"avg_metrics[""divergence_at_grad_update""] = int((first_divergence or {}).get(""n_grad_updates"", -1))"
+src/hpo.py,1562,".get(key, default)",'outage_metric','',DISTINCT,"avg_metrics[""outage_metric""] = seed_metrics[0].get(""outage_metric"", """")"
+src/hpo.py,1732,".get(key, default)",int(n),{},DISTINCT,"attr_by_number.get(int(n), {}).get(key) for n in df_trials[""number""]"
+src/hpo.py,1895,".get(key, default)",'best_reward_weights',{},DISTINCT,"flat_row[k] = record.get(""best_reward_weights"", {}).get(k)"
+src/hpo.py,1896,".get(key, default)",'best_reward_weights',{},DISTINCT,"flat_row[""reward_weights_json""] = json.dumps(record.get(""best_reward_weights"", {}))"
+src/hpo.py,1931,conditional default,os.path.exists(best_csv_path),'',DISTINCT,""" and an older copy of it is still on disk, holding results this run """
+src/hpo.py,2004,".get(key, default)",'failed_models',[],DISTINCT,"failed = list(df_best.attrs.get(""failed_models"", []))"
+src/rl_interface.py,149,".get(key, default)",'state','',DISTINCT,"states = [p.get(""state"", """") for p in phases]"
+src/rl_interface.py,563,x or default,gap is None,lspd is None,DISTINCT,if gap is None or lspd is None:
+src/rl_interface.py,619,x or default,vehicle_node is None,rsu_node is None,DISTINCT,if vehicle_node is None or rsu_node is None:
+src/rl_interface.py,628,x or default,tls_info,{},DISTINCT,tls = tls_info or {}
+src/rl_interface.py,630,".get(key, default)",'tls_features',{},DISTINCT,"tls = (vehicle_node._state_dict() or {}).get(""tls_features"", {})"
+src/rl_interface.py,630,x or default,vehicle_node._state_dict(),{},DISTINCT,"tls = (vehicle_node._state_dict() or {}).get(""tls_features"", {})"
+src/rl_interface.py,786,conditional default,delta_max and delta_max > 0.0,None,DISTINCT,float(delta_max) if delta_max and delta_max > 0.0 else None
+src/rl_interface.py,798,conditional default,value and float(value) > 0.0,None,DISTINCT,self._delta_max_fixed = float(value) if value and float(value) > 0.0 else None
+src/rl_interface.py,923,".get(key, default)",str(char),-1,DISTINCT,"return TLS_STATE_CODES.get(str(char), -1)"
+src/rl_interface.py,947,x or default,state_dict.get('tls_features'),{},DISTINCT,"tls = state_dict.get(""tls_features"") or {}"
+src/rl_interface.py,948,".get(key, default)",'dist_to_stopline',None,DISTINCT,"d = tls.get(""dist_to_stopline"", None)"
+src/rl_interface.py,950,x or default,state_dict.get('subchannel_cbr'),[],DISTINCT,"per_ch = state_dict.get(""subchannel_cbr"") or []"
+src/rl_interface.py,953,conditional default,measured,float('nan'),DISTINCT,"float(d) if measured else float(""nan""),"

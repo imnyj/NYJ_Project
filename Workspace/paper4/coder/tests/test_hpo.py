@@ -11,6 +11,9 @@ import pytest
 
 from src.hpo import (
     CANONICAL_MODEL_NAMES,
+    GAMMA_SEARCH_HIGH,
+    GAMMA_SEARCH_LOW,
+    composite_objective_terms,
     compute_composite_objective,
     evaluate_model_in_env,
     evaluate_trial_multiseed,
@@ -21,7 +24,83 @@ from src.hpo import (
     save_study_results,
 )
 from tests.contract_adapters import DummyPolicy
+from tests.contract_adapters import (
+    sample_dummy_policy_hparams as _sample_dummy_policy_hparams,
+)
+from src.hoorl_wiring import DATASET_ENV_VAR
 from src.rl_interface import STATE_DIM
+
+
+def dummy_policy_search_space(trial, model_name):
+    """The search space `DummyPolicy` brings with it.
+
+    `run_hpo_study(search_space=...)` is called with (trial, canonical_name);
+    the double's own sampler only needs the trial, so this is the two-argument
+    adapter and nothing more. It lives in the tests because the model does.
+    """
+    assert model_name == "DummyPolicy", (
+        f"this space is DummyPolicy's, not {model_name!r}'s"
+    )
+    return _sample_dummy_policy_hparams(trial)
+
+
+# ---------------------------------------------------------------------------
+# HOORL's offline dataset
+# ---------------------------------------------------------------------------
+@pytest.fixture(scope="module", autouse=True)
+def _hoorl_offline_dataset(tmp_path_factory):
+    """Point HOORL's offline stage at a SYNTHETIC dataset for the whole module.
+
+    WHY THE TESTS NEED ONE AT ALL. `evaluate_trial_multiseed` constructs every
+    baseline through `offline_hparams` and then calls `pretrain_hoorl(...,
+    require_offline=True)`, so for HOORL the trial cannot start without a
+    dataset. That is the correct production behaviour -- a HOORL run that skips
+    its first stage is the online-only ablation and is indistinguishable from the
+    method once it has finished -- and it makes the dataset a dependency of the
+    test suite.
+
+    WHY NOT `require_offline=False` HERE. Because then nothing would check that
+    the offline stage is reachable from `hpo.py` at all. The wiring could be
+    deleted and every test would stay green, which is the exact failure the
+    wiring was written to prevent, moved one layer up. With a real dataset in
+    place the trial genuinely runs `HOORL.offline_update`, so breaking the path
+    turns this module red.
+
+    WHY IT IS BUILT AND NOT CHECKED IN. `build_synthetic_dataset` reads the live
+    observation-normalising constants when it runs, so the fixture cannot go
+    stale. A committed npz would have been silently invalidated on 2026-09-05,
+    when `N_ACTIVE_MAX_OBS` moved from 100 to 168.
+
+    WHAT IT IS NOT. Manufactured numbers describing no traffic. They exercise
+    shapes, key sets and code paths, and no measurement may rest on them; the
+    metadata says so and `assert_not_synthetic` enforces it.
+    """
+    from src.hoorl_offline_synthetic import write_synthetic_dataset
+    from src.hot_swap_trainer import prepare_scenario
+
+    # A scenario must exist BEFORE the fixture reads the observation normalisers.
+    # `V_MAX_OBS`, `E_REF` and `DELTA_MAX` are computed when `src.rl_interface`
+    # is imported, from the network on disk, and with no network they are the
+    # fallbacks of an empty directory -- V_MAX_OBS 13.32 against a real 15.9.
+    # A fixture built then is rejected by `verify_compatibility` with a 17 %
+    # mismatch, which is not a normalisation change but a fixture written before
+    # the normalisation existed.
+    #
+    # Which scenario does not matter much and that is a measured statement, not a
+    # hope: over 90 scenarios V_MAX_OBS depended ONLY on the seed and spanned
+    # 0.756 %, well inside the 2 % tolerance the check allows for scenario-drawn
+    # constants (results/hoorl_offline/observation_constant_spread.csv).
+    prepare_scenario(density=20.0, max_steps=200, warmup_steps=100, seed=42)
+
+    target = tmp_path_factory.mktemp("hoorl_offline") / "hoorl_offline.npz"
+    npz_path, _meta_path = write_synthetic_dataset(str(target), n_transitions=512)
+    previous = os.environ.get(DATASET_ENV_VAR)
+    os.environ[DATASET_ENV_VAR] = npz_path
+    yield npz_path
+    if previous is None:
+        os.environ.pop(DATASET_ENV_VAR, None)
+    else:
+        os.environ[DATASET_ENV_VAR] = previous
 
 
 class TestHyperparameterOptimization:
@@ -66,10 +145,64 @@ class TestHyperparameterOptimization:
                           "entropy_coef", "value_coef"},
             "SPAM-D3QN": {"hidden_dim", "lr", "gamma", "target_update_freq",
                           "epsilon_decay", "per_alpha"},
-            # `tau` is absent on purpose: CARLTON removes the target network
-            # (use_target_network=False), which is the published method's claim,
-            # so tau has nothing to move.
-            "CARLTON": {"hidden_dim", "lr", "gamma", "omega"},
+            # No offline-stage key is searched, for a reason that is currently
+            # about the pipeline rather than about the parameters (2026-09-05).
+            #
+            # THE OFFLINE STAGE IS REACHABLE BUT CANNOT YET RUN. Three things
+            # have to hold before an offline-stage key means anything, and they
+            # became true one at a time on 2026-09-05, which is why this comment
+            # has been wrong twice already:
+            #
+            #   1. the learner exists    -- `HOORL._offline_update_iql`, verified
+            #      by etc/scripts/verify_hoorl_iql.py;
+            #   2. something reaches it  -- `src/hpo.py` imports `pretrain_hoorl`
+            #      and calls it in `evaluate_trial_multiseed` (from 21:29; before
+            #      that `src/hoorl_wiring.py` defined it and nothing imported it);
+            #   3. it has data to run on -- STILL FALSE. No offline dataset has
+            #      been collected, so `pretrain_hoorl` raises
+            #      `OfflineDatasetMissing` and every HOORL rollout dies before a
+            #      single offline update happens.
+            #
+            # Condition 3 is why the keys stay out. Once it holds, the remaining
+            # objections are different ones: search-dimension fairness against
+            # the eight baselines that have no offline stage at all, and the cost
+            # of a pre-training pass per trial.
+            #
+            # Do not restate any of this as a static fact. Two earlier versions
+            # of this comment asserted "nothing calls pretrain()" and each was
+            # falsified within the hour. `etc/scripts/verify_hoorl_offline_wiring.py`
+            # prints the live answer; trust it rather than this paragraph.
+            #
+            # An earlier version of this comment ruled `offline_lr_scale` out on
+            # identifiability grounds -- that it only multiplies the learning
+            # rates, so `actor_lr` could absorb it. That was measured and is
+            # false: `actor_lr=3e-4, scale=2` and `actor_lr=6e-4, scale=1` agree
+            # on the offline rate (6.00e-04) and differ on the online one
+            # (3.00e-04 vs 6.00e-04). The scale sets the RATIO between two
+            # stages, which no single learning rate reproduces. It is
+            # identifiable once both stages actually run.
+            #
+            # `iql_expectile` and `iql_beta` are a harder question. They shape the
+            # offline objective and ARE identifiable, but each distinct pair needs
+            # its own pre-training pass, and Optuna samples them continuously, so
+            # 15 trials means 15 pre-trainings -- caching cannot help. Two things
+            # argue for fixing them at literature values instead. Search and
+            # training then start from one shared set of pre-trained weights, so
+            # the two cannot drift apart; and HOORL would otherwise carry two more
+            # search dimensions than the eight baselines that have no offline
+            # stage at all, which handicaps it for a reason that comes from our
+            # design rather than from the method.
+            #
+            # Add any of the three here only together with the same edit to
+            # `sample_hparams`, and only once the offline stage is actually
+            # reached. That second condition is machine-checked rather than left
+            # to whoever reads this: `etc/scripts/verify_hoorl_iql.py`
+            # check 14 fails if any of `offline_lr_scale`, `iql_expectile`,
+            # `iql_beta` or `value_lr` appears in the search space while no
+            # pipeline module reaches an offline update. Keep the two in step; a
+            # key added here and nowhere else turns that check red on purpose.
+            "HOORL": {"hidden_dim", "actor_lr", "critic_lr", "gamma", "tau",
+                      "alpha"},
             "MADDPG-MT": {"hidden_dim", "actor_lr", "critic_lr", "gamma", "tau",
                           "global_critic_weight", "gumbel_tau"},
         }
@@ -86,7 +219,10 @@ class TestHyperparameterOptimization:
         for coef in ("entropy_coef", "ent_coef"):
             if coef in params:
                 assert 1e-4 <= params[coef] <= 0.05
-        assert 0.95 <= params["gamma"] <= 0.999
+        # Derived from the canonical bounds, never repeated as literals here. A
+        # test that restates the number it is checking passes unchanged when the
+        # source moves and the two quietly disagree.
+        assert GAMMA_SEARCH_LOW <= params["gamma"] <= GAMMA_SEARCH_HIGH
 
     def test_02_model_name_normalization_and_aliases(self):
         """Alias resolution maps to the canonical names in the baseline registry."""
@@ -108,11 +244,11 @@ class TestHyperparameterOptimization:
         assert normalize_model_name(get_baseline("PPO")) == "PPO"
 
     def test_03_composite_objective_monotonicity_and_bounds(self):
-        """Verify composite objective penalty increases monotonically with error, AoI, outage, and power."""
+        """Verify composite objective penalty increases monotonically with error, AoI, packet loss, and power."""
         base_metrics = {
             "mean_error": 1.0,
             "mean_aoi": 2.0,
-            "outage_rate": 0.05,
+            "packet_loss_rate": 0.05,
             "avg_power_norm": 0.5,
         }
         base_score = compute_composite_objective(base_metrics)
@@ -125,9 +261,9 @@ class TestHyperparameterOptimization:
         aoi_up = dict(base_metrics, mean_aoi=4.0)
         assert compute_composite_objective(aoi_up) > base_score
 
-        # 3. Outage rate increase -> Score increase
-        outage_up = dict(base_metrics, outage_rate=0.20)
-        assert compute_composite_objective(outage_up) > base_score
+        # 3. Packet loss increase -> Score increase
+        loss_up = dict(base_metrics, packet_loss_rate=0.20)
+        assert compute_composite_objective(loss_up) > base_score
 
         # 4. Power increase -> Score increase
         power_up = dict(base_metrics, avg_power_norm=1.0)
@@ -181,7 +317,7 @@ class TestHyperparameterOptimization:
         hparams = {"lr": 1e-3, "hidden_dim": 64, "gamma": 0.98}
 
         score, avg_metrics = evaluate_trial_multiseed(
-            model_cls=get_baseline("CARLTON"),
+            model_cls=get_baseline("HOORL"),
             hparams=hparams,
             seeds=[42, 101],
             n_steps=40,
@@ -198,14 +334,40 @@ class TestHyperparameterOptimization:
         assert "mean_error" in avg_metrics
         assert "mean_aoi" in avg_metrics
 
+        # Every key of `avg_metrics` becomes a `user_attrs_*` column of the trial
+        # CSV, so this is also the assertion that the term breakdown reaches the
+        # file. Without it there is no measured basis for any future argument
+        # about the weights -- which is exactly the state the studies of
+        # 2026-09-02 were left in.
+        from src.hpo import OBJECTIVE_TERM_KEYS
+
+        for key in OBJECTIVE_TERM_KEYS:
+            assert f"obj_term_{key}" in avg_metrics
+        assert avg_metrics["obj_terms_sum"] == pytest.approx(score, rel=1e-6)
+        assert sum(avg_metrics[f"obj_term_{k}"] for k in OBJECTIVE_TERM_KEYS) == pytest.approx(
+            score, rel=1e-5
+        )
+
+        # Airtime and abandonment are carried for diagnosis only; they are not
+        # in the objective and must not appear among its terms.
+        assert "mean_cbr" in avg_metrics
+        assert "obj_term_cbr" not in avg_metrics
+
     def test_06_optuna_study_single_model_optimization(self):
-        """Verify run_hpo_study successfully executes trials and selects optimal parameters."""
+        """Verify run_hpo_study successfully executes trials and selects optimal parameters.
+
+        `DummyPolicy` is not a registry baseline, so it arrives with its own
+        search space. It used to arrive with nothing and be served by the
+        catch-all that `sample_hparams` ended in, which is the arrangement that
+        also served `'MA2HDQN '` and `'CARLTON'` without saying anything.
+        """
         study = run_hpo_study(
             model_name="DummyPolicy",
             model_cls=DummyPolicy,
             n_trials=4,
             seeds=[42],
             n_steps=10,
+            search_space=dummy_policy_search_space,
         )
 
         assert len(study.trials) == 4
@@ -224,6 +386,7 @@ class TestHyperparameterOptimization:
             n_trials=3,
             seeds=[42],
             n_steps=10,
+            search_space=dummy_policy_search_space,
         )
         csv_path, record = save_study_results(study, model_name="DummyPolicy", output_dir=str(tmp_path))
 
@@ -334,27 +497,87 @@ class TestEmptyRunIsNotTheGlobalOptimum:
             assert compute_composite_objective(metrics) == FAILED_RUN_PENALTY
 
 
-class TestOutageIsCoverageOutage:
-    """Outage is the coverage definition, fixed by the user on 2026-08-31."""
+class TestCoverageOutageIsDiagnosticOnly:
+    """Coverage outage is still measured, and no longer scored (2026-09-05).
 
-    def test_objective_prefers_the_coverage_metric_over_frame_errors(self):
+    The 2026-08-31 decision that "outage" means the coverage definition still
+    stands for the metric and for every table that reports it. What changed is
+    what the HPO objective ranks trials by. `coverage_outage_rate` is a function
+    of the road geometry, the RSU placement and the density, none of which a
+    scheduler touches, and all 135 committed trials measured the identical
+    0.2621; scoring it at weight 2.0 added a constant and ranked nothing. The
+    packet loss rate, which spans 0.0396 to 0.3065 over those same trials, is
+    what the policy actually moves and is what the objective now reads.
+    """
+
+    def test_objective_scores_packet_loss_and_ignores_coverage_outage(self):
         from src.evaluate import LEGACY_OUTAGE_METRIC_KEY, OUTAGE_METRIC_KEY
 
         assert OUTAGE_METRIC_KEY == "coverage_outage_rate"
         assert LEGACY_OUTAGE_METRIC_KEY == "packet_loss_rate"
 
-        # `outage_rate` is what the composite reads; when the environment
-        # provides the coverage metric it must be that one, not the frame
-        # error rate the two columns used to share.
         metrics = {
             "mean_error": 1.0, "mean_aoi": 2.0, "avg_power_norm": 0.5,
             "n_observations": 900, "tx_attempts": 30,
-            "outage_rate": 0.4,
+            "packet_loss_rate": 0.4,
+            # Both aliases of the coverage metric are present and both must be
+            # ignored; the pre-2026-09-05 objective read `outage_rate`.
+            "coverage_outage_rate": 0.2621, "outage_rate": 0.2621,
         }
-        with_coverage = compute_composite_objective(metrics)
-        assert with_coverage == pytest.approx(1.0 + 0.5 * 2.0 + 2.0 * 0.4 + 0.2 * 0.5)
+        assert compute_composite_objective(metrics) == pytest.approx(
+            1.0 * 1.0 + 0.5 * 2.0 + 2.0 * 0.4 + 0.2 * 0.5
+        )
 
-    def test_rollout_tags_which_outage_definition_it_scored(self):
+    def test_a_constant_coverage_rate_cannot_separate_two_trials(self):
+        """The defect itself: two trials that differ only in coverage outage tie."""
+        base = {
+            "mean_error": 1.0, "mean_aoi": 2.0, "avg_power_norm": 0.5,
+            "n_observations": 900, "tx_attempts": 30, "packet_loss_rate": 0.12,
+        }
+        low = dict(base, coverage_outage_rate=0.10, outage_rate=0.10)
+        high = dict(base, coverage_outage_rate=0.50, outage_rate=0.50)
+        assert compute_composite_objective(low) == compute_composite_objective(high)
+
+        # ...while the quantity the policy controls does separate them.
+        worse = dict(base, packet_loss_rate=0.30)
+        assert compute_composite_objective(worse) > compute_composite_objective(base)
+
+    def test_the_term_breakdown_sums_to_the_score(self):
+        """The columns must reconstruct the score, or they cannot justify a weight."""
+        from src.hpo import OBJECTIVE_TERM_KEYS
+
+        metrics = {
+            "mean_error": 3.0, "mean_aoi": 4.0, "avg_power_norm": 0.5,
+            "packet_loss_rate": 0.25, "n_observations": 900, "tx_attempts": 30,
+        }
+        terms = composite_objective_terms(metrics)
+        assert set(terms) == set(OBJECTIVE_TERM_KEYS)
+        assert sum(terms.values()) == pytest.approx(compute_composite_objective(metrics))
+
+        # The contributions are WEIGHTED, not the raw metrics: a reader summing
+        # the columns must not have to know what the weights were.
+        assert terms["error"] == pytest.approx(1.0 * 3.0)
+        assert terms["aoi"] == pytest.approx(0.5 * 4.0)
+        assert terms["loss"] == pytest.approx(2.0 * 0.25)
+        assert terms["power"] == pytest.approx(0.2 * 0.5)
+
+    def test_a_penalised_run_still_has_a_breakdown_that_sums_to_its_score(self):
+        """A failed run's score is a flat penalty, not a sum of measurements, so
+        the breakdown must not invite a reader to interpret it as one."""
+        from src.hpo import FAILED_RUN_PENALTY
+
+        for bad in (
+            {"mean_error": 0.0, "mean_aoi": 0.0, "n_observations": 0, "tx_attempts": 0},
+            {"mean_error": 1.0, "mean_aoi": 1.0, "packet_loss_rate": 0.1,
+             "avg_power_norm": 0.5, "n_observations": 900, "tx_attempts": 30,
+             "diverged": True},
+        ):
+            terms = composite_objective_terms(bad)
+            assert sum(terms.values()) == pytest.approx(FAILED_RUN_PENALTY)
+            assert sum(terms.values()) == pytest.approx(compute_composite_objective(bad))
+
+    def test_rollout_still_records_the_coverage_metric(self):
+        """Removed from the objective, kept in the metrics dict for diagnostics."""
         model = DummyPolicy(state_dim=STATE_DIM, num_channels=4, hidden_dim=32)
         metrics = evaluate_model_in_env(model=model, seed=42, n_steps=15)
         from src.evaluate import LEGACY_OUTAGE_METRIC_KEY, OUTAGE_METRIC_KEY
@@ -363,6 +586,10 @@ class TestOutageIsCoverageOutage:
         if OUTAGE_METRIC_KEY in metrics:
             assert metrics["outage_metric"] == OUTAGE_METRIC_KEY
             assert metrics["outage_rate"] == metrics[OUTAGE_METRIC_KEY]
+
+        # The term the objective scores has to be there for real, not defaulted.
+        assert "packet_loss_rate" in metrics
+        assert 0.0 <= metrics["packet_loss_rate"] <= 1.0
 
 
 
@@ -446,7 +673,8 @@ class TestHparamsActuallyReachModels:
 
         Measured before the routing fix: `density=55.0`, `warmup_steps=9` and
         `total_nonsense=1` were all accepted in silence by SPAMD3QN, PPO and
-        CARLTON, so an HPO CSV column could claim a value the run never used.
+        the ninth baseline, so an HPO CSV column could claim a value the run
+        never used.
         """
         from src.baselines import get_baseline
         from src.hpo import CANONICAL_MODEL_NAMES, _search_space_keys
@@ -472,7 +700,7 @@ class TestHparamsActuallyReachModels:
         from src.baselines import get_baseline
         from src.rl_interface import STATE_DIM as _SD
 
-        model = get_baseline("CARLTON")(state_dim=_SD, num_channels=4, total_nonsense=1)
+        model = get_baseline("HOORL")(state_dim=_SD, num_channels=4, total_nonsense=1)
         assert "total_nonsense" in (getattr(model, "hparams", {}) or {})
 
     def test_search_space_is_not_the_generic_fallback(self):
@@ -498,11 +726,11 @@ class TestHparamsActuallyReachModels:
         assert sb3.clip_range(1.0) == pytest.approx(0.29)
         assert sb3.ent_coef == pytest.approx(0.049)
 
-        carlton = get_baseline("CARLTON")(
-            state_dim=STATE_DIM, num_channels=4, lr=7e-4, omega=0.77,
+        hoorl = get_baseline("HOORL")(
+            state_dim=STATE_DIM, num_channels=4, actor_lr=7e-4, alpha=0.077,
         )
-        assert carlton.optimizer.param_groups[0]["lr"] == pytest.approx(7e-4)
-        assert carlton.omega == pytest.approx(0.77)
+        assert hoorl.actor_optimizer.param_groups[0]["lr"] == pytest.approx(7e-4)
+        assert hoorl.alpha == pytest.approx(0.077)
 
 
 if __name__ == "__main__":
@@ -540,7 +768,7 @@ class TestOpenIntervalsReachTheBuffer:
 
         monkeypatch.setattr(hpo, "AoiV2IEnv", _factory)
 
-        model = get_baseline("CARLTON")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
+        model = get_baseline("HOORL")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
         with caplog.at_level(_logging.WARNING):
             hpo.evaluate_model_in_env(
                 model=model, seed=42, n_steps=60, train_steps_during_rollout=1
@@ -828,7 +1056,7 @@ class TestDivergingTrialIsPenalised:
         self._patch_seeds(monkeypatch, [True] * 100)
         study = run_hpo_study(
             model_name="DummyPolicy", model_cls=DummyPolicy, n_trials=2,
-            seeds=[1], n_steps=10,
+            seeds=[1], n_steps=10, search_space=dummy_policy_search_space,
         )
         assert all(t.value == FAILED_RUN_PENALTY for t in study.trials)
         _, record = save_study_results(study, model_name="DummyPolicy", output_dir=str(tmp_path))
@@ -992,3 +1220,243 @@ class TestRolloutForwardsWhatTheModelReported:
         for keys in model.seen_batches:
             assert "action_idx" not in keys
             assert "behaviour_log_prob" not in keys
+
+
+class TestDiscountSearchRange:
+    """The discount ceiling, and the property that made it 0.99 (2026-09-05).
+
+    The bound is a physical argument, not an experimental result. A vehicle is
+    inside RSU coverage for a measured 50.3 to 54.2 s, so a discount whose
+    horizon runs far past that is weighting rewards for a vehicle that has left.
+    The gamma sweep confirmed that capping at 0.99 costs nothing (0.99 and 0.97
+    were indistinguishable across three seeds), but it is not what fixes the
+    number, and these tests check the physical property rather than the sweep.
+    """
+
+    def test_all_sites_search_one_range(self):
+        """A bound applied to some models and not others makes the studies
+        incomparable, which is how a change reached two of three paths earlier
+        this week. Read from the AST so a branch that was missed is caught even
+        though it is never executed by this test run."""
+        import ast
+
+        source = os.path.join(os.path.dirname(__file__), "..", "src", "hpo.py")
+        tree = ast.parse(open(os.path.abspath(source)).read())
+        consts = {
+            t.id: n.value.value
+            for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant)
+            for t in n.targets if isinstance(t, ast.Name)
+        }
+        consts.update({
+            n.target.id: n.value.value
+            for n in tree.body
+            if isinstance(n, ast.AnnAssign) and isinstance(n.value, ast.Constant)
+            and isinstance(n.target, ast.Name)
+        })
+
+        def value(node):
+            if isinstance(node, ast.Constant):
+                return node.value
+            if isinstance(node, ast.Name):
+                return consts.get(node.id)
+            return None
+
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if fn != "suggest_float" or not node.args:
+                continue
+            if not isinstance(node.args[0], ast.Constant) or node.args[0].value != "gamma":
+                continue
+            found.append((value(node.args[1]), value(node.args[2])))
+
+        assert found, "no gamma search range found in src/hpo.py"
+        assert set(found) == {(GAMMA_SEARCH_LOW, GAMMA_SEARCH_HIGH)}, (
+            f"the gamma sites do not all search one range: {sorted(set(found))}"
+        )
+
+    def test_the_ceiling_horizon_stays_near_the_measured_dwell(self):
+        """1/(1-gamma) is a time in SECONDS because the SMDP discount is
+        `gamma ** delta_t` with delta_t in seconds. The ceiling must sit above
+        the dwell time, so effects outliving one visit are still learnable, and
+        well below the region no vehicle is present to experience."""
+        dwell_lo, dwell_hi = 50.3, 54.2
+        horizon = 1.0 / (1.0 - GAMMA_SEARCH_HIGH)
+
+        assert horizon > dwell_hi, "the ceiling cannot see one vehicle's whole visit"
+        assert horizon < 4.0 * dwell_lo, (
+            f"horizon {horizon:.0f} s is more than four times the {dwell_lo} s dwell; "
+            "the discarded 0.9975 and 0.9986 were 7.7x and 13.7x"
+        )
+
+        # The floor is below the dwell, which is intended: a short horizon is a
+        # legitimate answer and RES-MAPDDPG's study settled at 0.9503 on its own.
+        assert 1.0 / (1.0 - GAMMA_SEARCH_LOW) < dwell_lo
+
+    def test_no_model_can_be_handed_a_discount_above_the_ceiling(self):
+        """The end-to-end property: sampling every branch must never produce a
+        value the ceiling excludes.
+
+        The list is exactly the registry. It used to carry `"DummyPolicy"` too,
+        to exercise the catch-all branch that answered for unknown names; that
+        branch raises since 2026-09-06, and the double's own space is checked
+        below instead.
+        """
+        for name in list(CANONICAL_MODEL_NAMES):
+            study = optuna.create_study(
+                sampler=optuna.samplers.RandomSampler(seed=7),
+                direction="minimize",
+            )
+            for _ in range(8):
+                trial = study.ask()
+                params = sample_hparams(trial, name)
+                assert GAMMA_SEARCH_LOW <= params["gamma"] <= GAMMA_SEARCH_HIGH, (
+                    f"{name} sampled gamma={params['gamma']}"
+                )
+                study.tell(trial, 0.0)
+
+        # The test double brings its own space, so it is the one place the
+        # ceiling could be restated and drift. It reads the same constants.
+        study = optuna.create_study(
+            sampler=optuna.samplers.RandomSampler(seed=7), direction="minimize"
+        )
+        for _ in range(8):
+            trial = study.ask()
+            gamma = dummy_policy_search_space(trial, "DummyPolicy")["gamma"]
+            assert GAMMA_SEARCH_LOW <= gamma <= GAMMA_SEARCH_HIGH
+            study.tell(trial, 0.0)
+
+
+class TestUnknownModelNameIsRefused:
+    """No name gets a search space by accident (2026-09-06).
+
+    `sample_hparams` used to end in a catch-all: any name that was not one of the
+    nine got `lr`, `hidden_dim` and `gamma`, the study ran to completion and the
+    trial history looked ordinary. Two ways in were measured that day. A trailing
+    space, `'MA2HDQN '`, did not resolve, so a model with a seven-key space
+    searched three. And `'CARLTON'`, replaced in the registry by HOORL but still
+    named in `etc/run_hpo_parallel.sh`, was scheduled for a twelve-hour run that
+    would have tuned three hyperparameters of a model that no longer exists while
+    never tuning the one that replaced it.
+
+    `assert_hparams_reach_model` was no guard against this: all three keys reach
+    the constructor, so the space is valid, just not this model's.
+    """
+
+    @staticmethod
+    def _ask():
+        study = optuna.create_study(
+            sampler=optuna.samplers.RandomSampler(seed=1), direction="minimize"
+        )
+        return study.ask()
+
+    @pytest.mark.parametrize("name", ["CARLTON", "UNKNOWN-MODEL", "DummyPolicy", "", "  "])
+    def test_an_unknown_name_raises_instead_of_being_tuned(self, name):
+        with pytest.raises(ValueError) as excinfo:
+            sample_hparams(self._ask(), name)
+
+        message = str(excinfo.value)
+        # The message has to say what was received AND what was expected; a bare
+        # "unknown model" leaves the reader to guess whether the name or the
+        # registry is what moved.
+        assert repr(name) in message
+        for known in CANONICAL_MODEL_NAMES:
+            assert known in message
+
+    def test_surrounding_whitespace_is_absorbed(self):
+        """The specific way `'MA2HDQN '` got three keys instead of seven."""
+        canonical = sample_hparams(self._ask(), "MA2HDQN")
+        for variant in ("MA2HDQN ", " MA2HDQN", "\tMA2HDQN\n", " ma2hdqn "):
+            assert normalize_model_name(variant) == "MA2HDQN"
+            assert sorted(sample_hparams(self._ask(), variant)) == sorted(canonical)
+
+        # And the stripped form is what downstream sees, because the return value
+        # becomes a dict key and part of `optuna_trials_<name>.csv`.
+        assert normalize_model_name(" UNKNOWN ") == "UNKNOWN"
+
+    def test_every_registry_model_still_has_its_own_space(self):
+        """The refusal must not have swallowed a real model with it."""
+        for name in CANONICAL_MODEL_NAMES:
+            params = sample_hparams(self._ask(), name)
+            assert params, f"{name} received an empty search space"
+            assert sorted(params) != ["gamma", "hidden_dim", "lr"], (
+                f"{name} received the old three-key catch-all space"
+            )
+
+    def test_a_caller_with_its_own_model_supplies_its_own_space(self):
+        """The seam that makes the refusal survivable, and its default.
+
+        Without an explicit space a caller bringing an unregistered `model_cls`
+        must fail rather than be served a guess, which is what separates a
+        deliberate test double from a mistyped baseline.
+        """
+        with pytest.raises(ValueError):
+            run_hpo_study(model_name="DummyPolicy", model_cls=DummyPolicy,
+                          n_trials=1, seeds=[42], n_steps=8)
+
+        study = run_hpo_study(model_name="DummyPolicy", model_cls=DummyPolicy,
+                              n_trials=1, seeds=[42], n_steps=8,
+                              search_space=dummy_policy_search_space)
+        assert len(study.trials) == 1
+
+
+class TestLauncherSchedulesTheRegistry:
+    """The launcher's group list and the registry must be the same set.
+
+    Checked here as well as in `etc/preflight_hpo.py` because the preflight is
+    something a person runs before a launch, and this is something CI runs on
+    every commit. The mismatch of 2026-09-06 -- CARLTON scheduled, HOORL not --
+    sat in the tree unnoticed until a launch was being prepared.
+    """
+
+    @staticmethod
+    def _scheduled():
+        import re
+
+        launcher = os.path.abspath(os.path.join(
+            os.path.dirname(__file__), "..", "etc", "run_hpo_parallel.sh"))
+        text = open(launcher).read()
+        match = re.search(r"^GROUP_MODELS=\((.*?)^\)", text, re.MULTILINE | re.DOTALL)
+        assert match is not None, (
+            f"no GROUP_MODELS=( ... ) array in {launcher}; if the launcher stopped "
+            "declaring its models that way this test is reading the wrong place "
+            "and must be pointed at the new one rather than deleted"
+        )
+        scheduled = []
+        for spec in re.findall(r'"([^"]*)"', match.group(1)):
+            scheduled.extend(spec.split())
+        return scheduled
+
+    def test_the_scheduled_set_equals_the_registry(self):
+        scheduled = self._scheduled()
+        assert set(scheduled) == set(CANONICAL_MODEL_NAMES), (
+            "scheduled but not in the registry: "
+            f"{sorted(set(scheduled) - set(CANONICAL_MODEL_NAMES))}; "
+            "in the registry but scheduled by no group: "
+            f"{sorted(set(CANONICAL_MODEL_NAMES) - set(scheduled))}"
+        )
+
+    def test_no_model_is_scheduled_twice(self):
+        scheduled = self._scheduled()
+        duplicated = sorted({m for m in scheduled if scheduled.count(m) > 1})
+        assert not duplicated, (
+            f"{duplicated} would have two groups each writing a best-params row, "
+            "and the merge cannot tell which answer to keep"
+        )
+
+    def test_every_scheduled_name_gets_a_real_search_space(self):
+        """Passing the set check is not enough: the sizes have to be right too.
+
+        This is the half nothing was checking. CARLTON passed as a name a human
+        recognised and failed only in the size of the space it was handed.
+        """
+        for name in self._scheduled():
+            study = optuna.create_study(
+                sampler=optuna.samplers.RandomSampler(seed=2), direction="minimize"
+            )
+            params = sample_hparams(study.ask(), name)
+            assert sorted(params) != ["gamma", "hidden_dim", "lr"], (
+                f"{name} is scheduled but receives the three-key catch-all space"
+            )

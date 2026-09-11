@@ -1,0 +1,7 @@
+density,delta_fixed,seed,error_mode,steps,warmup_steps,setup_s,loop_s,steps_per_s,mean_vehicles_in_coverage,transitions,transitions_per_step,transitions_per_s_wall
+5.0,1.0,2001,accumulate,300,600,0.43,1.17,256.06,23.36,626,2.0867,534.32
+20.0,1.0,2001,accumulate,300,600,1.29,3.95,75.87,71.38,1913,6.3767,483.77
+35.0,1.0,2001,accumulate,300,600,2.2,6.77,44.34,107.67,2872,9.5733,424.49
+5.0,5.0,2001,accumulate,300,600,0.44,1.11,269.99,23.36,126,0.42,113.4
+20.0,5.0,2001,accumulate,300,600,1.28,3.8,79.03,71.38,376,1.2533,99.05
+35.0,5.0,2001,accumulate,300,600,2.26,6.68,44.92,107.67,552,1.84,82.66

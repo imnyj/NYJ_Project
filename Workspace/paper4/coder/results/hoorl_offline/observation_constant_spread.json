@@ -1,0 +1,103 @@
+{
+  "constants": {
+    "A_MAX": {
+      "max": 5.0,
+      "min": 5.0,
+      "n_distinct": 1,
+      "origin": "code",
+      "relative_spread": 0.0,
+      "values": [
+        5.0
+      ]
+    },
+    "DELTA_MAX": {
+      "max": 45.0,
+      "min": 45.0,
+      "n_distinct": 1,
+      "origin": "scenario",
+      "relative_spread": 0.0,
+      "values": [
+        45.0
+      ]
+    },
+    "DELTA_MIN": {
+      "max": 0.1,
+      "min": 0.1,
+      "n_distinct": 1,
+      "origin": "code",
+      "relative_spread": 0.0,
+      "values": [
+        0.1
+      ]
+    },
+    "E_REF": {
+      "max": 13.33,
+      "min": 13.23,
+      "n_distinct": 5,
+      "origin": "scenario",
+      "relative_spread": 0.007558578987150389,
+      "values": [
+        13.23,
+        13.26,
+        13.28,
+        13.32,
+        13.33
+      ]
+    },
+    "N_ACTIVE_MAX_OBS": {
+      "max": 168.0,
+      "min": 168.0,
+      "n_distinct": 1,
+      "origin": "code",
+      "relative_spread": 0.0,
+      "values": [
+        168.0
+      ]
+    },
+    "PHASE_REMAINING_REF_S": {
+      "max": 59.999996871,
+      "min": 59.999996871,
+      "n_distinct": 1,
+      "origin": "code",
+      "relative_spread": 0.0,
+      "values": [
+        59.999996871
+      ]
+    },
+    "QUEUE_MAX": {
+      "max": 20.0,
+      "min": 20.0,
+      "n_distinct": 1,
+      "origin": "code",
+      "relative_spread": 0.0,
+      "values": [
+        20.0
+      ]
+    },
+    "RSU_RANGE": {
+      "max": 300.0,
+      "min": 300.0,
+      "n_distinct": 1,
+      "origin": "code",
+      "relative_spread": 0.0,
+      "values": [
+        300.0
+      ]
+    },
+    "V_MAX_OBS": {
+      "max": 15.996,
+      "min": 15.876,
+      "n_distinct": 5,
+      "origin": "scenario",
+      "relative_spread": 0.007558578987150478,
+      "values": [
+        15.876,
+        15.912,
+        15.936,
+        15.984,
+        15.996
+      ]
+    }
+  },
+  "n_cells": 90
+}

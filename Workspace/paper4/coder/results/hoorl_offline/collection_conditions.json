@@ -1,0 +1,42 @@
+{
+  "coverage_complete": true,
+  "dataset": "/home/imnyj/Workspace/paper4/data/hoorl_offline/hoorl_offline.npz",
+  "delivered_delta_geomean_s": 2.2086117570264396,
+  "delivered_delta_max_s": 10.399999618530273,
+  "delivered_delta_min_s": 0.10000000149011612,
+  "fraction_inside_requested_band": 0.9940076832565787,
+  "git": {
+    "branch": "main",
+    "commit": "f994cb7e1bca4d9c87ae75b0869c48624eaa2a04",
+    "dirty": true
+  },
+  "n_transitions": 128331,
+  "npz_bytes": 10810058,
+  "observation_constant_drift_between_cells": [],
+  "observation_constants": {
+    "A_MAX": 5.0,
+    "DELTA_MAX": 45.0,
+    "DELTA_MIN": 0.1,
+    "E_REF": 13.33,
+    "N_ACTIVE_MAX_OBS": 168.0,
+    "PHASE_REMAINING_REF_S": 59.99999687075631,
+    "QUEUE_MAX": 20.0,
+    "RSU_RANGE": 300.0,
+    "V_MAX_OBS": 15.995999999999999
+  },
+  "requested_delta_band_s": [
+    0.5000000000000001,
+    9.999999999999998
+  ],
+  "state_dim": 17,
+  "transitions_by_density": {
+    "10": 8773,
+    "15": 13467,
+    "20": 19361,
+    "25": 25396,
+    "30": 29056,
+    "35": 28256,
+    "5": 4022
+  },
+  "wall_clock_s": 1283.59
+}

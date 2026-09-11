@@ -1,0 +1,35 @@
+{
+  "budget_fraction": 0.1,
+  "budget_ms": 10.000000000000002,
+  "caps_within_budget": [
+    16,
+    32,
+    64
+  ],
+  "current_MAX_NEIGHBOURS": 16,
+  "decision_rule": "the largest cap whose 99th-percentile latency for the SLOWEST of the nine models stays under 10 % of the 0.1 s scheduling step. The 10 % is a design margin set by the team lead on 2026-09-06, not a derived quantity, and is recorded as such.",
+  "device": "cuda:0",
+  "largest_cap_within_budget": 64,
+  "n_calls_per_cell": 600,
+  "scheduling_step_s": 0.1,
+  "state_dim": 21,
+  "the_cap_does_not_affect_inference": "Measured: sweeping 16/32/64 moved 99th-percentile inference latency by less than run-to-run noise for all nine models, because `select_action` takes only the ego state and the neighbourhood reaches the JOINT CRITIC during `update`. A latency budget cannot choose a cap. See update_cost_by_cap.csv for the quantity that does depend on it.",
+  "what_this_does_not_decide": "the effect of the cap on task performance. That is left to a separate ablation. It is not measured here because a short training run does not predict a long one -- the same reason a divergence threshold was left unset after 4,000 steps failed to predict 200,000.",
+  "worst_model_per_cap": {
+    "16": {
+      "p99_ms": 1.5617,
+      "slowest_model": "I-HAMAPPO",
+      "within_budget": true
+    },
+    "32": {
+      "p99_ms": 1.326,
+      "slowest_model": "I-HAMAPPO",
+      "within_budget": true
+    },
+    "64": {
+      "p99_ms": 1.3332,
+      "slowest_model": "HOORL",
+      "within_budget": true
+    }
+  }
+}

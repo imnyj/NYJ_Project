@@ -1,0 +1,82 @@
+[
+  {
+    "title": "Mobility-aware distributed proactive caching in content-centric vehicular networks",
+    "citations": 29
+  },
+  {
+    "title": "SF-partition-based clustering and relaying scheme for resolving near–far unfairness in IoT multihop LoRa networks",
+    "citations": 23
+  },
+  {
+    "title": "Particle swarm optimization video streaming service in vehicular ad-hoc networks",
+    "citations": 18
+  },
+  {
+    "title": "Cooperative content downloading protocol based on the mobility information of vehicles in intermittently connected vehicular networks",
+    "citations": 16
+  },
+  {
+    "title": "Adaptive mobility-based IoT LoRa clustering communication scheme",
+    "citations": 12
+  },
+  {
+    "title": "Implicit overhearing node-based multi-hop communication scheme in IoT LoRa networks",
+    "citations": 12
+  },
+  {
+    "title": "RSU-driven cloud construction and management mechanism in VANETs",
+    "citations": 11
+  },
+  {
+    "title": "Multi-hop vehicular cloud construction with connection time based resource allocation in VANETs",
+    "citations": 10
+  },
+  {
+    "title": "Enhanced hybrid energy-efficient distributed clustering protocol for IoT-based WSNs with multiple sinks",
+    "citations": 9
+  },
+  {
+    "title": "Data delivery protocol using the trajectory information on a road map in VANETs",
+    "citations": 9
+  },
+  {
+    "title": "Video packet distribution scheme for multimedia streaming services in VANETs",
+    "citations": 8
+  },
+  {
+    "title": "Adaptive content precaching scheme based on the predictive speed of vehicles in content-centric vehicular networks",
+    "citations": 7
+  },
+  {
+    "title": "Cooperative content precaching scheme based on the mobility information of vehicles in intermittently connected vehicular networks",
+    "citations": 6
+  },
+  {
+    "title": "Efficient multipath routing protocol against path failures in wireless sensor networks",
+    "citations": 6
+  },
+  {
+    "title": "Content Storage Management and Precaching Scheme in Content-Centric-Network-Based Internet of Vehicles",
+    "citations": 5
+  },
+  {
+    "title": "Multiple precaching vehicle selection scheme based on set ranking in intermittently connected vehicular networks",
+    "citations": 5
+  },
+  {
+    "title": "Particle swarm optimization-based content delivery protocol for UAV VAENTs",
+    "citations": 4
+  },
+  {
+    "title": "Resource cluster-based resource search and allocation scheme for vehicular clouds in vehicular ad hoc networks",
+    "citations": 4
+  },
+  {
+    "title": "Traffic optimized content precaching scheme based on tolerable delay time in content-centric vehicular networks",
+    "citations": 4
+  },
+  {
+    "title": "Set Ranking-Based Precaching Protocol in Vehicular Ad hoc Networks",
+    "citations": 2
+  }
+]

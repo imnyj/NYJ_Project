@@ -74,6 +74,10 @@ TOTAL 38: OK=34  DIFF=1  FAIL=1  SKIP=2
 
 ## 확정된 비교 baseline 9종 (`baselines_v2.json`)
 
+> **2026-09-05 주의.** 아래 표는 2026-08-27 시점의 기록이며 이후 교체가 있었습니다. 최신 2번 자리의 `xu2026`(HOORL)은 `chen2026`(I-HAMAPPO, IEEE TWC)으로 바뀌었고, 유사 2번 자리의 `mlika2022`(DDPG-AoI)는 `cohen2025`(CARLTON)를 거쳐 다시 `xu2026`(HOORL)으로 바뀌었습니다. 즉 `xu2026`은 최신 범주에서 내려왔다가 유사 범주로 복귀했습니다. CARLTON이 빠진 이유는 목적함수에 AoI가 없어 유사 범주에 맞지 않고 구현 쪽 문제도 겹쳤기 때문입니다. 코드 레지스트리는 교체 후 목록을 따릅니다. 아래 표와 그에 딸린 주석은 당시 판단의 기록으로 보존하되, 현재 유효한 목록은 `baselines_v2.json`과 `baselines_v2.md`입니다. 강등 사유는 `baselines_v2.md`의 "검토 후 제외" 표 맨 위에 있습니다.
+>
+> 아래 94행의 `xu2026` 도메인 주의(모바일 크라우드센싱이라 심사에서 지적될 수 있음)는 지금도 유효합니다. 대응 논거는 `baselines_v2.json`의 `domain_defense_for_manuscript` 필드에 정리해 두었습니다.
+
 | 분류 | ID | 논문 | 게재처 | 검증 |
 |---|---|---|---|---|
 | 최신 | `li2026` | Resource Allocation in NOMA-V2X Networks With **Multi-Agent Parameterized Action Space** RL | TVT 75(7) 14775–14790, 2026 | OK |

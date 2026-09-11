@@ -1,0 +1,915 @@
+
+\begin{document}
+\history{Date of publication xxxx 00, 0000, date of current version xxxx 00, 0000.}
+\doi{10.1109/ACCESS.2024.0429000}
+
+\title{Proximal Policy Optimization-based Delay Tolerant Precaching Scheme in Content-Centric Vehicular Networks}
+\author{\uppercase{Jeongtak Na}\authorrefmark{1}, 
+\uppercase{Youngju Nam}\authorrefmark{2},
+AND \uppercase{Euisin Lee}\authorrefmark{3},
+% \IEEEmembership{Member, IEEE}
+}
+
+\address[1]{School of Information and Communication Engineering Chungbuk National University Cheongju, Republic of Korea (e-mail: jeongtak\_na@chungbuk.ac.kr)}
+\address[2]{School of Software Kunsan National University Gunsan, Republic of Korea (e-mail: imnyj@kunsan.ac.kr)}
+\address[3]{School of Information and Communication Engineering Chungbuk National University Cheongju, Republic of Korea (e-mail: eslee@chungbuk.ac.kr)}
+
+\tfootnote{This work was supported by a National Research Foundation of Korea (NRF) grant funded by the Korean government (Ministry of Science and ICT (MSIT)) (No. 2022R1A2C1010121).}
+
+\markboth
+{Author \headeretal: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS}
+{Author \headeretal: Preparation of Papers for IEEE TRANSACTIONS and JOURNALS}
+
+\corresp{Corresponding author: Euisin Lee (e-mail: eslee@chungbuk.ac.kr).}
+
+
+\begin{abstract}
+The rapid growth of in-vehicle infotainment services and autonomous driving applications has significantly increased the demand for large-scale multimedia content delivery in vehicular networks. 
+However, due to high vehicle mobility, short RSU contact durations, and fluctuating wireless conditions, conventional reactive content retrieval mechanisms often fail to deliver large contents reliably. 
+To address this challenge, proactive content precaching has emerged as a promising approach in content-centric vehicular networks (CCVNs). 
+Nevertheless, existing precaching strategies typically rely on static optimization models or heuristic rules, which struggle to adapt to highly dynamic vehicular environments.
+In this paper, we propose a Proximal Policy Optimization (PPO)-based delay-tolerant precaching scheme that dynamically determines both RSU selection and proportional content allocation along a vehicle’s predicted route. 
+The precaching decision process is formulated as a Markov decision process (MDP), where the serving RSU acts as the agent and learns an optimal policy through interactions with the environment. 
+The proposed framework incorporates path-aware RSU discovery, a PPO-based decision-making module, and a reinforcement-driven update mechanism. 
+To guide the learning process, we design a multi-objective reward function that jointly considers successful content delivery, utilization of cached data, minimization of traffic waste, and compliance with tolerable delay constraints.
+Extensive simulations using the SUMO mobility simulator demonstrate that the proposed scheme significantly improves delivery reliability while maintaining efficient resource utilization. 
+Compared with deterministic and heuristic baseline algorithms, the PPO-based approach achieves higher content delivery success rates while effectively controlling backhaul overhead in dynamic vehicular environments.
+\end{abstract}
+
+\begin{keywords}
+content-centric vehicular networks, delay-tolerant precaching, PPO, reinforcement learning.
+\end{keywords}
+\titlepgskip=-21pt
+
+\maketitle
+\section{Introduction}
+\IEEEPARstart{T}{he} rapid advancement of intelligent transportation systems and autonomous driving technologies has significantly increased the demand for large-scale multimedia content delivery in vehicular environments \cite{Autonomous, ITS}. 
+Modern vehicles frequently access high-volume data such as high-definition maps, infotainment contents, and software updates\cite{VehicularApplication, InfotainmentServicesContent}. 
+However, delivering such contents reliably in vehicular networks remains challenging due to high vehicle mobility, short communication windows with roadside units (RSUs), and dynamically fluctuating wireless channel conditions\cite{VehicularNetworkDynamics}. 
+As vehicles quickly move across RSU coverage areas, conventional reactive content retrieval often fails to complete large content downloads within a limited contact duration\cite{RSU}.
+
+Content-Centric Vehicular Networking (CCVN) has been widely recognized as a promising paradigm for addressing these challenges by enabling in-network caching and content-based communication\cite{CCVN}. 
+In CCVN environments, RSUs and vehicles can store content chunks locally and opportunistically serve subsequent requests, thereby reducing backhaul load and improving content accessibility\cite{CCVNCaching, ICNEfficientCaching}. 
+To further improve delivery reliability, proactive caching and precaching mechanisms have been introduced, where requested contents are staged in advance at RSUs that vehicles are likely to encounter along their routes\cite{Demand, Popularity2, MobilityAwareEdgeCaching, LargeFileMobilityCaching, Nam}.
+
+Despite these advances, existing precaching strategies still face important limitations in highly dynamic vehicular environments. 
+Many approaches primarily focus on determining \emph{where} to cache contents based on popularity statistics or predicted mobility patterns \cite{PopularityValueRetrieval, UAVEdgeCachingPopularity, CoPUP, Seq2SeqPopularityCaching, VehiclesMobility, DSP2, LargeFileMobilityCaching}. 
+However, they rarely address the problem of \emph{how} content should be distributed across multiple RSUs along a vehicle's trajectory to ensure successful delivery within a tolerable delay bound. 
+In practice, vehicles encounter multiple RSUs sequentially with varying contact durations, and effective precaching therefore requires coordinated decisions on both RSU selection and content allocation along the predicted route \cite{EdgeVCD, Nam}. 
+Furthermore, deterministic optimization models  or heuristic policies are often unable to adapt to rapidly changing traffic density, stochastic vehicle mobility, and time-varying network conditions \cite{ProactiveContentCaching2016, EdgeVCD, AdaptiveContentPrecaching, ClairvoyantEdge, Nam}.
+
+\IEEEpubidadjcol
+
+To address these challenges, reinforcement learning (RL) provides a promising approach for adaptive decision making in dynamic environments \cite{ReinforcementLearning}. 
+Unlike static optimization models that rely on predefined assumptions, RL enables an agent to learn an effective policy directly through interaction with the environment. 
+This capability is particularly beneficial in vehicular networks, where mobility patterns, RSU encounter opportunities, and wireless channel conditions exhibit significant uncertainty and non-stationarity. 
+By continuously observing system states and learning from experience, an RL-based policy can dynamically adjust precaching decisions to evolving network conditions \cite{Policy-based}.
+
+Motivated by these observations, this paper proposes a reinforcement learning-based delay-tolerant precaching framework that jointly determines RSU selection and proportional content allocation along a vehicle's predicted trajectory. 
+The precaching decision problem is formulated as a Markov decision process (MDP), where the serving RSU acts as the decision-making agent and learns an adaptive policy through environmental interaction. 
+In particular, we employ Proximal Policy Optimization (PPO) to learn the precaching policy. 
+PPO is particularly suitable for this problem because the precaching decision involves continuous allocation variables and requires stable policy updates in highly stochastic vehicular environments \cite{PPO}. 
+Using this framework, the agent determines which RSUs along the vehicle path should participate in precaching and how much content portion should be allocated to each RSU, enabling sequential content delivery across multiple RSUs within a tolerable delay bound. To the best of our knowledge, this is the first study that formulates 
+delay-tolerant precaching in content-centric vehicular networks as a 
+reinforcement learning problem that jointly optimizes route-aware RSU 
+selection and proportional content allocation for sequential content 
+delivery along a vehicle trajectory.
+This work substantially extends our preliminary study presented in~\cite{Na2026ICAIIC}, in which the basic concept of PPO-based delay-tolerant precaching was introduced.
+Compared with the conference version, the present work provides a comprehensive formulation of the precaching problem as an MDP and develops a path-aware PPO framework that jointly determines RSU selection and proportional content allocation.
+It further extends the preliminary work with detailed state and action modeling, reward design and optimization, reinforcement-driven policy updates, and extensive performance evaluations under diverse vehicular mobility and network conditions.
+
+
+The main contributions of this paper are summarized as follows:
+
+\begin{itemize}
+
+\item We formulate the delay-tolerant precaching problem in content-centric vehicular networks as a Markov decision process that explicitly models vehicle mobility, RSU encounter sequences, and delivery deadline constraints.
+
+\item We propose a PPO-based precaching framework that jointly determines RSU selection and proportional content allocation along a vehicle's predicted trajectory, enabling path-wise sequential content delivery across multiple RSUs.
+
+\item We design a multi-objective reward function that simultaneously considers delivery completion, reuse of previously cached data, reduction of wasted precaching traffic, and compliance with tolerable delay constraints.
+
+\item Extensive simulations based on SUMO mobility traces demonstrate that the proposed approach significantly improves delivery success rates while effectively controlling backhaul traffic overhead compared with existing deterministic and heuristic precaching strategies.
+
+\end{itemize}
+
+
+The remainder of this paper is organized as follows. 
+Section~\ref{sec:rw} reviews related work on content-centric vehicular networking and existing precaching strategies. 
+Section~\ref{sec.nm} provides the network model of the proposed scheme.
+Section~\ref{sec:MDPmodel} presents the system model and formulates the delay-tolerant precaching problem as a Markov decision process. 
+Section~\ref{sec:proposed_scheme} introduces the proposed PPO-based delay-tolerant precaching framework, including the path-aware RSU discovery mechanism, the learning architecture, and the content transmission procedure. 
+Section~\ref{sec.pe} evaluates the performance of the proposed scheme through extensive simulations. 
+Finally, Section~\ref{sec:conclusion} concludes this paper and discusses future research directions.
+
+
+\section{Related Work}
+\label{sec:rw}
+
+\subsection{Content-Centric Vehicular Networking Fundamentals}
+\label{subsec:rw_ccvn}
+
+Content-centric vehicular networking (CCVN) has emerged as a promising paradigm for supporting large-scale multimedia content delivery in highly dynamic vehicular environments~\cite{CCVN}. 
+Unlike traditional host-centric networking architectures that focus on end-host addresses, CCVN shifts the communication paradigm toward named data objects, enabling users to request contents directly by their names rather than by the location of a specific server. 
+In this architecture, intermediate nodes such as roadside units (RSUs) and vehicles are capable of caching content chunks and serving future requests opportunistically. 
+This in-network caching capability reduces redundant data transmissions, alleviates backhaul congestion, and significantly improves content accessibility for mobile users. 
+Consequently, CCVN has been widely recognized as a suitable networking framework for data-intensive vehicular services such as high-definition video streaming, infotainment distribution, and map updates.
+
+Despite these advantages, several challenges arise when CCVN is deployed in vehicular networks. 
+Due to high vehicle mobility, communication opportunities between vehicles and RSUs are typically short-lived and highly unpredictable. 
+Frequent handovers between RSUs, fluctuating wireless channel conditions, and intermittent connectivity further complicate reliable content delivery. 
+As a result, purely reactive content retrieval mechanisms often fail to deliver large content objects within a limited contact window. 
+These limitations have motivated extensive research on proactive caching and precaching strategies, where contents are placed in advance at strategically selected RSUs or edge nodes based on predicted demand or vehicle mobility patterns. 
+By staging contents closer to the expected delivery points, precaching mechanisms aim to increase delivery reliability and reduce content access latency in highly dynamic vehicular environments.
+
+\subsection{Precaching Schemes in CCVN}
+\label{subsec:rw_precaching}
+To mitigate backhaul load and download delay, a broad set of precaching schemes has been studied in CCVN environments. 
+Existing works can be categorized by the primary signal used for proactive placement, including popularity-driven, mobility-aided, Optimization-based, and machine learning-aided strategies. 
+This categorization is particularly useful for clarifying the scope of our work, which targets request-centric, deadline-aware, path-wise completion for delay-tolerant contents.
+
+\subsubsection{Popularity-driven Precaching}
+\label{subsubsec:rw_popularity_precaching}
+
+Content popularity has been widely exploited as a key factor in proactive caching and precaching strategies for vehicular networks. 
+Popularity-driven precaching schemes aim to improve cache hit ratio and reduce delivery latency by storing frequently requested contents at edge nodes such as RSUs or vehicles.
+
+Several studies have investigated popularity-based caching strategies in content-centric vehicular networks. 
+For example,~\cite{PopularityValueRetrieval} proposes a proactive content precaching method that evaluates the value of content popularity to determine caching priorities in Internet of Vehicles (IoV) environments. 
+Similarly,~\cite{ICNEfficientCaching} presents an efficient ICN-based caching scheme that leverages content popularity information to improve caching efficiency and reduce content retrieval delay in vehicular networks.
+
+Popularity prediction has also been integrated with cooperative edge caching mechanisms. 
+In~\cite{UAVEdgeCachingPopularity}, cooperative edge content caching with popularity prediction is introduced for UAV-assisted vehicular networks, where predicted popularity values guide caching decisions among edge nodes to improve service availability. 
+Furthermore,~\cite{CoPUP} proposes the CoPUP framework, which jointly considers content popularity and user preferences in mobile edge computing environments to enhance caching performance and reduce redundant transmissions.
+
+Recent studies have also applied deep learning techniques to model content popularity dynamics. 
+For instance,~\cite{Seq2SeqPopularityCaching} utilizes a sequence-to-sequence LSTM model to predict future popularity trends and allocate cache resources according to both content popularity and priority levels in information-centric networking environments.
+
+Although these popularity-driven approaches effectively improve cache hit ratio and overall content accessibility, most of them primarily focus on global popularity characteristics and do not explicitly consider the mobility patterns of individual vehicles or sequential content delivery along vehicle trajectories. 
+Consequently, their effectiveness may degrade in highly dynamic vehicular environments where content delivery opportunities strongly depend on vehicle mobility and contact duration. 
+In contrast, our work focuses on mobility-aware and delay-tolerant precaching decisions that dynamically allocate content across multiple RSUs along a vehicle’s predicted route.
+
+
+
+
+
+\subsubsection{Mobility-aided Precaching}
+\label{subsubsec:rw_mobility_precaching}
+
+Vehicle mobility information has been widely exploited to improve the efficiency of proactive caching and precaching in vehicular networks. 
+Mobility-aided precaching schemes typically predict the future trajectory, encounter probability, or residence time of vehicles in order to determine where contents should be placed in advance.
+
+Early studies focused on mobility prediction for cooperative caching decisions. 
+For example,~\cite{VehiclesMobility} proposes a cooperative caching scheme in content-centric vehicular networks that utilizes vehicle mobility prediction to identify RSUs or vehicles likely to serve future content requests. 
+Similarly,~\cite{AdaptiveContentPrecaching} introduces an adaptive precaching scheme that leverages predicted vehicle speed to determine the most appropriate RSUs for staging requested contents along the vehicle’s path.
+In addition, Nam \emph{et al.}~\cite{Nam} proposed a mobility-aware precaching scheme for content-centric Internet of Vehicles (IoV) environments. 
+Their approach predicts the future movement of vehicles and proactively places requested contents at RSUs that the vehicles are likely to encounter along their routes by solving a integer linear programming problem. 
+Another related work~\cite{OptimizedDistributedProactiveCaching} formulates distributed proactive caching based on the movement probability of vehicles, enabling RSUs to collaboratively determine caching locations that maximize the likelihood of successful delivery.
+
+Subsequent research further incorporated mobility awareness into edge caching architectures. 
+In~\cite{MobilityAwareEdgeCaching}, a mobility-aware proactive edge caching scheme is proposed to optimize caching placement by considering vehicle trajectories and service demands in information-centric IoV environments. 
+Similarly,~\cite{LargeFileMobilityCaching} addresses mobility-aware proactive caching for large files, where RSUs proactively stage file segments along predicted vehicle routes to improve delivery continuity. 
+Mobility-aware caching concepts have also been extended to cooperative service environments. 
+For instance,~\cite{MobilityAwareServiceCaching} proposes a mobility-aware cooperative service caching framework for mobile augmented reality applications in mobile edge computing, where predicted user mobility guides the placement of service components at edge servers.
+
+
+
+
+
+
+Although these mobility-driven approaches effectively improve cache hit ratio and delivery latency, most of them rely heavily on deterministic mobility prediction or static optimization rules. 
+As a result, their ability to adapt to highly dynamic vehicular environments—where traffic density, contact duration, and wireless conditions fluctuate rapidly—remains limited. 
+Motivated by this limitation, our work adopts a reinforcement learning-based precaching framework that dynamically determines RSU selection and content allocation according to real-time vehicular mobility and delay constraints.
+
+
+
+
+
+\subsubsection{Optimization-based Precaching}
+\label{subsubsec:rw_optimization_precaching}
+
+Several studies have explored optimization-driven approaches to improve content precaching and caching efficiency in vehicular networks. These approaches typically formulate caching decisions as optimization problems that consider traffic conditions, content popularity, or resource constraints.
+
+In~\cite{CatchFishCaching}, a vehicular content distribution method based on edge caching and a Catch Fish Optimization (CFO) strategy is proposed. The scheme optimizes content placement at edge nodes by iteratively searching for caching configurations that maximize cache utilization and reduce transmission delay. Similarly,~\cite{Multi-timescale} introduces a multi-timescale hierarchical prefetching framework for vehicular edge networks, where content placement decisions are optimized across different temporal scales to improve online caching performance and reduce service latency.
+
+Optimization techniques have also been applied to traffic-aware caching strategies. The authors in~\cite{TaylorFlamingoCaching} propose a Taylor Flamingo Shark Optimization-based caching method for vehicular social networks, which integrates traffic awareness and content popularity to determine optimal caching locations. In addition,~\cite{AdaptiveCooperativeCaching} presents an adaptive cooperative caching strategy in vehicular networks that dynamically optimizes caching decisions among multiple vehicles and RSUs by solving multiple-choice knapsack (MCK) problem and multiple minimum-weight dominating set (MMWDS) problem with two greedy algorithms in order to enhance content availability and reduce redundant transmissions.
+
+Although these optimization-based schemes improve caching efficiency and network utilization, they generally rely on predefined optimization objectives or heuristic search processes. Consequently, their adaptability to highly dynamic vehicular environments—characterized by rapidly changing mobility patterns, network topology, and wireless conditions—remains limited. In contrast, our work adopts a reinforcement learning-based approach that enables adaptive and data-driven precaching decisions while explicitly considering vehicle mobility and delay-tolerant content delivery requirements.
+
+
+\subsubsection{Machine Learning-aided Precaching}
+\label{subsubsec:rw_learning_precaching}
+
+To overcome the limitations of heuristic precaching strategies in highly dynamic vehicular environments, recent studies have explored machine learning-based approaches for proactive content placement.
+
+A representative direction applies deep reinforcement learning to determine optimal caching nodes. 
+For example,~\cite{SAC_precaching} proposes a precaching vehicle selection scheme based on the Soft Actor--Critic (SAC) algorithm in content-centric Internet of Vehicles (CIoV). 
+By modeling vehicle mobility, cache availability, and content demand as the system state, the SAC agent learns a policy that selects suitable vehicles for precaching, improving delivery efficiency and reducing redundant transmissions.
+
+Another line of work introduces collaborative learning frameworks for cooperative caching. 
+In~\cite{DRL_FL_caching}, a deep reinforcement learning-based asynchronous federated learning architecture enables vehicles to locally train caching policies and periodically aggregate model updates, allowing scalable and privacy-preserving cooperative caching in IoV environments.
+
+Mobility prediction has also been combined with intelligent precaching strategies. 
+The work in~\cite{Informer_precaching} employs a spatial-temporal Informer model to predict vehicle mobility and service demand, enabling context-aware precaching decisions that improve service continuity and reduce delivery latency.
+
+Despite these advances, most learning-based approaches primarily focus on selecting caching nodes or predicting mobility patterns. 
+They do not explicitly address fine-grained content allocation across multiple RSUs along a vehicle's route under delay constraints. 
+Motivated by this limitation, our work formulates delay-tolerant precaching as a reinforcement learning problem and employs PPO to jointly determine RSU selection and proportional content allocation for sequential content delivery.
+
+
+
+
+
+
+
+
+
+\subsection{Delay-Tolerant Content Delivery and Precaching}
+\label{subsec:rw_dtc}
+Compared with delay-sensitive services\cite{DSP1}, delay-tolerant contents (e.g., software updates, backup services, or non-real-time multimedia sharing) can tolerate bounded delivery delay, which offers additional degrees of freedom for proactive staging and opportunistic delivery \cite{DelayTolerantCloudFog, AdaptiveMultiCopyRelaying}. 
+For instance, \cite{DelayTolerantCloudFog} proposed a delay-tolerant data transmission scheme based on a software-defined cloud–fog architecture. 
+In this framework, fog nodes and RSUs cooperatively manage data forwarding decisions, enabling vehicles to retrieve contents through multiple intermediate nodes while tolerating temporary disconnections.
+Another line of research focuses on adaptive forwarding strategies in vehicular delay-tolerant networks \cite{AdaptiveMultiCopyRelaying}. The research introduced a learning-based multi-copy relaying mechanism that dynamically adjusts the number of message replicas according to network conditions, improving delivery probability while reducing redundant transmissions.
+However, prior studies often assume either overly relaxed delay models or focus on partial aspects of delivery, resulting in limited end-to-end treatment of \emph{content-level completion} within a tolerable delay bound. 
+
+
+Recently, a heuristic-based delay-tolerant precaching scheme has been proposed to precache delay tolerable contents, but their reliance on fixed rules restricts adaptability to highly dynamic vehicular conditions (e.g., traffic fluctuations, varying contact windows), which may lead to suboptimal performance in realistic deployments~\cite{Nam}. 
+
+
+Although these studies demonstrate the feasibility of delay-tolerant communication and precaching, most existing approaches focus either on opportunistic forwarding or static precaching policies. 
+Consequently, they often lack mechanisms to dynamically determine where and how much content should be precached along a vehicle's route under varying mobility and network conditions to download contents within tolerable delay times.
+
+
+\subsection{Summary and Positioning of Our Work}
+\label{subsec:rw_summary}
+
+The above review shows that proactive caching and precaching in content-centric vehicular networks (CCVNs) have been widely studied to improve delivery efficiency and reduce backhaul traffic. 
+Existing approaches mainly fall into four categories: popularity-driven, mobility-aided, optimization-based, and machine learning-aided precaching. 
+Popularity-based schemes exploit request distributions to improve cache hit ratio, while mobility-aware methods utilize predicted vehicle trajectories to determine caching locations. 
+Optimization-based approaches formulate caching placement as mathematical optimization problems, and learning-based methods aim to derive adaptive caching policies from data.
+
+Despite these advances, most existing studies mainly focus on determining \emph{where} to cache contents and optimizing average network-level metrics. 
+They rarely address fine-grained content allocation across multiple RSUs for a specific vehicle or guarantee content completion under delay constraints. 
+To address this gap, this paper proposes a reinforcement learning-based delay-tolerant precaching framework that jointly considers vehicle mobility, RSU encounters, and tolerable delivery deadlines. 
+By employing a PPO agent to determine RSU selection and proportional content allocation along the predicted vehicle route, the proposed scheme enables sequential content delivery across multiple RSUs and improves the probability of completing downloads within the delay bound.
+
+
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=\textwidth]{framework.png}
+    \caption{Overall framework of the integrated network model. The top layer illustrates the DRL-based control loop, while the bottom layer depicts the physical vehicular network environment. The PPO agent guides the serving RSU to execute an optimal precaching plan $a_t$, dynamically adapting to stochastic vehicular micro-mobility and delay-tolerant content demands.}
+    \label{fig:framework}
+\end{figure*}
+
+\section{Network Model} \label{sec.nm}
+In this section, we describe the network model adopted for the proposed PPO-based delay-tolerant precaching (DTP) scheme, as illustrated in Figure~\ref{fig:framework}. 
+The network consists of content servers (e.g., YouTube, Netflix), a set of RSUs $\mathbb{R}=\{R_{1},\cdots,R_{J}\}$, and a set of vehicles $\mathbb{V}=\{V_{1},\cdots,V_{I}\}$. 
+Each RSU $R_{j}$ is deployed at road intersections with traffic lights, equipped with a caching storage and a caching priority table (CPT) for managing cached contents. 
+The RSUs are interconnected through high-capacity fiber backhaul links to the content server, enabling wired communication, while wireless communication to vehicles is supported by IEEE 802.11p WAVE ~\cite{WAVE}. 
+Vehicles traverse the road network based on their navigation destinations, dynamically interacting with RSUs along their paths. The velocity of each vehicle $V_{i}$ is updated every 0.1 seconds using an acceleration model that follows a Gaussian distribution with skewness, reflecting heterogeneous traffic conditions.  
+
+We consider that the requested content has a tolerable delay time according to its own delay-tolerant characteristics. Then, content servers have a set of contents $\mathbb{C}=\{C_{1},\cdots,C_{K}\}$ and each content $C_{k}$ has its tolerant delay time $Tol_{k}$. These delay-tolerant contents are divided into fixed-sized chunks for convenience of caching and transmission. The focus of this paper is to achieve efficient resource utilization through an intelligent precaching strategy for delay-tolerant contents. 
+
+To enable adaptive and scalable decision making for delay tolerant content precaching, the PPO algorithm is integrated into the network model. At each decision epoch $t$, the system state $s_t$ is defined as the tuple of vehicle context (speed, location, and predicted sojourn time), content characteristics (size, category, and tolerable delay time), and RSU information (cached contents and distance to the requesting vehicle). Based on this state, the PPO agent determines an action $a_t = [p_1, \cdots, p_N]$, where $p_i$ denotes the proportion of content to be precached at RSU $i$ among the candidate RSUs along the vehicle’s path. The reward $r_t$ is designed to maximize successful content delivery within the tolerable delay time, while minimizing backhaul usage, traffic waste, and deadline violations.  
+
+Thus, the proposed network model jointly captures the physical vehicular communication environment and the reinforcement learning framework. RSUs function not only as caching nodes but also as decision-making points guided by the PPO agent, which learns optimal precaching strategies by interacting with the dynamic mobility patterns of vehicles and fluctuating content demands. This integrated model enables adaptive, delay-aware, and resource-efficient content delivery in CCN-based vehicular networks.  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\section{MDP Formulation for PPO-based Delay-Tolerant Precaching}
+\label{sec:MDPmodel}
+We formulate the proposed delay-tolerant precaching problem as a discounted Markov decision process (MDP)
+$\mathcal{M}=\langle\mathcal{S},\mathcal{A},P,r,\gamma\rangle$,
+where $\mathcal{S}$ is the state space, $\mathcal{A}$ is the action space, $P$ is the transition kernel induced by vehicle mobility and wireless/backhaul dynamics, $r$ is the reward function, and $\gamma\in(0,1)$ is the discount factor \cite{MDP}. 
+At each decision epoch $t$, the serving RSU acts as the agent and outputs a precaching decision that determines (i) which on-path RSUs will participate in precaching and (ii) how much portion of the requested content should be staged at each selected RSU. 
+
+\subsection{Agent and Decision Epoch}
+We consider the serving RSU $R_{\mathrm{svc}}$ (i.e., the RSU that first receives the content request) as the \emph{agent} that executes the precaching control. 
+This choice is motivated by the fact that $R_{\mathrm{svc}}$ is the earliest network entity that can (i) collect the requester’s path information, (ii) query or aggregate cache/backhaul reports from on-path RSUs, and (iii) coordinate backhaul-based content precaching before the vehicle reaches subsequent RSUs.
+
+A decision epoch $t$ is triggered upon the arrival of a delay-tolerant content request at $R_{\mathrm{svc}}$. 
+At this epoch, $R_{\mathrm{svc}}$ receives a lightweight \textit{Path\_Announce} message and constructs the path-aware candidate set $\mathcal{C}_t$ by filtering RSUs that lie on the announced route and are reachable within the tolerable delay constraint. 
+Based on the resulting state observation (vehicle context, content characteristics, and the ordered on-path RSU features), the agent takes an action $a_t$, i.e., a single allocation decision for the current request.
+
+The action $a_t$ represents a one-shot precaching plan that specifies both \emph{which} RSUs in $\mathcal{C}_t$ will participate in precaching and \emph{how much} of the requested content each selected RSU should store. 
+In particular, $a_t$ is post-processed into (i) a top-$k$ RSU subset and (ii) a normalized proportion vector $\{p_{t,i}\}$ with $\sum_i p_{t,i}=1$, so that RSU $R_i$ precaches $p_{t,i}\cdot C_{\text{total}}$ (in bits or chunks). 
+After $a_t$ is issued, $R_{\mathrm{svc}}$ dispatches the corresponding content portions to the selected RSUs over the backhaul, and the vehicle subsequently downloads these cached portions opportunistically during successive RSU encounters.
+
+Note that we adopt a single decision per request to keep online control lightweight and to align with practical deployment constraints (limited signaling and strict timing). 
+Nevertheless, the effectiveness of $a_t$ is evaluated over the remainder of the episode through the realized sequential downloads and whether completion occurs within $Tol_{\mathrm{req}}$, which directly determines the reward signal used to update the PPO policy.
+
+\subsection{State Space} \label{subsec:state_space}
+At each decision epoch $t$, we represent the state as a concatenated 56-dimensional vector:
+\begin{equation}
+s_t \triangleq \big[\mathbf{s}^{(vc)}_t \;\Vert\; \mathbf{s}^{(rsu)}_t\big]\in\mathbb{R}^{56},
+\end{equation}
+where $\mathbf{s}^{(vc)}_t\in\mathbb{R}^{6}$ captures the requesting vehicle and content context, and $\mathbf{s}^{(rsu)}_t\in\mathbb{R}^{50}$ encodes path-aware RSU information for the candidate RSUs along the predicted route of the vehicle.
+
+Specifically, the vector $\mathbf{s}^{(vc)}_t$ summarizes the requester’s instantaneous mobility and the basic characteristics of the requested content, providing the policy with essential information on \emph{where the vehicle is}, \emph{how fast the network is moving}, and \emph{how stringent the delay constraint is}:
+\begin{equation}
+\mathbf{s}^{(vc)}_t \triangleq 
+\Big[
+\tilde{x}_t,\;\tilde{y}_t,\;\tilde{v}^{\text{avg}}_t,\;\tilde{S},\;\tilde{T}^{\text{sel}}_t,\;\tilde{v}^{\max}
+\Big],
+\end{equation}
+where $(\tilde{x}_t,\tilde{y}_t)$ are normalized vehicle coordinates, $\tilde{v}^{\text{avg}}_t$ is the normalized average network speed,
+$\tilde{S}$ is the normalized content size, $\tilde{T}^{\text{sel}}_t$ is the normalized tolerable delay used for the request,
+and $\tilde{v}^{\max}$ is the normalized maximum configured vehicle speed.
+
+Let $\{R_{(1)},\ldots,R_{(N)}\}$ be the ordered list of candidate RSUs on the predicted path, sorted by their encounter order. 
+To maintain a fixed input dimensionality for the MLP-based policy network, we set the maximum number of considered RSUs to $N=25$. 
+When applying the network model of simulation environment in Section~\ref{sec.pe}, this is sufficient to cover RSU encounters in our 15\,km $\times$ 15\,km grid topology within the maximum tolerable delay boundary. 
+If a vehicle’s route contains fewer than 25 RSUs, the remaining feature slots are strictly zero-padded.
+
+For each $R_{(j)}$ up to $N=25$, we define two features: the normalized cumulative distance-to-contact and a binary selection flag:
+\begin{equation}
+\mathbf{s}^{(rsu)}_t \triangleq 
+\Big[
+\tilde{d}_{t,1},\;\tilde{b}_{t,1},\;\tilde{d}_{t,2},\;\tilde{b}_{t,2},\;\ldots,\;\tilde{d}_{t,N},\;\tilde{b}_{t,N}
+\Big],
+\end{equation}
+where $\tilde{b}_{t,j}\in\{0,1\}$ indicates whether $R_{(j)}$ is (finally) selected for precaching, and $\tilde{d}_{t,j}$ is defined by
+\begin{equation}
+\tilde{d}_{t,j} \triangleq \frac{d_{t,j}}{D_{\max}},\qquad d_{t,j}\ge 0,
+\end{equation}
+with $d_{t,j}$ being the cumulative travel distance from the vehicle’s current position to $R_{(j)}$ along the route, and $D_{\max}$
+the map-dependent normalization constant (e.g., the maximum Manhattan distance between any two intersections in the map).
+
+\subsection{Action Space} \label{subsec:action_space}
+TThe action $a_t \in \mathcal{A}$ is a continuous 50-dimensional vector produced by the actor network, which we partition as $a_t \triangleq \big[\mathbf{u}_t \;\Vert\; \mathbf{v}_t\big]$, where $\mathbf{u}_t \in \mathbb{R}^{N}$ denotes RSU selection scores and $\mathbf{v}_t \in \mathbb{R}^{N}$ represents raw allocation logits for the $N=25$ on-path RSUs.
+
+
+To ensure mathematical validity within the simulated environment, the raw outputs corresponding to the content-chunk proportions ($\mathbf{v}_t$) are passed through a Softmax activation layer, guaranteeing that $\sum_{i=1}^{25} p_i = 1$ and $p_i \ge 0$. Concurrently, the RSU selection scores ($\mathbf{u}_t$) are processed via a Sigmoid activation function to map them into a $[0, 1]$ probability range. 
+
+These mapped scores are subsequently used for a path-adaptive top-$k$ selection. In practice, the set of effective on-path RSUs varies over time due to dynamic backhaul load, heterogeneous wireless conditions, and route-dependent RSU encounters. Selecting all candidate RSUs would unnecessarily increase the action dimensionality and operational overhead (e.g., backhaul transfers and cache insertions), and it can also amplify wasted precaching when short contacts or route deviations prevent downloads. Hence, we adopt a top-$k$ RSU selection to concentrate precaching on the most promising on-path RSUs, improving deadline-completion reliability while suppressing traffic waste.
+
+To reflect this environment-driven constraint and to promote robust policy learning across different route lengths, we determine the number of participating RSUs, $k$, as a function of the vehicle’s remaining path length $L$. Specifically, we sample $k$ from a path-proportional uniform range:
+\begin{equation}
+k \sim \mathcal{U}\Big(\max(1, \lfloor L/4 \rfloor), \max(1, \lfloor L/2 \rfloor)\Big),
+\end{equation}
+where $\mathcal{U}(a,b)$ draws the integer parameter $k$ from a discrete uniform distribution between $a$ and $b$.
+Thus, $k$ is chosen to be approximately $25\%$--$50\%$ of $L$ (with a minimum of 1), which prevents degenerate cases when $L$ is small.
+
+Once $k$ is determined by the environment, the agent selects the top-$k$ RSUs with the highest selection scores ($\mathbf{u}_t$) to perform the cooperative precaching. This dynamic bounding inherently prevents excessive network overhead while ensuring sufficient caching redundancy.
+
+\subsection{State Transition}
+In our CCVN scenario, the state transition kernel $P(s_{t+1}\!\mid s_t,a_t)$ is not available in closed form and is practically unknown to the agent, because the next state is jointly determined by stochastic microscopic mobility (e.g., stop-and-go and signal stops), time-varying wireless conditions (e.g., fading and contention), and fluctuating backhaul/scheduling dynamics. Hence, explicitly modeling $P(\cdot)$ would require strong assumptions and is brittle under non-stationary traffic conditions.
+
+Given an allocation decision $a_t$, the serving RSU dispatches content portions to selected on-path RSUs via backhaul, which cache them before vehicle arrival. As the vehicle traverses the route, it opportunistically downloads cached chunks during successive RSU encounters, where the realized delivery depends on the contact window and instantaneous link rate. Consequently, $s_{t+1}$ captures updated vehicle context, elapsed time and remaining content, and the outcomes of RSU encounters. We therefore adopt a model-free approach (PPO) that optimizes the policy directly from sampled trajectories generated by the simulator.
+
+\subsection{Reward Function}
+\label{subsec:reward}
+The reward $r(s_t,a_t)$ is designed to steer the PPO agent toward deadline-compliant and traffic-efficient precaching decisions. 
+Specifically, we define a multi-objective composite reward $r_{\mathrm{total}}$ that (i) promotes effective utilization of cached/precached data, (ii) penalizes wasted precaching traffic, and (iii) discourages slow completion relative to the tolerable delay bound. 
+The resulting reward is given by
+\begin{align}
+r_{\mathrm{total}} = & \; \frac{C_{\text{cons}}}{C_{\text{total}}} W_{cons} 
+\;+\; \frac{C_{\text{cached}}}{C_{\text{total}}} W_{cached} \nonumber \\
+& -\; \frac{C_{\text{waste}}}{C_{\text{total}}} W_{waste} 
+\;-\; \frac{T_{\text{actual}}}{T_{tol}} W_{time},
+\label{eq:reward}
+\end{align}
+where all traffic-related terms are normalized by the total content size $C_{\text{total}}$ to make the reward scale-invariant across different content sizes.
+
+In our reward $r_{\mathrm{total}}$, $C_{\text{cons}}$ is the amount of data successfully delivered to the requesting vehicle via the selected RSUs. 
+Maximizing $\frac{C_{\text{cons}}}{C_{\text{total}}}$ promotes allocations that are feasible under short contact windows. 
+Moreover, $C_{\text{cached}}$ denotes the volume of pre-existing cached data utilized for delivery; thus, $\frac{C_{\text{cached}}}{C_{\text{total}}}W_{cached}$ rewards backhaul savings by encouraging reuse of already stored chunks.
+$C_{\text{waste}}$ is the amount of data precached at selected RSUs but not downloaded (e.g., due to missed encounters or insufficient sojourn time). 
+The penalty $\frac{C_{\text{waste}}}{C_{\text{total}}}W_{waste}$ discourages over-allocation to unreliable RSUs and reduces traffic waste.
+$T_{\text{actual}}$ is the realized completion (or elapsed) time normalized by the tolerable bound $T_{tol}$. 
+The penalty $\frac{T_{\text{actual}}}{T_{tol}}W_{time}$ incentivizes earlier completion and lowers deadline-miss risk by favoring RSUs that can deliver larger portions within shorter contacts.
+
+\subsection{Episode Termination}
+We define episode termination to complete the MDP specification and to ensure an unambiguous definition of returns, reward accumulation, and evaluation metrics in our PPO-based framework. In particular, the termination rule determines (i) how the cumulative reward is computed, (ii) how success/failure events are labeled for deadline-aware services, and (iii) the measurement interval for traffic overhead and completion time, thereby improving experimental fairness and reproducibility.
+
+An episode terminates when the requesting vehicle: (i) completes downloading the entire content within the tolerable delay $Tol_{\mathrm{req}}$ (success), (ii) exceeds the tolerable delay $Tol_{\mathrm{req}}$ before completion (deadline miss), or (iii) leaves the simulated route or reaches the maximum episode horizon. In our SUMO-based setup, we use a fixed upper bound on episode length (e.g., 20{,}000 simulation steps) to prevent unbounded rollouts and to enable consistent comparisons across policies and baselines. Under this termination definition, key performance metrics such as delivery success rate, deadline-miss rate, and overhead ratio are computed over the same episode interval, ensuring that reported gains reflect deadline-compliant end-to-end delivery and resource efficiency. In our formulation, one episode corresponds to a single delay-tolerant content request. 
+Specifically, an episode starts when the request arrives at the serving RSU $R_{\mathrm{svc}}$ (i.e., at decision epoch $t$) and terminates when the content is delivered (success) or the tolerable delay $Tol_{\mathrm{req}}$ is exceeded (deadline miss).
+
+
+
+\section{PPO-based Delay Tolerant Precaching Scheme}
+\label{sec:proposed_scheme}
+
+We propose a Proximal Policy Optimization (PPO)-driven delay-tolerant precaching scheme that dynamically allocates content portions to roadside units (RSUs) along a vehicle's navigation path. 
+Compared with value-based reinforcement learning methods such as DQN, 
+the proposed scheme involves continuous allocation variables, 
+which makes policy-gradient methods more suitable. 
+Among them, PPO provides stable and sample-efficient learning through 
+its clipped policy update mechanism, making it well suited for highly 
+stochastic vehicular environments.
+Unlike traditional optimization-based approaches, our scheme adapts to vehicular mobility, RSU cache dynamics, and deadline constraints of delay-tolerant contents. The scheme consists of four main components: (i) path-aware RSU discovery, (ii) PPO-based decision making, (iii) content transmission process, and (iv) reinforcement-driven updates. We describe these four components in each of the following four subsections, individually.
+
+\subsection{Path-aware RSU Discovery}
+When a vehicle initiates a content request, it delivers its navigation path $\mathcal{P}=\{x_1,\ldots,x_K\}$ (an ordered sequence of intersections/road segments) to the serving RSU via a lightweight \textsf{Path\_Announce} message. 
+Using this trajectory, the serving RSU performs a path-aware discovery procedure to (i) construct a feasible candidate RSU set $\mathcal{C}_t$ under the deadline constraint and (ii) collect the state features required by the PPO agent.
+
+The serving RSU first filters RSUs that are not on the announced route or cannot be reached within the tolerable delay, and forms
+\begin{equation}
+\begin{split}
+\mathcal{C}_t=\Big\{R_i\in\mathbb{R}\ \Big|\ \text{intersection}(R_i)\in\mathcal{P}\ \\ \wedge\ \text{reachability}(R_i,Tol_{\text{req}})=1\Big\},
+\end{split}
+\end{equation}
+where $\text{intersection}(R_i)\in\mathcal{P}$ means that RSU $R_i$ is deployed at an intersection node that lies on $\mathcal{P}$, and
+$\text{reachability}(R_i,Tol_{\text{req}})=1$ indicates that the vehicle is predicted to enter the coverage of $R_i$ no later than $t+Tol_{\text{req}}$.
+
+For each $R_i\in\mathcal{C}_t$, the serving RSU estimates the contact window
+$\hat{T}_i=[\hat{t}^{\text{arr}}_i,\hat{t}^{\text{dep}}_i]$ by combining (i) route geometry and RSU coverage and (ii) the vehicle’s mobility prediction.
+Specifically, let $L_i$ denote the path-wise distance the vehicle travels within the coverage region of $R_i$ (computed from the intersection-based route and the RSU coverage radius). 
+Given the predicted effective speed $\hat{v}(t)$ derived from the current speed and acceleration model, the expected sojourn time is approximated as $\hat{\tau}_i \approx L_i/\hat{v}(t)$, yielding $\hat{t}^{\text{dep}}_i=\hat{t}^{\text{arr}}_i+\hat{\tau}_i$.
+
+Concurrently, each candidate RSU $R_i$ periodically reports a compact \textsf{Cache\_Report} message that includes (i) cached chunk indices and availability for the requested content, and (ii) remaining cache capacity. 
+In addition, the serving RSU computes the cumulative travel distance $d_{t,i}$ from the vehicle’s current position to $R_i$ along the route $\mathcal{P}$, which is later normalized and used as an input feature. 
+By jointly leveraging predicted contact windows and RSU cache reports, the discovery phase prunes infeasible RSUs and provides up-to-date, route-aligned context.
+
+Finally, the collected information is assembled into the 56-dimensional state vector $s_t$ (Section~\ref{subsec:state_space}) and passed to the PPO agent, enabling deadline-aware selection and allocation decisions for delay-tolerant precaching.
+
+\subsection{PPO Learning Algorithm and Network Architecture} 
+
+\subsubsection{Actor-Critic Network Architecture and Hyperparameters} \label{subsec:ppo_hyper}
+To handle the high-dimensional continuous state and action spaces, our PPO agent employs a Multi-Layer Perceptron (MLP)-based Actor-Critic neural network architecture. Both the Actor (policy) and Critic (value) networks consist of two fully connected hidden layers with 64 neurons each, employing the Hyperbolic Tangent (Tanh) activation function to process the 56-dimensional state input $s_t$. The output layer of the Actor network generates the 50-dimensional continuous action vector $a_t$, while the Critic network outputs a single scalar value estimating the state-value function $V(s_t)$. The Actor network outputs a continuous score for each candidate RSU, representing its relative importance for precaching. 
+These scores are then processed through a path-adaptive top-$k$ selection mechanism to identify a subset of RSUs, after which the selected scores are normalized to generate the final precaching allocation vector.
+
+
+
+To ensure stable and efficient learning, the PPO hyperparameters were configured as follows: the discount factor ($\gamma$) is set to 0.99, the learning rate is $3 \times 10^{-4}$, and the clipping range ($\epsilon$) is restricted to 0.2 to prevent large policy updates. The agent collects 256 steps per rollout and updates the networks over 10 epochs using a mini-batch size of 64. 
+To enhance robustness and avoid overfitting to a specific traffic scenario, the training environment includes diverse traffic densities and vehicle mobility patterns. 
+As a result, the learned policy is able to generalize to dynamic vehicular environments beyond the specific scenarios used during training.
+
+Since PPO optimizes a stochastic policy, we parameterize $\pi_\theta(a_t|s_t)$ as a diagonal Gaussian distribution. 
+Given the state $s_t$, the Actor network outputs the mean vector $\boldsymbol{\mu}_\theta(s_t)\in\mathbb{R}^{50}$, and we maintain a learnable log-standard-deviation vector $\log\boldsymbol{\sigma}_\theta\in\mathbb{R}^{50}$ (state-independent for stability). 
+Thus,
+\begin{equation}
+a_t \sim \mathcal{N}\!\big(\boldsymbol{\mu}_\theta(s_t),\,\mathrm{diag}(\boldsymbol{\sigma}_\theta^2)\big),
+\end{equation}
+and the sampled action is optionally squashed by $\tanh(\cdot)$ to keep each dimension bounded. 
+Finally, the raw action $a_t=[\mathbf{u}_t\Vert\mathbf{v}_t]$ is deterministically post-processed via the top-$k$ selection and allocation normalization described in Section~\ref{subsec:action_space} to obtain a valid precaching plan.
+
+\subsubsection{PPO Training Objective}
+\label{subsubsec:ppo_objective}
+To train the stochastic precaching policy $\pi_\theta(a_t|s_t)$ in a stable and sample-efficient manner, we adopt Proximal Policy Optimization (PPO), which constrains each policy update to remain close to the previous policy $\pi_{\theta_{\text{old}}}$. 
+PPO achieves this via a clipped surrogate objective that limits the policy ratio and prevents excessively large updates as follows:
+\begin{align}
+L^{\text{PPO}}(\theta) \;=\; & \mathbb{E}_t \Big[ \min \!\big( \rho_t(\theta)\,\hat{A}_t, \nonumber \\
+& \text{clip}\big(\rho_t(\theta),\,1-\epsilon,\,1+\epsilon\big)\,\hat{A}_t \big) \Big],
+\label{eq:ppo-clip}
+\end{align}
+where the importance ratio is
+\begin{equation}
+\rho_t(\theta)=\frac{\pi_\theta(a_t|s_t)}{\pi_{\theta_{\text{old}}}(a_t|s_t)},
+\end{equation}
+$\hat{A}_t$ is the advantage estimate, and $\epsilon$ is the clipping parameter (set to $0.2$ in our implementation). 
+For continuous actions, $\pi_\theta(a_t|s_t)$ is computed from the Gaussian policy described in Section~\ref{subsec:ppo_hyper}.
+
+We compute $\hat{A}_t$ using generalized advantage estimation (GAE):
+\begin{align}
+\delta_t &= r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t), \label{eq:td_error}\\
+\hat{A}_t &= \sum_{l=0}^{T-t-1} (\gamma\lambda)^l \delta_{t+l},
+\label{eq:gae}
+\end{align}
+where $V_\phi(\cdot)$ is the critic (state-value) network, $\gamma$ is the discount factor, and $\lambda\in[0,1]$ controls the bias--variance trade-off. 
+We normalize advantages within each rollout to improve numerical stability.
+
+In practice, we jointly optimize the actor and critic by maximizing
+\begin{align}
+\mathcal{J}(\theta,\phi) =
+\mathbb{E}_t\Big[
+L^{\text{PPO}}(\theta)
+- c_v\big(V_\phi(s_t)-\hat{V}_t\big)^2 \nonumber \\
++ c_e\,\mathcal{H}\big(\pi_\theta(\cdot|s_t)\big)
+\Big],
+\label{eq:ppo_total}
+\end{align}
+where $\hat{V}_t$ is the value target (e.g., $\hat{V}_t=\hat{A}_t+V_\phi(s_t)$), $\mathcal{H}(\cdot)$ denotes entropy to encourage exploration, and $c_v$ and $c_e$ are weighting coefficients. 
+We perform multiple epochs of minibatch updates on samples collected from rollouts, following the hyperparameter settings described in Section~\ref{subsec:ppo_hyper}.
+
+\subsubsection{Optuna-based Reward Weight Tuning}
+\label{subsubsec:optuna_weights}
+In Eq. (\ref{eq:reward}), the weights ($W_{\text{cons}}$, $W_{\text{waste}}$, $W_{\text{time}}$, $W_{\text{cached}}$) control the trade-off among delivery volume, traffic waste, timeliness, and reuse of pre-existing cached data. Finding the optimal balance for these weights is a non-trivial multi-objective tuning problem. To determine the optimal values for these weights, we employed the \textbf{Optuna} hyperparameter optimization framework using the Tree-structured Parzen Estimator (TPE) sampler \cite{Optuna}.
+
+During the tuning process, all core PPO hyperparameters and network architectures (as described in Section \ref{subsec:ppo_hyper}) were fixed, allowing Optuna to explore only the reward weight space. The search space for each weight was defined using continuous uniform distributions: $W_{\text{cached}}, W_{\text{waste}} \sim \mathcal{U}(1.0, 5.0)$ and $W_{\text{cons}}, W_{\text{time}} \sim \mathcal{U}(0.1, 3.0)$. This asymmetric bounding was configured based on our preliminary evaluations; because the agent tends to prioritize greedy consumption and rapid delivery early in the training phase, the weights for traffic waste and cached chunk reuse required a higher upper bound to exert sufficient regularization against network over-allocation. To prevent overfitting to a specific traffic pattern and to account for the inherent variance in reinforcement learning, we separated the training and validation environments. Each candidate weight set was evaluated on a validation set comprising diverse route geometries and traffic densities, and the performance was averaged over three random seeds.
+
+To align the tuning process with our core evaluation metrics, we defined the Optuna objective function to incorporate the traffic overhead ratio:
+\begin{equation}
+\mathcal{J}_{\text{opt}} = (100 \cdot \overline{\text{SR}}) - (\lambda_d \cdot \overline{\text{Delay}}) - (\lambda_o \cdot \overline{\text{Overhead}}),
+\end{equation}
+where $\overline{\text{SR}}$, $\overline{\text{Delay}}$, and $\overline{\text{Overhead}}$ represent the average delivery success rate, average completion time, and average overhead ratio computed over the validation episodes, respectively. The constants $\lambda_d$ and $\lambda_o$ are scaling factors used to balance the magnitude of delay and overhead against the success rate.
+
+We adopted a two-stage tuning procedure to balance computational efficiency with convergence stability. In the first stage, we executed 100 trials with a short proxy training budget of 10,000 timesteps to rank candidate weight sets. In the second stage, the top-5 candidates from the first stage were re-trained with a longer budget to ensure full convergence. The weight set that achieved the highest average $\mathcal{J}_{\text{opt}}$ score across the validation seeds was selected as the final configuration.
+
+This rigorous process yielded the optimized weights presented in Table \ref{tab:weights}. The high value of $W_{\text{cached}}$ (3.169) emphasizes the maximum utilization of pre-existing RSU storage, while $W_{\text{waste}}$ (2.554) acts as a strong regularizer to prevent the agent from over-allocating data, minimizing the traffic overhead ratio. The lower value of $W_{\text{cons}}$ (1.158) suggests that while consumption is encouraged, the agent prioritizes avoiding traffic waste and meeting the deadline ($W_{\text{time}}$=2.644).
+
+\begin{table}[h]
+\centering
+\caption{Optimized Reward Weights by Optuna}
+\label{tab:weights}
+\begin{tabular}{|l|c|}
+\hline
+\textbf{Weight Parameter} & \textbf{Value} \\ \hline
+$W_{\text{cached}}$ (Cached) & 3.169 \\
+$W_{\text{cons}}$ (Consumption) & 1.158 \\
+$W_{\text{waste}}$ (Waste Cache) & 2.554 \\
+$W_{\text{time}}$ (Time Penalty) & 2.644 \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Content Transmission Process}
+Upon receiving a content request with tolerable delay $Tol_{\text{req}}$, the serving RSU (denoted $R_{\text{svc}}$) executes a pipeline that converts the PPO \emph{raw action} into a feasible precaching-and-delivery plan. As illustrated in Algorithm~\ref{alg:ppo-dtp}, the process consists of two operational phases.
+
+In the phase 1 (Decision and Precaching), $R_{\text{svc}}$ assembles the decision state $s_t$ from the path-aware discovery features and queries the PPO policy to obtain a raw action
+\[
+a_t=[\mathbf{u}_t \,\Vert\, \mathbf{v}_t]\in\mathbb{R}^{50},
+\]
+where $\mathbf{u}_t\in\mathbb{R}^{N}$ are RSU selection scores and $\mathbf{v}_t\in\mathbb{R}^{N}$ are allocation logits for the $N$ on-path candidate RSUs ($N=25$). The raw action is then post-processed to yield: (i) a top-$k$ selected RSU set $\mathcal{I}_k=\mathrm{TopK}(\mathbf{u}_t,k)$ and (ii) a normalized proportion vector $\mathbf{p}_t=\{p_{t,i}\}$ over the selected RSUs such that $\sum_{i\in\mathcal{I}_k} p_{t,i}=1$ and $p_{t,i}\ge 0$. Consequently, the assigned precaching amount for RSU $R_i$ is $p_{t,i}\cdot C_{\text{total}}$ (in bits or chunks), and $R_{\text{svc}}$ partitions the requested content accordingly. Next, $R_{\text{svc}}$ forwards each assigned portion to every $R_i\in\mathcal{I}_k$ via the backhaul. Each selected RSU caches its received portion and records the associated metadata (chunk indices, size, and expiry tied to $Tol_{\text{req}}$) in the CPT to enable immediate service upon vehicle contact.
+
+In the phase 2 (Vehicle Traversal and Download), the vehicle opportunistically retrieves the staged chunks across successive RSU encounters. When the vehicle enters the coverage of a selected RSU $R_i\in\mathcal{I}_k$, that RSU transmits its cached portion at the available wireless rate during the contact window. If multiple selected RSUs are encountered along the route, the vehicle accumulates downloaded portions across encounters until the full content is reconstructed. This hop-by-hop cached transmission reduces backhaul dependency during traversal. The process continues until the cumulative received size reaches $C_{\text{total}}$ within $Tol_{\text{req}}$. If a small residual portion remains as the deadline approaches, $R_{\text{svc}}$ (or the last encountered RSU) may trigger a limited \emph{make-up fetch} from the content server over the backhaul to guarantee completion; such fallback traffic is accounted for in the reward via the corresponding cost/overhead terms. Finally, the completion status and traffic statistics are reported to $R_{\text{svc}}$ for reward computation and subsequent policy updates.
+
+\begin{algorithm}[h!]
+\caption{PPO-based Delay Tolerant Precaching}
+\label{alg:ppo-dtp}
+\begin{algorithmic}[1] 
+\REQUIRE Trained PPO Policy $\pi$, Vehicle $V$ with path $P = \{RSU_1, \dots, RSU_N\}$, Content Request $(ID, \text{Size})$, Tolerable Delay $Tol_{\text{req}}$
+\ENSURE Final Download Status
+
+\vspace{1.5mm}
+\STATE \textbf{Phase 1: Decision and Precaching}
+\STATE Assemble state $s_t$ from $(V, P, ID, \text{Size}, Tol_{\text{req}})$
+\STATE $a_t \leftarrow \pi(s_t)$ \COMMENT{PPO Policy determines allocation vector}
+
+\FOR{$i \leftarrow 1$ \textbf{to} $N$}
+    \STATE $\text{ChunkToCache} \leftarrow \text{getAllocatedChunk}(a_t, RSU_i)$
+    \IF{$\text{ChunkToCache} > 0$}
+        \STATE $RSU_i$ downloads $\text{ChunkToCache}$ of $ID$ from backhaul
+    \ENDIF
+\ENDFOR
+
+\vspace{2mm}
+\STATE \textbf{Phase 2: Vehicle Traversal and Download}
+\STATE $\text{DownloadedSize} \leftarrow 0$
+\STATE $T_{\text{start}} \leftarrow \text{CurrentTime}$
+
+\WHILE{$\text{DownloadedSize} < \text{Size}$ \textbf{and} $V$ is active on path $P$}
+    \STATE Update $V$ position at time $t$
+    \STATE $RSU_{\text{contact}} \leftarrow \text{getRSUInRange}(V, P)$
+    
+    \IF{$RSU_{\text{contact}} \neq \text{null}$}
+        \STATE $i \leftarrow \text{index of } RSU_{\text{contact}} \text{ in } P$
+        \STATE $\text{AssignedChunk} \leftarrow \text{getAllocatedChunk}(a_t, RSU_i)$
+        
+        \IF{$\text{AssignedChunk} > 0$ \textbf{and} $RSU_{\text{contact}}$ has cached it}
+            \STATE $\text{data} \leftarrow RSU_{\text{contact}}.\text{transmit}(ID, \text{AssignedChunk})$
+        \ELSE
+            \STATE $\text{data} \leftarrow \text{Backhaul.transmit}(ID)$
+        \ENDIF
+        
+        \STATE $\text{DownloadedSize} \leftarrow \text{DownloadedSize} + \text{data}$
+    \ENDIF
+\ENDWHILE
+\STATE $T_{\text{actual}} \leftarrow \text{CurrentTime} - T_{\text{start}}$
+
+\IF{$\text{DownloadedSize} \ge \text{Size} \land T_{\text{actual}} \le Tol_{\text{req}}$}
+    \RETURN \textbf{Success}
+\ELSE
+    \RETURN \textbf{Failure} \COMMENT{Incomplete or Missed Deadline}
+\ENDIF
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Reinforcement-driven Updates}
+\label{subsec:rl_updates}
+The proposed framework includes a reinforcement-driven update module to realize the essential learning loop of reinforcement learning and to ensure that the precaching policy continuously improves from experience. 
+In highly dynamic CCVN environments, traffic density, vehicle trajectories, wireless channel quality, and backhaul load can vary significantly over time, making fixed heuristics or static optimization models brittle. 
+Therefore, beyond executing a one-shot allocation decision $a_t$ for each request, the agent must update its policy parameters so that future decisions adapt to the evolving environment and generalize across diverse operating conditions.
+
+After executing action $a_t$ under the current policy $\pi_{\theta_{\text{old}}}$, the agent observes the resulting trajectory data, including $(s_t,a_t,r_t,s_{t+1})$ samples and episode outcomes (success within $Tol_{\mathrm{req}}$, deadline miss, and traffic overhead). 
+These interaction samples are accumulated into a rollout buffer and are used to compute advantage estimates (e.g., via GAE) and value targets for the critic. 
+The policy is then updated by maximizing the PPO clipped surrogate objective, together with value-function and entropy regularization terms, using multiple epochs of minibatch stochastic gradient ascent. 
+This update process constrains policy changes to be proximal to $\pi_{\theta_{\text{old}}}$, stabilizing learning while enabling consistent performance improvement.
+
+By iterating \emph{interaction $\rightarrow$ evaluation $\rightarrow$ update}, the reinforcement-driven module aligns policy optimization with operational key performance indicators (e.g., delivery success rate, traffic overhead, and deadline compliance). 
+Consequently, the proposed scheme learns robust RSU selection and precaching allocation strategies that remain effective under non-stationary vehicular mobility and network conditions, which is critical for large-scale, real-time deployments.
+
+\section{Performance Evaluation} \label{sec.pe}
+
+\subsection{Simulation Environment and Training Setup}
+To validate the effectiveness of our proposed scheme, we developed a comprehensive simulation environment integrating the Simulation of Urban MObility (SUMO) framework with a custom Python-based reinforcement learning module. SUMO, a realistic microscopic traffic simulator, is utilized to model complex vehicular micro-mobility, including continuous speed variations, intersection stops, and car-following behaviors \cite{SUMO}.
+
+As summarized in Table \ref{tab:sim_params}, the road network is constructed as a 15 km $\times$ 15 km Manhattan-style grid, reflecting a typical urban topology. Vehicles are generated with average speeds ranging from 10 km/h to 100 km/h to simulate various traffic conditions, from congested urban centers to free-flowing arterial roads. To support the vehicular network infrastructure, RSUs are deployed at major intersections with a uniform interval of 1,250 m. Each RSU provides a wireless coverage radius of 700 m and operates with a reliable transmission rate of 6 Mbps.
+
+\begin{table}[h!]
+\centering
+\caption{Simulation Environment Parameters}
+\label{tab:sim_params}
+\begin{tabular}{ll}
+\hline
+\textbf{Parameter} & \textbf{Value} \\ \hline
+Simulation Tool & SUMO \\
+Distance between RSUs & 1,250 m \\
+Vehicle mobility model & Manhattan case \\
+Road Network Size & 15 km $\times$ 15 km Grid \\
+Transmission rate & 6 Mbps \\
+RSU coverage radius & 700 m \\
+Size of requested content & [100, 700] MB \\
+Vehicles average speed & [10, 100] km/h \\
+Tolerable delay time & [400, 4000] s \\
+Episode Duration & 20,000 steps \\ \hline
+\end{tabular}
+\end{table}
+
+\subsection{Baseline Algorithms and Performance Metrics}
+\subsubsection{Baseline Algorithms}
+
+We evaluate our PPO-based scheme against several baseline algorithms to demonstrate its effectiveness:
+\begin{itemize}
+    \item \textbf{SAC-PVS (CSMP) \cite{Nam}:} A deterministic mathematical optimization model that calculates and allocates 100\% of the required capacity based on average vehicle speeds without any redundancy.
+    \item \textbf{Greedy (Nearest-RSU):} A brute-force heuristic that sequentially fully allocates available capacities starting from the nearest RSU until reaching 130\% of the content size, prioritizing proximity over network efficiency.
+    \item \textbf{Random Allocation:} A naive approach where both the selection of precaching RSUs and the proportion of content chunks are randomized without considering distance or available capacity.
+    \item \textbf{No Precaching (Cellular Only):} A lower-bound baseline where all content is downloaded upon encountering an RSU (or via a cellular network), without any proactive caching.
+\end{itemize}
+
+\subsubsection{Performance Metrics}
+\begin{itemize}
+    \item \textbf{Content Delivery Success Rate:} The percentage of content requests fully downloaded within the tolerable delay time.
+    \item \textbf{Overhead Ratio (\%):} The ratio of wasted (unused) precached data to the original size of the requested content.
+\end{itemize}
+
+\subsection{Comparison with Baseline Schemes}
+We evaluated the proposed PPO-based scheme against the baseline algorithms. The primary objective of this evaluation is to analyze how each algorithm manages the intrinsic uncertainties of vehicular environments, focusing on the trade-off between guaranteeing content delivery and minimizing backhaul resource waste.
+
+\begin{figure*}[t] 
+\centering
+    \includegraphics[width=\textwidth]{fig2_compare_success4.jpg}
+    \caption{Performance comparison of content delivery success rate: (a) Impact of tolerable delay time; (b) Impact of requested content size; (c) Impact of vehicle speed.}
+    \label{fig:compare_success}
+\end{figure*}
+\begin{figure*}[t] 
+\centering
+    \includegraphics[width=\textwidth]{fig2_compare_overhead4.jpg}
+    \caption{Performance comparison of overhead ratio: (a) Impact of tolerable delay time; (b) Impact of requested content size; (c) Impact of vehicle speed.}
+    \label{fig:compare_overhead}
+\end{figure*}
+
+\subsubsection{Impact of Tolerable Delay}
+Fig. \ref{fig:compare_success}(a) and Fig. \ref{fig:compare_overhead}(a) depict the performance of the evaluated schemes under varying tolerable delay times. In delay-tolerant networking, a relaxed deadline provides the infrastructure with more opportunities to sequence chunk deliveries across multiple RSUs. As the tolerable delay time increases from 400 s to 4,000 s, the proposed PPO-based scheme exhibits a performance improvement, achieving a success rate of up to 90\%. This high success rate indicates that the PPO agent learns to exploit the extended time window by opportunistically selecting reliable future RSUs rather than forcing inefficient downloads.
+While the deterministic model, CSMP, also shows an upward trend with increased delay, its success rate plateaus around 70-75\%. CSMP allocates 100\% of the content size based on average speed models. Consequently, even with ample time, it cannot recover from micro-mobility events (e.g., stopping at a red light or deceleration) that occur within the predicted contact window. Random Allocation and Cellular Only fail to deliver sufficient success rates, proving that without path-aware precaching, extended deadlines alone cannot resolve the connectivity interruptions inherent in vehicular networks.
+
+\subsubsection{Impact of Content Size}
+Handling large multimedia files is a primary challenge in CCVNs due to the limited duration of vehicle-to-RSU contacts. The advantage of the proposed scheme becomes prominent when handling large content sizes, as illustrated in Fig. \ref{fig:compare_success}(b). The proposed PPO-based scheme maintains a resilient success rate as the requested content size reaches 700 MB. The reinforcement learning agent achieves this by fractionally distributing the content across an optimized subset of upcoming RSUs, ensuring that the required transmission volume per RSU remains within the feasible capacity of each contact window.
+
+In contrast, deterministic approaches experience a performance collapse. For instance, the success rate of CSMP drops below 25\% when the content size exceeds 400 MB. Because CSMP allocates the required data chunks without a safety margin, a deviation in the vehicle's trajectory or a drop in the wireless transmission rate results in an incomplete download. This highlights a vulnerability in heuristic models: the inability to dynamically scale redundancy in proportion to the difficulty of the task.
+
+
+\subsubsection{Impact of Vehicle Speed}
+Vehicle speed directly dictates the physical contact duration with RSUs, making it a critical variable for any precaching strategy. Fig. \ref{fig:compare_success}(c) and Fig. \ref{fig:compare_overhead}(c) illustrate the operational stability under varying average vehicle speeds ranging from 10 km/h to 100 km/h. At high speeds, the contact window shrinks, whereas at low speeds, vehicles are more susceptible to traffic congestion and variable dwell times. The proposed scheme demonstrates stability, maintaining a success rate of over 70\% across the entire speed spectrum. 
+
+Conversely, CSMP exhibits a lower success rate (fluctuating between 55\% and 60\%). While CSMP attempts to calculate the RSU dwell time using the macroscopic average speed, it fails to account for stochastic micro-mobility. The performance of the proposed scheme confirms that the PPO agent internalizes the spatio-temporal dynamics of the vehicular network. By dynamically adjusting the proportion of precached chunks based on the agent's real-time state observations, the proposed method neutralizes the uncertainties introduced by speed variations.
+
+
+
+\subsubsection{Trade-off between Success Rate and Overhead}
+The overhead ratio charts (Fig. \ref{fig:compare_overhead}) reveal the fundamental mechanism driving the robustness of the proposed scheme. In vehicular networks, caching 100\% of the required data (0\% overhead) is fragile, as demonstrated by CSMP's frequent delivery failures. On the other hand, the Greedy and Random allocation strategies exhibit high overhead ratios (often exceeding 100\%), wasting backhaul bandwidth and RSU storage capacity without guaranteeing a proportional increase in the success rate.
+
+Our proposed PPO agent avoids both extremes by establishing an overhead ratio of approximately 25\% to 30\%. In the context of our scheme, this functions as a proactively learned safety margin rather than wasted data. Through trial and error during the training phase, the agent discovers that a controlled over-allocation is the optimal point to absorb the uncertainties of vehicle mobility. By accepting this bounded trade-off, the proposed scheme ensures a stable Quality of Service (QoS) without suffocating the network infrastructure.
+
+
+\begin{figure*}[t] 
+\centering
+    \includegraphics[width=\textwidth]{fig1_ablation_success4.jpg}
+    \caption{Ablation study on the proposed scheme concerning content delivery success rate: (a) Impact of tolerable delay time; (b) Impact of requested content size; (c) Impact of vehicle speed.}
+    \label{fig:ablation_success}
+\end{figure*}
+\begin{figure*}[t] 
+\centering
+    \includegraphics[width=\textwidth]{fig1_ablation_overhead4.jpg}
+    \caption{Ablation study on the proposed scheme concerning overhead ratio: (a) Impact of tolerable delay time; (b) Impact of requested content size; (c) Impact of vehicle speed.}
+    \label{fig:ablation_overhead}
+\end{figure*}
+
+
+\subsection{Ablation Study}
+
+In reinforcement learning, the reward function dictates the optimization trajectory of the agent. Designing a reward formulation for content-centric vehicular networks requires balancing user-centric metrics (delivery success) with infrastructure constraints (backhaul bandwidth and RSU storage). To validate the efficacy of our multi-objective reward formulation, we conducted an ablation study. By isolating and deactivating specific penalty and reward components---namely, the waste penalty (w/o Waste), the cache utilization reward (w/o Cached), the time penalty (w/o Time), and the consumption reward (w/o Cons)---we analyze their individual impacts on the learning process. The results are observed across varying tolerable delays, content sizes, and vehicle speeds (Fig. \ref{fig:ablation_success} and Fig. \ref{fig:ablation_overhead}).
+\subsubsection{Effect of the Waste Penalty}
+The waste penalty acts as a regularization mechanism against data over-allocation. Removing this penalty (w/o Waste) prompts the agent to adopt an unconstrained caching strategy. Without a negative reinforcement signal for unused data, the agent maximizes the delivery probability by broadcasting the requested content to all candidate RSUs along the vehicle trajectory. While this configuration achieves a higher success rate, it incurs an overhead ratio exceeding 160\%. In a physical network deployment, this data replication occupies backhaul links and accelerates the eviction of other stored data in limited RSU caches, degrading the system capacity for subsequent requests.
+\subsubsection{Effect of the Cached Reward}
+The cache utilization reward guides the agent to leverage data already stored in the infrastructure. Deactivating this component (w/o Cached) blinds the agent to the state of the RSU storage. Consequently, the agent orders redundant content fetches from the core server via the backhaul network, even when the requested chunks are available at upcoming RSUs. This redundancy elevates the overhead ratio to approximately 100\%, demonstrating that path-aware precaching must integrate caching status to minimize backhaul dependency.
+\subsubsection{Effect of the Time Penalty}
+The time penalty discourages the agent from deferring deliveries to the end of the tolerable delay bound. When this penalty is removed (w/o Time), the agent lacks the incentive to expedite the download process. It schedules precaching at distant RSUs, increasing the vulnerability to unpredictable vehicular micro-mobility, such as route deviations or traffic stops. This deferred strategy increases the probability of deadline misses, lowering the delivery success rate.
+\subsubsection{Effect of the Consumption Reward}
+The consumption reward provides a direct incentive for fulfilling the user request. Omitting this reward (w/o Cons) yields performance comparable to the complete scheme (All) in moderate scenarios, as the agent indirectly completes deliveries to avoid time and waste penalties. However, as the requested content size exceeds 600 MB (Fig. \ref{fig:ablation_success}), the w/o Cons configuration exhibits a declining success rate. Because it lacks a direct incentive for task completion, the agent adopts a conservative allocation strategy to avoid the waste penalty. Consequently, while w/o Cons records a lower overhead ratio, it fails to deliver large files. In contrast, the complete scheme (All) allocates a higher safety margin to secure the delivery. This demonstrates that the consumption reward prevents conservative under-allocation, justifying the overhead increase to maintain delivery reliability under heavy traffic demands.
+\subsubsection{Optimality of the Complete Scheme}
+The complete proposed scheme (All), utilizing all four tuned weights, achieves an optimal trade-off between delivery success and backhaul efficiency. It maintains a success rate of over 70\% while suppressing the overhead ratio to approximately 25\%. This 25\% overhead represents a learned safety margin rather than arbitrary waste. It is the necessary redundancy required to offset the uncertainties of vehicle mobility. These results confirm that the multi-objective reward design aligns the agent's behavior with the operational requirements of vehicular networks, balancing delivery reliability with resource efficiency.
+
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+In this paper, we proposed a Proximal Policy Optimization (PPO)-based delay-tolerant precaching scheme to ensure large-content delivery in dynamic vehicular networks. To address the uncertainties of vehicle mobility and brief RSU encounter times, we formulated a multi-objective reward function that jointly considers delivery success, content consumption, and the minimization of backhaul resource waste.
+
+Evaluations using the SUMO simulator demonstrated the superiority of the proposed scheme over deterministic and heuristic baseline algorithms. While conventional mathematical models (e.g., CSMP) suffer performance degradation due to zero-margin policies failing to accommodate vehicular micro-mobility, the PPO agent learned to allocate a proactive safety margin (an overhead of approximately 25\% to 30\%). Consequently, the proposed scheme maintained delivery success rates exceeding 70\% under conditions such as large content sizes (up to 700 MB) and high vehicle speeds (up to 100 km/h), without causing the backhaul congestion observed in greedy or random approaches.
+
+This study demonstrates that our reinforcement learning approach optimizes the trade-off between Quality of Service (QoS) and backhaul efficiency. For future work, we plan to extend this single-agent architecture to a Multi-Agent Reinforcement Learning (MARL) framework to manage cooperative caching among multiple RSUs and address dense traffic scenarios in emerging 6G V2X environments.
+
+\section*{Acknowledgment}
+This work was supported by a National Research Foundation of Korea (NRF) grant funded by the Korean government (Ministry of Science and ICT (MSIT)) (No. 2022R1A2C1010121).
+
+
+\begin{thebibliography}{1}
+\setlength{\itemsep}{0pt} 
+\setlength{\parskip}{0pt}
+
+\bibitem{Autonomous}
+Q. Yuan, H. Zhou, J. Li, Z. Liu, F. Yang and X. S. Shen, ``Toward Efficient Content Delivery for Automated Driving Services: An Edge Computing Solution,'' \emph{IEEE Netw.}, vol. 32, no. 1, pp. 80–86, 2018.
+
+\bibitem{ITS}
+X. Wang, X. Zheng, W. Chen and F. -Y. Wang, ``Visual Human–Computer Interactions for Intelligent Vehicles and Intelligent Transportation Systems: The State of the Art and Future Directions,'' \emph{IEEE Transactions on Systems, Man, and Cybernetics: Systems}, vol. 51, no. 1, pp. 253-265, Jan. 2021.
+
+\bibitem{VehicularApplication}
+N. H. Hussein, C. T. Yaw, S. P. Koh, S. K. Tiong and K. H. Chong, ``A Comprehensive Survey on Vehicular Networking: Communications, Applications, Challenges, and Upcoming Research Directions,'' IEEE Access, vol. 10, pp. 86127-86180, 2022.
+
+\bibitem{InfotainmentServicesContent}
+H. Lim, ``Toward Infotainment Services in Vehicular Named Data Networking: A Comprehensive Framework Design and Its Realization,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 2, pp. 2793-2810, Feb. 2025
+
+\bibitem{VehicularNetworkDynamics}
+L. Liu, C. Chen, Q. Pei, S. Maharjan and Y. Zang, ``Vehicular Edge Computing and Networking: A Survey,'' Mobile Netw Appl 26, 1145–1168 (2021).
+
+% Sami Ullah1,6 • Ghulam Abbas1,2 • Muhammad Waqas3,4 • Ziaul Haq Abbas5 • Abd Ullah Khan
+\bibitem{RSU}
+S. Ullah, G. Abbas, M. Waqas and A. Khan, ``RSU assisted reliable relay selection for emergency message routing in intermittently connected VANETs,'' \emph{Wireless Netw.}, vol. 29, pp. 1311–1332, 2023.
+
+\bibitem{CCVN}
+X. Wang and X. Wang, ``Vehicular Content–Centric Networking Framework,'' \emph{IEEE Syst. J.}, vol. 13, no. 1, pp. 519–529, 2019.
+
+\bibitem{CCVNCaching}
+C. Chen, C. Wang, T. Qiu, M. Atiquzzaman and D. O. Wu, ``Caching in Vehicular Named Data Networking: Architecture, Schemes and Future Directions,'' IEEE Communications Surveys and Tutorials, vol. 22, no. 4, pp. 2378-2407, Fourthquarter 2020.
+
+\bibitem{ICNEfficientCaching}
+D. Gupta, S. Rani, A. Singh and J. J. P. C. Rodrigues, ``ICN Based Efficient Content Caching Scheme for Vehicular Networks,'' IEEE Transactions on Intelligent Transportation Systems, vol. 24, no. 12, pp. 15548-15556, Dec. 2023.
+
+
+\bibitem{PopularityValueRetrieval}
+M. T. R. Khan, Y. Z. Jembre, M. M. Saad, S. H. Bouk, S. H. Ahmed and D. Kim, ``Proactive Content Retrieval Based on Value of Popularity in Content-Centric Internet of Vehicles,'' \emph{IEEE Trans. Intell. Transp. Syst.}, vol. 25, no. 8, pp. 8514—8526, 2024.
+
+
+
+\bibitem{UAVEdgeCachingPopularity}
+Q. Xu, M. Cheng, J. Jin, Z. Su, D. Fang, Y. Wang and Y. Wu, ``Cooperative Edge Content Caching With Popularity Prediction in UAV-Assisted Vehicular Networks,'' IEEE Transactions on Network Science and Engineering, vol. 13, pp. 7614-7632, 2026.
+
+
+\bibitem{CoPUP}
+M. Yasir, S. Zaman, T. Maqsood, F. Rehman and S. Mustafa, ``CoPUP: content popularity and user preferences aware content caching framework in mobile edge computing,'' Cluster Comput 26, 267–281 (2023).
+
+
+\bibitem{Seq2SeqPopularityCaching}
+M. W. Kang and Y. W. Chung, ``Content Caching Based on Popularity and Priority of Content Using seq2seq LSTM in ICN,'' in IEEE Access, vol. 11, pp. 16831-16842, 2023.
+
+
+\bibitem{VehiclesMobility}
+L. Yao, A. Chen, J. Deng, J. Wang and G. Wu, ``A cooperative caching scheme based on mobility prediction in vehicular content centric networks,'' \emph{IEEE Trans. Veh. Technol.}, vol. 67, no. 6, pp. 5435–5444, 2018.
+
+\bibitem{DSP1}
+I. Ud Din, B. Ahmad, A. Almogren, H. Almajed, I. Mohiuddin and J. J. P. C. Rodrigues, ``Left–right–front caching strategy for vehicular networks in ICN–Based Internet of Things,'' IEEE Access, vol. 9, pp. 595–605, 2021.
+
+\bibitem{DSP2}
+Y. AlNagar, R. H. Gohary, S. Hosny and A. A. El-Sherif, ``Mobility aware edge caching for minimizing latency in vehicular networks,'' IEEE Open J. Veh. Technol., vol. 3, pp. 68–84, Feb. 2022.
+
+\bibitem{Popularity2}
+B. Feng, C. Feng, D. Feng, Y. Wu and X. -G. Xia, ``Proactive content caching scheme in urban vehicular networks,'' \emph{IEEE Trans. Commun.}, vol. 71, no. 7, pp. 4165–4180, 2023.
+
+\bibitem{ProactiveContentCaching2016}
+K. Kanai, T. Muto, J. Katto, S. Yamamura, T. Furutono, T. Saito, H. Mikami, K. Kusachi, T. Tsuda, W. Kameyama, Y. -J. Park and T. Sato, ``Proactive Content Caching for Mobile Video Utilizing Transportation Systems and Evaluation Through Field Experiments,''IEEE Journal on Selected Areas in Communications, vol. 34, no. 8, pp. 2102-2114, Aug. 2016.
+
+
+\bibitem{Nam}
+Y. Nam, H. Choi and E. Lee, ``Content Storage Management and Precaching Scheme in Content-Centric-Network-Based Internet of Vehicles,'' \emph{IEEE Internet Things J.}, vol. 12, no. 9, pp. 12927-12947, 2025.
+
+\bibitem{ReinforcementLearning}
+R. A. Nazib and S. Moh, ``Reinforcement Learning-Based Routing Protocols for Vehicular Ad Hoc Networks: A Comparative Survey,'' IEEE Access, vol. 9, pp. 27552-27587, 2021.
+
+\bibitem{Policy-based}
+Z. Liu, Policy-Based Reinforcement Learning, in: Artificial Intelligence for Engineers, Springer, Cham, 2025.
+
+
+\bibitem{PPO}
+Y. Cheng, Q. Guo and X. Wang, ``Proximal Policy Optimization With Advantage Reuse Competition,'' IEEE Transactions on Artificial Intelligence, vol. 5, no. 8, pp. 3915-3925, Aug. 2024.
+
+\bibitem{Na2026ICAIIC}
+J. Na, J. Youn, I. Em, E. Lee and Y. Nam, ``Delay Tolerant Precaching Scheme Based on Proximal Policy Optimization in Content-Centric Vehicular Networks'' International Conference on Artificial Intelligence in Information and Communication (ICAIIC), Tokyo, Japan, 2026.
+
+%\bibitem{Zipf}
+%L. Breslau, P. Cao, L. Fan, G. Phillips, and S. Shenker, ``Web caching and Zipf–like distributions: Evidence and implications,'' in Proc. IEEE INFOCOM, New York, NY, USA, Mar. 1999, pp. 126–134.
+
+\bibitem{Demand}
+Z. Zhang, C.-H. Lung, M. St-Hilaire and I. Lambadaris, ``Smart proactive caching: Empower the video delivery for autonomous vehicles in ICN–based networks,'' IEEE Trans. Veh. Technol., vol. 69, no. 7, pp. 7955–7965, Jul. 2020.
+
+\bibitem{EdgeVCD}
+Q. Luo, C. Li, T. H. Luan and W. Shi, ``EdgeVCD: Intelligent Algorithm-Inspired Content Distribution in Vehicular Edge Computing Network,'' IEEE Internet of Things Journal, vol. 7, no. 6, pp. 5562-5579, June 2020
+
+\bibitem{AdaptiveContentPrecaching}
+Y. Nam, H. Choi, Y. Shin, E. Lee and E.-K.  Lee, ``Adaptive Content Precaching Scheme Based on the Predictive Speed of Vehicles in Content-Centric Vehicular Networks,'' Sensors 2021, 21, 5376.
+
+
+\bibitem{ClairvoyantEdge}
+M. Sethuraman, A. Sarma, A. Bauskar, A. Dhekne and U. Ramachandran, ``ClairvoyantEdge: Prescient Prefetching of On-demand Video at the Edge of the Network,'' IEEE/ACM 7th Symposium on Edge Computing (SEC), Seattle, WA, USA, 2022.
+
+
+\bibitem{OptimizedDistributedProactiveCaching}
+S. Oh, S. Park, Y. Shin and E. Lee, ``Optimized Distributed Proactive Caching Based on Movement Probability of Vehicles in Content-Centric Vehicular Networks,'' Sensors 2022, 22, 3346. 
+
+
+\bibitem{MobilityAwareEdgeCaching}
+S. Musa, M. Zennaro, M. Libsie and E. Pietrosemoli, ``Mobility-Aware Proactive Edge Caching Optimization Scheme in Information-Centric IoV Networks,'' Sensors 2022, 22, 1387.
+
+
+\bibitem{LargeFileMobilityCaching} 
+G. Yu, Y. He, J. Wu, Z. Chen and J. Pan, ``Mobility-Aware Proactive Edge Caching for Large Files in the Internet of Vehicles,'' IEEE Internet of Things Journal, vol. 10, no. 13, pp. 11293-11305, Jul. 2023.
+
+\bibitem{MobilityAwareServiceCaching}
+Q. Fan, W. Zhang, C. Ling, R. Yadav, D. Wang and H. He, ``Mobility-Aware Cooperative Service Caching for Mobile Augmented Reality Services in Mobile Edge Computing,'' IEEE Transactions on Vehicular Technology, vol. 73, no. 11, pp. 17543-17557, Nov. 2024.
+
+% \bibitem{RequesterMobility2}
+% R. Wang, Z. Kan, Y. Cui, D. Wu, and Y. Zhen,``Cooperative caching strategy with content request prediction in Internet of Vehicles,'' IEEE Internet Things J., vol. 8, no. 11, pp. 8964–8975, Jun. 2021.
+
+\bibitem{CatchFishCaching}
+D. Zhang, W. Wang, J. Zhang, T. Zhang, X. Ren and L. Chen, ``New Method of Vehicular Network Content Distribution Based on Edge Caching and Catch Fish Optimization Strategy,'' IEEE Transactions on Reliability, vol. 74, no. 4, pp. 5190-5204, Dec. 2025.
+
+\bibitem{Multi-timescale}
+S. Lu, B. Xiang, J. Wu, P. Andelfinger and W. Cai, ``Multi-Timescale Hierarchical Prefetching for Online Caching in Vehicular Edge Networks,'' 34th International Conference on Computer Communications and Networks (ICCCN), Tokyo, Japan, 2025, pp. 1-9.
+
+\bibitem{TaylorFlamingoCaching}
+V. V. Doraiswamy and M. Subramaniam, ``A Taylor flamingo shark optimization-based traffic aware content caching vehicular social networks,'' in \emph{Proc. 5th Int. Conf. Evol. Comput. Mobile Sustain. Netw. (ICECMSN)}, Coimbatore, India, 2025, pp. 532--539.
+
+\bibitem{AdaptiveCooperativeCaching}
+Z. Jin, T. Song and W. -K. Jia, ``An Adaptive Cooperative Caching Strategy for Vehicular Networks,'' IEEE Transactions on Mobile Computing, vol. 23, no. 10, pp. 9502-9517, Oct. 2024.
+
+
+\bibitem{SAC_precaching}
+Y. Nam, Y. Shin, H. Choi and E. Lee, ``Precaching vehicle selection based on soft actor-critic in CIoV,'' AIMS Mathematics, 2026, 11(2): 3314-3348.
+
+
+\bibitem{DRL_FL_caching}
+Y. Lin, L. Tong, X. Zhu, M. Su, and Z. Wen, ``DRL-based asynchronous federated learning for cooperative caching in IoV,'' in \emph{Proc. Int. Conf. Intell. Comput. (ICIC)}, 2025.
+
+\bibitem{Informer_precaching}
+C. Wang, J. Peng, L. Cai, W. Liu, Z. Zhao, H. He and Z. Huang, ``Mobility and Context-Aware Precaching Strategy Using Spatial-Temporal Informer for Vehicular Service,'' IEEE Internet of Things Journal, vol. 12, no. 11, pp. 16053-16066, Jun. 2025.
+
+\bibitem{DelayTolerantCloudFog}
+B. Xia, F. Kong, J. Zhou, X. Tang and H. Gong, ``A delay–tolerant data transmission scheme for Internet of Vehicles based on software defined cloud-fog networks,'' IEEE Access, vol. 8, pp. 65911–65922, 2020.
+
+\bibitem{AdaptiveMultiCopyRelaying}
+H. Lin, J. Qian and B. Di, ``Learning for Adaptive Multi-Copy Relaying in Vehicular Delay Tolerant Network,'' IEEE Transactions on Intelligent Transportation Systems, vol. 25, no. 3, pp. 3054-3063, Mar. 2024.
+
+
+\bibitem{WAVE}
+R. Jiang and Y. Zhu, ``Wireless access in vehicular environment,'' in \emph{Encyclopedia of Wireless Networks}, X. Shen, X. Lin, and K. Zhang, Eds. Cham, Switzerland: Springer, 2020.
+
+\bibitem{MDP}
+R. J. Boucherie and N. M. van Dijk, Eds., \emph{Markov Decision Processes in Practice}. Cham, Switzerland: Springer, 2017.
+
+\bibitem{Optuna}
+T. Akiba, S. Sano, T. Yanase, T. Ohta and M. Koyama, ``Optuna: A next-generation hyperparameter optimization framework,'' in \emph{Proc. 25th ACM SIGKDD Int. Conf. Knowl. Discovery Data Mining (KDD)}, New York, NY, USA, 2019, pp. 2623--2631.
+
+\bibitem{SUMO}
+W. M. Griggs, R. H. Ordóñez-Hurtado, E. Crisostomi, F. Häusler, K. Massow and R. N. Shorten, "A Large-Scale SUMO-Based Emulation Platform," in IEEE Transactions on Intelligent Transportation Systems, vol. 16, no. 6, pp. 3050-3059, Dec. 2015.
+
+\end{thebibliography}
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1in,clip,keepaspectratio]{JeongtakNa.jpg}}]{Jeongtak Na} received the B.S. and M.S. degrees in computer engineering from Chungbuk National University, Cheongju, South Korea, in 2017 and 2019, respectively. He is currently pursuing the Ph.D. degree in the School of Information and Communication Engineering at Chungbuk National University.
+
+From 2017 to 2019, he was a researcher with the Natural Language Processing (NLP) Laboratory at Chungbuk National University. From 2019 to 2025, he worked in the IT industry as a software engineer. His current research interests include vehicular ad hoc networks (VANETs), reinforcement learning, intelligent transportation systems (ITS)
+\end{IEEEbiography}
+\vspace{-0.5cm}
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{JongpilYoun.jpg}}]{Jongpil Youn} He received the B.S., M.S. degrees from School of Information and Communication Engineering at Chungbuk National Univeristy, CheongJu, Korea in 2015, and 2018 respectively. He is currently working toward a Ph.D. degree in School of Information and Communication Engineering at Chungbuk National University. His research interests are in the areas of computer communication and networking. His research interests include Vehicular ad-hoc Network, mobility management, and content precaching.
+% \end{IEEEbiography}
+
+% \newpage
+
+% %If you do not have or do not want to include a photo, you can use IEEEbiographynophoto as shown below:
+
+% \begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{EmIrina.jpg}}]{Irina Em}
+% received the M.S. degree from Chungbuk National University, Cheongju, South Korea, in 2025, and is currently pursuing the Ph.D. degree in information and communication engineering with Chungbuk National University, Cheongju, Republic of Korea. Her research interests include deep reinforcement learning, vehicular networks, and content precaching in intermittently connected vehicular networks (ICVNs).
+% \end{IEEEbiography}
+
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1in,clip,keepaspectratio]{YoungjuNam.png}}]{Youngju Nam} He received the B.S., M.S., and Ph.D. degrees from the School of Information and Communication Engineering, Chungbuk National University, Cheongju, South Korea, in 2017, 2019, and 2023, respectively. He joined the School of Software, Kunsan National University, in 2024, where he is currently working as an Assistant Professor. His research interests include computer communication and networking, wireless sensor networks, content-centric vehicular networks, content precaching, optimization, and social networks.
+\end{IEEEbiography}
+\vspace{-0.5cm}
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1in,clip,keepaspectratio]{EuisinLee.jpg}}]{Euisin Lee} He received the B.S., M.S., and Ph.D. degrees from Computer Engineering at Chungnam National University, Daejeon, Korea, in 2005, 2007, and 2012, respectively. He studied as a Post-Doctoral researcher in the department of Computer Science at University of California at Los Angeles from 2012 to 2014. He joined the School of Information and Communication Engineering at Chungbuk National University in 2014 and is currently working as a professor. His research interests are in the areas of computer communication and networking. He is mainly interested in routing, multicasting, mobility management, location service, and QoS (Real-time and Reliability) in Mobile Ad hoc Networks (MANETs), Wireless Sensor Networks (WSNs), Vehicular Ad hoc Networks (VANETs), and Smart Grid.
+\end{IEEEbiography}
+\EOD
+\end{document}
+
+

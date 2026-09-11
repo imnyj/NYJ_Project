@@ -1,0 +1,39 @@
+{
+  "channel_spread": {
+    "max_spread_seen": 0.03136,
+    "mean_spread": 0.006296533333333332,
+    "mean_spread_over_mean_occupancy": 2.331970086990691
+  },
+  "coverage": {
+    "cells": 7,
+    "cycles": [
+      0
+    ],
+    "env_steps_measured": 4200,
+    "fraction_of_training_run": 0.021,
+    "road_cycles_of_14_covered": 1,
+    "steps_per_cell": 600,
+    "training_run_env_steps": 200000
+  },
+  "stop_line": {
+    "fraction_at_or_past_rsu_range_of_finite": 0.2701701710438651,
+    "fraction_infinite_of_all": 0.029255418635373957,
+    "max": 899.9847634512837,
+    "n_finite": 343713,
+    "p50": 182.21329984022782,
+    "p90": 773.1620962134275,
+    "p99": 886.8330509823089,
+    "rsu_range_m": 300.0
+  },
+  "tls_chars": {
+    "all_zero_fraction": 0.026253612102668706,
+    "by_char": {
+      "G": 0.29212703269307044,
+      "g": 0.13256275143067595,
+      "none": 0.026253612102668706,
+      "r": 0.5122386537480877,
+      "y": 0.0368179500254972
+    },
+    "total": 352980
+  }
+}

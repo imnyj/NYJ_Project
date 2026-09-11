@@ -1,0 +1,5 @@
+group,models,sum_trial_s,projected_15trial_h,is_critical_path
+g0,PPO MADDPG-MT,2852.5,11.89,0
+g1,I-HAMAPPO SAC,2101.0,8.75,0
+g2,TD3 RES-MAPDDPG,2432.5,10.14,0
+g3,SPAM-D3QN HOORL MA2HDQN,2862.7,11.93,1

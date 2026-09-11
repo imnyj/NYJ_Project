@@ -1,0 +1,10 @@
+model,n_declared,declared_keys,update_ok,missing_keys,flag_values_full_batch,keys_needing_real_buffer,keys_that_read_zero,undeclared_binary_keys,additive,moved_keys,added_keys,backup_used,error
+PPO,1,behaviour_logp_stored,True,,behaviour_logp_stored=0.0,behaviour_logp_stored,,first_epoch_clip_fraction;first_epoch_ratio_max;first_epoch_ratio_mean;first_epoch_ratio_std,yes,,,sb3_ppo.py.1788646269.bak,
+SAC,0,,True,,,,,ent_coef;ent_coef_loss,yes,,,sb3_sac.py.1788646269.bak,
+TD3,1,actor_updated,True,,actor_updated=0.0,actor_updated,,n_updates,yes,,,sb3_td3.py.1788646269.bak,
+RES-MAPDDPG,1,neighbourhood_used,True,,neighbourhood_used=1.0,,neighbourhood_used,,yes,,neighbourhood_used,res_mapddpg.py.1788646269.bak,
+MA2HDQN,2,n_step_active;target_synced,True,,n_step_active=0.0;target_synced=0.0,n_step_active;target_synced,,lr_scale,yes,,,ma2hdqn.py.1788646269.bak,
+I-HAMAPPO,3,neighbourhood_used;behaviour_logp_stored;policy_synced,True,,neighbourhood_used=1.0;behaviour_logp_stored=0.0;policy_synced=0.0,behaviour_logp_stored;policy_synced,neighbourhood_used,clip_fraction;mean_ratio;ratio_max;ratio_std,yes,,neighbourhood_used,i_hamappo.py.1788646269.bak,
+SPAM-D3QN,1,per_sampled,True,,per_sampled=0.0,per_sampled,,,yes,,,spam_d3qn.py.1788646269.bak,
+HOORL,3,offline_pretrained;behaviour_logp_stored;phase_offline,True,,offline_pretrained=0.0;behaviour_logp_stored=0.0;phase_offline=0.0,offline_pretrained;behaviour_logp_stored;phase_offline,,,yes,,,hoorl.py.1788646269.bak,
+MADDPG-MT,2,task_decomposed;global_critic_cooperative,True,,task_decomposed=0.0;global_critic_cooperative=1.0,task_decomposed,global_critic_cooperative,,yes,,,maddpg_mt.py.1788646269.bak,

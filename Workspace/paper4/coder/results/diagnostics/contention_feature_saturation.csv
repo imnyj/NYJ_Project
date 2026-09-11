@@ -1,0 +1,3 @@
+density,normaliser,divisor,n_steps_observed,in_range_mean,in_range_max,feature_mean,feature_max,saturated_fraction,distinct_values
+35.0,new (N_ACTIVE_MAX_OBS),168.0,200,140.92,148.0,0.8388,0.881,0.0,14
+35.0,old (literal 100.0),100.0,200,140.92,148.0,0.995,1.0,0.995,2

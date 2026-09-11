@@ -1,0 +1,5 @@
+arm,rank,model_name,mean_error,mean_aoi,packet_loss_rate,coverage_outage_rate,avg_power_norm,composite_score,old_composite,new_composite,delta,recorded_matches_old
+eval_prelim_mean,1,HeuristicScheduler,2.7534,4.031,0.0462,0.2752,0.8863,5.4966,5.4966,5.0386,-0.458,True
+eval_prelim_mean,2,PPO,56.0949,20.0319,0.1813,0.2732,0.0003,66.6573,66.6573,66.4735,-0.1838,True
+eval_prelim_accumulate,1,HeuristicScheduler,2.7363,4.025,0.0462,0.2752,0.8861,5.4764,5.4764,5.0184,-0.458,True
+eval_prelim_accumulate,2,PPO,14.9552,5.8965,0.1274,0.2732,0.7958,18.609,18.609,18.3174,-0.2916,True

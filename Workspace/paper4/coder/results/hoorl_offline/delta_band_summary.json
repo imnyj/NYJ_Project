@@ -1,0 +1,24 @@
+{
+  "E_REF": 13.26,
+  "V_MAX_OBS": 15.911999999999999,
+  "decoder_delta_max": 45.0,
+  "decoder_delta_min": 0.1,
+  "densities": [
+    5.0,
+    20.0,
+    35.0
+  ],
+  "error_mode": "accumulate",
+  "n_bins": 15,
+  "n_intervals": 6711,
+  "n_next_obs_present": 6371,
+  "n_transmitted": 5879,
+  "note": "feat0 is observation feature [0], norm_sq_error(last_pred_err). Rows are binned by delta_actual, the MEASURED interval, not by the requested Delta. The transmitted-only curve is the headline: an interval that closed without a report carries the previous interval's error into the next observation.",
+  "seeds": [
+    2001,
+    2002
+  ],
+  "steps": 900,
+  "wall_clock_s": 90.78,
+  "warmup_steps": 600
+}

@@ -1,0 +1,8 @@
+Category,Relevance,Related_Keywords,Description
+Telecommunications,High,"LoRa, Wireless Communications, VANETs, V2X",Covers communication networks, wireless systems, and telecommunication protocols.
+Computer Networks and Communications,High,"WSN, Multi-hop Routing, Proactive Caching, CCN",Specifically targets network architecture, routing protocols, and distributed caching.
+Computer Science - Information Systems,High,"IoT, Information-Centric Networks, Cloud Computing",Focuses on information systems, IoT architectures, and network data delivery.
+Engineering - Electrical & Electronic,High,"Wireless Sensor Networks, Signal Relaying",Broad category encompassing electrical engineering and communication systems.
+Transportation Science & Technology,Medium,"VANETs, Intelligent Transportation Systems (ITS), Vehicular Clouds",Focuses on transportation systems, ITS, and vehicular networking applications.
+Computer Science - Artificial Intelligence,Medium,"Particle Swarm Optimization, Clustering Algorithms",Relevant for papers focusing on AI/ML or heuristic optimization applied to networks.
+Computer Science - Interdisciplinary Applications,Medium,"UAVs, Multi-sink WSNs",Good for papers applying CS techniques to multidisciplinary environments like UAVs.

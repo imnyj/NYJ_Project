@@ -31,7 +31,6 @@ import torch
 
 from src.baselines import ALL_BASELINES, get_baseline
 from src.baselines.base_agent import BaseRLModel
-from src.baselines.carlton import CARLTON
 from src.baselines.i_hamappo import IHAMAPPO
 from src.baselines.maddpg_mt import MADDPGMT
 from src.baselines.spam_d3qn import SPAMD3QN
@@ -118,35 +117,22 @@ class TestActionRoundTrip:
             f"{len(wrong)}/{model.num_actions} joint indices mis-recovered: {wrong[:8]}"
         )
 
-    def test_carlton_recovers_every_branch_triple(self):
-        model = _make_model("CARLTON")
-        dec = model.decoder
-        triples = [
-            (d, p, c)
-            for d in range(model.num_delta_levels)
-            for p in range(model.num_power_levels)
-            for c in range(model.num_channels)
-        ]
-        raws = []
-        for d, p, c in triples:
-            delta, ch, power = model._action_to_tuple(d, p, c)
-            raws.append(dec.encode_action(delta, ch, power))
-        recovered = model._infer_branch_indices(torch.as_tensor(np.stack(raws)))
-        wrong = [
-            (t, tuple(int(x) for x in recovered[i].tolist()))
-            for i, t in enumerate(triples)
-            if tuple(int(x) for x in recovered[i].tolist()) != t
-        ]
-        assert len(triples) == 128
-        assert wrong == [], f"{len(wrong)}/128 branch triples mis-recovered: {wrong[:8]}"
-
-    def test_spam_and_carlton_share_one_grid(self):
-        """The two discretised baselines must quantise identically, or a
-        comparison between them measures the grid instead of the learner."""
-        spam = _make_model("SPAM-D3QN")
-        carl = _make_model("CARLTON")
-        assert spam.delta_candidates == pytest.approx(carl.delta_candidates)
-        assert spam.power_candidates == pytest.approx(carl.power_candidates)
+    # CARLTON was replaced by HOORL on 2026-09-05 (see
+    # backup/carlton_replaced_20260905/WHY_REPLACED.md). Two checks went with it
+    # and are recorded here rather than deleted silently, because each was
+    # holding something down.
+    #
+    # `test_carlton_recovers_every_branch_triple` walked all 128 (delta, power,
+    # channel) triples through encode/decode. HOORL emits a continuous delta and
+    # power, so the branch-triple form does not apply to it; the equivalent
+    # guarantee for HOORL is that a sampled continuous action survives the
+    # encode/decode round trip, which belongs with the other continuous models.
+    #
+    # `test_spam_and_carlton_share_one_grid` asserted the two discretised
+    # baselines quantise identically, so a comparison between them measures the
+    # learner and not the grid. SPAM-D3QN is now the only discretised baseline,
+    # so there is no second grid to agree with and the check has nothing left to
+    # compare. It must come back the moment a second discretised model is added.
 
     def test_maddpg_mt_critic_sees_the_unit_action_that_was_executed(self):
         model = _make_model("MADDPG-MT")
@@ -334,23 +320,14 @@ def test_ma2hdqn_reports_that_n_step_is_inactive():
     assert out["n_step_active"] == 0.0
 
 
-def test_carlton_policy_temperature_is_separable_from_the_backup():
-    """M-1: omega is the mellowmax operator parameter AND used to be the policy
-    temperature. They are now separate arguments, and the policy entropy is
-    reported so a collapse is visible."""
-    model = _make_model("CARLTON", omega=10.0, policy_beta=0.1)
-    assert model.omega == 10.0 and model.policy_beta == 0.1
-    default = _make_model("CARLTON", omega=3.0)
-    assert default.policy_beta == 3.0
-
-    buf = _fill_buffer(model, n=24, seed=8)
-    out = model.update(buf.sample(16))
-    for branch in ("delta", "power", "channel"):
-        key = f"policy_entropy_{branch}"
-        assert key in out
-        assert 0.0 <= out[key] <= 1.0 + 1e-6
-    # A near-uniform temperature must leave the policy near-uniform.
-    assert out["policy_entropy_delta"] > 0.9
+# `test_carlton_policy_temperature_is_separable_from_the_backup` was removed with
+# CARLTON. It asserted that `policy_beta` can be given independently of the
+# mellowmax `omega`, and that a near-uniform temperature leaves the policy
+# near-uniform. Worth recording: the separation existed in the code and the
+# search space simply never used it, which is why the shipped runs coupled the
+# two. If CARLTON returns as a channel-allocation control, this test returns with
+# it and `policy_beta` must be searched, on a range derived from the measured
+# spread of Q values rather than an absolute one.
 
 
 # ---------------------------------------------------------------------------
@@ -464,12 +441,12 @@ def test_update_survives_a_degenerate_batch(name: str):
 @pytest.mark.parametrize("key", ["w1", "w4", "w2_raw"])
 def test_reward_weights_cannot_be_absorbed_by_a_model(key: str):
     with pytest.raises(TypeError, match="reward weights"):
-        get_baseline("CARLTON")(state_dim=STATE_DIM, num_channels=NUM_CHANNELS, **{key: 0.5})
+        get_baseline("HOORL")(state_dim=STATE_DIM, num_channels=NUM_CHANNELS, **{key: 0.5})
 
 
 def test_genuine_unknown_hparams_are_still_absorbed():
     """The guard must be narrow: only the reward-weight family is rejected."""
-    model = get_baseline("CARLTON")(
+    model = get_baseline("HOORL")(
         state_dim=STATE_DIM, num_channels=NUM_CHANNELS, some_future_key=1.0
     )
     assert model.hparams == {"some_future_key": 1.0}
@@ -485,16 +462,18 @@ def test_genuine_unknown_hparams_are_still_absorbed():
 # a different slot depending on which producer filled the buffer -- exactly the
 # C-1 failure mode, just moved one layer out.
 # ---------------------------------------------------------------------------
-_DISCRETE_HEADS = ["SPAM-D3QN", "CARLTON", "RES-MAPDDPG", "MA2HDQN", "I-HAMAPPO"]
+# CARLTON left this list when it was replaced by HOORL on 2026-09-05. HOORL is
+# not a substitute here: it emits a continuous delta and power, so it has no
+# discrete branch indices for these checks to recover.
+_DISCRETE_HEADS = ["SPAM-D3QN", "RES-MAPDDPG", "MA2HDQN", "I-HAMAPPO"]
 
 
 def _inferred_index(model: BaseRLModel, raw: np.ndarray) -> int:
     t = torch.as_tensor(np.asarray(raw, dtype=np.float32).reshape(1, -1))
     if isinstance(model, SPAMD3QN):
         return int(model._infer_action_indices(t)[0].item())
-    if isinstance(model, CARLTON):
-        branch = model._infer_branch_indices(t)[0]
-        return model.pack_action_index(int(branch[0]), int(branch[1]), int(branch[2]))
+    # A CARLTON branch stood here until 2026-09-05. It packed three branch
+    # indices into one joint index; HOORL has no discrete branches to pack.
     return int(model._resolve_channel_indices({"action": t}, torch.device("cpu"))[0].item())
 
 
@@ -688,10 +667,10 @@ def test_load_rejects_a_bundle_it_does_not_understand(tmp_path):
 
 
 def test_load_still_accepts_a_bare_state_dict(tmp_path):
-    trained = _make_model("CARLTON", seed=31)
+    trained = _make_model("HOORL", seed=31)
     path = tmp_path / "bare.pt"
     torch.save(trained.state_dict(), str(path))
-    fresh = _make_model("CARLTON", seed=32)
+    fresh = _make_model("HOORL", seed=32)
     fresh.load(str(path))
     assert _max_abs_diff(_weights(fresh), _weights(trained)) == pytest.approx(0.0, abs=0.0)
 

@@ -281,7 +281,7 @@ def _save_fake_checkpoint(path, model, hparams, training_steps=12345):
     """Write a bundle in exactly the shape `HotSwapTrainer.save_checkpoint` writes."""
     torch.save(
         {
-            "model_name": "CARLTON",
+            "model_name": "HOORL",
             "hparams": dict(hparams),
             "rest_state_dict": model.state_dict(),
             "act_state_dict": model.state_dict(),
@@ -309,12 +309,12 @@ class TestCheckpointsAreActuallyLoaded:
         empty_dir.mkdir()
 
         with pytest.raises(FileNotFoundError, match="No checkpoint"):
-            build_evaluated_model("CARLTON", {}, checkpoint_dir=str(empty_dir))
+            build_evaluated_model("HOORL", {}, checkpoint_dir=str(empty_dir))
 
         # ... and the whole benchmark refuses to produce a table from it.
         with pytest.raises(FileNotFoundError, match="No checkpoint"):
             run_full_benchmark(
-                models=["CARLTON"],
+                models=["HOORL"],
                 densities=[25.0],
                 seeds=[42],
                 output_dir=str(tmp_path / "out"),
@@ -328,16 +328,16 @@ class TestCheckpointsAreActuallyLoaded:
         ckpt_dir = tmp_path / "checkpoints"
         ckpt_dir.mkdir()
 
-        trained = get_baseline("CARLTON")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
+        trained = get_baseline("HOORL")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
         with torch.no_grad():
             for p in trained.parameters():
                 p.add_(1.25)  # a signature no fresh initialisation would produce
-        _save_fake_checkpoint(ckpt_dir / "CARLTON_best.pt", trained, {"hidden_dim": 64})
+        _save_fake_checkpoint(ckpt_dir / "HOORL_best.pt", trained, {"hidden_dim": 64})
 
-        loaded, prov = build_evaluated_model("CARLTON", {}, checkpoint_dir=str(ckpt_dir))
+        loaded, prov = build_evaluated_model("HOORL", {}, checkpoint_dir=str(ckpt_dir))
 
         assert prov["checkpoint_loaded"] is True
-        assert prov["checkpoint_file"] == "CARLTON_best.pt"
+        assert prov["checkpoint_file"] == "HOORL_best.pt"
         assert prov["checkpoint_training_steps"] == 12345
         assert prov["checkpoint_weights"] == "act_state_dict"
 
@@ -348,7 +348,7 @@ class TestCheckpointsAreActuallyLoaded:
             assert torch.equal(expected[k].cpu(), got[k].cpu()), k
 
         # Guard against a vacuous comparison: a fresh model must NOT match.
-        fresh = get_baseline("CARLTON")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
+        fresh = get_baseline("HOORL")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
         assert any(
             not torch.equal(fresh.state_dict()[k].cpu(), expected[k].cpu())
             for k in expected
@@ -372,19 +372,19 @@ class TestCheckpointsAreActuallyLoaded:
         assert find_checkpoint(str(ckpt_dir), "MADDPG-MT").endswith("MADDPGMT_ep011.pt")
         assert find_checkpoint(str(ckpt_dir), "SPAM-D3QN").endswith("SPAMD3QN_best.pt")
         assert find_checkpoint(str(ckpt_dir), "SPAM-D3QN", select="last").endswith("SPAMD3QN_ep002.pt")
-        assert find_checkpoint(str(ckpt_dir), "CARLTON") is None
+        assert find_checkpoint(str(ckpt_dir), "HOORL") is None
 
     def test_13_checkpoint_hparams_win_over_the_csv(self, tmp_path):
         """The saved tensors were shaped by the checkpoint's hparams, not the CSV's."""
         ckpt_dir = tmp_path / "checkpoints"
         ckpt_dir.mkdir()
-        trained = get_baseline("CARLTON")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
-        _save_fake_checkpoint(ckpt_dir / "CARLTON_best.pt", trained, {"hidden_dim": 64})
+        trained = get_baseline("HOORL")(state_dim=STATE_DIM, num_channels=4, hidden_dim=64)
+        _save_fake_checkpoint(ckpt_dir / "HOORL_best.pt", trained, {"hidden_dim": 64})
 
         # A stale CSV claims a different width. Trusting it would raise a size
         # mismatch in load_state_dict, or silently load a partial network.
         loaded, prov = build_evaluated_model(
-            "CARLTON", {"hidden_dim": 256}, checkpoint_dir=str(ckpt_dir)
+            "HOORL", {"hidden_dim": 256}, checkpoint_dir=str(ckpt_dir)
         )
         assert prov["checkpoint_loaded"] is True
         for k, v in trained.state_dict().items():
@@ -395,7 +395,7 @@ class TestCheckpointsAreActuallyLoaded:
         empty_dir = tmp_path / "checkpoints"
         empty_dir.mkdir()
         model, prov = build_evaluated_model(
-            "CARLTON", {}, checkpoint_dir=str(empty_dir), require_checkpoint=False
+            "HOORL", {}, checkpoint_dir=str(empty_dir), require_checkpoint=False
         )
         assert model is not None
         assert prov["checkpoint_loaded"] is False
@@ -445,18 +445,18 @@ class TestBenchmarkInvariants:
         from src.hot_swap_trainer import ENV_ONLY_HPARAM_KEYS
 
         polluted = {
-            "hidden_dim": 64, "omega": 0.3,
+            "hidden_dim": 64, "alpha": 0.3,
             "w1": 0.5, "w2": 0.2, "w3": 0.2, "w4": 0.1, "w1_raw": 0.116,
             "density": 25.0, "warmup_steps": 350, "rsu_range": 300.0,
             "reward_weights_json": "{}",
         }
-        kept = constructor_hparams(get_baseline("CARLTON"), polluted)
-        assert set(kept) == {"hidden_dim", "omega"}
+        kept = constructor_hparams(get_baseline("HOORL"), polluted)
+        assert set(kept) == {"hidden_dim", "alpha"}
         assert not (set(kept) & set(ENV_ONLY_HPARAM_KEYS))
 
         # And the model builds. Without the filter, BaseRLModel raises TypeError
         # on w1..w4 while `density` and `warmup_steps` are swallowed in silence.
-        model = instantiate_model("CARLTON", polluted)
+        model = instantiate_model("HOORL", polluted)
         assert model.hparams == {}
 
     def test_18_power_normalisation_uses_the_decoder_bounds(self):
@@ -505,8 +505,15 @@ class TestBenchmarkInvariants:
 
         `packet_loss_rate` is the link-layer frame error rate and is a different
         quantity. The benchmark must refuse to build a table under the old
-        definition unless the caller says so explicitly, and must score the
+        definition unless the caller says so explicitly, and must carry the
         coverage metric when the environment provides it.
+
+        Since 2026-09-05 the composite no longer SCORES the coverage rate. It is
+        a property of the road geometry and the density, not of the policy, so
+        weighting it in a table whose purpose is to rank models injects
+        policy-independent noise into the ranking. It is still reported, and the
+        naming decision of 2026-08-31 is untouched; what changed is only whether
+        it ranks. The score's third term is the packet loss rate.
         """
         import src.evaluate as ev
 
@@ -536,7 +543,7 @@ class TestBenchmarkInvariants:
         with pytest.raises(RuntimeError, match=ev.OUTAGE_METRIC_KEY):
             ev.run_full_benchmark(**kwargs)
 
-        # Once it does, that is the term the composite scores.
+        # Once it does, the table carries it -- and the score ignores it.
         def _run_with_coverage(**kw):
             return {"density": kw["density"], "seed": kw["seed"],
                     **base, ev.OUTAGE_METRIC_KEY: 0.25}
@@ -548,10 +555,60 @@ class TestBenchmarkInvariants:
         expected = (
             ev.COMPOSITE_WEIGHTS["error"] * base["mean_error"]
             + ev.COMPOSITE_WEIGHTS["aoi"] * base["mean_aoi"]
-            + ev.COMPOSITE_WEIGHTS["outage"] * 0.25
+            + ev.COMPOSITE_WEIGHTS["loss"] * base[ev.LOSS_METRIC_KEY]
             + ev.COMPOSITE_WEIGHTS["power"] * normalize_power_dbm(base["avg_tx_power_dbm"])
         )
         assert df_lb.iloc[0]["composite_score"] == pytest.approx(round(expected, 4))
+
+        # The defect this replaces: a term with the largest weight that the
+        # ranking cannot feel. Moving the coverage rate right across its range
+        # must leave the score untouched, while the scored term must move it.
+        def _run_with_high_coverage(**kw):
+            return {"density": kw["density"], "seed": kw["seed"],
+                    **base, ev.OUTAGE_METRIC_KEY: 0.95}
+
+        monkeypatch.setattr(ev, "evaluate_single_run", _run_with_high_coverage)
+        _, _, df_lb_high = ev.run_full_benchmark(**kwargs)
+        assert df_lb_high.iloc[0]["composite_score"] == pytest.approx(
+            df_lb.iloc[0]["composite_score"]
+        )
+        assert df_lb_high.iloc[0][ev.OUTAGE_METRIC_KEY] == pytest.approx(0.95), (
+            "the coverage rate must still be reported even though it is not scored"
+        )
+
+        def _run_with_more_loss(**kw):
+            return {"density": kw["density"], "seed": kw["seed"],
+                    **dict(base, packet_loss_rate=base["packet_loss_rate"] / 2.0),
+                    ev.OUTAGE_METRIC_KEY: 0.25}
+
+        monkeypatch.setattr(ev, "evaluate_single_run", _run_with_more_loss)
+        _, _, df_lb_less_loss = ev.run_full_benchmark(**kwargs)
+        assert df_lb_less_loss.iloc[0]["composite_score"] < df_lb.iloc[0]["composite_score"]
+
+    def test_20b_evaluate_and_hpo_score_the_same_expression(self):
+        """The two objectives must agree, or HPO tunes for one ranking and the
+        paper's table reports another. They diverged once already, over the dBm
+        window used to normalise power, and neither file said so."""
+        import src.evaluate as ev
+        import src.hpo as hpo
+
+        assert ev.COMPOSITE_WEIGHTS == {
+            "error": 1.0, "aoi": 0.5, "loss": 2.0, "power": 0.2,
+        }
+        assert ev.LOSS_METRIC_KEY == "packet_loss_rate"
+
+        metrics = {
+            "mean_error": 3.0, "mean_aoi": 4.0, "packet_loss_rate": 0.25,
+            "avg_power_norm": normalize_power_dbm(16.5),
+            "n_observations": 900, "tx_attempts": 30,
+        }
+        expected = (
+            ev.COMPOSITE_WEIGHTS["error"] * metrics["mean_error"]
+            + ev.COMPOSITE_WEIGHTS["aoi"] * metrics["mean_aoi"]
+            + ev.COMPOSITE_WEIGHTS["loss"] * metrics["packet_loss_rate"]
+            + ev.COMPOSITE_WEIGHTS["power"] * metrics["avg_power_norm"]
+        )
+        assert hpo.compute_composite_objective(metrics) == pytest.approx(expected)
 
     def test_21_heuristic_shares_the_rl_action_bounds(self):
         """H1. The rule-based baseline was confined to a quarter of the Delta range."""

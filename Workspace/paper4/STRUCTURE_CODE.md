@@ -1,9 +1,16 @@
 # 구현 구조
 
-작성 2026-08-30 · 짝 문서: `STRUCTURE_FILES.md` (파일이 어디에 있는가)
+작성 2026-08-30 · 개정 2026-09-05 (줄 수 실측 갱신, `divergence_guard.py` 추가)
+짝 문서: `STRUCTURE_FILES.md` (파일이 어디에 있는가)
 
 이 문서는 **파일 안이 어떻게 짜여 있는가**만 다룬다. 클래스와 함수 단위로,
 각각 한 줄씩 무엇을 하는지 붙였다. `[핵심]`은 이해에 반드시 필요한 것이다.
+
+> [!WARNING]
+> **각 절 제목의 줄 수는 2026-09-05 14:56 `wc -l` 스냅샷이다.** 측정 당시 여러 에이전트가 같은
+> 파일들을 동시에 수정하고 있었고 같은 세션 안에서도 값이 움직였으므로, 정확한 값이 필요하면
+> 문서를 믿지 말고 `wc -l`을 다시 실행할 것. 본문의 `파일:줄번호` 인용도 같은 기준이며,
+> 어긋나면 함께 적어 둔 상수 이름이나 함수 이름으로 찾을 것. 이름 쪽이 정본이다.
 
 ---
 
@@ -32,7 +39,7 @@
 
 ---
 
-## 1. `src/rl_interface.py` — 상태·액션·버퍼의 정본 (754줄)
+## 1. `src/rl_interface.py` — 상태·액션·버퍼의 정본 (913줄)
 
 모든 상수와 자료구조의 유일한 출처. 다른 파일은 여기서 읽어 쓴다.
 
@@ -43,6 +50,7 @@ P_MIN, P_MAX = 10, 23     전송전력 범위 (3GPP power-class-3)
 DELTA_MIN = 0.1           ETSI CAM 최소 생성 주기
 DELTA_MAX                 [핵심] Δ 상한. net.xml의 실제 최대 적색 시간에서 추출
 V_LIMIT                   시나리오 제한속도. net.xml의 최대 차선 속도에서 추출
+V_MAX_OBS = V_LIMIT × speed_factor   관측 정규화 전용. V_LIMIT과 일부러 분리
 E_REF = V_LIMIT × 1s      [핵심] 오차 정규화 기준. "1초분의 무지"
 
 def get_sumo_max_red_phase_duration(): tlLogic을 순회해 최대 연속 적색 시간 계산 (사이클 랩어라운드 고려)
@@ -76,32 +84,47 @@ class RetrospectiveReplayBuffer:   SMDP 버퍼
 
 ### 상태 17차원
 
+인덱스는 `vectorize_from_dict()`가 `vec[i]`에 대입하는 순서와 1:1로 대응한다.
+
 | # | 피처 | 정규화 | 무엇을 위한 것 |
 |---|---|---|---|
 | 0 | 마지막 예측 오차 | `norm_sq_error` | 이 차량이 얼마나 예측 가능한가 → Δ 결정 |
-| 1,2 | 속도 X, Y | /V_LIMIT | dead reckoning 입력 |
-| 3 | 속력 | /V_LIMIT | 정지 판단 |
-| 4 | 가속도 | /a_max | 출발 시점 추론 |
-| 5,6 | RSU 상대좌표 | /RSU_range | 위치 |
-| 7 | RSU까지 거리 | /RSU_range | **전력 결정의 물리적 근거** |
+| 1,2 | 속도 X, Y | /`V_MAX_OBS`, clip[-1,1] | dead reckoning 입력 |
+| 3 | 속력 | /`V_MAX_OBS`, clip[0,1] | 정지 판단 |
+| 4 | 가속도 | /`a_max`, clip[-1,1] | 출발 시점 추론 |
+| 5,6 | RSU 상대좌표 | /`RSU_RANGE`, clip[-1,1] | 위치 |
+| 7 | RSU까지 거리 | /`RSU_RANGE`, clip[0,1] | **전력 결정의 물리적 근거** |
 | 8,9,10 | 신호등 R/Y/G | one-hot | **정지 추론 1차 근거** |
-| 11 | 신호 전환까지 | /60s | 출발 시점 추론 |
-| 12 | 정지선 거리 | /RSU_range | 통과할지 정지할지 |
-| 13 | 범위 내 차량 수 | /100 | 혼잡 예측 |
-| 14 | CBR | 그대로 | 혼잡 실측 |
-| 15 | 앞 대기 차량 수 | /queue_max | 출발 지연 |
+| 11 | 신호 전환까지 | /60s, clip[0,1] | 출발 시점 추론 |
+| 12 | 정지선 거리 | /`RSU_RANGE`, clip[0,1] | 통과할지 정지할지 |
+| 13 | 범위 내 차량 수 | /100, clip[0,1] | 혼잡 예측 |
+| 14 | CBR | clip[0,1] | 혼잡 실측 |
+| 15 | 앞 대기 차량 수 | /`queue_max`(20.0), clip[0,1] | 출발 지연 |
 | 16 | heading | [-1,1] | 접근/이탈 |
 
 > 피처 [0]은 원래 AoI(age)였으나, SMDP에서는 결정 시점이 항상 갱신 직후라
 > age가 구조적으로 0이다. 실측 결과 상수였고, 마지막 예측 오차로 교체했다.
 
+> [!NOTE]
+> **[1]~[3]의 분모는 `V_LIMIT`이 아니라 `V_MAX_OBS`다.** 차량은 SUMO의 speed factor만큼
+> 차선 제한속도를 넘어설 수 있으므로, `V_LIMIT`으로 나누면 빠른 차량이 전부 1.0에 클립되어
+> 이 논문이 가장 구분해야 할 구간의 해상도가 사라진다. 반면 보상의 `E_REF`는 "시나리오 속도로
+> 1초를 달린 거리"라는 뜻을 유지해야 하므로 `V_LIMIT` 기준을 그대로 쓴다. 두 상수를 일부러
+> 분리해 둔 것이며, 하나로 합치면 관측과 보상 가운데 한쪽이 반드시 틀어진다.
+
 ---
 
-## 2. `src/hot_swap_trainer.py` — 파이프라인의 심장 (2,095줄)
+## 2. `src/hot_swap_trainer.py` — 파이프라인의 심장 (4,160줄)
 
-전체의 4분의 1이 이 파일이다. 6개 클래스가 각자 다른 층을 맡는다.
+전체의 약 28퍼센트가 이 파일이다. 6개 클래스가 각자 다른 층을 맡는다.
 
 ```
+# 모듈 상수 (전부 실측에서 유도)
+CBR_REF = 0.60                       [핵심] 혼잡 항 정규화 기준. 서브채널 1개 포화 시 달성 상한
+DEFAULT_WARMUP_STEPS = 1200          [핵심] 워밍업. 밀도 50이 안정되는 지점
+ERROR_MODE_ACCUMULATE / _MEAN        오차 항 집계 방식 두 가지
+DEFAULT_ERROR_MODE = "accumulate"    [핵심] mean 팔은 2026-09-04 폐기
+
 def infer_state_dim():        StateVectorizer에서 관측 폭을 동적으로 읽음
 def select_default_devices(): GPU 수에 따라 Act/Rest 디바이스 결정
 
@@ -157,6 +180,30 @@ $$R_k = -\Big(w_1 \sum_{t \in [t_k, t_{k+1})} \mathrm{Norm}(e^2(t))\frac{\delta 
 움직이는 차를 방치하면 매 스텝 벌점이 쌓이지만, 정지한 차는 예측이 맞으므로
 아무리 오래 두어도 0이다. 그래서 정지 차량에게는 긴 Δ가, 움직이는 차량에게는 짧은 Δ가 유리하다.
 
+네 항의 정규화는 `_finalize_interval`에서 아래와 같이 이루어진다.
+
+| 항 | 코드상 계산 | 비고 |
+|---|---|---|
+| $e^2$ | `interval_accum` 누적값 | `error_mode`가 `mean`이면 `delta_actual`로 나눔 |
+| $P_{tx}$ | `(power_dbm - p_min) / (p_max - p_min)` | 범위는 디코더 인스턴스에서 읽음 |
+| $C_{freq}$ | `min(1, subchannel_cbr[ch] / CBR_REF)` | **`CBR_REF` = 0.60** |
+| $\mathbb{I}_{red}$ | `_is_redundant_update(err)` | 갱신 시점 오차 ≤ 3.2 m |
+
+> [!IMPORTANT]
+> **혼잡 항은 원시 CBR이 아니라 `CBR_REF`로 나눈 값이다.** 원시 CBR은 서브채널이 4개이고
+> 갱신 1회의 에어타임이 짧아 1에 한참 못 미치므로, 그대로 쓰면 혼잡 항이 전체 벌점의 0.1퍼센트
+> 수준만 기여한다. 0.60은 서브채널 하나를 포화시켜 측정한 달성 가능 상한이다(2026-09-02).
+> 2026-09-01에 설정되었던 0.25는 워밍업 350에서, 그리고 다른 프로세스가 시나리오 파일을
+> 재생성하는 동안 측정된 값이라 상한이 낮게 나왔다. 근거는 `idea/design_spec_v2.md` 4절에 있다.
+
+> [!WARNING]
+> **오차 항 집계에 두 팔이 있고, `mean` 팔은 폐기되었다.** `error_mode`가 `mean`이면 오차 항을
+> 구간 길이로 나누어 구간당 벌점을 1.0 이하로 가두는데, 에피소드 점수는 Δ의 합으로 나누므로
+> 침묵할수록 점수가 오르는 역전이 생긴다. 실측 상관계수는 accumulate 팔에서 오차 대 초당보상이
+> -0.973인 반면, mean 팔에서는 -0.299에 그치고 Δ 대 초당보상이 오히려 +0.591이었다.
+> 2026-09-04에 사용자가 mean 팔 폐기를 결정했다. **새 실행과 논문 인용은 accumulate 단일이다.**
+> 상세는 `idea/design_spec_v2.md` 8절 D2 이력과 `review/full_audit_20260904.md` 4-5절에 있다.
+
 ### 훈련 루프가 gym이 아닌 이유
 
 차량마다 결정 시점이 다르다. 차량 A의 다음 상태는 A의 다음 갱신 때 생기지,
@@ -180,7 +227,64 @@ for step in range(steps):
 
 ---
 
-## 3. `src/Communications.py` — 802.11p 물리계층 (311줄)
+## 3. `src/divergence_guard.py` — 발산 감시 (360줄, 2026-09-03 신설)
+
+학습이 발산했는지, 기울기 갱신이 멈췄는지를 **실행 중에** 판정해 중단시킨다.
+torch 상태를 갖지 않고 트레이너에서 아무것도 임포트하지 않는다. 그 덕분에 실행 중 판정과
+진척 CSV를 훑는 사후 판정이 완전히 같은 규칙을 쓴다.
+
+```
+# 임계 상수 (정상·발산 실행 18건의 손실 분포에서 유도)
+DEFAULT_LOSS_ABS_FLOOR = 1.0e3           [핵심] 절대 하한 규칙
+DEFAULT_LOSS_RATIO = 1.0e3               [핵심] 워밍업 중앙값 대비 배율 규칙
+DEFAULT_WARMUP_EPISODES = 5              배율 규칙의 기준 구간
+DEFAULT_LOSS_PATIENCE = 3                연속 초과 요구 횟수
+DEFAULT_MAX_ZERO_UPDATE_EPISODES = 3     기울기 갱신 0회가 몇 에피소드 이어지면 중단
+DEFAULT_MAX_NONFINITE_LOSS_UPDATES = 10  비유한 손실 연속 허용 횟수 (갱신 단위)
+
+ABORT_DIVERGED / ABORT_GRAD_STALL / ABORT_TRAINER_CRASH / ABORT_EMPTY_EPISODES
+                                         중단 사유 코드
+
+def is_finite_number():      NaN/Inf 판정
+@dataclass AbortVerdict:     중단 판정 1건. as_dict()로 기록에 실림
+
+class DivergenceMonitor:
+    loss_threshold (property): 워밍업 종료 전에는 절대 하한만, 이후에는 배율 규칙과 함께
+    _close_warmup_if_ready():  워밍업 손실의 중앙값을 확정해 기준선으로 삼음
+    observe():                 [핵심] 에피소드 1건을 받아 중단 여부 판정
+    state():                   현재 감시 상태 덤프
+
+def scan_progress_rows():    [핵심] 진척 CSV 행 목록에 같은 규칙을 사후 적용
+```
+
+### 왜 규칙이 두 개인가
+
+절대 하한 하나로는 부족하다. 모델별 손실 척도가 SPAM-D3QN의 5e-4에서 CARLTON의 12까지
+네 자릿수에 걸쳐 흩어져 있어서, 모두에게 맞는 절대값이 존재하지 않는다.
+배율 규칙 하나로도 부족하다. PPO의 초기 손실 평균이 -0.09여서 배율만 보면 89.5 같은 평범한
+잡음에도 발화한다. 그래서 두 규칙을 함께 쓰고, 여기에 연속 초과 요구를 더한다.
+I-HAMAPPO가 한 에피소드에 145,990까지 튀었다가 두 에피소드 뒤 0.79로 회복하고 83 에피소드를
+더 학습한 사례가 있으므로, 한 번의 초과는 근거가 되지 못한다.
+
+절대 하한 1.0e3이라는 값은 가장 나쁜 정상 에피소드(12.43)와 가장 약한 실제 발산(285,247)
+사이에 네 자릿수의 빈 구간이 있어서 그 아래쪽 끝에서 고른 것이다.
+
+### 세 가지를 따로 감시하는 이유
+
+2026-09-02의 사고에서 세 가지가 동시에 참이어야 발산이 눈에 띄지 않았다.
+손실이 폭주했고, 기울기 갱신이 멈췄고, 학습 스레드가 조용히 죽었다.
+앞의 둘은 `DivergenceMonitor`가, 스레드 사망은 `hot_swap_trainer.BackgroundTrainer._worker_loop`가
+맡는다. 하나만 보고 있었다면 그때도 놓쳤을 것이다.
+
+> [!IMPORTANT]
+> **본훈련이 끝난 뒤에 만들어졌으므로 기존 산출물에는 소급 적용되지 않았다.**
+> 2026-09-03 이전에 생성된 체크포인트와 진척 CSV는 이 감시를 거치지 않은 것이다.
+> 다만 `scan_progress_rows()`가 같은 규칙을 사후에 적용하므로 과거 실행도 다시 판정할 수 있고,
+> `review/full_audit_20260904.md`가 그 방식으로 18개 실행을 재판정했다.
+
+---
+
+## 4. `src/Communications.py` — 802.11p 물리계층 (462줄)
 
 "이 전송이 성공하는가"에 답하는 것이 전부다.
 
@@ -221,7 +325,7 @@ def judge_uplink():          [핵심] 같은 채널 그룹의 상호 간섭을 �
 
 ---
 
-## 4. `src/sumo/make_sumo_set.py` — 시나리오 생성 (502줄)
+## 5. `src/sumo/make_sumo_set.py` — 시나리오 생성 (668줄)
 
 ```
 # 기하 상수
@@ -248,7 +352,7 @@ def make_sumo_files():           [핵심] 위를 락으로 감싼 공개 진입�
 
 ---
 
-## 5. `src/dynamics_predictor.py` — 동역학 피처 (410줄)
+## 6. `src/dynamics_predictor.py` — 동역학 피처 (661줄)
 
 ```
 def predict_stop_imminent():   신호·거리·속도로 곧 정지할 확률
@@ -262,7 +366,7 @@ class DynamicsPredictor:       위 함수들의 캐싱 래퍼
 
 ---
 
-## 6. `src/baselines/` — 비교 방안 9종 (3,740줄)
+## 7. `src/baselines/` — 비교 방안 9종 (12개 파일 4,159줄)
 
 ```
 __init__.py
@@ -298,7 +402,7 @@ sb3_wrapper.py          기본 3종 공통. 하이브리드 액션을 3차원 Bo
 
 ---
 
-## 7. 진입점 3종
+## 8. 진입점 3종
 
 ```
 run_all.py
@@ -331,7 +435,7 @@ def run_all_baselines_hpo():      9종 전체
 
 ---
 
-## 8. 이 코드에서 헷갈리기 쉬운 것
+## 9. 이 코드에서 헷갈리기 쉬운 것
 
 **gym 환경이 아니다.** `env.step()`이 있어도 `model.learn(env)`로 못 돌린다.
 SMDP라 전역 틱이 없다. `needs_decision`에 있는 차량에게만 새 grant를 준다.

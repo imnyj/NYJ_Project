@@ -1,0 +1,59 @@
+import os
+import litellm
+from mcp.server.mcpserver import MCPServer
+
+# Initialize MCP server
+mcp = MCPServer("FreeTokenSubagent")
+
+def load_config():
+    config_path = os.path.expanduser("~/.config/config.yml")
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with open(config_path, "r") as f:
+        lines = f.readlines()
+        model_name = lines[0].strip()
+        # Find the next non-empty line
+        api_key = ""
+        for line in lines[1:]:
+            if line.strip():
+                api_key = line.strip()
+                break
+        return model_name, api_key
+
+@mcp.tool()
+def ask_free_subagent(prompt: str) -> str:
+    """
+    Use this tool to delegate tasks or ask questions to the free token subagent.
+    This subagent uses the school-provided model and API token.
+    Provide a clear, detailed prompt describing what the subagent needs to do.
+    """
+    model_name, api_key = load_config()
+    
+    try:
+        base_url = os.environ.get("FREE_TOKEN_BASE_URL", None)
+        custom_provider = os.environ.get("FREE_TOKEN_PROVIDER", None)
+        
+        # Determine model string for litellm
+        model_str = model_name
+        if custom_provider:
+            model_str = f"{custom_provider}/{model_name}"
+        elif base_url and not model_str.startswith("openai/"):
+            # Assume openai-compatible proxy if base_url is set and no provider prefix
+            model_str = f"openai/{model_name}"
+
+        kwargs = {
+            "model": model_str,
+            "api_key": api_key,
+            "messages": [{"role": "user", "content": prompt}]
+        }
+        if base_url:
+            kwargs["api_base"] = base_url
+            
+        response = litellm.completion(**kwargs)
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Error communicating with the free token subagent: {str(e)}"
+
+if __name__ == "__main__":
+    mcp.run()

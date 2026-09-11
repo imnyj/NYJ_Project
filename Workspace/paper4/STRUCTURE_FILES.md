@@ -1,6 +1,7 @@
 # 파일 구조
 
-작성 2026-08-30 · 대상: `Workspace/paper4`
+작성 2026-08-30 · 개정 2026-09-05 (줄 수 실측 갱신, `divergence_guard.py` 추가)
+대상: `Workspace/paper4`
 짝 문서: `STRUCTURE_CODE.md` (파일 **안**의 구현 구조)
 
 이 문서는 **어떤 파일이 어디에 있고 무엇을 담당하는가**만 다룬다.
@@ -46,22 +47,23 @@ Workspace/paper4/
 
 ```
 coder/
-├── run_all.py                    훈련 진입점 (87줄)
+├── run_all.py                    훈련 진입점 (454줄)
 │
 ├── src/
-│   ├── rl_interface.py           상태·액션·버퍼의 정본 (754줄)
-│   ├── hot_swap_trainer.py       ★ 환경·스케줄러·훈련루프 (2095줄)
-│   ├── Communications.py         802.11p 물리계층 (411줄)
-│   ├── dynamics_predictor.py     신호등·차량 동역학 피처 (410줄)
-│   ├── heuristic_scheduler.py    규칙 기반 스케줄러 (185줄)
-│   ├── evaluate.py               벤치마크 평가 (417줄)
-│   ├── hpo.py                    Optuna 하이퍼파라미터 탐색 (630줄)
+│   ├── rl_interface.py           상태·액션·버퍼의 정본 (913줄)
+│   ├── hot_swap_trainer.py       ★ 환경·스케줄러·훈련루프 (4,160줄)
+│   ├── divergence_guard.py       학습 발산·기울기 정지 감시 (360줄, 2026-09-03 신설)
+│   ├── Communications.py         802.11p 물리계층 (462줄)
+│   ├── dynamics_predictor.py     신호등·차량 동역학 피처 (661줄)
+│   ├── heuristic_scheduler.py    규칙 기반 스케줄러 (244줄)
+│   ├── evaluate.py               벤치마크 평가 (901줄)
+│   ├── hpo.py                    Optuna 하이퍼파라미터 탐색 (1,629줄)
 │   │
 │   ├── sumo/
-│   │   ├── make_sumo_set.py      격자망·차량흐름·신호등 생성 (502줄)
+│   │   ├── make_sumo_set.py      격자망·차량흐름·신호등 생성 (668줄)
 │   │   └── generated.*.xml       생성된 SUMO 파일 7종 (자동 생성물)
 │   │
-│   └── baselines/                비교 방안 9종 (3740줄)
+│   └── baselines/                비교 방안 9종 (12개 파일 4,159줄)
 │       ├── __init__.py           레지스트리 — 이름↔클래스의 정본
 │       ├── base_agent.py         공통 인터페이스
 │       ├── sb3_wrapper.py        Stable-Baselines3 하이브리드 액션 래퍼
@@ -69,13 +71,36 @@ coder/
 │       ├── res_mapddpg.py  ma2hdqn.py  i_hamappo.py    최신 3종
 │       └── spam_d3qn.py  carlton.py  maddpg_mt.py      유사 3종
 │
-├── tests/                        pytest 110개
-├── etc/scripts/                  검증 스크립트 9종
+├── tests/                        pytest 파일 20개, 7,864줄
+├── etc/scripts/                  검증 스크립트 13종
 ├── checkpoints/  logs/           산출물 (본훈련 전 비어 있어야 정상)
 └── backup/                       코드 백업·격리
 ```
 
-**전체 9,231줄.** 절반 가까이(2,095줄)가 `hot_swap_trainer.py` 하나에 있다.
+**위 트리에 열거한 파일 전체 14,611줄** (2026-09-05 14:56 `wc -l` 실측).
+그 가운데 **4,160줄, 약 28퍼센트가 `hot_swap_trainer.py` 하나에 있다.**
+
+> [!NOTE]
+> **집계 범위와 재현 방법.** 이 숫자는 위 트리에 이름이 나온 `.py` 파일만 더한 값이며,
+> `tests/`와 `etc/scripts/`는 포함하지 않는다. 앞선 판본이 적었던 9,231줄도 같은 범위의
+> 합계였으므로 두 값은 직접 비교할 수 있다. 재현하려면 `coder/`의 상위에서 아래를 실행한다.
+>
+> ```
+> wc -l coder/run_all.py coder/src/*.py coder/src/sumo/make_sumo_set.py coder/src/baselines/*.py
+> ```
+>
+> 백업과 캐시를 제외한 `coder/` 전체는 26,945줄, `coder/src/` 전체는 14,157줄이었다.
+
+> [!WARNING]
+> **줄 수는 스냅샷이므로 그대로 인용하지 말 것.** 2026-09-05 측정 당시 여러 에이전트가
+> `hot_swap_trainer.py`·`rl_interface.py`·`evaluate.py`·`hpo.py`·`make_sumo_set.py`를 동시에
+> 수정하고 있었고, 같은 세션 안에서도 값이 계속 움직였다. `hot_swap_trainer.py` 하나만 해도
+> 약 40분 사이에 3,656 → 3,932 → 4,160으로 늘었다. 정확한 값이 필요하면 문서를 믿지 말고
+> 위 명령을 다시 실행한다.
+> 이 표의 용도는 어느 파일이 큰지의 비율 감각을 주는 것이지 정확한 계수가 아니다.
+>
+> **같은 이유로 이 문서와 다른 설계 문서에 적힌 `파일:줄번호` 인용도 2026-09-05 기준이다.**
+> 줄 번호가 어긋나면 함께 적어 둔 상수 이름이나 함수 이름으로 찾을 것. 이름 쪽이 정본이다.
 
 ---
 
@@ -92,6 +117,26 @@ coder/
 | `dynamics_predictor.py` | 신호등 상태·앞차·정지 임박을 TraCI에서 추출 | 정지 추론의 근거가 사라진다 |
 | `sumo/make_sumo_set.py` | 도로망과 교통 수요를 만든다 | 굴릴 도로가 없다 |
 | `baselines/` | 비교 방안 9종 | 비교 대상이 없다 |
+| `divergence_guard.py` | 학습이 발산했는지 감시하고 중단시킨다 | 발산한 실행이 정상 종료로 보고된다 |
+
+#### `divergence_guard.py`는 무엇인가 (2026-09-03 신설)
+
+2026-09-03에 신설된 발산 감시 모듈이다. **손실의 절대 하한**과 **워밍업 중앙값 대비 배율**이라는
+두 규칙으로 학습 발산을 감지하고, 조건에 걸리면 실행을 중단시킨다. 여기에 기울기 갱신이 아예
+멈춘 경우와 학습 스레드가 조용히 죽은 경우를 각각 별도로 감시한다.
+
+이 모듈이 없던 2026-09-02에 PPO baseline이 11번째 에피소드에서 발산하고 학습 스레드가 죽었으나,
+에피소드 루프는 8.8시간을 더 돌며 89개 에피소드 행과 체크포인트를 쓰고 `episodes: 100`이라는
+요약을 반환했다. 예약 보고서는 그 실행을 `done 100/100`으로 기록했다. 발산을 잡는 것이 아니라
+**발산한 실행이 성공으로 보고되는 것**을 막는 것이 이 모듈의 목적이다.
+
+> [!IMPORTANT]
+> **본훈련이 끝난 뒤에 만들어졌기 때문에 기존 산출물에는 소급 적용되지 않았다.**
+> 2026-09-03 이전에 생성된 체크포인트와 진척 CSV는 이 감시를 거치지 않은 것이다.
+> 다만 모듈이 트레이너에서 아무것도 임포트하지 않으므로, 실행 중 판정과 진척 CSV를 훑는
+> 사후 판정(`etc/report_progress.py`)이 같은 규칙을 쓴다. 따라서 과거 실행도 사후에 같은
+> 기준으로 다시 판정할 수 있으며, `review/full_audit_20260904.md`가 그 방식으로 재판정했다.
+> 임계값의 근거는 `CODE_GUIDE.md` 2-3절에 정리해 두었다.
 
 ### 3-2. 훈련 이후 단계
 
@@ -101,7 +146,7 @@ coder/
 | `hpo.py` | Optuna 20 trial 하이퍼파라미터 탐색 | 같은 날 탐색공간 재작성 |
 | `heuristic_scheduler.py` | 규칙 기반 비교군 | 평가에서만 쓰임 |
 
-### 3-3. 검증 스크립트 (`etc/scripts/`)
+### 3-3. 검증 스크립트 (`etc/scripts/`, 13종)
 
 | 스크립트 | 무엇을 검증 |
 |---|---|
@@ -114,6 +159,19 @@ coder/
 | `verify_n_queue_live.py` | n_queue 피처가 실제로 변하는가 |
 | `verify_observation_liveness.py` | (구) 환경 반환 관측의 liveness |
 | `verify_sb3_baselines.py` | SB3 3종의 래퍼 계약 |
+| `verify_behaviour_logp_wiring.py` | 행동 정책의 log-probability 배선 |
+| `verify_objective_rescoring.py` | 목적함수 재채점의 일관성 |
+| `check_gamma_ablation.py` | 감마 절제 실험 점검 |
+| `check_onpolicy_fix.py` | on-policy 수정의 반영 여부 |
+
+`etc/` 직속에는 스크립트가 4개 더 있다.
+
+| 스크립트 | 역할 |
+|---|---|
+| `report_progress.py` | 진척 CSV를 훑어 실행 상태를 보고. `divergence_guard`의 사후 판정 경로 |
+| `verify_divergence_guard.py` | 발산 감시 규칙이 기록된 실행에 대해 의도대로 발화하는가 |
+| `merge_hpo_results.py` | HPO 결과 병합 |
+| `gpu_alloc.py` | GPU 배정 |
 
 `verify_observation_liveness.py`는 `env.step()`이 **반환하는** 벡터를 본다.
 그 벡터는 살아 있었으나 모델에게 가지 않았고, 그래서 18차원 중 15개가 상수인 것을 놓쳤다.
@@ -169,6 +227,10 @@ import 그래프를 실측해 현재 파이프라인이 전혀 쓰지 않는 것
 | 서브채널 4개 | `Communications.NUM_SUBCHANNELS` | 802.11p 10 MHz × 4 |
 | baseline 이름↔클래스 | `baselines/__init__.py::BASELINE_REGISTRY` | 상수 |
 | 보상 가중치 w1~w4 | 환경 생성자 (Optuna 탐색 대상) | `hpo.py`가 샘플 |
+| 혼잡 항 정규화 기준 0.60 | `hot_swap_trainer.CBR_REF` | 서브채널 1개를 포화시켜 측정한 달성 가능 상한 (2026-09-02) |
+| 워밍업 기본 1200 | `hot_swap_trainer.DEFAULT_WARMUP_STEPS` | 밀도 50이 안정되는 지점에서 유도 (2026-09-02) |
+| 보상 오차 항 집계 모드 | `hot_swap_trainer.DEFAULT_ERROR_MODE` | `accumulate` 단일. mean 팔은 2026-09-04 폐기 |
+| 발산 판정 임계 | `divergence_guard.py`의 `DEFAULT_LOSS_*` | 정상·발산 실행 18건의 손실 분포에서 유도 |
 
 > [!IMPORTANT]
 > **리터럴을 새로 쓰지 말 것.** 이 프로젝트에서 반복적으로 결함을 만든 원인이다.

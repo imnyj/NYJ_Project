@@ -1,0 +1,767 @@
+# src/hoorl_offline.py
+# ============================================================================
+# Offline dataset for HOORL's first stage.
+#
+# J. Xu, X. Zhou, M. Song, W. Wang, D. Niyato and C. Yuen, "AoI and Energy-Aware
+# Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning
+# Framework," IEEE TVT 75(8), pp. 18102--18115, 2026. DOI: 10.1109/TVT.2026.3675626
+#
+# ---------------------------------------------------------------------------
+# WHY THIS MODULE EXISTS AT ALL
+# ---------------------------------------------------------------------------
+# HOORL learns offline from a previously collected dataset and then continues
+# online. Offline reinforcement learning is only defined relative to a KNOWN
+# behaviour policy: every offline method reasons about how far the learned policy
+# has drifted from the one that produced the data, and that reasoning is vacuous
+# if nobody can say what produced the data. So the behaviour policy is written
+# down here as code, its parameters are recorded in the dataset's metadata, and
+# the collection is reproducible from that metadata alone.
+#
+# ---------------------------------------------------------------------------
+# WHY NOT REUSE ANOTHER BASELINE'S TRAINING LOG
+# ---------------------------------------------------------------------------
+# Because a learner's replay buffer is not a dataset from a fixed policy. Its
+# contents were produced by a policy that changed continuously while it was being
+# filled, and by exploration schedules that were annealing at the same time, so
+# the distribution shift between "the behaviour policy" and the learned policy is
+# neither stationary nor measurable. Pretraining on that and calling the result
+# HOORL would reproduce something the paper does not describe.
+#
+# ---------------------------------------------------------------------------
+# THE BEHAVIOUR POLICY
+# ---------------------------------------------------------------------------
+# A documented fixed-period heuristic, per the specification in
+# librarian/baselines_v2.json (`xu2026`, `implementability`):
+#
+#     Delta    = a FIXED value, the same at every decision epoch
+#     channel  ~ Uniform{0, ..., num_channels - 1}
+#     power    ~ Uniform[p_min, p_max]        (dBm, the decoder's own range)
+#
+# `delta_fixed` has NO default. The specification says "a fixed value" without
+# saying which, and a default here would silently become the answer.
+#
+# HONEST LIMITATION, STATED WHERE IT CANNOT BE MISSED: with a single fixed Delta
+# the dataset has ZERO coverage of the Delta axis. Every transition in it was
+# taken at the same silence interval, so no offline method can learn anything
+# about how the return varies with Delta -- it can only learn about the channel
+# and the power at that one interval. `delta_jitter` is provided so that the
+# collection can instead draw Delta log-uniformly inside a band around the fixed
+# value, which keeps the behaviour policy fully documented and known while giving
+# the Delta axis non-zero support. It defaults to 0.0, i.e. the literal
+# specification, and the value used is recorded in the metadata either way.
+#
+# ---------------------------------------------------------------------------
+# WHAT THE METADATA PINS DOWN
+# ---------------------------------------------------------------------------
+# The behaviour-policy parameters, the transition count, the density mix, the
+# seeds, AND two things that are not properties of the collection but of the code
+# that ran it:
+#
+#   * the git commit hash at collection time, and whether the tree was dirty;
+#   * `N_ACTIVE_MAX_OBS`, together with the rest of the observation-normalising
+#     constants.
+#
+# The second one is the reason this section exists. If the observation
+# normalisation changes, every stored state vector silently means something
+# different from what a freshly built model will produce, and the dataset is
+# void -- but nothing about the file itself would show it. `verify_compatibility`
+# turns that into a loud failure at load time. The same failure mode has already
+# invalidated a hyper-parameter search in this project once.
+# ============================================================================
+
+from __future__ import annotations
+
+import argparse
+import gc
+import json
+import logging
+import math
+import os
+import random
+import subprocess
+import time
+from dataclasses import asdict, dataclass
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
+import torch
+
+from src.rl_interface import (
+    ActionDecoder,
+    N_ACTIVE_MAX_OBS,
+    STATE_DIM,
+    RetrospectiveReplayBuffer,
+)
+
+logger = logging.getLogger(__name__)
+
+#: Version of the on-disk layout. Bump it when a stored column changes meaning.
+DATASET_FORMAT_VERSION: int = 1
+
+#: Columns stored in the npz, in the order the loader expects them.
+ARRAY_KEYS: Tuple[str, ...] = (
+    "state",
+    "action",
+    "reward",
+    "next_state",
+    "done",
+    "delta_t",
+    "action_idx",
+    "behaviour_log_prob",
+)
+
+
+# ---------------------------------------------------------------------------
+# Behaviour policy
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class FixedPeriodBehaviourPolicy:
+    """The documented logging policy. Every field is recorded in the metadata.
+
+    `log_prob` returns the log density of the CHANNEL and POWER factors only.
+    That is not an omission and it is not a bug:
+
+      * the channel is a fair draw over `num_channels`, so its log-probability is
+        -log(num_channels);
+      * the power is uniform on [p_min, p_max] in dBm, and the stored action is
+        the unit coordinate of that same linear range, so its density in unit
+        coordinates is exactly 1 and contributes 0;
+      * Delta is DETERMINISTIC when `delta_jitter == 0`, so its distribution is a
+        point mass whose density with respect to Lebesgue measure does not exist.
+        There is no finite number to store. With `delta_jitter > 0` Delta is
+        log-uniform inside the band, which in the decoder's unit coordinate is
+        again uniform, so it contributes a finite constant and IS included.
+
+    A consumer that needs a full joint density must therefore know which case it
+    is in; `delta_component_defined` says so, and the metadata records it.
+    """
+
+    delta_fixed: float
+    num_channels: int
+    p_min: float
+    p_max: float
+    #: Multiplicative half-width of the Delta band, in log space. 0.0 reproduces
+    #: the literal specification (a single fixed Delta, zero coverage of the
+    #: Delta axis). 1.0 would mean [delta_fixed / e, delta_fixed * e], clipped to
+    #: the decoder's range.
+    delta_jitter: float = 0.0
+
+    @property
+    def delta_component_defined(self) -> bool:
+        return self.delta_jitter > 0.0
+
+    def delta_band(self, decoder: ActionDecoder) -> Tuple[float, float]:
+        """The [low, high] Delta band, clipped to the decoder's own range."""
+        if not self.delta_component_defined:
+            return (float(self.delta_fixed), float(self.delta_fixed))
+        lo = max(float(decoder.delta_min), self.delta_fixed * math.exp(-self.delta_jitter))
+        hi = min(float(decoder.delta_max), self.delta_fixed * math.exp(self.delta_jitter))
+        if hi < lo:
+            lo = hi = float(min(max(self.delta_fixed, decoder.delta_min), decoder.delta_max))
+        return (lo, hi)
+
+    def sample(
+        self, rng: np.random.Generator, decoder: ActionDecoder
+    ) -> Tuple[Tuple[float, int, float], int, float]:
+        """Draw one grant. Returns ((Delta, ch, power), ch, behaviour log-prob)."""
+        lo, hi = self.delta_band(decoder)
+        if hi > lo:
+            delta = float(np.exp(rng.uniform(math.log(lo), math.log(hi))))
+        else:
+            delta = float(lo)
+        ch = int(rng.integers(0, int(self.num_channels)))
+        power = float(rng.uniform(self.p_min, self.p_max))
+        return (delta, ch, power), ch, self.log_prob()
+
+    def log_prob(self) -> float:
+        """Log density of one draw, in the unit coordinates the decoder uses.
+
+        Channel: -log(num_channels). Power: uniform on the unit interval, density
+        1, contributing 0. Delta: included only when the band is non-degenerate,
+        where it is uniform over a sub-interval of the unit coordinate of width
+        `w`, contributing -log(w). Since the exact `w` depends on the decoder's
+        range, the Delta term is folded in by `_delta_unit_width` at collection
+        time and stored per transition; this method returns the part that does
+        not depend on the decoder.
+        """
+        return -math.log(float(self.num_channels))
+
+
+def _delta_unit_log_density(policy: FixedPeriodBehaviourPolicy, decoder: ActionDecoder) -> float:
+    """The Delta factor's contribution to the behaviour log density, or 0.0.
+
+    Log-uniform Delta over [lo, hi] is uniform in the decoder's unit coordinate
+    (the mapping is exponential), and the unit width of that band is
+    (log hi - log lo) / log(delta_max / delta_min). Its log density is therefore
+    -log(width). Returns 0.0 for the degenerate single-Delta case, where the
+    factor has no density at all; `delta_component_defined` is what tells a
+    consumer which of the two it is looking at.
+    """
+    if not policy.delta_component_defined:
+        return 0.0
+    lo, hi = policy.delta_band(decoder)
+    if hi <= lo:
+        return 0.0
+    full = math.log(float(decoder.delta_max) / float(decoder.delta_min))
+    if full <= 0.0:
+        return 0.0
+    width = (math.log(hi) - math.log(lo)) / full
+    return -math.log(max(width, 1e-12))
+
+
+# ---------------------------------------------------------------------------
+# Dataset container
+# ---------------------------------------------------------------------------
+class OfflineDataset:
+    """An in-memory offline dataset that samples like `RetrospectiveReplayBuffer`.
+
+    `sample()` emits EXACTLY the key set and tensor shapes that
+    `RetrospectiveReplayBuffer.sample` emits, so a model cannot tell the two
+    apart and the offline and online stages consume one batch contract. The
+    discount column is recomputed here from this dataset's own gamma for the same
+    reason the buffer computes one; every baseline in this project prefers
+    `delta_t` and its own gamma anyway (`BaseRLModel.smdp_discounts`).
+    """
+
+    def __init__(
+        self,
+        arrays: Dict[str, np.ndarray],
+        metadata: Dict[str, Any],
+        gamma: float = 0.99,
+    ) -> None:
+        missing = [k for k in ARRAY_KEYS if k not in arrays]
+        if missing:
+            raise KeyError(f"offline dataset is missing columns {missing}")
+        n = int(arrays["state"].shape[0])
+        for key in ARRAY_KEYS:
+            if int(arrays[key].shape[0]) != n:
+                raise ValueError(
+                    f"column {key!r} has {arrays[key].shape[0]} rows, expected {n}"
+                )
+        self.arrays = {k: np.asarray(arrays[k]) for k in ARRAY_KEYS}
+        self.metadata = dict(metadata)
+        self.gamma = float(gamma)
+        self._n = n
+
+    def __len__(self) -> int:
+        return self._n
+
+    @property
+    def state_dim(self) -> int:
+        return int(self.arrays["state"].shape[1])
+
+    def sample(self, batch_size: int) -> Dict[str, torch.Tensor]:
+        if self._n == 0:
+            raise ValueError("Cannot sample from an empty offline dataset.")
+        size = min(int(batch_size), self._n)
+        idx = np.random.choice(self._n, size, replace=False)
+        delta_t = self.arrays["delta_t"][idx].astype(np.float32).reshape(-1, 1)
+        out = {
+            "state": torch.from_numpy(self.arrays["state"][idx].astype(np.float32)),
+            "action": torch.from_numpy(self.arrays["action"][idx].astype(np.float32)),
+            "reward": torch.from_numpy(self.arrays["reward"][idx].astype(np.float32).reshape(-1, 1)),
+            "next_state": torch.from_numpy(self.arrays["next_state"][idx].astype(np.float32)),
+            "done": torch.from_numpy(self.arrays["done"][idx].astype(np.float32).reshape(-1, 1)),
+            "delta_t": torch.from_numpy(delta_t),
+            "discount": torch.from_numpy(np.power(self.gamma, delta_t).astype(np.float32)),
+            "action_idx": torch.from_numpy(self.arrays["action_idx"][idx].astype(np.int64).reshape(-1)),
+            "behaviour_log_prob": torch.from_numpy(
+                self.arrays["behaviour_log_prob"][idx].astype(np.float32).reshape(-1, 1)
+            ),
+        }
+        return out
+
+    # -- persistence -------------------------------------------------------
+    def save(self, npz_path: str) -> Tuple[str, str]:
+        """Write the arrays and a sibling `<name>.meta.json`. Returns both paths."""
+        npz_path = os.path.abspath(npz_path)
+        os.makedirs(os.path.dirname(npz_path), exist_ok=True)
+        np.savez_compressed(npz_path, **self.arrays)
+        meta_path = os.path.splitext(npz_path)[0] + ".meta.json"
+        with open(meta_path, "w") as fh:
+            json.dump(self.metadata, fh, indent=2, sort_keys=True)
+            fh.flush()
+            os.fsync(fh.fileno())
+        return npz_path, meta_path
+
+    @classmethod
+    def load(cls, npz_path: str, gamma: float = 0.99) -> "OfflineDataset":
+        npz_path = os.path.abspath(npz_path)
+        meta_path = os.path.splitext(npz_path)[0] + ".meta.json"
+        if not os.path.exists(meta_path):
+            raise FileNotFoundError(
+                f"{npz_path} has no sibling metadata at {meta_path}. An offline dataset "
+                "whose behaviour policy and observation normalisation are unknown cannot "
+                "be used for offline reinforcement learning; recollect it."
+            )
+        with np.load(npz_path) as data:
+            arrays = {k: data[k] for k in ARRAY_KEYS}
+        with open(meta_path) as fh:
+            metadata = json.load(fh)
+        return cls(arrays, metadata, gamma=gamma)
+
+    # -- validity ----------------------------------------------------------
+    def verify_compatibility(self, strict: bool = True) -> List[str]:
+        """Complaints about using this dataset with the CURRENT code.
+
+        The stored observation width and the observation-normalising constants
+        are compared against what this process would produce now. A mismatch
+        means every state vector in the file denotes something different from
+        what a freshly constructed model will see, which voids the dataset
+        silently unless it is checked. `strict` raises instead of returning.
+        """
+        problems: List[str] = []
+        stored_dim = int(self.metadata.get("state_dim", -1))
+        if stored_dim != STATE_DIM:
+            problems.append(
+                f"state_dim: dataset {stored_dim}, current {STATE_DIM}"
+            )
+        if self.state_dim != STATE_DIM:
+            problems.append(
+                f"stored state array width {self.state_dim}, current STATE_DIM {STATE_DIM}"
+            )
+        stored_norm = self.metadata.get("observation_constants", {})
+        current_norm = observation_constants()
+        for key, current in current_norm.items():
+            stored = stored_norm.get(key)
+            if stored is None:
+                problems.append(f"{key}: not recorded in the dataset metadata")
+            elif not math.isclose(float(stored), float(current), rel_tol=1e-9, abs_tol=1e-12):
+                problems.append(f"{key}: dataset {stored}, current {current}")
+        if problems and strict:
+            raise ValueError(
+                "This offline dataset was collected under a different observation "
+                "definition and is void:\n  " + "\n  ".join(problems)
+            )
+        return problems
+
+
+# ---------------------------------------------------------------------------
+# Provenance
+# ---------------------------------------------------------------------------
+def observation_constants() -> Dict[str, float]:
+    """Every constant that changes what an observation MEANS, read live.
+
+    Recorded in the dataset metadata and re-read at load time. `N_ACTIVE_MAX_OBS`
+    is the one that motivated this: it is derived from the density grid and the
+    RSU coverage, so regenerating the scenario differently moves it, and every
+    stored contention feature would then be normalised against a ceiling the
+    current code no longer uses.
+    """
+    import src.rl_interface as rli
+
+    return {
+        "N_ACTIVE_MAX_OBS": float(rli.N_ACTIVE_MAX_OBS),
+        "V_MAX_OBS": float(getattr(rli, "V_MAX_OBS", float("nan"))),
+        "E_REF": float(getattr(rli, "E_REF", float("nan"))),
+        "DELTA_MAX": float(getattr(rli, "DELTA_MAX", float("nan"))),
+        "DELTA_MIN": float(getattr(rli, "DELTA_MIN", float("nan"))),
+    }
+
+
+def git_provenance(repo_dir: Optional[str] = None) -> Dict[str, Any]:
+    """The commit the collection ran at, and whether the tree was modified.
+
+    A dataset that records only a commit hash while the tree was dirty records a
+    code state that never existed, so `dirty` is stored alongside it. Failures
+    are recorded as such rather than raising: a missing git is a reason to note
+    "unknown", not a reason to lose a collection run.
+    """
+    repo_dir = repo_dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def _run(args: Sequence[str]) -> Optional[str]:
+        try:
+            out = subprocess.run(
+                list(args), cwd=repo_dir, capture_output=True, text=True, timeout=15
+            )
+        except Exception:  # noqa: BLE001 - provenance must not break collection
+            return None
+        return out.stdout.strip() if out.returncode == 0 else None
+
+    commit = _run(["git", "rev-parse", "HEAD"])
+    status = _run(["git", "status", "--porcelain"])
+    return {
+        "commit": commit or "unknown",
+        "dirty": None if status is None else bool(status.strip()),
+        "branch": _run(["git", "rev-parse", "--abbrev-ref", "HEAD"]) or "unknown",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Collection
+# ---------------------------------------------------------------------------
+def limit_cpu_threads(num_threads: int = 1) -> None:
+    """Pin this process to `num_threads` BLAS/torch threads.
+
+    Collection runs no gradient step and is dominated by SUMO, so more threads
+    buy nothing while taking cores away from the hyper-parameter searches this is
+    meant to run alongside. The environment variables are set as well because
+    several numerical backends read them once at import.
+    """
+    n = str(max(1, int(num_threads)))
+    for var in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        os.environ[var] = n
+    torch.set_num_threads(max(1, int(num_threads)))
+
+
+def collect_offline_dataset(
+    delta_fixed: float,
+    densities: Sequence[float],
+    seeds: Sequence[int],
+    steps_per_episode: int,
+    warmup_steps: int = 1200,
+    delta_jitter: float = 0.0,
+    num_channels: int = 4,
+    error_mode: str = "raw",
+    sumo_dir: Optional[str] = None,
+    gamma: float = 0.99,
+    max_transitions: Optional[int] = None,
+    progress_every: int = 0,
+) -> OfflineDataset:
+    """Roll the fixed-period behaviour policy through the real SUMO environment.
+
+    One episode per (density, seed) pair. The loop is the same event-driven SMDP
+    loop the trainer runs -- a transition is assembled and stored only when the
+    environment reports the interval CLOSED, so the reward and the measured
+    `delta_t` are the environment's, never the requested Delta and never a value
+    computed here. In-flight intervals are finalised at the episode boundary for
+    the same reason the trainer does it: dropping them would discard exactly the
+    long-Delta decisions.
+
+    No model is constructed and no gradient is taken. CPU only.
+    """
+    # Imported here, not at module import time: `hot_swap_trainer` starts SUMO
+    # machinery and pulls in libsumo, and this module is also imported by tests
+    # that never collect anything.
+    from src.hot_swap_trainer import AoiV2IEnv, prepare_scenario
+
+    if float(delta_fixed) <= 0.0:
+        raise ValueError("delta_fixed must be positive; there is no default for it")
+    densities = [float(d) for d in densities]
+    seeds = [int(s) for s in seeds]
+    if not densities or not seeds:
+        raise ValueError("collection needs at least one density and one seed")
+
+    decoder = ActionDecoder(num_channels=int(num_channels))
+    if not (decoder.delta_min <= float(delta_fixed) <= decoder.delta_max):
+        raise ValueError(
+            f"delta_fixed={delta_fixed} is outside the decoder's range "
+            f"[{decoder.delta_min}, {decoder.delta_max}]"
+        )
+    policy = FixedPeriodBehaviourPolicy(
+        delta_fixed=float(delta_fixed),
+        num_channels=int(num_channels),
+        p_min=float(decoder.p_min),
+        p_max=float(decoder.p_max),
+        delta_jitter=float(delta_jitter),
+    )
+
+    columns: Dict[str, List[Any]] = {k: [] for k in ARRAY_KEYS}
+    per_episode: List[Dict[str, Any]] = []
+    started = time.time()
+    stop = False
+
+    for density in densities:
+        if stop:
+            break
+        for seed in seeds:
+            if stop:
+                break
+            # Written before the environment is built, for the same reason the
+            # trainer does it: the decoder's DELTA_MAX is scenario-derived.
+            prepare_scenario(
+                density=float(density),
+                max_steps=int(steps_per_episode),
+                warmup_steps=int(warmup_steps),
+                seed=int(seed),
+                sumo_dir=sumo_dir,
+            )
+            # The Delta band is re-clipped against the refreshed decoder, so a
+            # scenario whose DELTA_MAX moved cannot silently push the behaviour
+            # policy outside the action space.
+            live_decoder = ActionDecoder(num_channels=int(num_channels))
+            delta_logp = _delta_unit_log_density(policy, live_decoder)
+
+            rng = np.random.default_rng(int(seed))
+            env: Optional[Any] = None
+            n_before = len(columns["state"])
+            try:
+                env = AoiV2IEnv(
+                    density=float(density),
+                    seed=int(seed),
+                    max_steps=int(steps_per_episode),
+                    warmup_steps=int(warmup_steps),
+                    num_channels=int(num_channels),
+                    error_mode=str(error_mode),
+                    sumo_dir=sumo_dir,
+                )
+                obs, _info = env.reset()
+                # Same reason the validation episode does it: the uplink success
+                # draw consumes the process-wide `random` stream, whose position
+                # depends on whether the scenario was regenerated.
+                random.seed(int(seed))
+
+                open_decision: Dict[str, Dict[str, Any]] = {}
+                action_dict: Dict[str, Any] = {}
+                for vid, s_vec in obs.items():
+                    grant, ch, base_logp = policy.sample(rng, live_decoder)
+                    raw = live_decoder.encode_action(grant[0], grant[1], grant[2])
+                    open_decision[vid] = {
+                        "state": np.asarray(s_vec, dtype=np.float32),
+                        "raw_action": raw,
+                        "action_idx": int(ch),
+                        "behaviour_log_prob": float(base_logp + delta_logp),
+                    }
+                    action_dict[vid] = grant
+
+                for _step in range(int(steps_per_episode)):
+                    next_obs, _r, _term, _trunc, step_info = env.step(action_dict)
+
+                    action_dict = {}
+                    for rec in step_info["completed"]:
+                        vid = rec["vid"]
+                        prev = open_decision.pop(vid, None)
+                        if prev is None:
+                            continue
+                        s2 = next_obs.get(vid)
+                        if s2 is None:
+                            s2 = np.zeros(int(prev["state"].shape[0]), dtype=np.float32)
+                            done = True
+                        else:
+                            done = bool(rec["done"])
+                        _append(columns, prev, rec, s2, done)
+
+                    for vid in step_info["needs_decision"]:
+                        s_vec = next_obs.get(vid)
+                        if s_vec is None:
+                            continue
+                        grant, ch, base_logp = policy.sample(rng, live_decoder)
+                        raw = live_decoder.encode_action(grant[0], grant[1], grant[2])
+                        open_decision[vid] = {
+                            "state": np.asarray(s_vec, dtype=np.float32),
+                            "raw_action": raw,
+                            "action_idx": int(ch),
+                            "behaviour_log_prob": float(base_logp + delta_logp),
+                        }
+                        action_dict[vid] = grant
+
+                    for vid in [v for v in open_decision if v not in next_obs]:
+                        open_decision.pop(vid, None)
+
+                    obs = next_obs
+                    if progress_every and len(columns["state"]) and \
+                            len(columns["state"]) % int(progress_every) == 0:
+                        logger.info(
+                            "HOORL offline collection: %d transitions after %.1f s",
+                            len(columns["state"]), time.time() - started,
+                        )
+                    if max_transitions is not None and len(columns["state"]) >= int(max_transitions):
+                        stop = True
+                        break
+
+                if not stop:
+                    for rec in env.finalize_open_intervals():
+                        vid = rec["vid"]
+                        prev = open_decision.pop(vid, None)
+                        if prev is None:
+                            continue
+                        s2 = obs.get(vid)
+                        if s2 is None:
+                            s2 = np.zeros(int(prev["state"].shape[0]), dtype=np.float32)
+                        _append(columns, prev, rec, s2, bool(rec.get("done", False)))
+
+                metrics = env.get_metrics()
+            finally:
+                if env is not None:
+                    try:
+                        env.close()
+                    except Exception:  # noqa: BLE001 - closing must not mask a failure
+                        logger.warning("could not close the collection environment", exc_info=True)
+                    del env
+                    gc.collect()
+
+            per_episode.append({
+                "density": float(density),
+                "seed": int(seed),
+                "transitions": len(columns["state"]) - n_before,
+                "mean_aoi": float(metrics.get("mean_aoi", float("nan"))),
+                "mean_update_error": float(metrics.get("mean_update_error", float("nan"))),
+            })
+            logger.info(
+                "HOORL offline collection: density %.1f seed %d gave %d transitions",
+                density, seed, per_episode[-1]["transitions"],
+            )
+
+    arrays = {
+        "state": np.asarray(columns["state"], dtype=np.float32).reshape(-1, STATE_DIM),
+        "action": np.asarray(columns["action"], dtype=np.float32).reshape(-1, 3),
+        "reward": np.asarray(columns["reward"], dtype=np.float32).reshape(-1),
+        "next_state": np.asarray(columns["next_state"], dtype=np.float32).reshape(-1, STATE_DIM),
+        "done": np.asarray(columns["done"], dtype=np.float32).reshape(-1),
+        "delta_t": np.asarray(columns["delta_t"], dtype=np.float32).reshape(-1),
+        "action_idx": np.asarray(columns["action_idx"], dtype=np.int64).reshape(-1),
+        "behaviour_log_prob": np.asarray(
+            columns["behaviour_log_prob"], dtype=np.float32
+        ).reshape(-1),
+    }
+
+    band = policy.delta_band(ActionDecoder(num_channels=int(num_channels)))
+    metadata: Dict[str, Any] = {
+        "format_version": DATASET_FORMAT_VERSION,
+        "collected_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "method": "HOORL",
+        "reference_doi": "10.1109/TVT.2026.3675626",
+        "behaviour_policy": {
+            "kind": "fixed_period_uniform_channel_power",
+            **asdict(policy),
+            "delta_band": [float(band[0]), float(band[1])],
+            "delta_component_defined": bool(policy.delta_component_defined),
+            "note": (
+                "Delta is deterministic when delta_jitter == 0, so the stored "
+                "behaviour_log_prob covers the channel factor only and the Delta "
+                "axis has zero coverage. With delta_jitter > 0 Delta is log-uniform "
+                "inside delta_band and its (finite) log density is included."
+            ),
+        },
+        "n_transitions": int(arrays["state"].shape[0]),
+        "state_dim": int(STATE_DIM),
+        "num_channels": int(num_channels),
+        "densities": [float(d) for d in densities],
+        "seeds": [int(s) for s in seeds],
+        "steps_per_episode": int(steps_per_episode),
+        "warmup_steps": int(warmup_steps),
+        "error_mode": str(error_mode),
+        "sumo_dir": None if sumo_dir is None else os.path.abspath(sumo_dir),
+        "gamma_for_stored_discount": float(gamma),
+        "observation_constants": observation_constants(),
+        "git": git_provenance(),
+        "per_episode": per_episode,
+        "wall_clock_s": round(time.time() - started, 2),
+        "truncated_by_max_transitions": bool(stop),
+    }
+    return OfflineDataset(arrays, metadata, gamma=float(gamma))
+
+
+def _append(
+    columns: Dict[str, List[Any]],
+    prev: Dict[str, Any],
+    rec: Dict[str, Any],
+    next_state: np.ndarray,
+    done: bool,
+) -> None:
+    """Store one CLOSED interval. Reward and delta_t come from the environment."""
+    columns["state"].append(np.asarray(prev["state"], dtype=np.float32))
+    columns["action"].append(np.asarray(prev["raw_action"], dtype=np.float32))
+    columns["reward"].append(float(rec["reward"]))
+    columns["next_state"].append(np.asarray(next_state, dtype=np.float32))
+    columns["done"].append(float(bool(done)))
+    columns["delta_t"].append(float(rec["delta_actual"]))
+    columns["action_idx"].append(int(prev["action_idx"]))
+    columns["behaviour_log_prob"].append(float(prev["behaviour_log_prob"]))
+
+
+def dataset_from_buffer(
+    buffer: RetrospectiveReplayBuffer, metadata: Dict[str, Any]
+) -> OfflineDataset:
+    """Adapter for tests and for replaying a hand-built buffer as a dataset.
+
+    NOT a route for turning another baseline's training log into an offline
+    dataset: that log has no fixed behaviour policy, which is the one thing the
+    offline stage requires. The caller supplies the metadata and is responsible
+    for what it claims.
+    """
+    columns: Dict[str, List[Any]] = {k: [] for k in ARRAY_KEYS}
+    for item in buffer.buffer:
+        columns["state"].append(np.asarray(item["state"], dtype=np.float32))
+        columns["action"].append(np.asarray(item["action"], dtype=np.float32))
+        columns["reward"].append(float(item["reward"]))
+        columns["next_state"].append(np.asarray(item["next_state"], dtype=np.float32))
+        columns["done"].append(float(item["done"]))
+        columns["delta_t"].append(float(item["delta_t"]))
+        columns["action_idx"].append(int(item.get("action_idx") or 0))
+        columns["behaviour_log_prob"].append(float(item.get("behaviour_log_prob") or 0.0))
+    arrays = {
+        "state": np.asarray(columns["state"], dtype=np.float32),
+        "action": np.asarray(columns["action"], dtype=np.float32),
+        "reward": np.asarray(columns["reward"], dtype=np.float32),
+        "next_state": np.asarray(columns["next_state"], dtype=np.float32),
+        "done": np.asarray(columns["done"], dtype=np.float32),
+        "delta_t": np.asarray(columns["delta_t"], dtype=np.float32),
+        "action_idx": np.asarray(columns["action_idx"], dtype=np.int64),
+        "behaviour_log_prob": np.asarray(columns["behaviour_log_prob"], dtype=np.float32),
+    }
+    return OfflineDataset(arrays, metadata, gamma=float(buffer.gamma))
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Collect HOORL's offline dataset with the documented fixed-period policy.",
+    )
+    parser.add_argument(
+        "--delta-fixed", type=float, required=True,
+        help="The fixed silence interval of the behaviour policy, in seconds. "
+             "REQUIRED: the specification says 'a fixed value' without saying which, "
+             "so there is deliberately no default.",
+    )
+    parser.add_argument(
+        "--delta-jitter", type=float, default=0.0,
+        help="Multiplicative half-width of a log-uniform Delta band, in log space. "
+             "0.0 (default) is the literal specification and leaves the Delta axis "
+             "with zero coverage.",
+    )
+    parser.add_argument("--densities", type=float, nargs="+", default=[5.0, 15.0, 25.0, 35.0])
+    parser.add_argument("--seeds", type=int, nargs="+", default=[2001, 2002, 2003])
+    parser.add_argument("--steps", type=int, default=2000, help="steps per episode")
+    parser.add_argument("--warmup-steps", type=int, default=1200)
+    parser.add_argument("--num-channels", type=int, default=4)
+    parser.add_argument("--error-mode", type=str, default="raw")
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--max-transitions", type=int, default=None)
+    parser.add_argument("--threads", type=int, default=1)
+    parser.add_argument("--sumo-dir", type=str, default=None)
+    parser.add_argument(
+        "--out", type=str,
+        default="data/hoorl_offline/hoorl_offline.npz",
+        help="npz path; the metadata goes to the sibling .meta.json",
+    )
+    parser.add_argument("--log-level", type=str, default="INFO")
+    return parser
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    logging.basicConfig(
+        level=getattr(logging, str(args.log_level).upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    # CPU only, by construction: this must be able to run alongside the GPU
+    # hyper-parameter searches without competing with them.
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+    limit_cpu_threads(int(args.threads))
+
+    dataset = collect_offline_dataset(
+        delta_fixed=float(args.delta_fixed),
+        densities=args.densities,
+        seeds=args.seeds,
+        steps_per_episode=int(args.steps),
+        warmup_steps=int(args.warmup_steps),
+        delta_jitter=float(args.delta_jitter),
+        num_channels=int(args.num_channels),
+        error_mode=str(args.error_mode),
+        sumo_dir=args.sumo_dir,
+        gamma=float(args.gamma),
+        max_transitions=args.max_transitions,
+        progress_every=1000,
+    )
+    npz_path, meta_path = dataset.save(args.out)
+    logger.info(
+        "wrote %d transitions to %s (metadata: %s)", len(dataset), npz_path, meta_path
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

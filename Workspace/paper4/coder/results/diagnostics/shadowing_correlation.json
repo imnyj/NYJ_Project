@@ -1,0 +1,24 @@
+{
+  "decorr_m": 12.0,
+  "distance_used_is_constant": true,
+  "distance_used_m": 0.8,
+  "interval_s": 10.0,
+  "old_distance_grew_from_to": [
+    80.0,
+    88.0
+  ],
+  "repeats": 2000,
+  "retries": 10,
+  "rho_now": 0.935507,
+  "rho_old_at_last_retry": 0.000653,
+  "sample_correlation": {
+    "lag1_expected_fixed": 0.9355,
+    "lag1_fixed": 0.9345,
+    "lag1_old": 0.0108,
+    "sd_fixed": 3.9397,
+    "sd_old": 3.9673,
+    "sigma_db": 4.0
+  },
+  "speed_mps": 8.0,
+  "step_s": 0.1
+}

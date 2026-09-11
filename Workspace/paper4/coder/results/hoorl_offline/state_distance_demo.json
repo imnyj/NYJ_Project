@@ -1,0 +1,288 @@
+{
+  "distance_spec": {
+    "controls": {
+      "reference_shift": "the same statistic between the lowest and the highest density in the benchmark grid under one policy: the largest covariate shift the experiment already contains, used as the unit of comparison.",
+      "sampling_floor": "the same statistic between two disjoint halves of ONE sample, at the sample size used for the comparison. A measured distance at or below the floor is not distinguishable from finite-sample noise."
+    },
+    "joint": {
+      "definition": "sqrt(2*E||X-Y|| - E||X-X'|| - E||Y-Y'||) over the range-normalised 17-dim vectors, Euclidean norm, estimated on a random subsample",
+      "name": "energy_distance",
+      "note": "subsampled, so it carries Monte Carlo error; the floor quantifies it",
+      "why": "sensitive to correlation shift that identical marginals would hide"
+    },
+    "per_feature": {
+      "definition": "the same 1-D Wasserstein-1 distance, per feature, normalised",
+      "name": "w1_<feature>",
+      "why": "identifies WHICH feature moved; the mean alone cannot"
+    },
+    "primary": {
+      "blind_spot": "invariant to correlation structure; see the joint measure",
+      "definition": "mean over the 17 observation features of the 1-D Wasserstein-1 distance between the two empirical marginals, each feature first divided by its nominal clip range so the average is over commensurable quantities",
+      "name": "mean_normalised_w1",
+      "range": "[0, 1]; 1 means every feature is at opposite ends of its range",
+      "units": "fraction of a feature's nominal range"
+    }
+  },
+  "interpretability_note": "Absolute values are not interpretable. Read the ..._over_sampling_floor and ..._over_reference_shift columns: below 1.0 on the floor means the shift is indistinguishable from sampling noise, and above 1.0 on the reference means the shift exceeds the density-grid span the benchmark already covers.",
+  "provenance": {
+    "caveat": "SHORT EPISODES, PROBE DELTA, NO TRAINED POLICY. Design demonstration only; recompute after the observation definition settles.",
+    "delta_fixed_probe_value": 1.0,
+    "episodes": [
+      {
+        "decoder_delta_range": [
+          0.1,
+          45.0
+        ],
+        "delta_fixed": 1.0,
+        "delta_jitter": 0.0,
+        "density": 20.0,
+        "n_states": 2698,
+        "name": "fixed_d20_s2001",
+        "seed": 2001,
+        "wall_clock_s": 6.94
+      },
+      {
+        "decoder_delta_range": [
+          0.1,
+          45.0
+        ],
+        "delta_fixed": 1.0,
+        "delta_jitter": 0.0,
+        "density": 20.0,
+        "n_states": 2421,
+        "name": "fixed_d20_s2002",
+        "seed": 2002,
+        "wall_clock_s": 6.29
+      },
+      {
+        "decoder_delta_range": [
+          0.1,
+          45.0
+        ],
+        "delta_fixed": 1.0,
+        "delta_jitter": 0.0,
+        "density": 5.0,
+        "n_states": 882,
+        "name": "fixed_d05_s2001",
+        "seed": 2001,
+        "wall_clock_s": 2.05
+      },
+      {
+        "decoder_delta_range": [
+          0.1,
+          45.0
+        ],
+        "delta_fixed": 1.0,
+        "delta_jitter": 0.0,
+        "density": 35.0,
+        "n_states": 4163,
+        "name": "fixed_d35_s2001",
+        "seed": 2001,
+        "wall_clock_s": 11.2
+      },
+      {
+        "decoder_delta_range": [
+          0.1,
+          45.0
+        ],
+        "delta_fixed": 1.0,
+        "delta_jitter": 6.0,
+        "density": 20.0,
+        "n_states": 524,
+        "name": "varied_d20_s2001",
+        "seed": 2001,
+        "wall_clock_s": 6.55
+      }
+    ],
+    "git": {
+      "branch": "main",
+      "commit": "f994cb7e1bca4d9c87ae75b0869c48624eaa2a04",
+      "dirty": true
+    },
+    "observation_constants": {
+      "DELTA_MAX": 45.0,
+      "DELTA_MIN": 0.1,
+      "E_REF": 13.26,
+      "N_ACTIVE_MAX_OBS": 168.0,
+      "V_MAX_OBS": 15.911999999999999
+    },
+    "steps": 400,
+    "warmup_steps": 600
+  },
+  "reference_pair": [
+    "fixed_d05_s2001",
+    "fixed_d35_s2001"
+  ],
+  "reference_shift_value": 0.11084702163531499,
+  "rows": [
+    {
+      "argmax_feature": "n_queue_norm",
+      "energy_distance": 0.2518187750886046,
+      "energy_over_reference_shift": 0.4149458245183628,
+      "energy_over_sampling_floor": 3.447968577740906,
+      "max_normalised_w1": 0.1592998635014557,
+      "mean_normalised_w1": 0.05156968051545815,
+      "mean_w1_delta_critical": 0.06913682411916648,
+      "n_a": 2698,
+      "n_b": 524,
+      "sample_a": "fixed_d20_s2001",
+      "sample_b": "varied_d20_s2001",
+      "w1_accel_norm": 0.005382481463712773,
+      "w1_cbr": 0.016631396964448302,
+      "w1_dist_norm": 0.09756187063985892,
+      "w1_dist_to_stopline_norm": 0.11823264456067291,
+      "w1_heading_cos": 0.02503462639672184,
+      "w1_last_pred_err_norm": 0.08096103774295442,
+      "w1_n_active_norm": 0.049820626316828695,
+      "w1_n_queue_norm": 0.1592998635014557,
+      "w1_over_reference_shift": 0.465232892635777,
+      "w1_over_sampling_floor": 1.9430004748977259,
+      "w1_phase_remaining_norm": 0.03568494458972625,
+      "w1_rel_x_norm": 0.030457820764246992,
+      "w1_rel_y_norm": 0.031038762627945415,
+      "w1_speed_norm": 0.10894871482648583,
+      "w1_tls_green": 0.032622411851583544,
+      "w1_tls_red": 0.025478301710625317,
+      "w1_tls_yellow": 0.0036908877936158158,
+      "w1_vx_norm": 0.03158347235553247,
+      "w1_vy_norm": 0.02425470465637337
+    },
+    {
+      "argmax_feature": "speed_norm",
+      "energy_distance": 0.08986593916318132,
+      "energy_over_reference_shift": 0.14808068305892869,
+      "energy_over_sampling_floor": 1.230467959884246,
+      "max_normalised_w1": 0.04313064573178599,
+      "mean_normalised_w1": 0.016988384770131808,
+      "mean_w1_delta_critical": 0.01673683321487109,
+      "n_a": 2698,
+      "n_b": 2421,
+      "sample_a": "fixed_d20_s2001",
+      "sample_b": "fixed_d20_s2002",
+      "w1_accel_norm": 0.006015094682431535,
+      "w1_cbr": 0.0027310924264549903,
+      "w1_dist_norm": 0.02315024174604248,
+      "w1_dist_to_stopline_norm": 0.020745995615961667,
+      "w1_heading_cos": 0.019827767558680553,
+      "w1_last_pred_err_norm": 0.00043811156830585494,
+      "w1_n_active_norm": 0.03993997715988525,
+      "w1_n_queue_norm": 0.023013268081168957,
+      "w1_over_reference_shift": 0.15325973147048855,
+      "w1_over_sampling_floor": 0.6400745427580655,
+      "w1_phase_remaining_norm": 0.011583193554116758,
+      "w1_rel_x_norm": 0.01900030701846235,
+      "w1_rel_y_norm": 0.0275587194762207,
+      "w1_speed_norm": 0.04313064573178599,
+      "w1_tls_green": 0.0039578325187106245,
+      "w1_tls_red": 0.00988478316583119,
+      "w1_tls_yellow": 0.004842113836522444,
+      "w1_vx_norm": 0.027608999126055633,
+      "w1_vy_norm": 0.0053743978256037914
+    },
+    {
+      "argmax_feature": "n_active_norm",
+      "energy_distance": 0.6068714521489558,
+      "energy_over_reference_shift": 1.0,
+      "energy_over_sampling_floor": 8.309442760974985,
+      "max_normalised_w1": 0.5303070981308329,
+      "mean_normalised_w1": 0.11084702163531499,
+      "mean_w1_delta_critical": 0.10629691862230493,
+      "n_a": 882,
+      "n_b": 4163,
+      "sample_a": "fixed_d05_s2001",
+      "sample_b": "fixed_d35_s2001",
+      "w1_accel_norm": 0.017327308295924174,
+      "w1_cbr": 0.01501777283584996,
+      "w1_dist_norm": 0.10461484991003042,
+      "w1_dist_to_stopline_norm": 0.08843299951291526,
+      "w1_heading_cos": 0.07865381947910598,
+      "w1_last_pred_err_norm": 0.001938424636686332,
+      "w1_n_active_norm": 0.5303070981308329,
+      "w1_n_queue_norm": 0.3048403678831541,
+      "w1_over_reference_shift": 1.0,
+      "w1_over_sampling_floor": 4.176403916519437,
+      "w1_phase_remaining_norm": 0.007730993476228316,
+      "w1_rel_x_norm": 0.038885058971566924,
+      "w1_rel_y_norm": 0.07666150947858884,
+      "w1_speed_norm": 0.13476531560355132,
+      "w1_tls_green": 0.08200195764109153,
+      "w1_tls_red": 0.1052161276072604,
+      "w1_tls_yellow": 0.02109066863193354,
+      "w1_vx_norm": 0.09800193661060289,
+      "w1_vy_norm": 0.17891315909503175
+    },
+    {
+      "argmax_feature": "n_active_norm",
+      "energy_distance": 0.34490713446310606,
+      "energy_over_reference_shift": 0.5683363968461134,
+      "energy_over_sampling_floor": 4.722558758571544,
+      "max_normalised_w1": 0.28598839560701494,
+      "mean_normalised_w1": 0.05516286851490571,
+      "mean_w1_delta_critical": 0.057320839771345514,
+      "n_a": 2698,
+      "n_b": 882,
+      "sample_a": "fixed_d20_s2001",
+      "sample_b": "fixed_d05_s2001",
+      "w1_accel_norm": 0.01701004659231106,
+      "w1_cbr": 0.009674663706782917,
+      "w1_dist_norm": 0.0529252858947945,
+      "w1_dist_to_stopline_norm": 0.050669420667232616,
+      "w1_heading_cos": 0.041861190145245655,
+      "w1_last_pred_err_norm": 0.0013358758319602139,
+      "w1_n_active_norm": 0.28598839560701494,
+      "w1_n_queue_norm": 0.18717955167440992,
+      "w1_over_reference_shift": 0.49764863052785224,
+      "w1_over_sampling_floor": 2.078381689587056,
+      "w1_phase_remaining_norm": 0.012842852204866223,
+      "w1_rel_x_norm": 0.02719469702988629,
+      "w1_rel_y_norm": 0.013655334414389432,
+      "w1_speed_norm": 0.04942177984125419,
+      "w1_tls_green": 0.037659541207142655,
+      "w1_tls_red": 0.05776093486566852,
+      "w1_tls_yellow": 0.005711797938844465,
+      "w1_vx_norm": 0.05870618434179573,
+      "w1_vy_norm": 0.028171212789797753
+    },
+    {
+      "argmax_feature": "n_active_norm",
+      "energy_distance": 0.34623246423561777,
+      "energy_over_reference_shift": 0.5705202691766023,
+      "energy_over_sampling_floor": 4.740705520699017,
+      "max_normalised_w1": 0.24492063532221647,
+      "mean_normalised_w1": 0.06403813053632422,
+      "mean_w1_delta_critical": 0.053321521713873325,
+      "n_a": 2698,
+      "n_b": 4163,
+      "sample_a": "fixed_d20_s2001",
+      "sample_b": "fixed_d35_s2001",
+      "w1_accel_norm": 0.0050511269520653445,
+      "w1_cbr": 0.005356117415878731,
+      "w1_dist_norm": 0.061297489209659654,
+      "w1_dist_to_stopline_norm": 0.050104482660640506,
+      "w1_heading_cos": 0.040940688040364215,
+      "w1_last_pred_err_norm": 0.0007653223910584812,
+      "w1_n_active_norm": 0.24492063532221647,
+      "w1_n_queue_norm": 0.11766081620874422,
+      "w1_over_reference_shift": 0.5777162939660092,
+      "w1_over_sampling_floor": 2.4127765927567353,
+      "w1_phase_remaining_norm": 0.00939033951719319,
+      "w1_rel_x_norm": 0.024439772073355428,
+      "w1_rel_y_norm": 0.08246791618562058,
+      "w1_speed_norm": 0.08891853374190552,
+      "w1_tls_green": 0.04434241643394887,
+      "w1_tls_red": 0.04745519274159188,
+      "w1_tls_yellow": 0.015378870693089075,
+      "w1_vx_norm": 0.04812519252839991,
+      "w1_vy_norm": 0.2020333070017799
+    }
+  ],
+  "sampling_floor": {
+    "energy_distance_max": 0.07303395301055648,
+    "energy_distance_mean": 0.014606790602111296,
+    "half_size": 262,
+    "mean_normalised_w1_max": 0.026541259861592486,
+    "mean_normalised_w1_mean": 0.017688920731284013,
+    "measured_on": "fixed_d20_s2001",
+    "repeats": 5
+  }
+}

@@ -1,0 +1,212 @@
+"""Is the discount factor what destabilised the two on-policy baselines?
+
+`results/hpo/optuna_best_params.csv` gave I-HAMAPPO gamma = 0.99862780 and PPO
+gamma = 0.99750732, the two largest of the nine studies; the third, SAC, sits far
+below at 0.97283624. At a 0.5 s decision interval those two discounts carry an
+effective horizon of 728.8 s and 401.2 s, both longer than the 200 s episode, so
+the return the critic is asked to fit extends past anything the rollout ever
+observes. The same two models are also the only two without a target critic and
+without GAE, so the discount and the algorithm structure are perfectly confounded
+in the committed evidence and neither can be blamed from it alone.
+
+`results/hpo/divergence_detection_check.csv` already ruled the learning rate out:
+holding gamma at the selected value and dropping the rate to 3e-4 delayed PPO's
+NaN from step 588 to 2493 without preventing it, and left I-HAMAPPO at a mean
+loss of 37867 against a healthy ceiling of 12.43. The discount was never varied.
+This script varies it, and nothing else.
+
+Two arms per model, both under the CURRENT code:
+
+  * `gamma097` -- the selected hyperparameters verbatim, with gamma alone
+    replaced by 0.97, near the SAC value and giving a 33.3 s horizon;
+  * `selected`  -- the selected hyperparameters verbatim, re-run here rather than
+    quoted from `onpolicy_fix_check.csv`.
+
+The control arm is re-run because the earlier file is not a like-for-like
+comparison any more: `src/sumo/generated.rou.xml` was regenerated on 2026-09-04
+at 15:58 after that file was written, so the two would differ by the traffic
+demand as well as by gamma. Re-running both arms in one session removes that.
+
+Output goes to `results/hpo/gamma_ablation_20260904.csv` with the column set of
+`divergence_detection_check.csv`, so rows can be read side by side. Neither
+existing file is touched.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import sys
+import time
+from typing import Any, Dict, List
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+import src.Communications as comm  # noqa: E402
+from src.baselines import get_baseline  # noqa: E402
+from src.hpo import (  # noqa: E402
+    DEFAULT_HPO_N_STEPS,
+    compute_composite_objective,
+    evaluate_model_in_env,
+)
+from src.rl_interface import STATE_DIM  # noqa: E402
+
+RESULTS_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "results", "hpo")
+)
+
+#: The discount the ablation moves to. Chosen as the value SAC's study settled on
+#: (0.97283624 rounded down), so the arm sits inside the range the seven stable
+#: models were tuned in rather than at an arbitrary round number.
+ABLATION_GAMMA: float = 0.97
+
+# Verbatim from results/hpo/optuna_best_params.csv, column hparams_json -- the
+# same dictionaries check_onpolicy_fix.py and the pre-fix check used, so the
+# three files differ only by the one hyperparameter named in the arm.
+SELECTED: Dict[str, Dict[str, Any]] = {
+    "PPO": {"hidden_dim": 64, "learning_rate": 0.0010809366764261586,
+            "gamma": 0.9975073184286054, "clip_range": 0.2361881493638004,
+            "ent_coef": 0.02051249550821203, "vf_coef": 0.5638821363327259,
+            "n_epochs": 4},
+    "I-HAMAPPO": {"hidden_dim": 64, "lr_actor": 0.0008433020501242809,
+                  "lr_critic": 0.0005608338145080542, "gamma": 0.9986278038774985,
+                  "clip_ratio": 0.24947883746104182,
+                  "entropy_coef": 0.004483168971211849,
+                  "value_coef": 0.5771926186506204},
+}
+GAMMA097: Dict[str, Dict[str, Any]] = {
+    name: dict(hp, gamma=ABLATION_GAMMA) for name, hp in SELECTED.items()
+}
+ARMS: Dict[str, Dict[str, Dict[str, Any]]] = {"selected": SELECTED, "gamma097": GAMMA097}
+
+#: Column set of results/hpo/divergence_detection_check.csv, in its order.
+FIELDS = ["model", "arm", "seed", "n_steps", "wall_s", "diverged", "divergence_rule",
+          "divergence_pseudo_episode", "divergence_at_env_step", "n_grad_updates",
+          "mean_recent_loss", "max_consecutive_nonfinite_losses", "composite_score",
+          "n_update_failures", "n_observations", "tx_attempts", "hparams",
+          "divergence_reason"]
+
+#: Everything the verdict is read from, kept beside the comparable columns rather
+#: than inside them so the file stays loadable next to the older two.
+EXTRA_FIELDS = ["gamma", "effective_horizon_s", "divergence_threshold",
+                "divergence_baseline_loss", "divergence_pseudo_episodes_seen",
+                "mean_aoi", "mean_error", "packet_loss_rate", "coverage_outage_rate",
+                "avg_tx_power_dbm", "mean_cbr"]
+
+#: The SMDP discount is `gamma ** delta_t` with `delta_t` measured in SECONDS
+#: (`rl_interface.py:818`, `base_agent.py:198`), so 1/(1-gamma) is already a time
+#: in seconds and needs no step-length conversion. Reported only; the rollout
+#: computes nothing from it.
+HORIZON_UNIT_S: float = 1.0
+
+#: The ceiling a healthy rollout of this pipeline reached, quoted in the
+#: divergence_reason of results/hpo/divergence_detection_check.csv. A mean loss
+#: three orders of magnitude above it is what "still broken" looks like.
+HEALTHY_LOSS_CEILING: float = 12.43
+
+#: The verdict threshold this run is judged against, from the task: a mean loss
+#: above it, or a NaN divergence, says the discount was not the cause.
+VERDICT_LOSS_LIMIT: float = 1000.0
+
+
+def one(model_name: str, arm: str, hparams: Dict[str, Any], seed: int, n_steps: int):
+    cls = get_baseline(model_name)
+    model = cls(state_dim=STATE_DIM, num_channels=comm.NUM_SUBCHANNELS, **hparams)
+    t0 = time.time()
+    m = evaluate_model_in_env(model=model, seed=seed, n_steps=n_steps, density=25.0,
+                              train_steps_during_rollout=2, check_divergence=True)
+    wall = time.time() - t0
+    gamma = float(hparams["gamma"])
+    row = {
+        "model": model_name, "arm": arm, "seed": seed, "n_steps": n_steps,
+        "wall_s": round(wall, 1),
+        "diverged": bool(m.get("diverged")),
+        "divergence_rule": m.get("divergence_rule", ""),
+        "divergence_pseudo_episode": m.get("divergence_episode", -1),
+        "divergence_at_env_step": m.get("steps_completed", -1),
+        "n_grad_updates": m.get("n_grad_updates", 0),
+        "mean_recent_loss": m.get("mean_recent_loss"),
+        "max_consecutive_nonfinite_losses": m.get("max_consecutive_nonfinite_losses", 0),
+        "composite_score": round(compute_composite_objective(m), 4),
+        "n_update_failures": m.get("n_update_failures", 0),
+        "n_observations": m.get("n_observations", 0),
+        "tx_attempts": m.get("tx_attempts", 0),
+        "hparams": json.dumps(hparams),
+        "divergence_reason": m.get("divergence_reason", ""),
+        "gamma": gamma,
+        "effective_horizon_s": round(HORIZON_UNIT_S / max(1e-12, 1.0 - gamma), 2),
+        "divergence_threshold": m.get("divergence_threshold"),
+        "divergence_baseline_loss": m.get("divergence_baseline_loss"),
+        "divergence_pseudo_episodes_seen": m.get("divergence_pseudo_episodes_seen", 0),
+        "mean_aoi": m.get("mean_aoi"),
+        "mean_error": m.get("mean_error"),
+        "packet_loss_rate": m.get("packet_loss_rate"),
+        "coverage_outage_rate": m.get("coverage_outage_rate"),
+        "avg_tx_power_dbm": m.get("avg_tx_power_dbm"),
+        "mean_cbr": m.get("mean_cbr"),
+    }
+    return row
+
+
+def verdict(rows: List[Dict[str, Any]]) -> List[str]:
+    """One line per model saying whether lowering gamma alone fixed it."""
+    lines: List[str] = []
+    for model_name in sorted({r["model"] for r in rows}):
+        by_arm = {r["arm"]: r for r in rows if r["model"] == model_name}
+        low = by_arm.get("gamma097")
+        if low is None:
+            continue
+        loss = float(low["mean_recent_loss"])
+        broken = bool(low["diverged"]) or loss > VERDICT_LOSS_LIMIT
+        ref = by_arm.get("selected")
+        ref_txt = (
+            f"; selected-gamma arm diverged={ref['diverged']} loss={ref['mean_recent_loss']}"
+            if ref else ""
+        )
+        lines.append(
+            f"[{model_name}] gamma={ABLATION_GAMMA}: diverged={low['diverged']} "
+            f"mean_recent_loss={loss:.4f} -> "
+            f"{'GAMMA IS NOT THE CAUSE' if broken else 'within the healthy range'} "
+            f"(limit {VERDICT_LOSS_LIMIT:.0f}, healthy ceiling {HEALTHY_LOSS_CEILING})"
+            f"{ref_txt}"
+        )
+    return lines
+
+
+def _write(path: str, fields: List[str], rows: List[Dict[str, Any]]) -> None:
+    exists = os.path.exists(path)
+    with open(path, "a" if exists else "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        if not exists:
+            w.writeheader()
+        w.writerows(rows)
+    print("WROTE", path, flush=True)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--models", nargs="+", default=["PPO", "I-HAMAPPO"])
+    ap.add_argument("--arms", nargs="+", default=["selected", "gamma097"])
+    ap.add_argument("--seeds", nargs="+", type=int, default=[1001])
+    ap.add_argument("--n-steps", type=int, default=DEFAULT_HPO_N_STEPS)
+    ap.add_argument("--out", default=os.path.join(RESULTS_DIR, "gamma_ablation_20260904.csv"))
+    a = ap.parse_args()
+
+    rows: List[Dict[str, Any]] = []
+    for model_name in a.models:
+        for arm in a.arms:
+            hp = ARMS[arm][model_name]
+            for seed in a.seeds:
+                row = one(model_name, arm, hp, seed, a.n_steps)
+                rows.append(row)
+                print(json.dumps({k: row[k] for k in FIELDS + EXTRA_FIELDS
+                                  if k not in ("hparams", "divergence_reason")}), flush=True)
+
+    _write(a.out, FIELDS + EXTRA_FIELDS, rows)
+    for line in verdict(rows):
+        print(line, flush=True)
+
+
+if __name__ == "__main__":
+    main()

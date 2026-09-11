@@ -38,7 +38,7 @@
 JSON의 모든 항목에 `cited_by_count` 필드를 추가했습니다. **OpenAlex와 CrossRef 두 출처를 모두 기록**했으며(2026-08-27 조회), 파일 맨 끝에 42편 전체 표를 두었습니다.
 
 - 두 수치가 크게 어긋나는 4건(`maatouk2020`, `yates2021`, `han2021`, `rajaraman2021`)은 OpenAlex가 레코드를 분할 저장해 과소 집계한 경우로 판단되며, 해당 항목의 `note`에 **어느 쪽이 신뢰할 만한지 명시**했습니다. 임의로 큰 값을 고르지 않았습니다.
-- **2026년 게재 문헌 5편**(`tadele2026`, `li2026`, `maksimovski2026`, `chen2026`, 및 `arani2026`류)은 피인용이 0~2입니다. 게재 직후라 정상이며 품질 신호가 아니라고 각 항목에 적어 두었습니다.
+- **2026년 게재 문헌 4편**(`tadele2026`, `li2026`, `maksimovski2026`, `chen20262`)은 피인용이 0~2입니다. 게재 직후라 정상이며 품질 신호가 아니라고 각 항목에 적어 두었습니다. (2026-09-05 정정: 이 줄은 원래 "5편"이라며 `arani2026`류를 함께 적었으나, 그 문헌은 이 목록에 들어 있지 않고 `SEARCH_SPEC.md:6`의 폐기 6종에 해당하여 인용 대상이 아닙니다.)
 - 저피인용 1건(`jiang2021`, 1~2회)은 주제 적합성만으로 채택했음을 해당 항목에 명시했습니다.
 
 ## 게재지 정책 준수
@@ -230,7 +230,9 @@ DOI 검증 결과: `10.1109/TVT.2026.3662431` — CrossRef 일치(저자 3인, T
 
 ## ↓ 2차 보강분 (TWC)
 
-\bibitem{chen2026} H. Chen, H. Cui, P. Cao, Y. He, J. Li, I. W.-H. Ho, and V. C. M. Leung, ``Mobile-edge computing in SAGINs: A hybrid action space P-DDQN algorithm for joint offloading and resource allocation,'' \emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 19115--19130, 2026.
+\bibitem{chen20262} H. Chen, H. Cui, P. Cao, Y. He, J. Li, I. W.-H. Ho, and V. C. M. Leung, ``Mobile-edge computing in SAGINs: A hybrid action space P-DDQN algorithm for joint offloading and resource allocation,'' \emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 19115--19130, 2026.
+
+키 주의(2026-09-05 정리): 이 항목의 키는 원래 `chen2026`이었으나 `baselines_v2.json`의 `chen2026`(Quan Chen, 시맨틱 인지 오프로딩, DOI 10.1109/TWC.2025.3626670)과 충돌했습니다. `SEARCH_SPEC.md`의 숫자 접미사 규약에 따라 이 항목을 `chen20262`로 바꾸었고, 결과 표와 그림 범례에서 반복 인용되는 베이스라인 논문이 접미사 없는 `chen2026`을 유지합니다. 선례는 `xu2023`과 `xu20232`입니다.
 
 DOI 검증 결과: `10.1109/TWC.2026.3706356` — CrossRef 일치(저자 7인 전원, **TWC** vol. 25 pp. 19115-19130, 2026), doi.org 해석 정상. **CrossRef에 호 번호가 아직 없어** `no.`를 생략했습니다(2026년 게재분). 투고 직전 재확인 권장. **피인용: OpenAlex 0 / CrossRef 0 — 2026년 게재 직후라 정상이며 품질 신호가 아닙니다.**
 인용 위치: **Sec. II-C, `li2026` 옆.** 목표 저널 대응 관점에서 **이번 보강에서 가장 값어치 있는 한 편**입니다. TWC가 파라미터화 액션(P-DQN 계열) 기법을 직접 게재한다는 사실을 보여주므로, 우리 하이브리드 액션 공간이 ML 문헌에서 억지로 끌어온 외래 요소가 아니라 **투고 저널의 정상 범위 안**이라는 점을 리뷰어에게 확립할 수 있습니다. 갈래 4는 원래 IEEE 저널 근거가 `li2026`(TVT) 한 편뿐이었는데 이제 목표 저널 자체의 사례가 생겼습니다.

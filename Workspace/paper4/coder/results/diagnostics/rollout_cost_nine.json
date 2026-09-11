@@ -1,0 +1,19 @@
+{
+  "density": 25.0,
+  "device": "cuda:0",
+  "gpus": [
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090"
+  ],
+  "hparams": "median of each model's own search space (_MedianTrial)",
+  "max_neighbours": 192,
+  "n_steps": 4000,
+  "projection_caveat": "projected_trial_s assumes the three seeds of a trial cost the same. A model that sometimes diverges stops early on those seeds, so its projection is an upper estimate.",
+  "road_cycle": 0,
+  "seed_measured": 1001,
+  "seeds_per_trial": 3,
+  "state_dim": 21,
+  "total_measured_s": 3215.2
+}

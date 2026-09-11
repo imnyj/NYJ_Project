@@ -1,0 +1,10 @@
+{
+  "source": "results/diagnostics/rollout_cost_nine.csv",
+  "method": "one seed at the search's own 4000-step rollout, x3 seeds x15 trials; hyper-parameters at the median of each model's own search space",
+  "total_h": 40.2,
+  "perfect_balance_h": 10.05,
+  "current_makespan_h": 11.47,
+  "optimal_makespan_h": 11.27,
+  "saving_h": 0.2,
+  "shape": "one group of three and three of two: the only shape with nine models and four GPUs that leaves no GPU idle"
+}

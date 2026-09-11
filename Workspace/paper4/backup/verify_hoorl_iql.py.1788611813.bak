@@ -1,0 +1,746 @@
+"""Does HOORL's offline stage actually run implicit Q learning, and correctly?
+
+Independent of `src/baselines/hoorl.py`: every quantity this script checks is
+recomputed here from the batch and from the model's own networks, using formulae
+written out again rather than imported, and then compared against what
+`offline_update` reported. A check that called back into the code under test
+would only confirm that the code agrees with itself.
+
+The eleven checks, and what each would catch:
+
+  1.  No learner named  -- `offline_update` still refuses to run when
+      `offline_algorithm` is None, so the substitute learner cannot be entered
+      by accident.
+  2.  Unknown learner named -- the same refusal for a key that is not registered.
+  3.  Runs and returns   -- phase "offline" plus offline_algorithm "iql" yields a
+      loss dict through the ordinary `update()` entry point.
+  4.  Everything finite  -- no NaN and no inf anywhere in the returned dict. Two
+      models in this project have already been killed by a NaN loss.
+  5.  Gradients flow     -- the actor, the critics and the value network all move,
+      and the frozen target critics move only by the Polyak rule. A baseline that
+      silently failed to learn has been found here before.
+  6.  SMDP discount      -- the reported TD target equals
+      r + (1 - done) * gamma ** delta_t * V(s') recomputed here. A constant
+      discount would fail this by a wide margin at delta_t far from 1 s.
+  7.  Expectile loss     -- the reported value loss equals the asymmetric
+      least-squares loss recomputed here against the TARGET critics at the
+      DATASET action.
+  8.  In-sample only     -- `_sample_policy` is monkeypatched to raise for the
+      duration of one offline update. IQL's claim is that it never evaluates an
+      action the dataset does not contain; if any code path sampled a fresh
+      action from the policy, this fires.
+  9.  Hyper-parameters real -- changing `iql_expectile` and `iql_beta` changes the
+      losses on an identical batch with identical weights. An argument that is
+      accepted and then ignored is the inert-hyper-parameter failure this project
+      has already reported an optimum for once.
+  10. Extreme advantages -- a batch scaled so the raw advantage weight would
+      overflow float32 still produces finite losses, and the clip ceiling holds.
+  11. Real dataset batch -- `hoorl_offline.OfflineDataset.sample` output feeds
+      `update()` unmodified, and the whole `pretrain` -> `finish_offline_phase`
+      path runs and sets `offline_pretrained`.
+  12. Learns something -- on a dataset whose optimum we fix in advance, collected
+      under the real uniform logging policy, the extracted policy finds it. Pure
+      behaviour cloning would fail this by construction.
+  13. `offline_lr_scale` is real when set directly, measured by displacement.
+  14. No offline-stage hyper-parameter is searched while no trial ever enters the
+      offline phase. This is the family-level guard that `hpo.py`'s own
+      `assert_hparams_reach_model` structurally cannot provide.
+
+Nothing here touches SUMO, the shared scenario directory, `checkpoints/` or
+`logs/`. Results are written to `coder/results/diagnostics/hoorl_iql_verification.csv`.
+"""
+from __future__ import annotations
+
+import csv
+import json
+import math
+import os
+import sys
+import tempfile
+from typing import Any, Dict, List, Tuple
+
+# Scenario isolation before anything imports the SUMO module, whose BASE_PATH is
+# read at import time.
+os.environ.setdefault(
+    "PAPER4_SUMO_DIR", os.path.join(tempfile.gettempdir(), "hoorl_iql_verify_sumo")
+)
+os.makedirs(os.environ["PAPER4_SUMO_DIR"], exist_ok=True)
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+import torch.nn.functional as F  # noqa: E402
+
+from src.baselines.hoorl import (  # noqa: E402
+    HOORL,
+    IMPLEMENTED_OFFLINE_ALGORITHMS,
+    OfflineAlgorithmNotSelected,
+)
+from src.hoorl_offline import ARRAY_KEYS, OfflineDataset  # noqa: E402
+from src.rl_interface import ActionDecoder, STATE_DIM  # noqa: E402
+
+RESULTS = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__), "..", "..", "results", "diagnostics",
+        "hoorl_iql_verification.csv",
+    )
+)
+
+NUM_CHANNELS = 4
+_rows: List[Dict[str, Any]] = []
+
+
+def record(check: str, passed: bool, detail: str) -> bool:
+    _rows.append({"check": check, "result": "PASS" if passed else "FAIL", "detail": detail})
+    print(f"[{'PASS' if passed else 'FAIL'}] {check}: {detail}")
+    return passed
+
+
+# ---------------------------------------------------------------------------
+# Batch construction
+# ---------------------------------------------------------------------------
+def make_batch(
+    n: int = 64, seed: int = 0, reward_scale: float = 1.0
+) -> Dict[str, torch.Tensor]:
+    """A batch with exactly the key set `OfflineDataset.sample` emits.
+
+    The raw action is built through `ActionDecoder.encode_action`, so the stored
+    fields are the real logit encoding the model will invert, not a stand-in.
+    `delta_t` deliberately spans the decoder's whole range: a constant discount
+    and gamma ** delta_t are indistinguishable at delta_t = 1 and differ by
+    orders of magnitude at 45.
+    """
+    rng = np.random.default_rng(seed)
+    dec = ActionDecoder(num_channels=NUM_CHANNELS)
+    deltas = np.exp(rng.uniform(math.log(dec.delta_min), math.log(dec.delta_max), size=n))
+    chans = rng.integers(0, NUM_CHANNELS, size=n)
+    powers = rng.uniform(dec.p_min, dec.p_max, size=n)
+    actions = np.stack(
+        [dec.encode_action(float(deltas[i]), int(chans[i]), float(powers[i])) for i in range(n)]
+    ).astype(np.float32)
+    return {
+        "state": torch.from_numpy(rng.normal(0.0, 1.0, size=(n, STATE_DIM)).astype(np.float32)),
+        "action": torch.from_numpy(actions),
+        "reward": torch.from_numpy(
+            (reward_scale * rng.normal(0.0, 1.0, size=(n, 1))).astype(np.float32)
+        ),
+        "next_state": torch.from_numpy(
+            rng.normal(0.0, 1.0, size=(n, STATE_DIM)).astype(np.float32)
+        ),
+        "done": torch.from_numpy((rng.random((n, 1)) < 0.1).astype(np.float32)),
+        "delta_t": torch.from_numpy(deltas.astype(np.float32).reshape(-1, 1)),
+        "discount": torch.from_numpy(np.power(0.5, deltas).astype(np.float32).reshape(-1, 1)),
+        "action_idx": torch.from_numpy(chans.astype(np.int64)),
+        "behaviour_log_prob": torch.from_numpy(
+            np.full((n, 1), -math.log(NUM_CHANNELS), dtype=np.float32)
+        ),
+    }
+
+
+def make_model(seed: int = 0, **kwargs: Any) -> HOORL:
+    torch.manual_seed(seed)
+    params: Dict[str, Any] = dict(
+        state_dim=STATE_DIM,
+        num_channels=NUM_CHANNELS,
+        hidden_dim=64,
+        offline_algorithm="iql",
+        phase="offline",
+    )
+    params.update(kwargs)
+    return HOORL(**params)
+
+
+def replay_units(model: HOORL, actions: torch.Tensor) -> torch.Tensor:
+    """Recomputed here, not imported: sigmoid of the two logit fields."""
+    a = actions.float()
+    return torch.stack([torch.sigmoid(a[:, 0]), torch.sigmoid(a[:, 2])], dim=1)
+
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+def check_refusals() -> Tuple[bool, bool]:
+    ok_none = False
+    m = make_model(offline_algorithm=None)
+    try:
+        m.update(make_batch())
+    except OfflineAlgorithmNotSelected as exc:
+        ok_none = True
+        record("1_refuses_when_no_learner_named", True, f"raised: {type(exc).__name__}")
+    else:
+        record("1_refuses_when_no_learner_named", False, "update() returned instead of raising")
+
+    ok_bad = False
+    m2 = make_model(offline_algorithm="cql")
+    try:
+        m2.update(make_batch())
+    except OfflineAlgorithmNotSelected:
+        ok_bad = True
+        record("2_refuses_unregistered_learner", True, "offline_algorithm='cql' raised")
+    else:
+        record("2_refuses_unregistered_learner", False, "'cql' was accepted")
+    return ok_none, ok_bad
+
+
+def check_runs_and_finite() -> Tuple[bool, bool, Dict[str, float]]:
+    m = make_model()
+    out = m.update(make_batch())
+    ran = record(
+        "3_offline_update_runs",
+        isinstance(out, dict) and "loss" in out and "iql" in IMPLEMENTED_OFFLINE_ALGORITHMS,
+        f"returned {len(out)} keys, phase_offline={out.get('phase_offline')}, "
+        f"offline_updates={float(m.offline_updates.item())}",
+    )
+    bad = {k: v for k, v in out.items() if not math.isfinite(float(v))}
+    finite = record(
+        "4_all_returned_values_finite", not bad,
+        f"non-finite keys: {sorted(bad)}" if bad else f"all {len(out)} values finite",
+    )
+    return ran, finite, out
+
+
+def check_gradients() -> bool:
+    m = make_model()
+    batch = make_batch()
+    groups = {
+        "actor": m._actor_params,
+        "critic": m._critic_params,
+        "value": m._value_params,
+    }
+    before = {g: [p.detach().clone() for p in ps] for g, ps in groups.items()}
+    tgt_before = [p.detach().clone() for p in m.critic_1_target.parameters()]
+    critic1_before = [p.detach().clone() for p in m.critic_1.parameters()]
+
+    m.update(batch)
+
+    moved = {}
+    for g, ps in groups.items():
+        deltas = [float((p.detach() - b).abs().max().item()) for p, b in zip(ps, before[g])]
+        moved[g] = max(deltas) if deltas else 0.0
+    all_moved = all(v > 0.0 for v in moved.values())
+
+    # The target critic must move by EXACTLY the Polyak rule, not by a gradient.
+    # `critic_1` is stepped before the Polyak update, so the expected target uses
+    # the POST-step online weight, read back here.
+    tau = m.tau
+    polyak_err = 0.0
+    for pt_after, pt_b, p_after in zip(
+        m.critic_1_target.parameters(), tgt_before, m.critic_1.parameters()
+    ):
+        expected = tau * p_after.detach() + (1.0 - tau) * pt_b
+        polyak_err = max(polyak_err, float((pt_after.detach() - expected).abs().max().item()))
+
+    grads_frozen = all(not p.requires_grad for p in m.critic_1_target.parameters())
+    ok = all_moved and polyak_err < 1e-6 and grads_frozen
+    return record(
+        "5_gradients_flow_and_targets_polyak_only", ok,
+        f"max |dparam| actor={moved['actor']:.3e} critic={moved['critic']:.3e} "
+        f"value={moved['value']:.3e}; polyak residual={polyak_err:.3e}; "
+        f"target params frozen={grads_frozen}",
+    )
+
+
+def check_smdp_target() -> bool:
+    """The reported TD target must be r + (1-d) * gamma**delta_t * V(s')."""
+    gamma = 0.9
+    m = make_model(gamma=gamma)
+    batch = make_batch(seed=3)
+    with torch.no_grad():
+        v_next = m.value_net(batch["next_state"])
+    expected = (
+        batch["reward"]
+        + (1.0 - batch["done"]) * torch.pow(torch.tensor(gamma), batch["delta_t"]) * v_next
+    )
+    # The constant-discount alternative, to show the check can tell them apart.
+    naive = batch["reward"] + (1.0 - batch["done"]) * gamma * v_next
+
+    out = m.update(batch)
+    err = abs(float(out["target_mean"]) - float(expected.mean().item()))
+    gap = abs(float(naive.mean().item()) - float(expected.mean().item()))
+    ok = err < 1e-5 and gap > 1e-3
+    return record(
+        "6_smdp_discount_in_td_target", ok,
+        f"reported target_mean={out['target_mean']:.6f}, recomputed gamma**delta_t="
+        f"{float(expected.mean().item()):.6f} (err {err:.2e}); constant-gamma target would be "
+        f"{float(naive.mean().item()):.6f} (gap {gap:.4f}, so the check discriminates)",
+    )
+
+
+def check_expectile_and_advantage() -> bool:
+    """Value loss and advantage recomputed from the pre-update weights."""
+    tau_e = 0.75
+    m = make_model(iql_expectile=tau_e)
+    batch = make_batch(seed=5)
+    units = replay_units(m, batch["action"])
+    idx = batch["action_idx"].long().reshape(-1, 1)
+    with torch.no_grad():
+        x = torch.cat([batch["state"], units], dim=1)
+        q_t = torch.min(m.critic_1_target(x), m.critic_2_target(x)).gather(1, idx)
+        v = m.value_net(batch["state"])
+        u = q_t - v
+        w = torch.where(u < 0.0, torch.full_like(u, 1.0 - tau_e), torch.full_like(u, tau_e))
+        expected_value_loss = float((w * u.pow(2)).mean().item())
+        expected_adv = float(u.mean().item())
+
+    out = m.update(batch)
+    err_v = abs(float(out["value_loss"]) - expected_value_loss)
+    err_a = abs(float(out["advantage_mean"]) - expected_adv)
+    ok = err_v < 1e-5 and err_a < 1e-5
+    return record(
+        "7_expectile_loss_and_advantage", ok,
+        f"value_loss reported={out['value_loss']:.6f} recomputed={expected_value_loss:.6f} "
+        f"(err {err_v:.2e}); advantage_mean reported={out['advantage_mean']:.6f} "
+        f"recomputed={expected_adv:.6f} (err {err_a:.2e})",
+    )
+
+
+def check_no_policy_sampling() -> bool:
+    """IQL must never draw a fresh action; only the logged one is evaluated."""
+    m = make_model()
+    batch = make_batch(seed=7)
+
+    calls = {"n": 0}
+
+    def forbidden(*_args: Any, **_kwargs: Any):
+        calls["n"] += 1
+        raise AssertionError("_sample_policy was called during an offline IQL update")
+
+    original = m._sample_policy
+    m._sample_policy = forbidden  # type: ignore[method-assign]
+    try:
+        m.update(batch)
+        ok = calls["n"] == 0
+        detail = "no fresh action was sampled from the policy"
+    except AssertionError as exc:
+        ok = False
+        detail = str(exc)
+    finally:
+        m._sample_policy = original  # type: ignore[method-assign]
+    return record("8_no_out_of_distribution_action_query", ok, detail)
+
+
+def check_hparams_are_real() -> bool:
+    """Different expectile / beta must give different losses on the same weights."""
+    batch = make_batch(seed=11)
+    a = make_model(seed=1, iql_expectile=0.5, iql_beta=3.0).update(dict(batch))
+    b = make_model(seed=1, iql_expectile=0.95, iql_beta=3.0).update(dict(batch))
+    c = make_model(seed=1, iql_expectile=0.5, iql_beta=30.0).update(dict(batch))
+    d_exp = abs(float(a["value_loss"]) - float(b["value_loss"]))
+    d_beta = abs(float(a["actor_loss"]) - float(c["actor_loss"]))
+    ok = d_exp > 1e-6 and d_beta > 1e-6
+    return record(
+        "9_hyperparameters_take_effect", ok,
+        f"value_loss changed by {d_exp:.4e} when expectile 0.5 -> 0.95; actor_loss changed "
+        f"by {d_beta:.4e} when beta 3 -> 30 (same seed, same batch)",
+    )
+
+
+def check_extreme_advantage() -> bool:
+    """A reward scale that would overflow exp(beta * A) must stay finite."""
+    m = make_model(iql_beta=50.0, iql_adv_clip=100.0)
+    batch = make_batch(seed=13, reward_scale=1e4)
+    # Blow up the critics so the advantage is huge before the exponential.
+    with torch.no_grad():
+        for module in (m.critic_1, m.critic_2, m.critic_1_target, m.critic_2_target):
+            for p in module.parameters():
+                p.mul_(50.0)
+    out = m.update(batch)
+    bad = {k: v for k, v in out.items() if not math.isfinite(float(v))}
+    ceiling_ok = float(out["adv_weight_mean"]) <= 100.0 + 1e-3
+    ok = not bad and ceiling_ok
+    return record(
+        "10_extreme_advantage_stays_finite", ok,
+        f"non-finite keys={sorted(bad)}; adv_weight_mean={out['adv_weight_mean']:.3f} "
+        f"(ceiling 100), clipped fraction={out['adv_weight_clipped_frac']:.3f}",
+    )
+
+
+def check_real_dataset_and_pretrain() -> bool:
+    """The real OfflineDataset batch, then the whole pretrain -> handover path."""
+    n = 512
+    rng = np.random.default_rng(17)
+    dec = ActionDecoder(num_channels=NUM_CHANNELS)
+    deltas = np.exp(rng.uniform(math.log(dec.delta_min), math.log(dec.delta_max), size=n))
+    chans = rng.integers(0, NUM_CHANNELS, size=n)
+    powers = rng.uniform(dec.p_min, dec.p_max, size=n)
+    arrays = {
+        "state": rng.normal(size=(n, STATE_DIM)).astype(np.float32),
+        "action": np.stack(
+            [dec.encode_action(float(deltas[i]), int(chans[i]), float(powers[i])) for i in range(n)]
+        ).astype(np.float32),
+        "reward": rng.normal(size=n).astype(np.float32),
+        "next_state": rng.normal(size=(n, STATE_DIM)).astype(np.float32),
+        "done": (rng.random(n) < 0.05).astype(np.float32),
+        "delta_t": deltas.astype(np.float32),
+        "action_idx": chans.astype(np.int64),
+        "behaviour_log_prob": np.full(n, -math.log(NUM_CHANNELS), dtype=np.float32),
+    }
+    assert set(arrays) == set(ARRAY_KEYS), sorted(set(ARRAY_KEYS) ^ set(arrays))
+    dataset = OfflineDataset(arrays, {"state_dim": STATE_DIM}, gamma=0.99)
+
+    m = make_model(seed=19)
+    sample = dataset.sample(64)
+    out = m.update(sample)
+    dataset_ok = isinstance(out, dict) and all(math.isfinite(float(v)) for v in out.values())
+
+    m2 = make_model(seed=21, phase="online")
+    summary = m2.pretrain(dataset, num_updates=25, batch_size=64)
+    handover_ok = (
+        float(m2.offline_pretrained.item()) == 1.0
+        and float(m2.offline_updates.item()) == 25.0
+        and m2.phase == "online"
+        and all(math.isfinite(float(v)) for v in summary.values())
+    )
+    # The handover must leave the online stage able to step.
+    online_out = m2.update(make_batch(seed=23))
+    online_ok = float(online_out["phase_offline"]) == 0.0 and math.isfinite(online_out["loss"])
+
+    # Checkpoint round trip, now that the state dict carries the value network.
+    with tempfile.TemporaryDirectory() as td:
+        path = os.path.join(td, "hoorl.pt")
+        m2.save(path)
+        m3 = make_model(seed=31, phase="online")
+        m3.load(path)
+        keys_ok = any(k.startswith("value_net.") for k in m2.state_dict())
+        reload_ok = keys_ok and float(m3.offline_pretrained.item()) == 1.0
+
+    ok = dataset_ok and handover_ok and online_ok and reload_ok
+    return record(
+        "11_real_dataset_pretrain_handover_checkpoint", ok,
+        f"OfflineDataset batch accepted={dataset_ok}; pretrain 25 updates -> "
+        f"offline_updates={float(m2.offline_updates.item())}, pretrained="
+        f"{float(m2.offline_pretrained.item())}, phase={m2.phase}; online step after "
+        f"handover finite={online_ok}; checkpoint carries value_net and reloads={reload_ok}",
+    )
+
+
+def check_learns_a_better_policy() -> bool:
+    """A controlled dataset where the right answer is known in advance.
+
+    Checks 1-11 all confirm that one step is well formed. None of them confirms
+    that many steps produce a policy worth handing to the online stage, which is
+    the only thing the offline phase exists for, so this builds a dataset whose
+    optimum we fix ourselves and asks whether the extracted policy finds it.
+
+        reward = 2 * 1[subchannel == 0] - 4 * (u_power - 0.75) ** 2 + noise
+
+    The logging policy is the real one: uniform over subchannels, uniform over
+    power. Every episode is terminal, so the value target is the reward itself
+    and the check isolates policy extraction from bootstrapping. Both heads are
+    exercised at once -- the categorical head should concentrate on subchannel 0
+    and the Gaussian head should move its power mean towards 0.75 -- and the
+    uniform behaviour policy means a learner that merely imitated the data would
+    stay at 0.25 and 0.5 respectively, so behaviour cloning fails this check.
+    """
+    n, updates = 4096, 1500
+    rng = np.random.default_rng(101)
+    dec = ActionDecoder(num_channels=NUM_CHANNELS)
+    states = rng.normal(size=(n, STATE_DIM)).astype(np.float32)
+    chans = rng.integers(0, NUM_CHANNELS, size=n)
+    u_power = rng.random(n)
+    powers = dec.p_min + u_power * (dec.p_max - dec.p_min)
+    deltas = np.exp(rng.uniform(math.log(dec.delta_min), math.log(dec.delta_max), size=n))
+    rewards = (
+        2.0 * (chans == 0).astype(np.float64)
+        - 4.0 * (u_power - 0.75) ** 2
+        + rng.normal(0.0, 0.05, size=n)
+    )
+    arrays = {
+        "state": states,
+        "action": np.stack(
+            [dec.encode_action(float(deltas[i]), int(chans[i]), float(powers[i])) for i in range(n)]
+        ).astype(np.float32),
+        "reward": rewards.astype(np.float32),
+        "next_state": rng.normal(size=(n, STATE_DIM)).astype(np.float32),
+        "done": np.ones(n, dtype=np.float32),
+        "delta_t": deltas.astype(np.float32),
+        "action_idx": chans.astype(np.int64),
+        "behaviour_log_prob": np.full(n, -math.log(NUM_CHANNELS), dtype=np.float32),
+    }
+    dataset = OfflineDataset(arrays, {"state_dim": STATE_DIM}, gamma=0.99)
+
+    m = make_model(seed=41, iql_expectile=0.9, iql_beta=3.0)
+    probe = torch.from_numpy(rng.normal(size=(512, STATE_DIM)).astype(np.float32))
+
+    def policy_stats() -> Tuple[float, float]:
+        with torch.no_grad():
+            mean, _, logits = m._policy(probe)
+            p0 = float(F.softmax(logits, dim=-1)[:, 0].mean().item())
+            up = float((0.5 * (torch.tanh(mean[:, 1]) + 1.0)).mean().item())
+        return p0, up
+
+    p0_before, up_before = policy_stats()
+    losses: List[float] = []
+    values: List[float] = []
+    for _ in range(updates):
+        out = m.update(dataset.sample(256))
+        losses.append(float(out["value_loss"]))
+        values.append(float(out["mean_v"]))
+        if not math.isfinite(out["loss"]):
+            return record("12_learns_a_better_policy", False, "loss went non-finite mid-training")
+    p0_after, up_after = policy_stats()
+
+    # The value loss is NOT expected to fall monotonically from step 0. Both
+    # critics start near zero output, so the residual Q - V starts near zero too
+    # and the loss starts small for a reason that has nothing to do with fit;
+    # it necessarily rises while the critics grow to span the reward range, then
+    # settles. The convergence criterion therefore compares the last window with
+    # a mid-training window, not with the first.
+    mid_loss = float(np.mean(losses[updates // 2: updates // 2 + 100]))
+    late_loss = float(np.mean(losses[-100:]))
+    late_v = float(np.mean(values[-100:]))
+    # What V should be converging to. The behaviour policy's mean return is the
+    # dataset's mean reward; a 0.9 expectile has to sit well above it and below
+    # the achievable maximum of 2.0, otherwise V is fitting the logging policy's
+    # value instead of an upper expectile and the extraction has nothing to
+    # weight by.
+    data_mean_reward = float(rewards.mean())
+    ok = (
+        p0_after > 0.5                       # far above the uniform 0.25 the data has
+        and p0_after > p0_before + 0.15
+        and abs(up_after - 0.75) < abs(up_before - 0.75)
+        and abs(up_after - 0.75) < 0.15
+        and late_v > data_mean_reward + 0.3
+        and late_v < 2.1
+        and late_loss <= mid_loss * 1.05
+    )
+    return record(
+        "12_learns_a_better_policy", ok,
+        f"{updates} offline updates on a dataset whose optimum is (subchannel 0, "
+        f"u_power 0.75) collected under a uniform logging policy: P(ch=0) "
+        f"{p0_before:.3f} -> {p0_after:.3f} (data says 0.250); mean u_power "
+        f"{up_before:.3f} -> {up_after:.3f} (target 0.750, data says 0.500); "
+        f"mean V settled at {late_v:.3f} (behaviour mean return {data_mean_reward:.3f}, "
+        f"achievable max 2.000); value_loss mid {mid_loss:.4f} -> late {late_loss:.4f}",
+    )
+
+
+def check_offline_lr_scale_reaches_the_update() -> bool:
+    """Is `offline_lr_scale` real when it is used, MEASURED not asserted?
+
+    Three stages, and only the third is hard to fake:
+
+      (a) the search does NOT sample the key. This is the decision taken on
+          2026-09-05 and it is asserted in that direction ON PURPOSE. The
+          argument is inert unless a trial actually enters the offline phase,
+          and no trial does; see `check_offline_only_hparams_are_not_searched`,
+          which guards the whole family rather than this one member.
+      (b) every key the search DOES sample is a real constructor argument --
+          which is all `assert_hparams_reach_model` can see;
+      (c) the value changes what an offline update actually does, so that the
+          argument is genuinely available to whoever sets it directly.
+
+    Stage (c) is measured by displacement. On the FIRST Adam step the update is
+    lr * m / (sqrt(v) + eps) with m and v built from that same gradient, so the
+    step length is lr to within eps regardless of the gradient's magnitude.
+    Doubling the scale must therefore double the distance every parameter moves,
+    in all three of the actor, the critics and the value network. A scale that
+    reached the constructor but not the optimisers would leave the ratio at 1.
+
+    This is the check the project's history asks for: a search that reported an
+    optimal learning rate the model never applied, and a verification script that
+    inspected the wrong end of the pipe and passed while 15 of 18 observation
+    entries were constant.
+    """
+    # (a) and (b): read them from hpo.py rather than restating them here.
+    try:
+        from src.hpo import _search_space_keys, assert_hparams_reach_model
+
+        sampled = set(_search_space_keys("HOORL"))
+        unreachable = assert_hparams_reach_model("HOORL")
+    except Exception as exc:  # pragma: no cover - hpo is another session's file
+        sampled, unreachable = set(), [f"could not read hpo.py: {exc}"]
+    stage_a = "offline_lr_scale" not in sampled
+    stage_b = not unreachable
+
+    # (c) Measured displacement, first step, identical seed and identical batch.
+    batch = make_batch(seed=53)
+    groups = ("actor", "critic", "value")
+
+    def displacement(scale: float) -> Dict[str, float]:
+        m = make_model(seed=61, offline_lr_scale=scale, phase="offline")
+        params = {"actor": m._actor_params, "critic": m._critic_params, "value": m._value_params}
+        before = {g: [p.detach().clone() for p in ps] for g, ps in params.items()}
+        m.update(dict(batch))
+        return {
+            g: max(
+                float((p.detach() - b).abs().max().item())
+                for p, b in zip(params[g], before[g])
+            )
+            for g in groups
+        }
+
+    d1 = displacement(1.0)
+    d2 = displacement(2.0)
+    ratios = {g: (d2[g] / d1[g] if d1[g] > 0 else float("nan")) for g in groups}
+    stage_c = all(abs(ratios[g] - 2.0) < 0.05 for g in groups)
+
+    # And the same question asked of a model that never went through set_phase:
+    # the three optimisers must agree with each other even on that path.
+    m_direct = make_model(seed=71, offline_lr_scale=4.0, phase="online")
+    m_direct.offline_algorithm = "iql"
+    out = m_direct.offline_update(dict(batch))
+    consistent = (
+        abs(float(out["offline_actor_lr"]) - 3e-4 * 4.0) < 1e-12
+        and abs(float(out["offline_critic_lr"]) - 3e-4 * 4.0) < 1e-12
+        and abs(float(out["offline_value_lr"]) - 3e-4 * 4.0) < 1e-12
+    )
+
+    ok = stage_a and stage_b and stage_c and consistent
+    return record(
+        "13_offline_lr_scale_is_real_when_set_directly", ok,
+        f"(a) correctly ABSENT from the hpo.py search space={stage_a} "
+        f"(sampled keys {sorted(sampled)}); "
+        f"(b) assert_hparams_reach_model unreachable={unreachable}; "
+        f"(c) first-step displacement ratio at scale 2.0 vs 1.0: "
+        f"actor={ratios['actor']:.4f} critic={ratios['critic']:.4f} "
+        f"value={ratios['value']:.4f} (all must be 2.000); "
+        f"all three optimisers agree without set_phase={consistent}",
+    )
+
+
+def check_offline_only_hparams_are_not_searched() -> bool:
+    """No offline-stage hyper-parameter may be searched while no trial runs offline.
+
+    THE RULE THIS ENCODES. A hyper-parameter that is sampled by the search but
+    cannot reach an update is worse than one that is not searched at all: the
+    trial reports an optimum for it, and the report is false. `hpo.py`'s own
+    `assert_hparams_reach_model` cannot catch this class, because it asks only
+    whether the key is a named constructor argument -- and every one of these is.
+    They are accepted, stored, and then read exclusively by code on the offline
+    path.
+
+    So the check is on the PIPELINE, not on the constructor: an offline-stage
+    key may appear in the search space only if the offline phase can actually
+    run end to end. That takes a caller, a caller something imports, and a
+    dataset for it to load. All three are tested below, because on 2026-09-05
+    the second flipped to true while the third was still false, and a check
+    resting on the second alone would have opened the gate that same minute.
+
+    This is deliberately a guard over the whole FAMILY rather than over
+    `offline_lr_scale` alone. `iql_expectile` and `iql_beta` are inert today for
+    exactly the same reason, and a guard naming only the one argument that
+    happened to be discussed would not stop the next one.
+
+    The family list is cross-checked against the constructor signature, so a
+    rename cannot leave this check silently guarding nothing.
+    """
+    import inspect
+
+    # Read only inside `_offline_update_iql` / `_apply_offline_lr_scale`.
+    offline_only = {"offline_lr_scale", "iql_expectile", "iql_beta", "value_lr"}
+    accepted = set(inspect.signature(HOORL.__init__).parameters)
+    stale = sorted(offline_only - accepted)
+
+    try:
+        from src.hpo import _search_space_keys
+
+        sampled = set(_search_space_keys("HOORL"))
+        readable = True
+    except Exception as exc:  # pragma: no cover - hpo is another session's file
+        sampled, readable = set(), False
+        print(f"    (could not read hpo.py search space: {exc})")
+
+    # Can the offline stage actually COMPLETE? Three conditions, and all three
+    # are required. A caller has to exist; that caller has to be reachable from
+    # the pipeline rather than sitting in an orphaned module; and the dataset it
+    # loads has to exist, because `pretrain_hoorl` raises `OfflineDatasetMissing`
+    # without one and every rollout dies before a single offline update runs.
+    #
+    # The dataset condition was added on 2026-09-05 after the second of the three
+    # went from false to true. `src/hpo.py` began importing `pretrain_hoorl` at
+    # 21:29, which made the caller reachable and would have let this check permit
+    # offline keys -- while `test_05_evaluate_trial_multiseed` was at that very
+    # moment failing with 2 of 2 seeds dead on `OfflineDatasetMissing`. Reachable
+    # is not the same as runnable.
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    pipeline_files = [os.path.join(root, "run_all.py")]
+    for dirpath, _dirnames, filenames in os.walk(os.path.join(root, "src")):
+        pipeline_files.extend(os.path.join(dirpath, f) for f in filenames if f.endswith(".py"))
+    pipeline_files = [p for p in pipeline_files if os.path.exists(p)]
+
+    def read(path: str) -> str:
+        try:
+            return open(path, encoding="utf-8").read()
+        except OSError:
+            return ""
+
+    callers: List[str] = []
+    for path in pipeline_files:
+        if os.path.basename(path) == "hoorl.py":
+            continue
+        text = read(path)
+        if ".pretrain(" in text or ".set_phase(" in text:
+            callers.append(os.path.relpath(path, root))
+
+    reachable = []
+    for rel in callers:
+        stem = os.path.splitext(os.path.basename(rel))[0]
+        for path in pipeline_files:
+            if os.path.relpath(path, root) == rel:
+                continue
+            text = read(path)
+            if f"import {stem}" in text or f"{stem} import" in text or f"src.{stem}" in text:
+                reachable.append(rel)
+                break
+
+    dataset = None
+    for base in (os.path.abspath(os.path.join(root, "..")), root):
+        npz = os.path.join(base, "data", "hoorl_offline", "hoorl_offline.npz")
+        if os.path.exists(npz) and os.path.exists(os.path.splitext(npz)[0] + ".meta.json"):
+            dataset = npz
+            break
+
+    offline_stage_runs = bool(reachable) and dataset is not None
+    offending = sorted(sampled & offline_only)
+    ok = readable and not stale and (offline_stage_runs or not offending)
+    blockers = []
+    if not callers:
+        blockers.append("no pipeline module calls pretrain()/set_phase()")
+    elif not reachable:
+        blockers.append(f"the only callers {callers} are orphaned (nothing imports them)")
+    if dataset is None:
+        blockers.append("no collected offline dataset")
+    return record(
+        "14_no_inert_offline_hparam_in_the_search_space", ok,
+        f"offline-only keys {sorted(offline_only)} all still on the constructor="
+        f"{not stale}{'' if not stale else f' (stale: {stale})'}; offline stage can "
+        f"actually run={offline_stage_runs}"
+        + (f" (blocked by: {'; '.join(blockers)})" if blockers else f" (via {reachable})")
+        + f"; offline-only keys currently sampled={offending or 'none'}"
+        + ("" if ok else " -- these would be searched and never applied"),
+    )
+
+
+def main() -> int:
+    results = []
+    results.extend(check_refusals())
+    ran, finite, out = check_runs_and_finite()
+    results.extend([ran, finite])
+    results.append(check_gradients())
+    results.append(check_smdp_target())
+    results.append(check_expectile_and_advantage())
+    results.append(check_no_policy_sampling())
+    results.append(check_hparams_are_real())
+    results.append(check_extreme_advantage())
+    results.append(check_real_dataset_and_pretrain())
+    results.append(check_learns_a_better_policy())
+    results.append(check_offline_lr_scale_reaches_the_update())
+    results.append(check_offline_only_hparams_are_not_searched())
+
+    os.makedirs(os.path.dirname(RESULTS), exist_ok=True)
+    with open(RESULTS, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["check", "result", "detail"])
+        writer.writeheader()
+        writer.writerows(_rows)
+
+    n_pass = sum(1 for r in _rows if r["result"] == "PASS")
+    print(f"\n{n_pass}/{len(_rows)} checks passed. Written to {RESULTS}")
+    print("One offline loss dict, for the record:")
+    print(json.dumps({k: round(float(v), 6) for k, v in out.items()}, indent=2, sort_keys=True))
+    return 0 if all(results) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

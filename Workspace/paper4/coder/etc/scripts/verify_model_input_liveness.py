@@ -52,9 +52,12 @@ def main() -> int:
     seen: list = []
     original = H.HotSwapRLScheduler.decide_grant
 
-    def spy(self, vid, state_vec):
+    def spy(self, vid, state_vec, deterministic=False):
+        # `deterministic` must be forwarded: the held-out validation episode
+        # asks for the greedy policy, and a spy that swallowed the keyword would
+        # make every validation raise instead of score.
         seen.append(np.asarray(state_vec, dtype=np.float32).copy())
-        return original(self, vid, state_vec)
+        return original(self, vid, state_vec, deterministic)
 
     H.HotSwapRLScheduler.decide_grant = spy
     try:

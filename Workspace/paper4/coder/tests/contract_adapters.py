@@ -425,7 +425,50 @@ class DummyPolicy(nn.Module):
 # 4. Optuna HPO Contract (R3)
 # ----------------------------------------------------------------------------
 
+#: The test double's own search space. `DummyPolicy` is not a baseline and is not
+#: in the registry, so `src.hpo.sample_hparams` has nothing to say about it.
+#:
+#: It used to get a space anyway, from the catch-all that function ended in, and
+#: that is precisely the arrangement being removed: the catch-all could not tell
+#: this deliberate stand-in from a typo, so `'MA2HDQN '` with one trailing space
+#: quietly received the same three keys and tuned three of the seven things
+#: MA2HDQN actually has. The rule that replaces it is that a caller bringing its
+#: own model brings its own search space, and this constant is this caller
+#: honouring that rule rather than being exempted from it.
+DUMMY_POLICY_MODEL_NAME = "DummyPolicy"
+
+
+def sample_dummy_policy_hparams(trial: optuna.Trial) -> dict:
+    """Search space for `DummyPolicy`, owned here because the model is owned here."""
+    # The discount bounds come from `src.hpo` whenever it can be imported. A
+    # stand-in carrying its own ceiling would keep sampling discounts the real
+    # search has excluded since 2026-09-05, which is the shape of every "the
+    # change reached the main path and not the fallback" defect this project has
+    # hit; the literals below are the last resort, not the normal path.
+    try:
+        from src.hpo import GAMMA_SEARCH_HIGH, GAMMA_SEARCH_LOW
+    except ImportError:
+        GAMMA_SEARCH_LOW, GAMMA_SEARCH_HIGH = 0.95, 0.99
+
+    return {
+        "lr": trial.suggest_float("lr", 1e-4, 1e-2, log=True),
+        "hidden_dim": trial.suggest_categorical("hidden_dim", [32, 64, 128]),
+        "gamma": trial.suggest_float("gamma", GAMMA_SEARCH_LOW, GAMMA_SEARCH_HIGH),
+    }
+
+
 def sample_hparams(trial: optuna.Trial, model_name: str) -> dict:
+    """Registry models are sampled by `src.hpo`; the test double is sampled here.
+
+    The order matters. `DummyPolicy` is checked FIRST, because `src.hpo` refuses
+    names it does not recognise and refusing is the point of that change. Asking
+    it about the double and catching the refusal would work today and would go on
+    working if the refusal were ever weakened back into a silent default, which
+    is the failure mode this ordering exists to make impossible.
+    """
+    if model_name == DUMMY_POLICY_MODEL_NAME:
+        return sample_dummy_policy_hparams(trial)
+
     try:
         import src.hpo as hpo_mod
         if hasattr(hpo_mod, "sample_hparams"):
@@ -433,12 +476,14 @@ def sample_hparams(trial: optuna.Trial, model_name: str) -> dict:
     except (ImportError, AttributeError):
         pass
 
-    params = {
-        "lr": trial.suggest_float("lr", 1e-4, 1e-2, log=True),
-        "hidden_dim": trial.suggest_categorical("hidden_dim", [32, 64, 128]),
-        "gamma": trial.suggest_float("gamma", 0.90, 0.999),
-    }
-    return params
+    # `src.hpo` could not be imported at all, and the name is not the double.
+    # There is nothing this module knows about it, so it says so rather than
+    # inventing a space -- the whole defect was a stand-in space standing in for
+    # a real one.
+    raise RuntimeError(
+        f"no search space for {model_name!r}: src.hpo could not be imported and "
+        f"{DUMMY_POLICY_MODEL_NAME!r} is the only model this adapter defines itself."
+    )
 
 
 def run_hpo_study(

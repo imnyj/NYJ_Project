@@ -1,0 +1,97 @@
+{
+  "checks": [
+    {
+      "check": "HOORL is recognised as a two-stage model",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "a single-stage baseline is not",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "offline_algorithm is injected for HOORL",
+      "pass": true,
+      "detail": "{\"hidden_dim\": 64, \"offline_algorithm\": \"iql\"}"
+    },
+    {
+      "check": "no key is injected for other baselines",
+      "pass": true,
+      "detail": "{\"hidden_dim\": 64}"
+    },
+    {
+      "check": "an explicit caller choice is not overwritten",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "an unwired model refuses to pretrain rather than doing nothing",
+      "pass": true,
+      "detail": "OfflineAlgorithmNotSelected"
+    },
+    {
+      "check": "and its offline_updates stayed at zero",
+      "pass": true,
+      "detail": "offline_updates=0.0"
+    },
+    {
+      "check": "the offline stage was entered",
+      "pass": true,
+      "detail": "offline_updates=200.0"
+    },
+    {
+      "check": "pretraining changed the policy weights",
+      "pass": true,
+      "detail": "max |dw| over the actor = 3.619e-02"
+    },
+    {
+      "check": "the handover was recorded on the model",
+      "pass": true,
+      "detail": "offline_pretrained=1.0, phase=online"
+    },
+    {
+      "check": "the summary reports the run, not a silent skip",
+      "pass": true,
+      "detail": "{\"offline_stage_ran\": true, \"offline_algorithm\": \"iql\", \"offline_updates\": 200.0, \"n_transitions\": 4000, \"wall_clock_s\": 1.21}"
+    },
+    {
+      "check": "the online stage continued from the pretrained weights",
+      "pass": true,
+      "detail": "one online step moved the policy by 3.000e-04, while its distance to a never-pretrained model is 3.679e-02"
+    },
+    {
+      "check": "the online step did not reset the offline bookkeeping",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "offline_lr_scale sets a stage RATIO no single rate reproduces",
+      "pass": true,
+      "detail": "(actor_lr=3e-4, scale=2) -> offline 6.00e-04 / online 3.00e-04; (actor_lr=6e-4, scale=1) -> offline 6.00e-04 / online 6.00e-04"
+    },
+    {
+      "check": "a missing dataset stops the run by default",
+      "pass": true,
+      "detail": "OfflineDatasetMissing"
+    },
+    {
+      "check": "the deliberate ablation is recorded rather than silent",
+      "pass": true,
+      "detail": "{\"offline_stage_ran\": false, \"offline_updates\": 0.0, \"offline_pretrained\": 0.0, \"reason\": \"no dataset; require_offline=False\"}"
+    },
+    {
+      "check": "pretrain_hoorl is a no-op for other baselines",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "wire_and_pretrain constructs AND pretrains in one call",
+      "pass": true,
+      "detail": "offline_algorithm=iql, offline_updates=50.0"
+    }
+  ],
+  "n_pass": 18,
+  "n_total": 18,
+  "dataset": "SYNTHETIC; wiring verification only"
+}

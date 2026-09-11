@@ -1,0 +1,273 @@
+# src/hoorl_wiring.py
+# ============================================================================
+# The single place that puts HOORL's offline stage into the pipeline.
+#
+# ---------------------------------------------------------------------------
+# WHY A SEPARATE MODULE AND NOT TWO EDITS
+# ---------------------------------------------------------------------------
+# HOORL is a two-stage method: it learns offline from a fixed dataset and then
+# continues online. Two independent call sites construct its models and would
+# each have to arrange that -- `hpo.py`'s per-seed rollout and
+# `hot_swap_trainer.py`'s dual-model orchestrator. Writing the arrangement twice
+# is how a search and a training run end up under different conditions, and this
+# project has already discarded two sets of results to exactly that. So the
+# arrangement is written ONCE, here, and both call sites reduce to one import and
+# one call. If the two ever diverge it will be because someone deleted a call,
+# not because two copies drifted.
+#
+# ---------------------------------------------------------------------------
+# WHAT "NOT WIRED" LOOKS LIKE, AND WHY IT MUST BE LOUD
+# ---------------------------------------------------------------------------
+# Before this module existed, nothing anywhere called `pretrain()` or
+# `set_phase()`. HOORL therefore ran its online half only. That failure is
+# invisible from the outside: the model constructs, trains, checkpoints and
+# scores, and every number it produces is a real number. It is simply not the
+# method the paper describes, and reporting it under the method's name is the
+# same defect that caused the previous comparison plan to be replaced.
+#
+# `HOORL.offline_algorithm` defaults to None precisely so the offline stage
+# cannot start by accident, but a default of None only raises if something tries
+# to enter the stage. Nothing did. This module is what tries, and
+# `require_offline` is what decides whether failing to get there is an error or
+# a recorded, deliberate ablation. The default is an error.
+# ============================================================================
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from typing import Any, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+#: The offline learner. NOT the source paper's: the paper does not record which
+#: algorithm it used, so implicit Q-learning was chosen by this project and must
+#: be reported as this project's choice. `HOORL._offline_update_iql` states the
+#: reasoning; the name is repeated in the checkpoint so a results table can never
+#: silently attribute the substitute to the original authors.
+DEFAULT_OFFLINE_ALGORITHM: str = "iql"
+
+#: Where the collected dataset lives unless a caller says otherwise. An
+#: environment variable rather than a constant because the searches run in
+#: parallel process groups that already isolate their scenario directories the
+#: same way.
+DATASET_ENV_VAR: str = "PAPER4_HOORL_OFFLINE_DATASET"
+
+#: Gradient steps of the offline stage, and the batch each one draws.
+#:
+#: Both are defaults, not findings. The source paper records neither. They are
+#: set here so that the two call sites cannot pick different ones, and they are
+#: recorded in the returned summary so a run always states what it used.
+#: `etc/scripts/measure_hoorl_pretrain_cost.py` measures what they cost.
+DEFAULT_PRETRAIN_UPDATES: int = 2000
+DEFAULT_PRETRAIN_BATCH_SIZE: int = 256
+
+
+class OfflineDatasetMissing(RuntimeError):
+    """The offline stage was required and no dataset could be resolved.
+
+    Raised rather than warned about: a HOORL run that skips its offline stage is
+    the online-only ablation, and the whole reason this module exists is that
+    such a run is indistinguishable from the real thing once it has finished.
+    """
+
+
+def is_hoorl(model_or_cls: Any) -> bool:
+    """True for the HOORL class or an instance of it, by capability not by name.
+
+    Checked against the methods the two-stage protocol actually needs rather than
+    against a string, so a renamed or subclassed model still wires up and a
+    model that merely happens to be called HOORL does not.
+    """
+    for attr in ("pretrain", "set_phase", "finish_offline_phase", "offline_update"):
+        if not callable(getattr(model_or_cls, attr, None)):
+            return False
+    return True
+
+
+def offline_hparams(
+    model_or_cls: Any,
+    hparams: Optional[Dict[str, Any]] = None,
+    offline_algorithm: Optional[str] = DEFAULT_OFFLINE_ALGORITHM,
+) -> Dict[str, Any]:
+    """A COPY of `hparams` carrying `offline_algorithm`, for HOORL only.
+
+    Returns the mapping unchanged for every other baseline, so both call sites
+    can pass everything they build through this without a conditional of their
+    own. An `offline_algorithm` the caller already set is never overwritten: a
+    search that wants to compare two learners, or an ablation that deliberately
+    passes None, has to win against a default that would otherwise be silent.
+    """
+    out = dict(hparams or {})
+    if not is_hoorl(model_or_cls):
+        return out
+    if "offline_algorithm" in out:
+        logger.info(
+            "HOORL offline_algorithm already set to %r by the caller; leaving it.",
+            out["offline_algorithm"],
+        )
+        return out
+    out["offline_algorithm"] = offline_algorithm
+    return out
+
+
+def resolve_dataset_path(path: Optional[str] = None) -> Optional[str]:
+    """The dataset path from the argument, then the environment. None if neither."""
+    candidate = path or os.environ.get(DATASET_ENV_VAR) or None
+    if candidate is None:
+        return None
+    return os.path.abspath(str(candidate))
+
+
+def load_offline_dataset(path: Optional[str] = None, gamma: float = 0.99,
+                         strict: bool = True) -> Any:
+    """Load the dataset and refuse it if it was collected under other constants.
+
+    `strict` is passed to `OfflineDataset.verify_compatibility`, which compares
+    the stored observation-normalising constants against the live ones. Pre-
+    training on a dataset whose `N_ACTIVE_MAX_OBS` differs from the current value
+    initialises the policy against states that mean something else, and nothing
+    downstream would show it. That check is the reason the dataset carries
+    metadata at all, so this module does not offer a way past it by accident.
+    """
+    from src.hoorl_offline import OfflineDataset
+
+    resolved = resolve_dataset_path(path)
+    if resolved is None:
+        raise OfflineDatasetMissing(
+            "No offline dataset was given and "
+            f"{DATASET_ENV_VAR} is unset. HOORL's first stage cannot run, and a "
+            "HOORL run without it is the online-only ablation. Collect one with "
+            "`python -m src.hoorl_offline --delta-fixed <s> ...` or pass "
+            "`require_offline=False` to record the ablation deliberately."
+        )
+    if not os.path.exists(resolved):
+        raise OfflineDatasetMissing(f"offline dataset not found at {resolved}")
+    dataset = OfflineDataset.load(resolved, gamma=float(gamma))
+
+    # RE-DERIVE BEFORE REFUSING.
+    #
+    # `verify_compatibility` exists because a dataset normalised under different
+    # constants is void, and that was true while a dataset held only normalised
+    # vectors. A format-3 file also holds the PRE-normalisation values, so a moved
+    # bound is repairable: the affected features are recomputed from the raw
+    # columns and the collection stands. Refusing anyway would throw away
+    # 128,000 transitions and a twenty-minute collection because a divisor
+    # changed, which is the outcome the raw columns were added to prevent.
+    #
+    # It is not a way past the check. `reconcile_to_current_constants` re-derives
+    # ONLY the features whose constants are re-derivable and refuses everything
+    # else, so a changed observation width or a changed column meaning still
+    # reaches `verify_compatibility` and still stops the run. What it removes is
+    # the case where the check was right about the numbers and wrong about the
+    # remedy.
+    reconciliation = dataset.reconcile_to_current_constants()
+    if reconciliation["renormalised"]:
+        logger.warning(
+            "HOORL offline dataset RENORMALISED on load: %s. The stored vectors "
+            "were re-derived from the raw columns because these constants moved "
+            "since collection. The collection is unchanged; record this in the "
+            "run log so a result is never read as if the dataset had matched.",
+            reconciliation["constants_moved"],
+        )
+    elif reconciliation["constants_moved"] or reconciliation["constants_blocking"]:
+        logger.info("HOORL offline dataset not renormalised: %s",
+                    reconciliation["reason"])
+
+    dataset.verify_compatibility(strict=bool(strict))
+    logger.info("HOORL offline dataset: %d transitions from %s", len(dataset), resolved)
+    dataset.reconciliation_report = reconciliation
+    return dataset
+
+
+def pretrain_hoorl(
+    model: Any,
+    dataset_path: Optional[str] = None,
+    dataset: Optional[Any] = None,
+    num_updates: int = DEFAULT_PRETRAIN_UPDATES,
+    batch_size: int = DEFAULT_PRETRAIN_BATCH_SIZE,
+    require_offline: bool = True,
+    strict_compatibility: bool = True,
+    log_every: int = 0,
+) -> Optional[Dict[str, Any]]:
+    """Run HOORL's offline stage on `model`, then hand it to the online stage.
+
+    Returns None for a model that is not HOORL, so both call sites can apply it
+    unconditionally. For HOORL it returns the handover summary plus the settings
+    that produced it, which the caller should write into its run log: a summary
+    with `offline_updates` of zero is the ablation and has to be legible as such.
+
+    `require_offline=False` is the deliberate ablation. It still returns a
+    summary, marked, rather than silently doing nothing, because the difference
+    between "the offline stage was skipped on purpose" and "the offline stage was
+    never wired" is exactly what was lost before.
+
+    The handover itself lives in `HOORL.finish_offline_phase`, not here. This
+    function decides WHETHER and WITH WHAT; the model owns HOW.
+    """
+    if not is_hoorl(model):
+        return None
+
+    if dataset is None:
+        try:
+            dataset = load_offline_dataset(
+                dataset_path, gamma=float(getattr(model, "gamma", 0.99)),
+                strict=bool(strict_compatibility),
+            )
+        except OfflineDatasetMissing:
+            if require_offline:
+                raise
+            logger.warning(
+                "HOORL: no offline dataset, and require_offline=False. This run is "
+                "the ONLINE-ONLY ABLATION and must not be reported under the "
+                "method's name without saying so."
+            )
+            return {
+                "offline_stage_ran": False,
+                "offline_updates": 0.0,
+                "offline_pretrained": 0.0,
+                "reason": "no dataset; require_offline=False",
+            }
+
+    started = time.time()
+    summary = model.pretrain(
+        dataset, num_updates=int(num_updates), batch_size=int(batch_size),
+        log_every=int(log_every),
+    )
+    out: Dict[str, Any] = {
+        "offline_stage_ran": True,
+        "offline_algorithm": getattr(model, "offline_algorithm", None),
+        "pretrain_updates_requested": int(num_updates),
+        "pretrain_batch_size": int(batch_size),
+        "n_transitions": int(len(dataset)),
+        "offline_lr_scale": float(getattr(model, "offline_lr_scale", 1.0)),
+        "wall_clock_s": round(time.time() - started, 2),
+    }
+    out.update(summary)
+    logger.info("HOORL offline stage finished: %s", out)
+    return out
+
+
+def wire_and_pretrain(
+    model_cls: Any,
+    hparams: Optional[Dict[str, Any]] = None,
+    build: Optional[Any] = None,
+    **pretrain_kwargs: Any,
+) -> Tuple[Any, Optional[Dict[str, Any]]]:
+    """Both halves of the wiring in one call: construct, then pretrain.
+
+    `build` is a callable taking the augmented hyper-parameters and returning the
+    model, because the two call sites construct differently -- `hpo.py` makes one
+    model directly, `hot_swap_trainer.py` makes an Act and a Rest copy. Passing
+    the constructor in keeps that difference at the call site while the two
+    decisions this module owns, WHICH learner and WHETHER it pretrains, stay
+    identical for both.
+
+    Returns the model and the offline summary (None for non-HOORL models).
+    """
+    augmented = offline_hparams(model_cls, hparams)
+    model = build(augmented) if build is not None else model_cls(**augmented)
+    summary = pretrain_hoorl(model, **pretrain_kwargs)
+    return model, summary

@@ -164,3 +164,97 @@ class TestRetiredSymbols:
 
     def test_c_light_is_retained_because_the_path_loss_reference_needs_it(self):
         assert comm.C_LIGHT > 0
+
+
+class TestShadowingIsMeasuredFromTheLastDraw:
+    """The distance driving rho must be movement since this link's last SAMPLE.
+
+    Not since the last successful report. `hot_swap_trainer` passed the latter
+    until 2026-09-07: it differenced the current position against the position in
+    the vehicle's ledger, which a failed transmission does not update. On a first
+    transmission the two coincide, so the fault only appeared on retries, where
+    the distance grew by the whole dead-reckoning gap -- 80 m for a 10 s interval
+    at 8 m/s, against the 0.8 m a vehicle actually travels between two retries.
+    At 80 m, rho = exp(-80/12) is 0.001 and every retry is a fresh channel, which
+    is the independent-draw behaviour this module was written to remove and whose
+    cost was measured at 0.08 % against 7.06 % final delivery failure.
+    """
+
+    def test_the_distance_does_not_accumulate_across_retries(self):
+        comm.reset_shadowing_state()
+        comm.seed_channel(7)
+        step = 0.8
+        used = []
+        x = 0.0
+        for _ in range(6):
+            before = comm.shadowing_reference_position("veh")
+            comm.draw_shadowing_db_correlated("veh", position=(x, 0.0))
+            after = comm.shadowing_reference_position("veh")
+            if before is not None:
+                used.append(math.hypot(after[0] - before[0], after[1] - before[1]))
+            x += step
+        assert used, "no reference position was recorded"
+        assert all(abs(u - step) < 1e-9 for u in used), (
+            f"the distance the module used grew across retries: {used}. That is "
+            "the ledger-gap defect returning.")
+
+    def test_a_retry_keeps_most_of_the_previous_sample(self):
+        """The consequence, in the terms the physics is stated in.
+
+        Asserted statistically rather than on one draw, because a single AR(1)
+        step is a random variable: any individual pair can come out anywhere, and
+        a test on one of them would fail for correct code.
+        """
+        rho_expected = math.exp(-0.8 / comm.SHADOWING_DECORR_M)
+        pairs = []
+        for r in range(1500):
+            comm.reset_shadowing_state()
+            comm.seed_channel(5000 + r)
+            a = comm.draw_shadowing_db_correlated(f"v{r}", position=(0.0, 0.0))
+            b = comm.draw_shadowing_db_correlated(f"v{r}", position=(0.8, 0.0))
+            pairs.append((a, b))
+        mean_a = sum(p[0] for p in pairs) / len(pairs)
+        mean_b = sum(p[1] for p in pairs) / len(pairs)
+        num = sum((p[0] - mean_a) * (p[1] - mean_b) for p in pairs)
+        da = math.sqrt(sum((p[0] - mean_a) ** 2 for p in pairs))
+        db = math.sqrt(sum((p[1] - mean_b) ** 2 for p in pairs))
+        corr = num / (da * db)
+        assert corr == pytest.approx(rho_expected, abs=0.06), (
+            f"consecutive samples correlate at {corr:.4f}, not the {rho_expected:.4f} "
+            "that 0.8 m of travel implies")
+
+    def test_a_long_move_decorrelates(self):
+        """The other half: the correlation must not be unconditional."""
+        rho_expected = math.exp(-80.0 / comm.SHADOWING_DECORR_M)
+        assert rho_expected < 0.01
+        pairs = []
+        for r in range(1500):
+            comm.reset_shadowing_state()
+            comm.seed_channel(9000 + r)
+            a = comm.draw_shadowing_db_correlated(f"v{r}", position=(0.0, 0.0))
+            b = comm.draw_shadowing_db_correlated(f"v{r}", position=(80.0, 0.0))
+            pairs.append((a, b))
+        mean_a = sum(p[0] for p in pairs) / len(pairs)
+        mean_b = sum(p[1] for p in pairs) / len(pairs)
+        num = sum((p[0] - mean_a) * (p[1] - mean_b) for p in pairs)
+        da = math.sqrt(sum((p[0] - mean_a) ** 2 for p in pairs))
+        db = math.sqrt(sum((p[1] - mean_b) ** 2 for p in pairs))
+        assert abs(num / (da * db)) < 0.08
+
+    def test_neither_argument_is_refused_rather_than_drawn_uncorrelated(self):
+        comm.reset_shadowing_state()
+        with pytest.raises(TypeError, match="position"):
+            comm.draw_shadowing_db_correlated("veh")
+
+    def test_judge_uplink_takes_positions_and_the_trainer_supplies_them(self):
+        """The wiring, so a correct function called wrongly still fails here."""
+        import inspect
+
+        import src.hot_swap_trainer as hst
+
+        assert "position_of" in inspect.signature(comm.judge_uplink).parameters
+        source = inspect.getsource(hst.AoiV2IEnv.step)
+        assert "position_of=" in source, (
+            "the trainer no longer passes positions to judge_uplink; if it went "
+            "back to computing a distance itself, check which two positions it "
+            "differences.")

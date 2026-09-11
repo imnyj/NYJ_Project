@@ -1,0 +1,11 @@
+online_updates,drift_preserved,drift_discarded,separation_ratio,worst_tensor_preserved,worst_tensor_discarded
+0,0.0,1.853956,inf,none,log_std_head.bias
+25,0.146436,1.7667,12.065,channel_head.bias,log_std_head.bias
+50,0.266688,1.717651,6.441,channel_head.bias,log_std_head.bias
+100,0.415364,1.833147,4.413,channel_head.bias,channel_head.bias
+200,0.428297,1.670377,3.9,channel_head.weight,log_std_head.bias
+500,1.094039,1.765755,1.614,channel_head.weight,channel_head.weight
+1000,1.441362,2.327868,1.615,channel_head.weight,channel_head.weight
+counter_buffer,0.666667,,,total_updates,
+counter_buffer,0.0,,,offline_updates,
+counter_buffer,0.0,,,offline_pretrained,

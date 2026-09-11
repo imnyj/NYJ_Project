@@ -1,0 +1,5 @@
+variant,packet_loss_rate,tx_attempts,tx_abandoned,mean_error,max_error,mean_peak_aoi,peak_aoi,avg_tx_power_dbm,mean_reward,n_observations
+fixed,0.0889,1519,1,1.5443,80.2961,3.0947,10.3,16.3608,,47051
+shadowing_old,0.0666,1486,0,1.6748,128.7934,3.0944,10.2,16.4618,,47051
+cbr_ref_old,0.0889,1519,1,1.5443,80.2961,3.0947,10.3,16.3608,,47051
+ledger_old,0.0889,1519,1,1.5627,80.2961,3.0973,10.3,16.3608,,47051

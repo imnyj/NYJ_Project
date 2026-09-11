@@ -1,0 +1,21 @@
+check,passed,observed
+buffer non-empty after a genuine SUMO episode,1,752 transitions
+every transition carries reward_terms,1,752/752
+reward_terms sum to the scalar reward,1,max |sum - reward| = 7.153e-08 over 752 transitions
+reward_terms has one column per task,1,4 columns expected
+every transition carries a neighbourhood,1,752/752
+neighbourhood shapes,1,"(192, 21) and (192,)"
+mask is strictly 0/1,1,"unique values [0.0, 1.0]"
+padded rows are zero,1,no non-zero row behind a zero mask
+the neighbourhood is not trivially empty,1,"mean 46.97 neighbours, max 65, 0.0 % empty"
+no transition lists its own observation as a neighbour,1,0 violations
+MADDPG-MT reports task decomposition active,1,task_decomposed=1.0
+MADDPG-MT reports the global critic cooperative,1,global_critic_cooperative=1.0
+I-HAMAPPO update changes once it can see the neighbourhood,1,loss -0.009010 without -> -0.008727 with (relative change 3.14 %)
+RES-MAPDDPG update changes once it can see the neighbourhood,1,loss 0.047350 without -> 0.043264 with (relative change 8.63 %)
+SPAM-D3QN gets a prioritized batch,1,"keys added: ['indices', 'weights']"
+SPAM-D3QN reports the batch was prioritized,1,per_sampled=1.0
+priorities are written back,1,32 slots updated
+untouched priorities are left alone,1,720 slots unchanged
+the scenario on disk covers this run's horizon,1,"flows end at 80.0 s, run needs 80.0 s"
+the run did not write its parameters into make_sumo_set,1,"(3600.0, 3600.0, 20.0) -> (3600.0, 3600.0, 20.0)"

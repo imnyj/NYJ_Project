@@ -1,0 +1,23 @@
+{
+  "coverage_caveat": "This collection visited road cycles 0-2 while training walks 0-14, so a bound chosen to just clear the maximum here will be exceeded on roads this table never saw. Read it together with the fifteen-cycle n_active measurement, which is what says how much headroom the unseen roads require.",
+  "current_constants": {
+    "A_MAX": 5.0,
+    "DELTA_MAX": 45.0,
+    "DELTA_MIN": 0.1,
+    "DIST_TO_STOPLINE_REF_M": 900.0,
+    "E_REF": 13.27,
+    "N_ACTIVE_MAX_OBS": 250.0,
+    "PHASE_REMAINING_REF_S": 60.0,
+    "QUEUE_MAX": 25.0,
+    "RSU_RANGE": 300.0,
+    "V_MAX_OBS": 15.924
+  },
+  "dataset": "/home/imnyj/Workspace/paper4/data/hoorl_offline/hoorl_offline.npz",
+  "n_transitions": 128223,
+  "no_recommendation": "No candidate is marked preferred. The trade has two sides -- samples destroyed against resolution lost -- and which matters depends on whether the clipped region needs different behaviour, which this data cannot answer.",
+  "road_cycles_in_dataset": [
+    0,
+    1,
+    2
+  ]
+}

@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 
 import src.hot_swap_trainer as H
+import src.sumo.make_sumo_set as ss
 from src.hot_swap_trainer import (
     DEFAULT_REWARD_WEIGHTS,
     AoiV2IEnv,
@@ -987,40 +988,223 @@ class TestCheckpointSelectionUsesTheRewardRate:
     """
 
     @pytest.mark.slow
-    def test_best_checkpoint_stores_the_per_second_rate(self, tmp_path):
+    def test_best_checkpoint_stores_the_held_out_validation_rate(self, tmp_path):
+        """The stored score is the VALIDATION rate, not any training episode.
+
+        Two things are being asserted at once and both were broken:
+          * the metric is a reward RATE (C2), not the per-decision mean;
+          * it comes from the density-controlled validation episode, not from a
+            training episode whose density was whatever the schedule handed it.
+        """
         import pandas as pd
-        from src.hot_swap_trainer import run_hot_swap_training
+        from src.hot_swap_trainer import BEST_REWARD_METRIC, run_hot_swap_training
 
         ckpt_dir = tmp_path / "ckpt"
         summary = run_hot_swap_training(
             model_name="SelectProbe", model_cls=IdxPolicy,
             total_steps=120, episodes=2, density=[25.0, 50.0],
             batch_size=8, swap_interval=5, seed=SEED, warmup_steps=WARMUP,
+            validate_every_episodes=1,
             checkpoint_dir=str(ckpt_dir), tensorboard_dir=str(tmp_path / "tb"),
             log_dir=str(tmp_path / "logs"),
         )
         df = pd.read_csv(summary["log_csv_path"])
         assert len(df) == 2
 
-        per_sec = df["reward_per_sec_selected"]
+        val = df["val_reward_per_sec"].dropna()
+        assert len(val) == 2, "both episodes were due for validation"
         per_decision = df["reward_per_decision"]
-        # The control: the two metrics must actually disagree here, or this test
-        # could not tell them apart no matter what selection did.
-        assert not np.allclose(per_sec, per_decision), (
-            "the two candidate metrics coincide in this run, so the assertion "
-            "below would be vacuous"
-        )
 
         blob = torch.load(ckpt_dir / "SelectProbe_best.pt", map_location="cpu",
                           weights_only=False)
         stored = float(blob["best_reward"])
-        assert stored == pytest.approx(float(per_sec.max()), abs=1e-5), (
-            f"best.pt was selected on {stored}, which is not the per-second rate "
-            f"{float(per_sec.max())}"
+        assert blob["best_reward_metric"] == BEST_REWARD_METRIC
+        assert stored == pytest.approx(float(val.max()), abs=1e-5), (
+            f"best.pt was selected on {stored}, which is not the best validation "
+            f"rate {float(val.max())}"
         )
         assert stored != pytest.approx(float(per_decision.max()), abs=1e-5), (
             "best.pt was selected on the per-decision mean, the metric C2 replaced"
         )
+        # The row flagged as the selecting one must be the row that holds it.
+        chosen = df[df["val_is_best"].astype(bool)]
+        assert len(chosen) >= 1
+        assert float(chosen["val_reward_per_sec"].iloc[-1]) == pytest.approx(stored, abs=1e-5)
+        assert summary["best_validation_episode"] == int(chosen["episode"].iloc[-1])
+
+    @pytest.mark.slow
+    def test_selection_is_density_controlled_not_whatever_the_episode_drew(self, tmp_path):
+        """The defect itself: selection compared episodes at different densities.
+
+        The reward is a penalty rate and is systematically less negative on an
+        emptier road, so `ep_reward_per_sec > best_reward` across a cycling
+        density schedule ranks traffic, not policies. Measured over the two
+        ablation arms x nine models, 17 of 18 `_best.pt` files were written at
+        density 5 -- the lowest point of a seven-point grid that only 15 of 100
+        episodes can ever visit.
+
+        The run below cycles a schedule whose two densities differ by 2x, which
+        is what made the old rule pick every time. Every validation must
+        nevertheless report the SAME density, and that density must be one the
+        schedule contains.
+        """
+        import pandas as pd
+        from src.hot_swap_trainer import resolve_validation_density, run_hot_swap_training
+
+        schedule = [10.0, 40.0]
+        summary = run_hot_swap_training(
+            model_name="DensityCtrlProbe", model_cls=IdxPolicy,
+            total_steps=120, episodes=2, density=schedule,
+            batch_size=8, swap_interval=5, seed=SEED, warmup_steps=WARMUP,
+            validate_every_episodes=1,
+            checkpoint_dir=str(tmp_path / "ckpt"),
+            tensorboard_dir=str(tmp_path / "tb"), log_dir=str(tmp_path / "logs"),
+        )
+        df = pd.read_csv(summary["log_csv_path"])
+
+        # The training episodes did run at different densities -- otherwise this
+        # test could not tell a density-controlled rule from the old one.
+        assert sorted(df["density"].unique().tolist()) == sorted(schedule)
+
+        measured = df["val_density"].dropna().unique().tolist()
+        assert len(measured) == 1, f"validation density varied: {measured}"
+        assert measured[0] == pytest.approx(resolve_validation_density(schedule))
+        assert measured[0] in schedule, "validation ran outside the training support"
+        assert summary["validation_density"] == pytest.approx(measured[0])
+        assert summary["validation_seed"] == H.DEFAULT_VALIDATION_SEED
+
+    @pytest.mark.slow
+    def test_validation_transitions_never_reach_the_replay_buffer(self, tmp_path, monkeypatch):
+        """The held-out episode must be held out: no transition may be learned from.
+
+        A validation episode that fed the buffer would be training on the very
+        traffic the checkpoint is selected against, which is the ordinary form of
+        evaluation leakage. Counted at the streamer, which is the single door
+        every transition goes through on its way to the buffer.
+        """
+        from src.hot_swap_trainer import run_validation_episode, HotSwapTrainer
+
+        trainer = HotSwapTrainer(model_cls=IdxPolicy, state_dim=STATE_DIM,
+                                 num_channels=4, batch_size=8, swap_interval=5,
+                                 act_device="cpu", rest_device="cpu")
+        pushes = {"n": 0}
+        real_push = trainer.streamer.push
+
+        def counting_push(*a, **k):
+            pushes["n"] += 1
+            return real_push(*a, **k)
+
+        monkeypatch.setattr(trainer.streamer, "push", counting_push)
+
+        # A control run through the SAME scheduler path, so a zero below cannot
+        # be explained by the counter simply not working.
+        s_vec = np.zeros(STATE_DIM, dtype=np.float32)
+        trainer.scheduler.push_transition(s_vec, np.zeros(3, dtype=np.float32),
+                                          -0.1, s_vec, False, 1.0)
+        assert pushes["n"] == 1
+        before_qsize = trainer.streamer.qsize()
+        before_buffer = len(trainer.replay_buffer)
+
+        result = run_validation_episode(
+            trainer=trainer, density=DENSITY, seed=H.DEFAULT_VALIDATION_SEED,
+            n_steps=60, warmup_steps=WARMUP,
+            error_mode=H.DEFAULT_ERROR_MODE,
+            reward_weights=DEFAULT_REWARD_WEIGHTS,
+        )
+
+        # The episode really ran and really closed intervals, so "nothing was
+        # pushed" is a statement about the plumbing, not about an empty episode.
+        assert result["n_intervals_closed"] > 0
+        assert math.isfinite(result["reward_per_sec"])
+        assert pushes["n"] == 1, (
+            f"{pushes['n'] - 1} validation transition(s) reached the streamer"
+        )
+        assert trainer.streamer.qsize() == before_qsize
+        assert len(trainer.replay_buffer) == before_buffer
+
+    def test_validation_freezes_the_policy_it_is_scoring(self):
+        """The background worker is parked for the measurement.
+
+        Without this the Act weights move mid-episode -- a hot-swap lands every
+        `swap_interval` gradient updates -- so the score would belong to a
+        mixture of policies and the checkpoint written afterwards to none of
+        them.
+        """
+        from src.hot_swap_trainer import HotSwapTrainer
+
+        trainer = HotSwapTrainer(model_cls=IdxPolicy, state_dim=STATE_DIM,
+                                 num_channels=4, batch_size=1, swap_interval=1,
+                                 act_device="cpu", rest_device="cpu")
+        s_vec = np.zeros(STATE_DIM, dtype=np.float32)
+        for _ in range(16):
+            trainer.replay_buffer.push(s_vec, np.zeros(3, dtype=np.float32),
+                                       -0.1, s_vec, False, 1.0)
+        bg = trainer.background_trainer
+        trainer.start()
+        try:
+            time.sleep(0.3)
+            assert bg.training_steps > 0, "the worker never ran, so nothing was frozen"
+            with bg.paused() as frozen:
+                assert frozen, "the worker did not acknowledge the pause"
+                steps_at_pause = bg.training_steps
+                time.sleep(0.3)
+                assert bg.training_steps == steps_at_pause, (
+                    "gradient updates continued through the pause"
+                )
+            time.sleep(0.2)
+            assert bg.training_steps > steps_at_pause, "the worker never resumed"
+        finally:
+            trainer.stop()
+
+    def test_pause_is_reentrant(self):
+        """`run_validation_episode` pauses inside the caller's pause.
+
+        A non-reentrant flag would let the inner release restart the worker
+        before `_best.pt` is written, i.e. exactly the window this design closes.
+        """
+        from src.hot_swap_trainer import HotSwapTrainer
+
+        trainer = HotSwapTrainer(model_cls=IdxPolicy, state_dim=STATE_DIM,
+                                 num_channels=4, batch_size=1, swap_interval=1,
+                                 act_device="cpu", rest_device="cpu")
+        bg = trainer.background_trainer
+        bg.pause()
+        bg.pause()
+        bg.resume()
+        assert bg.pause_event.is_set(), "the inner resume released the outer pause"
+        bg.resume()
+        assert not bg.pause_event.is_set()
+
+    def test_a_stale_best_reward_is_not_inherited_on_resume(self, tmp_path):
+        """Checkpoints from the old rule carry an incomparable `best_reward`.
+
+        Those numbers are the best TRAINING episode, i.e. the score of whichever
+        density that episode drew -- at density 5 they are far less negative than
+        any validation score at density 20. Inheriting one as the target would
+        leave a resumed run unable to ever write `_best.pt` again, silently
+        keeping the discredited artefact.
+        """
+        from src.hot_swap_trainer import BEST_REWARD_METRIC, _inheritable_best_reward
+
+        assert _inheritable_best_reward({"best_reward": -0.05}) is None
+        assert _inheritable_best_reward(
+            {"best_reward": -0.05, "best_reward_metric": "episode_reward_per_sec"}
+        ) is None
+        assert _inheritable_best_reward(
+            {"best_reward": -0.05, "best_reward_metric": BEST_REWARD_METRIC}
+        ) == pytest.approx(-0.05)
+        assert _inheritable_best_reward(
+            {"best_reward": float("nan"), "best_reward_metric": BEST_REWARD_METRIC}
+        ) is None
+
+        # And the writer tags what it writes, so a checkpoint made now IS
+        # inheritable by the next resume.
+        trainer = HotSwapTrainer(model_cls=IdxPolicy, state_dim=STATE_DIM,
+                                 num_channels=4, act_device="cpu", rest_device="cpu")
+        path = str(tmp_path / "tagged.pt")
+        trainer.save_checkpoint(path, best_reward=-0.25)
+        blob = torch.load(path, map_location="cpu", weights_only=False)
+        assert _inheritable_best_reward(blob) == pytest.approx(-0.25)
 
     @pytest.mark.slow
     def test_both_metrics_are_reported_side_by_side(self, tmp_path):
@@ -1040,3 +1224,221 @@ class TestCheckpointSelectionUsesTheRewardRate:
             assert col in df.columns
         assert "mean_reward_per_second" in summary
         assert "mean_reward_per_decision" in summary
+
+
+# ---------------------------------------------------------------------------
+# Scenario-directory isolation -- `base_path` has to mean something
+# ---------------------------------------------------------------------------
+class TestScenarioDirectoryIsolation:
+    """`make_sumo_files(base_path=X)` used to lock in X and WRITE somewhere else.
+
+    Four functions honoured the argument (`_generation_lock`,
+    `are_sumo_files_valid`, `generation_signature_matches`,
+    `_write_generation_signature`) while `_make_sumo_files_impl` -- the one that
+    writes the seven files -- read the module-level `BASE_PATH` for every path it
+    used, including the two cache checks and the netconvert temporary. The caller
+    therefore got a `.sumo_gen.lock` in its own directory and a scenario in the
+    shared one. Measured on 2026-09-05: it overwrote `coder/src/sumo/` underneath
+    another session's experiment, which is unrecoverable after the fact because
+    nothing records which network a finished run actually read.
+
+    These tests never touch a real scenario directory: `BASE_PATH` is redirected
+    to a temporary "pretend default" so the invariant under test -- "an explicit
+    path does not disturb the process default" -- is checked without putting any
+    real directory at risk.
+    """
+
+    SCENARIO_FILES = (
+        "generated.nod.xml", "generated.edg.xml", "generated.net.xml",
+        "generated.rou.xml", "generated.add.xml", "generated.sumocfg",
+        "rsu.poi.xml", ".sumo_gen_signature.json",
+    )
+
+    @staticmethod
+    def _fingerprint(directory) -> dict:
+        """Content hash plus mtime for every file in `directory`."""
+        import hashlib
+
+        out = {}
+        for name in sorted(os.listdir(directory)):
+            path = os.path.join(directory, name)
+            if not os.path.isfile(path):
+                continue
+            with open(path, "rb") as fh:
+                out[name] = (hashlib.sha256(fh.read()).hexdigest(),
+                             os.stat(path).st_mtime_ns)
+        return out
+
+    @staticmethod
+    def _stored_density(directory) -> float:
+        import json
+
+        with open(os.path.join(directory, ss.SIGNATURE_FILE)) as fh:
+            return float(json.load(fh)["DENSITY"])
+
+    def _generate(self, density: float, base_path=None):
+        original_density = ss.DENSITY
+        ss.DENSITY = float(density)
+        try:
+            return ss.make_sumo_files(force_regenerate=True, base_path=base_path)
+        finally:
+            ss.DENSITY = original_density
+
+    def test_an_explicit_base_path_leaves_the_process_default_untouched(
+        self, tmp_path, monkeypatch
+    ):
+        """The reported defect, reproduced and then required not to happen."""
+        pretend_default = tmp_path / "shared"
+        explicit = tmp_path / "isolated"
+        pretend_default.mkdir()
+        explicit.mkdir()
+        monkeypatch.setattr(ss, "BASE_PATH", str(pretend_default))
+
+        # Populate the process default, then freeze what it looks like.
+        self._generate(20.0)
+        before = self._fingerprint(pretend_default)
+        assert set(self.SCENARIO_FILES).issubset(before), (
+            "the process default was not populated, so the check below is vacuous"
+        )
+
+        # A different density, so the old behaviour would have rewritten every
+        # one of those files rather than hitting the signature cache.
+        self._generate(35.0, base_path=str(explicit))
+
+        assert self._fingerprint(pretend_default) == before, (
+            "generating into an explicit directory modified the process default"
+        )
+        assert self._stored_density(pretend_default) == 20.0
+        for name in self.SCENARIO_FILES:
+            assert (explicit / name).is_file(), f"{name} was not written to base_path"
+        assert self._stored_density(explicit) == 35.0
+
+    def test_two_explicit_paths_do_not_invade_each_other(self, tmp_path, monkeypatch):
+        """Two scenarios in one process, each complete and each its own."""
+        monkeypatch.setattr(ss, "BASE_PATH", str(tmp_path / "unused_default"))
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+
+        assert self._generate(10.0, base_path=str(a)) == str(a)
+        snapshot_a = self._fingerprint(a)
+        assert self._generate(30.0, base_path=str(b)) == str(b)
+
+        assert self._fingerprint(a) == snapshot_a, "the second run rewrote the first"
+        assert self._stored_density(a) == 10.0
+        assert self._stored_density(b) == 30.0
+        assert ss.are_sumo_files_valid(str(a))
+        assert ss.are_sumo_files_valid(str(b))
+        # The lock lives with the scenario it protects, not somewhere else.
+        assert (a / ss.GENERATION_LOCK_FILE).exists()
+        assert (b / ss.GENERATION_LOCK_FILE).exists()
+        assert not os.path.exists(tmp_path / "unused_default" / "generated.net.xml")
+
+    def test_paper4_sumo_dir_still_redirects(self, tmp_path):
+        """Environment-variable isolation must keep working.
+
+        It is what the parallel HPO groups run on, so breaking it while repairing
+        the argument path would stop four studies. Checked in a subprocess
+        because `BASE_PATH` reads the variable at import time.
+        """
+        import json
+        import subprocess
+
+        target = tmp_path / "env_isolated"
+        package_dir = os.path.dirname(os.path.abspath(ss.__file__))
+        env = dict(os.environ, PAPER4_SUMO_DIR=str(target))
+        code = (
+            "import json, os, sys;"
+            "sys.path.insert(0, '/home/imnyj/Workspace/paper4/coder');"
+            "import src.sumo.make_sumo_set as ss;"
+            "ss.DENSITY = 15.0;"
+            "resolved = ss.make_sumo_files(force_regenerate=True);"
+            "print(json.dumps({'base_path': ss.BASE_PATH, 'resolved': resolved,"
+            " 'valid': ss.are_sumo_files_valid()}))"
+        )
+        before = self._fingerprint(package_dir)
+        proc = subprocess.run(["/home/imnyj/venv/bin/python", "-c", code],
+                              env=env, capture_output=True, text=True, timeout=600)
+        assert proc.returncode == 0, proc.stderr
+        got = json.loads(proc.stdout.strip().splitlines()[-1])
+
+        assert got["base_path"] == str(target)
+        assert got["resolved"] == str(target)
+        assert got["valid"] is True
+        assert (target / "generated.net.xml").is_file()
+        assert self._stored_density(target) == 15.0
+        # And the package directory, which is the shared scenario everyone else
+        # reads, was not written to.
+        assert self._fingerprint(package_dir) == before, (
+            "an isolated subprocess wrote into the package scenario directory"
+        )
+
+    def test_the_environment_starts_sumo_from_the_directory_it_generated(
+        self, tmp_path, monkeypatch
+    ):
+        """`AoiV2IEnv` read `ss.BASE_PATH` a second time to find its sumocfg.
+
+        Two independent readings of a global are the same answer only while the
+        global IS the answer. Given its own directory the environment has to
+        generate into it and start SUMO from it.
+        """
+        pretend_default = tmp_path / "shared"
+        own = tmp_path / "own"
+        pretend_default.mkdir()
+        monkeypatch.setattr(ss, "BASE_PATH", str(pretend_default))
+
+        env = AoiV2IEnv(density=DENSITY, seed=SEED, max_steps=10,
+                        warmup_steps=5, sumo_dir=str(own))
+        try:
+            env.reset()
+            assert env.sumo_dir == str(own)
+            assert (own / "generated.sumocfg").is_file()
+            assert (own / "generated.net.xml").is_file()
+            assert not (pretend_default / "generated.net.xml").exists(), (
+                "the environment generated into the process default instead"
+            )
+        finally:
+            env.close()
+
+    def test_scenario_constants_describe_the_directory_they_were_asked_about(
+        self, tmp_path, monkeypatch
+    ):
+        """DELTA_MAX / V_LIMIT / E_REF were read from the PACKAGE directory.
+
+        `rl_interface` hardcoded `os.path.dirname(__file__) + "/sumo"` for all
+        three readers, so an isolated process generated its own net.xml and then
+        normalised the observation and the reward against whatever net.xml was in
+        the package directory. It went unnoticed because every run so far uses the
+        same AV_SPEED and signal plan, so the two files agreed by coincidence.
+        """
+        import src.rl_interface as rli
+
+        monkeypatch.setattr(ss, "BASE_PATH", str(tmp_path / "unused_default"))
+        slow = tmp_path / "slow"
+        fast = tmp_path / "fast"
+
+        original_speed = ss.AV_SPEED
+        try:
+            ss.AV_SPEED = 40.0
+            self._generate(20.0, base_path=str(slow))
+            ss.AV_SPEED = 60.0
+            self._generate(20.0, base_path=str(fast))
+        finally:
+            ss.AV_SPEED = original_speed
+
+        try:
+            slow_consts = rli.refresh_scenario_constants(str(slow))
+            fast_consts = rli.refresh_scenario_constants(str(fast))
+
+            # The control: the two networks really do declare different limits,
+            # so "it read the right one" is a statement with content.
+            assert fast_consts["V_LIMIT"] > slow_consts["V_LIMIT"] * 1.3
+            assert slow_consts["V_LIMIT"] == pytest.approx(
+                rli.get_sumo_max_edge_speed(base_path=str(slow)))
+            assert fast_consts["V_LIMIT"] == pytest.approx(
+                rli.get_sumo_max_edge_speed(base_path=str(fast)))
+            # E_REF is derived from V_LIMIT, so it follows the same scenario.
+            assert fast_consts["E_REF"] == pytest.approx(fast_consts["V_LIMIT"])
+        finally:
+            # Put the module constants back on the process default; leaving them
+            # describing a temporary directory would corrupt every later test.
+            rli.refresh_scenario_constants()

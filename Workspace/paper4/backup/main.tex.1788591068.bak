@@ -1,0 +1,573 @@
+% ==============================================================================
+% IEEE Transactions on Wireless Communications (TWC) — LaTeX Template
+% Target: IEEE TWC
+% ==============================================================================
+%
+% ---- MARKER LEGEND -----------------------------------------------------------
+% Three kinds of open item are marked in this file. The tag alone says what has
+% to be done, so a later pass can grep for one kind without reading the others.
+%
+%   % DEFERRED DECISION
+%       A choice that has not been made yet. The surrounding text is a holding
+%       position, not a conclusion. Someone has to DECIDE, and only then edit.
+%       The comment states what the alternatives are and what bears on the choice.
+%
+%   % PROVISIONAL SCOPE
+%       Text that describes the proposed policy, which is not implemented yet.
+%       Per the user's decision it is to be developed after the nine baselines
+%       have been evaluated. Nothing has to be decided here; the text has to be
+%       COMPARED against the implementation once that implementation exists.
+%
+%   % PENDING MEASUREMENT
+%       A number or an empirical claim that must come from a results file which
+%       does not exist yet. Read it from the results CSV when it does. Never
+%       write one of these from memory, from a handover document, or from an
+%       earlier run whose configuration no longer matches.
+%
+% Why the markers exist: this project has already shipped a defect of exactly the
+% kind they prevent. Six discarded baselines survived several generations of the
+% manuscript, complete with DOIs, after the record had explicitly ordered their
+% removal, because nothing in the file said they were provisional. An unmarked
+% holding position becomes a settled claim once enough hands have passed over it.
+% ==============================================================================
+\documentclass[journal]{IEEEtran}
+
+% ---- Packages ----------------------------------------------------------------
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{multirow}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{subcaption}
+\usepackage{bm}
+
+% ---- Math Operators ----------------------------------------------------------
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\newcommand{\norm}[1]{\left\| #1 \right\|}
+
+% ==============================================================================
+\begin{document}
+
+% DEFERRED DECISION -- TITLE. The user decided on 2026-09-05 that the title is to
+% be settled only once the structure of the proposed method is final, so the line
+% below is a holding position and not a conclusion. Two things should weigh on
+% that decision, and both are visible in the current wording.
+%
+%   (1) The title still leads with "with a Hybrid Action Space", and Section II-C
+%       of this very paper argues that a hybrid action space is already standard
+%       practice in V2X resource allocation rather than a contribution. A reader
+%       who takes the title at face value and then reaches II-C finds the paper
+%       contradicting its own first page. If the II-C argument stands, this
+%       clause should go.
+%
+%   (2) The confirmed novelty axis is the PROSPECTIVE SILENCE-INTERVAL CONVERSION:
+%       turning the span over which a vehicle's state stays reproducible into a
+%       silence interval granted in advance, learned jointly with the subchannel
+%       and the power. The title does not carry it. "Context-Aware" is broader
+%       than the claim the paper actually makes, whereas the phrase used in the
+%       first contribution item, "prospective silence-interval conversion", names
+%       it exactly. The title should front what the body actually argues.
+%
+% Note also that no official abbreviation for the proposed framework has been
+% approved. Do not coin one here or anywhere else in the manuscript; the running
+% head below inherits whatever the title becomes.
+\title{Context-Aware V2I Uplink Scheduling via Deep Reinforcement Learning with a Hybrid Action Space}
+
+\author{Youngju~Nam,~Dick~Mugerwa,~Yongje~Shin,~Jeong-Hun~Kim,~and~Euisin~Lee,~\IEEEmembership{}%
+\thanks{This work was supported by the National Research Foundation of Korea (NRF) grant funded by the Korean government Ministry of Science and ICT (MSIT) under Grant No. 2022R1A2C1010121.
+\textit{(Corresponding author: Euisin Lee)}}%
+\thanks{Youngju Nam is with the School of Software, Kunsan National University, Gunsan 54150, Republic of Korea (e-mail: imnyj@kunsan.ac.kr).}%
+\thanks{Dick Mugerwa is with Kyambogo University, Kampala, Uganda (e-mail: dmugerwa@kyu.ac.ug).}%
+\thanks{Yongje Shin is with the School of Smart IT, Semyung University, Jecheon 27136, Republic of Korea (e-mail: dudujr@semyung.ac.kr).}%
+\thanks{Jeong-Hun Kim is with the Department of Computer Science and Information Engineering, Kunsan National University, Gunsan 54150, Republic of Korea (e-mail: kimjh@kunsan.ac.kr).}%
+\thanks{Euisin Lee is with the School of Information and Communication Engineering, Chungbuk National University, Cheongju 28644, Republic of Korea (e-mail: eslee@chungbuk.ac.kr).}%
+}
+
+% DEFERRED DECISION -- RUNNING HEAD. Derived from the title above; update it in
+% the same pass that settles the title, and keep the short form consistent with
+% whatever clause the title ends up leading with.
+\markboth{IEEE Transactions on Wireless Communications}%
+{Nam \MakeLowercase{\textit{et al.}}: Context-Aware V2I Uplink Scheduling via DRL}
+
+\maketitle
+
+% ==============================================================================
+% ABSTRACT
+% ==============================================================================
+\begin{abstract}
+A roadside unit (RSU) maintains its awareness of the vehicles inside its coverage by receiving mobility reports over the vehicle-to-infrastructure (V2I) uplink, and the schedule of those reports decides both how accurate that awareness is and how much uplink resource it costs.
+Fixed-period reporting resolves the trade-off in one direction only, because it charges the same channel occupancy and the same transmit energy for a vehicle held at a red phase as for a vehicle accelerating away from a stop line.
+Existing freshness-aware schedulers act after the fact, releasing an update once an observed age or an observed state deviation crosses a threshold, and the decision they release is binary.
+This paper instead lets the RSU convert the interval over which a vehicle's state is expected to remain reproducible by dead reckoning into the length of a silence interval that is granted in advance, and learns that conversion jointly with the subchannel index and the transmit power as one policy.
+The scheduling problem is formulated as a semi-Markov decision process (SMDP) whose decision epochs are the individual report arrivals, and the policy emits the hybrid action consisting of a continuous update interval $\Delta$, a continuous transmit power $p$, and a discrete subchannel index.
+The reward accumulates the normalized squared estimation error over each interval and charges transmit power, subchannel occupancy, and a redundant-update indicator once per granted report, so that a long silence is paid for exactly when the vehicle is actually moving.
+We build the evaluation environment by coupling the SUMO microscopic traffic simulator to an IEEE 802.11p physical layer at 5.9\,GHz with log-normal shadowing and Rayleigh-faded co-channel interference, and we compare the proposed framework against nine implemented baselines covering three foundational reinforcement learning algorithms, three recent hybrid-action V2X resource allocation methods, and three schemes closest to the present formulation.
+% PENDING MEASUREMENT. The closing sentence of an abstract normally states the
+% outcome. It is withheld because the training runs are being re-executed and no
+% valid result exists. Write it only after Section VI has been filled in, and
+% write it from the same numbers that section quotes.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Age of information, vehicle-to-infrastructure, uplink scheduling, deep reinforcement learning, hybrid action space, semi-Markov decision process.
+\end{IEEEkeywords}
+
+% ==============================================================================
+% I. INTRODUCTION
+% ==============================================================================
+\section{Introduction}
+\IEEEPARstart{C}{onnected} and automated vehicles exchange their kinematic state with one another and with the roadside so that perception, planning, and coordination can be carried out over a shared picture of the road rather than over what a single vehicle can see by itself. The accuracy of that shared picture is what safety-critical services such as cooperative collision avoidance and intelligent intersection management ultimately consume, and it has to be obtained inside a communication budget that does not grow with the number of participants~\cite{cai2023}. Roadside infrastructure is a practical place to hold that picture, since an RSU equipped with a cellular vehicle-to-everything interface can track the vehicles in its cell at lane-level accuracy and does so under sparse deployment and high vehicle speed~\cite{huang2024}. Routing the same reporting load through the cellular core instead is unattractive on latency grounds, because measured round-trip delays to a distant server are substantially larger than to a nearby edge node, and the end-to-end delay of a service that depends on those reports follows accordingly~\cite{zhang2024}. The V2I uplink toward a local RSU is therefore the link this paper schedules, and the question it addresses is how often each vehicle should be asked to use it.
+
+The standard answer is to have every vehicle report at a fixed short period, and that answer scales poorly. Cooperative awareness messages generated at a fixed rate and placed on the channel by sensing-based semi-persistent scheduling collide as the vehicle density grows, and the resulting resource conflicts degrade delivery precisely in the dense conditions where the awareness is most needed~\cite{jung2025}. Generation rules that fire only when a vehicle's position, heading, or dynamics have changed beyond a threshold are the accepted remedy in the V2X standardization literature, and they reduce channel load exactly because a large fraction of periodic messages carry nothing the receiver did not already have~\cite{maksimovski2026}. The same waste appears on the energy axis. When a status-update source can sleep, sense, or transmit, the energy-age optimal policy provably contains an explicit do-nothing action that is selected on the state of the source rather than on a clock~\cite{gong2022}, and once an average transmit-power constraint is imposed, the freshness-optimal schedule becomes channel-opportunistic and threshold-structured instead of periodic~\cite{tang2020}. Fixed-period reporting forfeits both of these structures by construction.
+
+Age of Information (AoI) was introduced to quantify what periodicity is really buying, by measuring the time elapsed since the generation of the freshest report the receiver holds~\cite{kaul2012}, and AoI-driven scheduling has since become an active line in vehicular networks and in the wider learning-based resource allocation literature~\cite{kahraman2024}. Part of the metric's appeal is that a receiver can evaluate it without any model of the source, since it needs only the timestamp of the report it holds, and that same independence from the source is why it cannot on its own distinguish a vehicle held at a stop line from one accelerating away. Proactive deep reinforcement learning has been used to let an RSU allocate radio resources among many vehicles under an AoI objective~\cite{chen2020}, branch-structured networks with action masking have been used to keep the coupled discrete decisions of link scheduling and server selection tractable under a long-run average AoI criterion~\cite{xie2025}, and current work conditions the AoI decision on the mobility state of the vehicle that holds the data~\cite{tadele2026}. That literature has also already established the premise this paper builds on, and we cite it as such rather than against it. Information that is old but still correct incurs no penalty once the metric is defined on the disagreement between the receiver's estimate and the source rather than on elapsed time~\cite{maatouk2020}, minimizing age alone is the wrong objective when updates differ in how much they actually tell the receiver~\cite{rajaraman2021}, the mean-square-optimal sampler for remote estimation is signal-aware and strictly outperforms the age-optimal one~\cite{sun2020}, and an event-triggered schedule can cut the transmission rate sharply while leaving the estimate exact, because the silence itself is informative~\cite{xu2020}.
+
+What is still open is the mechanism that turns this established predictability into a transmission schedule, and that is where the present work is positioned. The prevailing mechanism is retrospective and binary. Index policies defined on an arbitrary non-decreasing function of age decide, at each slot, which source to serve on the basis of the age already accumulated~\cite{tripathi2024}; change-based generation rules release a message once a state deviation has already exceeded its threshold~\cite{maksimovski2026}; and the closest antecedent to our own reasoning, a predictive status-update scheme that judges from an online prediction and the network state whether a generated packet is worth sending~\cite{jiang2021}, still evaluates each candidate packet after it exists and answers with send or discard. We invert the direction of that decision. The RSU estimates how long a vehicle's state will remain reproducible by dead reckoning from the context it can observe without any extra query, converts that duration into a silence interval of length $\Delta$, and grants the interval before the fact, so that the vehicle is told when to speak next rather than being asked at every opportunity whether it should. Because a silence interval is only useful if the report that ends it can actually be delivered, the same policy also selects the subchannel and the transmit power that the report will use, which places a timing decision, a frequency decision, and a power decision in one action vector. The proactive AoI scheduler of~\cite{chen2020} shares our actor and our objective but allocates frequency bands alone, and~\cite{xie2025} schedules links and selects servers without treating the update interval as a decision variable at all; in both cases the interval between reports is set outside the policy, whereas here it is the policy's primary output.
+
+% PROVISIONAL SCOPE. The proposed policy is NOT yet implemented. Per the user's
+% decision it is to be developed after the nine baselines have been evaluated, so
+% contribution items 1-3 below describe a design that is not final. Re-check each
+% item against the implemented method before submission.
+The main contributions of this paper are summarized as follows.
+\begin{itemize}
+    \item We redefine the scheduling objective from elapsed time to the RSU's actual state-estimation error, and we introduce a prospective silence-interval conversion in which the observed traffic-signal phase, stop-line distance, queue state, and vehicle dynamics are mapped to the length $\Delta$ of an interval during which the vehicle is instructed to remain silent. The conversion is granted in advance rather than inferred after a threshold has been crossed.
+    \item We formulate the resulting problem as an SMDP whose decision epochs are the report arrivals of individual vehicles, so that the variable sojourn time enters the value function through a $\gamma^{\Delta}$ discount, and we place the timing decision $\Delta$, the transmit power $p$, and the subchannel index in a single hybrid action so that the three are learned as one policy instead of being staged.
+    \item We design a reward that accumulates the normalized squared estimation error over the silence interval while charging transmit power, subchannel occupancy, and a redundant-update indicator once per granted report. The asymmetry between an accumulated term and three impulse terms is what makes a long silence cheap for a stationary vehicle and expensive for a moving one. The four weights are fixed rather than tuned per method, so that every compared method optimizes one identical objective.
+    \item We evaluate in an environment that couples SUMO microscopic traffic to an IEEE 802.11p physical layer with Rayleigh-faded co-channel interference, against nine baselines that are all implemented in the same environment and driven through the same hybrid action interface, and we state for each baseline which parts of its original method were carried over and which were not.
+\end{itemize}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:system} presents the system model and the scheduling protocol. Section~\ref{sec:problem} formulates the SMDP. Section~\ref{sec:proposed} describes the proposed framework. Section~\ref{sec:evaluation} presents the simulation setup and results. Section~\ref{sec:conclusion} concludes the paper.
+
+% ==============================================================================
+% II. RELATED WORK
+% ==============================================================================
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Age of Information in Vehicular Networks}
+AoI was introduced in a status-update setting motivated by vehicular state reporting, and its founding result is that neither the highest achievable update rate nor the lowest minimizes the average age, because queueing delay grows with the offered rate and produces an interior optimum~\cite{kaul2012}. Peak age was subsequently formalized alongside average age, together with the finding that discarding stale queued updates improves both, which is the reason an RSU should keep only the most recent state per vehicle rather than a queue of reports~\cite{costa2016}. The zero-wait policy that transmits the instant the channel frees was then shown not to be age-optimal in general, and the optimal sampler was shown to be a threshold policy that deliberately waits~\cite{sun2017}. For a base station serving many unreliable links, the canonical treatment derives a lower bound on the achievable age and develops greedy, randomized, Whittle-index, and Max-Weight policies against it~\cite{kadota2018}, and the field as a whole is surveyed in~\cite{yates2021}. Once an average transmit-power constraint is added, the age-optimal schedule acquires a threshold structure and becomes channel-opportunistic~\cite{tang2020}, which is the analytical precedent for treating power as a decision variable rather than a constant in a freshness objective. Frequency assignment is a freshness decision in the same sense, since AoI-optimal subcarrier assignment across many users under minimal channel knowledge has been shown to deliver age fairness as a by-product~\cite{han2021}, and that is the reason the subchannel index belongs in the same action vector as the interval instead of being delegated to a separate medium access mechanism.
+
+Two lines within this literature bear directly on the objective used here. The first observes that plain age is content-agnostic, and replaces it with a metric that grows only while the receiver's estimate actually disagrees with the source, for which the optimal policy differs structurally from the age-optimal one~\cite{maatouk2020}; the second argues from the scheduling side that when updates differ in informational value, minimizing age alone selects the wrong actions~\cite{rajaraman2021}. A vehicle held stationary through a red phase is the textbook instance of both statements, since its report ages continuously while remaining exactly reproducible from the state the RSU already holds. We take these results as the warrant for defining our error term on the RSU's dead-reckoning residual rather than on elapsed time, and not as a gap to be filled. The state of the art in analytical freshness scheduling generalizes Whittle-index policies from average age to arbitrary non-decreasing functions of age, proving indexability and giving a low-complexity index rule~\cite{tripathi2024}; that rule requires an explicit age-cost function to be specified in advance, whereas the policy studied here has to trade estimation error against power and channel occupancy without one being given.
+
+On the vehicular side, an RSU has been made to manage radio resources for many vehicles under an AoI objective through proactive deep reinforcement learning, which is the closest structural antecedent of our scheduler in terms of who decides and what is being minimized~\cite{chen2020}; that work allocates frequency bands, while the policy here additionally emits the interval and the power. Vehicular AoI minimization has also been cast as a Markov decision process over transmission decisions and power levels under non-orthogonal multiple access, with the structure of the optimal stationary policy characterized~\cite{abbas2023}, which is a fixed-slot formulation and therefore a foil for the semi-Markov treatment that a continuous $\Delta$ forces. Applied AoI work, including its learning-based branch, is surveyed in~\cite{kahraman2024}, and current work in the area conditions AoI decisions jointly on mobility and on the age of the data a vehicle holds~\cite{tadele2026}. A recent branch-network design with action masking reduces the effective output cardinality of coupled discrete scheduling decisions under a long-run average AoI criterion~\cite{xie2025}, and it is a useful point of comparison because it addresses the combinatorial growth of discrete decisions by changing the network architecture, whereas the hybrid action used here addresses it by keeping two of the three decisions continuous. Across these vehicular works the cadence at which a source reports is set outside the learned policy, by a fixed slot structure or by an arrival process, and it is that degree of freedom which the present formulation moves inside the policy.
+
+\subsection{Resource Allocation in V2X Networks}
+Deep reinforcement learning entered V2X resource allocation through the problem of letting each link choose a subband and a power level from local observations under a latency constraint and without global channel state information~\cite{ye2019}, and the multi-agent formulation of vehicular spectrum sharing, with a shared reward trading V2I throughput against V2V reliability, established the scalarization pattern that multi-objective work in this area still follows~\cite{liang2019}. The pairing of a discrete channel decision with a continuous power decision is by now the standard action structure of the field. It has been learned jointly for interfering device-to-device links under mutual interference, approaching the performance of centralized optimization from local observations alone~\cite{tan2021}; it recurs as a discrete mode decision alongside a continuous resource decision in energy-efficient heterogeneous networks~\cite{zhang2021}; and it appears again in heterogeneous V2X, where mode selection and resource allocation are optimized together for spectrum and energy efficiency~\cite{gui2024}. The action space of the present work is that established pair with a third, temporal component added.
+
+The physical regime and the objective structure of this paper also have direct precedents. Joint resource assignment and power control for V2I links has been studied specifically in the high-density regime where co-channel interference dominates, which is both the setting of our congestion term and the reason our evaluation sweeps vehicle density rather than reporting a single operating point~\cite{guo2022}. Multi-objective resource allocation in cooperative vehicular networks has been formulated so as to balance competing targets rather than to optimize a hand-fixed weighted sum, and that work states plainly that hand-tuned scalarization weights are a weakness~\cite{xu20232}; we acknowledge the point and nonetheless fix our four weights, because they are a property of the benchmark rather than of any single method, and a per-method search would give each compared method a different objective. The distributed alternative to the RSU-centered design used here is autonomous resource selection in NR-V2X Mode~2, where federated multi-agent learning replaces the standardized sensing-based procedure and reduces packet collisions~\cite{saad2025}; that line and ours differ in where the decision is made, and the subchannelized contention model is common to both. We keep the decision at the RSU because the context that makes a silence interval safe, namely the signal phase and the queue ahead, is available to the roadside without any vehicle spending uplink capacity to report it.
+
+The nine methods compared in Section~\ref{sec:evaluation} are drawn from this subsection's literature and from the two that follow. Parameterized-action multi-agent learning has been applied to V2X resource allocation so that a discrete resource block and its continuous power parameter are emitted in one shot~\cite{li2026}; sub-band allocation and power control have been split across a dueling double deep Q-network branch and an improved deterministic policy-gradient branch in a dynamic vehicular network~\cite{hong2026}; and hybrid-action multi-agent proximal policy optimization has been used for semantic-aware computation offloading in vehicular edge networks~\cite{chen2026}. Closer to our own formulation, AoI-aware joint scheduling and power allocation has been solved at the infrastructure side of a grid V2I network with a dueling double deep Q-network and prioritized experience replay~\cite{bai2024}; distributed dynamic channel allocation has been solved under explicit inter-carrier interference and channel reuse with a centralized-training, decentralized-execution value-based learner~\cite{cohen2025}; and AoI-aware radio resource management for platooning has been addressed with multi-agent deterministic policy gradients carrying a global critic and a task-decomposed reward~\cite{parvini2023}. The three recent methods were selected because their action structure is the closest published match to ours, and the three remaining ones because they share our actor, our objective, or our contention model. None of them was reproduced verbatim, since each was published for a different environment, and Section~\ref{sec:evaluation} states for every method which of its mechanisms survived the port and which did not.
+
+\subsection{Hybrid Action Spaces in Deep Reinforcement Learning}
+The action space used here is a parameterized-action Markov decision process, in which the agent first selects a discrete action and then supplies the continuous parameters that action requires~\cite{masson2016}. The policy architecture follows the hybrid actor-critic construction that carries one discrete head and one continuous head over a shared critic, which avoids both the cardinality growth of full discretization and the relaxation error of forcing a discrete decision through a continuous output~\cite{fan2019}. Off-policy maximum-entropy methods need additional care in this setting, since the entropy term is not well defined across a mixed space unless the discrete and continuous branches are decoupled and given separate entropy terms~\cite{xu2023}, and that observation constrains which of our baselines can be trained without modification. It would therefore be incorrect to present a hybrid action space as this paper's novelty. Parameterized-action learning is already the accepted answer for V2X resource allocation~\cite{li2026}, and the target venue itself publishes parameterized double deep Q-network methods for joint offloading and resource allocation~\cite{chen20262}. What is specific to this work is which quantities are placed inside that space. The discrete component is the subchannel and one continuous component is the transmit power, exactly as in the works just cited, but the second continuous component is a duration of silence on the time axis, so that a single inference decides when the next report happens as well as where in frequency and at what power it happens.
+
+\subsection{Event-Triggered and Variable-Interval Status Updates}
+Deciding when to sample rather than only how to transmit is a separate body of work, and it supplies the reason the interval is worth learning. The optimal sampler for remote estimation over a channel with random delay is signal-aware, takes a threshold form on the instantaneous estimation error, and strictly outperforms the age-optimal sampler, which means the sampling instants are aperiodic and state-dependent by necessity rather than by design preference~\cite{sun2020}. In the control literature, an event-triggered sensor schedule under packet drops keeps the remote estimate exact while cutting the communication rate sharply, because the decision not to transmit itself carries information about the measurement~\cite{xu2020}. The same conclusion has been reached inside the wireless literature, where the optimal event-based policy for remote parameter estimation under a resource constraint dominates periodic reporting at equal cost~\cite{flanigan2022}, and where wireless resources have been allocated among sensors by deep reinforcement learning with the reward driven by the resulting estimation error rather than by throughput or age~\cite{pang2023}. Transmission reliability closes the loop back onto estimation quality, since a failed update leaves the receiver holding a stale belief and therefore couples the retransmission policy and the channel to the steady-state error~\cite{huang2020}; this is why the subchannel and power decisions belong in the same action as the interval. Decision epochs that are triggered by events rather than by a fixed clock produce variable sojourn times and place the problem in the semi-Markov class, for which radio resource management supplies a worked formulation and the corresponding discounted-optimal treatment~\cite{perezromero2020}.
+
+The nearest antecedent to the mechanism proposed here judges, from an online prediction of the source process together with the network state, whether a status packet is worth transmitting, and evaluates the idea in a cooperative automated driving simulator~\cite{jiang2021}. We differ from it in the direction of the decision and in what the decision covers. That scheme reasons about a packet that has already been generated and answers a binary question about it, so the reporting cadence emerges as a by-product of a sequence of independent per-packet judgments. Our RSU instead assigns a continuous duration in advance, so that the cadence is the decision itself and the vehicle remains silent for a length of time that was chosen deliberately, and it assigns that duration together with the subchannel and the power that the terminating report will use rather than leaving those to a separate mechanism. The distinction has an operational consequence as well, because a per-packet judgment presumes that a candidate report exists at every opportunity and therefore that the vehicle keeps sampling and evaluating, whereas a granted interval lets the vehicle stay idle for a duration it knows in advance. It also changes what the decision can be conditioned on, since a duration assigned at the roadside can take the signal phase and the queue ahead into account, which a vehicle judging its own packet does not observe.
+
+\subsection{Mobility Prediction and Stationarity Exploitation}
+The prospective conversion described above is only sound if the future state of a vehicle is in fact predictable from what the RSU can observe, and that predictability is already established. Learned trajectory predictors that inject road geometry, traffic rules, and signal state as prior knowledge are surveyed in~\cite{ding2023}, which is the general statement of the point. It holds most strongly in exactly the regime this paper exploits, since embedding car-following physics into a learned predictor sharply reduces prediction error in congested stop-and-go traffic~\cite{yao2023}, which is where the RSU's constant-velocity extrapolation is at its most accurate and where a long silence therefore costs least. The transportation literature makes the specific inference our observation vector relies on: signal phase and timing delivered over V2I, together with the queue state, are sufficient to determine ahead of time whether an approaching vehicle will have to stop and when it will be able to move again~\cite{sun2022}. The traffic-signal indicators, the stop-line distance, and the queue count in our state vector are included for precisely that reason, and Section~\ref{sec:problem} lists them explicitly. Within V2X standardization, the corresponding rule-based practice generates a message only once position, heading, or dynamics have changed beyond a threshold, and quantifies the channel-load reduction that follows~\cite{maksimovski2026}. That rule differs from the present proposal on four counts. It thresholds a vehicle's own state against its own last report, whereas our RSU conditions on infrastructure-side context the vehicle cannot see; it reacts after a change has occurred, whereas we assign a silence interval before one does; it answers whether to send, whereas we answer when to send, on which subchannel, and at what power; and it is a per-vehicle distributed rule, whereas ours is a central grant issued by the RSU.
+
+% ==============================================================================
+% III. SYSTEM MODEL
+% ==============================================================================
+\section{System Model}
+\label{sec:system}
+
+\subsection{Network Architecture}
+We consider a single RSU mounted at a signalized intersection of an urban grid road network, with a communication range of $R_{\mathrm{RSU}} = 300$\,m and four approach arms carrying two lanes per direction. The uplink operates in the 5.9\,GHz ITS band over an IEEE 802.11p physical layer, and the RSU is assumed to be wired to the traffic signal controller, so that the signal phase and the time remaining in it are available to the scheduler at no communication cost. The band is divided into $C = 4$ subchannels of 10\,MHz each, which is the channel width an 802.11p station occupies, for an aggregate of 40\,MHz. Vehicle mobility is generated by the SUMO microscopic traffic simulator at a step resolution of $\delta t = 0.1$\,s on a grid whose junctions are spaced far enough apart that the coverage discs of neighbouring intersections do not overlap, and vehicles enter and leave the cell continuously as they traverse the network. Every quantity the scheduler consumes is therefore either measured by the RSU itself, wired to it, or derived from a report the RSU has already received, and no decision in this paper requires an additional query to a vehicle.
+
+\subsection{Scheduling Protocol}
+The uplink is grant-driven, and a vehicle transmits only when a standing grant of the RSU fires. Three events define a vehicle's lifetime inside the cell. On entry, denoted E1, the vehicle registers with the RSU and delivers an initial mobility report, from which the RSU opens a ledger entry and immediately issues the vehicle's first grant. A grant is the triple $(\Delta_i, \mathrm{ch}_i, p_i)$, which names the time until the next report, the subchannel the report must use, and the transmit power it must use; the grant is carried on the downlink control channel, whose occupancy is not charged in this model because a grant is a few bytes against the 300-byte status report it schedules. A grant does not fire on the step at which it is issued. It is stored with a deadline $t_{\mathrm{issue}} + \Delta_i$, and until the simulated clock reaches that deadline the vehicle transmits nothing, which is the silence interval the policy is buying. At the deadline, denoted E2, the vehicle transmits a 300-byte status report carrying its position, velocity, and acceleration on subchannel $\mathrm{ch}_i$ at power $p_i$. The report occupies the subchannel for one frame airtime of 448\,\textmu s at the 6\,Mbps base rate, and it is decoded or lost according to the interference model of Section~\ref{sec:system}-D. When it is decoded, the RSU overwrites the vehicle's ledger entry, closes the SMDP interval, forms the next observation, and asks the policy for the next grant, so that decision epochs coincide with successful report arrivals. When it is lost, the same grant is retried on the following simulation step without consulting the policy again, since a retransmission is a continuation of the same decision rather than a new one, and the interval is closed by force after ten consecutive failures, which corresponds to 1.0\,s of retrying. On exit, denoted E3, the vehicle leaves the coverage disc, its standing grant and deadline are discarded, and a terminal transition is recorded with the elapsed time actually observed rather than the interval that was requested.
+
+\subsection{RSU Awareness Table}
+The RSU maintains an awareness table that stores, for each registered vehicle $i$, the last decoded mobility report $(\mathbf{x}_i, \mathbf{v}_i, \tau_i)$, where $\mathbf{x}_i$ is the position, $\mathbf{v}_i$ the velocity, and $\tau_i$ the time at which that report was valid. Between reports the RSU extrapolates the vehicle's position by dead reckoning under a constant-velocity model,
+\begin{equation}
+    \hat{\mathbf{x}}_i(t) = \mathbf{x}_i + \mathbf{v}_i \cdot (t - \tau_i),
+    \label{eq:extrapolation}
+\end{equation}
+as in~\eqref{eq:extrapolation}, and the quantity the scheduler is accountable for is the residual of that extrapolation given by~\eqref{eq:error},
+\begin{equation}
+    e_i(t) = \norm{ \hat{\mathbf{x}}_i(t) - \mathbf{x}_i^{\mathrm{true}}(t) }_2,
+    \label{eq:error}
+\end{equation}
+where $\mathbf{x}_i^{\mathrm{true}}(t)$ is the ground-truth position held by the traffic simulator. The residual is used in three distinct places and it is worth separating them. Integrated over an interval it is the error term of the reward; evaluated at the instant a report becomes valid it is the redundancy test, since a report that the RSU could already have predicted to within a lane width tells it nothing; and the same instantaneous value, normalized, is fed back to the policy as an observation feature, because how wrong the last extrapolation turned out to be is the most direct evidence available about how long the next silence interval can safely be. The ground-truth position is never exposed to the policy, and it enters only the reward and the reported metrics. The table also serves as the source of the queue count described in Section~\ref{sec:problem}, which is reconstructed from the reports of other vehicles on the same lane rather than read out of the simulator, subject to a freshness guard of 1.0\,s so that a stale ledger entry cannot masquerade as a live measurement.
+
+\subsection{Wireless Channel Model}
+The uplink from vehicle $i$ to the RSU is modelled with a link budget in decibels,
+\begin{equation}
+    P_{\mathrm{rx},i} = P_{\mathrm{tx},i} + G_{\mathrm{tx}} + G_{\mathrm{rx}} - \mathrm{PL}(d_i) - X_{\sigma},
+\end{equation}
+where $G_{\mathrm{tx}} = 3$\,dBi is the gain of a vehicle roof antenna, $G_{\mathrm{rx}} = 9$\,dBi that of the RSU mast antenna, and $X_{\sigma}$ is log-normal shadowing with a standard deviation of 4\,dB. The path loss follows a free-space reference at one metre with an urban road exponent,
+\begin{equation}
+    \mathrm{PL}(d) = 20\log_{10}\!\left(\frac{4\pi f_c}{c}\right) + 10 \alpha \log_{10}(d) \quad [\mathrm{dB}],
+\end{equation}
+with $f_c = 5.9$\,GHz and $\alpha = 2.3$. The thermal noise floor over one 10\,MHz subchannel with a 9\,dB receiver noise figure is $-95$\,dBm. Reports that overlap in time on the same subchannel interfere with one another, and with independent Rayleigh fading on the desired link and on every interfering link the probability that report $i$ is decoded admits the closed form
+\begin{equation}
+    P_{\mathrm{succ},i} = \exp\!\left(-\frac{\gamma_{\mathrm{th}} N_0}{S_i}\right) \prod_{k \neq i} \frac{1}{1 + \gamma_{\mathrm{th}} I_k / S_i},
+    \label{eq:sinr}
+\end{equation}
+where $S_i$ is the received signal power from vehicle $i$, $I_k$ the received power of co-channel vehicle $k$, $N_0$ the noise power, and $\gamma_{\mathrm{th}}$ the decoding threshold. The threshold is not an independent parameter. It is read from the modulation and coding scheme the uplink actually operates at, namely QPSK with rate-$1/2$ coding at 6\,Mbps, which is the 802.11p base rate that ETSI ITS-G5 uses for cooperative awareness messages, and whose required signal-to-interference-plus-noise ratio is 10\,dB. This construction couples the three quantities that a scheduler can otherwise let drift apart, since the same choice of rate fixes the threshold in~\eqref{eq:sinr}, the 448\,\textmu s airtime that determines subchannel occupancy, and the $-85$\,dBm receiver sensitivity that determines the range at a given transmit power. Raising the transmit power raises a vehicle's own $S_i$ and simultaneously raises the $I_k$ it presents to every co-channel neighbour, and adding co-channel contenders lowers every success probability, so the power and congestion trade-offs the reward expresses are properties of the physical model rather than assertions of the reward.
+
+% ==============================================================================
+% IV. PROBLEM FORMULATION
+% ==============================================================================
+\section{Problem Formulation}
+\label{sec:problem}
+
+\subsection{Semi-Markov Decision Process}
+The agent is the RSU, which decides for each vehicle in its coverage when that vehicle should next report, on which subchannel, and at what power; vehicles execute grants and hold no policy of their own. Decision epochs are not uniformly spaced, because the epoch $t_k^{(i)}$ for vehicle $i$ is the instant at which its $k$-th report is processed, and the interval to the next epoch is itself chosen by the action. A process whose sojourn times are decision-dependent is semi-Markov rather than Markov, which is the formal reason the interval cannot be treated as a hyperparameter of a fixed-slot MDP, and the same structure arises in radio resource management whenever epochs are event-triggered~\cite{perezromero2020}. The per-vehicle episode terminates when the vehicle leaves the coverage disc. Since $\Delta$ is snapped to the 0.1\,s simulation grid, the realized sojourn times form a large but finite set, and the discount applied to a transition is $\gamma^{\Delta}$ with $\Delta$ the elapsed time actually measured rather than the interval requested, which differs whenever a retransmission delays the report or a range exit truncates the interval.
+
+\subsubsection{State Space}
+The observation delivered to the policy at each decision epoch is a 17-dimensional vector normalized to $[-1, 1]$, listed in Table~\ref{tab:state}. Every entry satisfies two admission criteria. It must carry information the policy can act on, and the RSU must be able to obtain it without issuing an additional query to any vehicle, since a scheduler that spends uplink capacity to decide how to spend uplink capacity defeats its own purpose. Features 1 through 7, 12, and 16 are derived from the last report the RSU already decoded and from its own geometry; features 8 through 11 come from the wired connection to the signal controller; features 0, 13, and 14 are the RSU's own bookkeeping and measurement; and feature 15 is reconstructed from the awareness table under the freshness guard described in Section~\ref{sec:system}-C. Two of these deserve comment. Feature 0 holds the residual of the last dead-reckoning extrapolation rather than the elapsed age, because under this formulation the RSU decides immediately after a report lands, so the age at a decision epoch is identically zero and would reach the policy as a constant; the residual, by contrast, is the RSU's direct read on how far this particular vehicle can be trusted to remain predictable. Feature 14 reports the channel busy ratio averaged over subchannels rather than for the subchannel about to be granted, since the identity of that subchannel is an output of the decision and cannot be an input to it.
+
+\begin{table}[!t]
+\centering
+\caption{Observation Vector at a Decision Epoch}
+\label{tab:state}
+\begin{tabular}{clc}
+\toprule
+\textbf{Index} & \textbf{Feature} & \textbf{Normalization} \\
+\midrule
+0 & Residual of last extrapolation & $e^2/(e^2+E_{\mathrm{ref}}^2)$ \\
+1, 2 & Velocity components $v_x$, $v_y$ & $/\,v_{\max}$ \\
+3 & Speed & $/\,v_{\max}$ \\
+4 & Acceleration & $/\,a_{\max}$ \\
+5, 6 & Position relative to RSU & $/\,R_{\mathrm{RSU}}$ \\
+7 & Distance to RSU & $/\,R_{\mathrm{RSU}}$ \\
+8--10 & Signal phase (red / yellow / green) & one-hot \\
+11 & Time remaining in current phase & $/\,60$\,s \\
+12 & Distance to stop line & $/\,R_{\mathrm{RSU}}$ \\
+13 & Vehicles in coverage & $/\,n_{\mathrm{act}}^{\max}$ \\
+14 & Channel busy ratio & clipped to $[0,1]$ \\
+15 & Vehicles queued ahead in lane & $/\,n_{\mathrm{q}}^{\max}$ \\
+16 & Approach indicator & $\cos\theta \in [-1,1]$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The causal chain the policy is expected to learn runs through these features in a specific order. A red phase at feature 8, a long remaining phase time at feature 11, a short stop-line distance at feature 12, a nonzero queue ahead at feature 15, and a speed and acceleration near zero at features 3 and 4 jointly imply that the vehicle will remain physically stationary for a determinable number of seconds. Over that span its mobility state is reproducible from the report the RSU already holds, so a report transmitted during it would carry nothing new, and the correct response is to grant a $\Delta$ of roughly that length. The transportation literature confirms that these particular quantities suffice to predict stop and restart behaviour at a signalized intersection~\cite{sun2022}, and if any link in the chain were absent from the observation the behaviour could not be learned at all. The upper bound of the action's interval range is set from the same reasoning, since the longest red phase in the network is the longest span over which this chain can conclude that a vehicle will stay put.
+
+\subsubsection{Action Space}
+The action for vehicle $i$ is the hybrid triple $\mathbf{a}_i = (\Delta_i, p_i, \mathrm{ch}_i)$. The update interval $\Delta_i$ is continuous over $[0.1, 45.0]$\,s and is produced by a geometric mapping $\Delta = \Delta_{\min} \cdot (\Delta_{\max}/\Delta_{\min})^{u}$ with $u = \sigma(\cdot) \in (0,1)$, so that the policy's output resolution is uniform in relative terms and a network output near either extreme does not collapse the low end of the range. The lower bound is the minimum cooperative-awareness generation interval of ETSI EN 302 637-2, and the upper bound is not an arbitrary ceiling: it is the longest red phase present in the generated road network, which is the longest time a vehicle in this scenario can be physically held stationary, and it is therefore the largest silence interval the paper's central argument could ever justify. The transmit power $p_i$ is continuous over $[10, 23]$\,dBm, whose upper limit is the 3GPP power-class-3 user-equipment maximum, and it is mapped linearly because dBm is already logarithmic in the underlying power. The subchannel index $\mathrm{ch}_i \in \{0, \ldots, C-1\}$ is discrete and is drawn from a categorical head. The three components are emitted by one forward pass, which is what allows the policy to make a long silence conditional on the report that ends it being placed on an uncontended subchannel at sufficient power, rather than deciding the timing first and discovering the channel afterwards.
+
+\subsubsection{Reward Function}
+The reward for the interval $[t_k, t_{k+1})$ of vehicle $i$ is
+\begin{equation}
+\begin{split}
+    R_k = -\Big( & w_1 \!\!\sum_{t \in [t_k, t_{k+1})}\!\! \mathrm{Norm}(e^2(t)) \cdot \frac{\delta t}{1\,\mathrm{s}} \\
+    & + w_2 \mathrm{Norm}(P_{\mathrm{tx}}) + w_3 \mathrm{Norm}(C_{\mathrm{freq}}) + w_4 \mathbb{I}_{\mathrm{red}} \Big),
+\end{split}
+\label{eq:reward}
+\end{equation}
+and the asymmetry between the first term of~\eqref{eq:reward} and the other three is the mechanism the paper depends on. The error term is accumulated step by step across the whole silence interval, so a vehicle that is moving and not reporting incurs a penalty on every simulation step it stays silent, while a vehicle whose extrapolation residual is near zero incurs almost nothing no matter how long the interval runs. The remaining three terms are impulses charged once per granted report, so lengthening $\Delta$ reduces their cost per unit time. A long silence is therefore cheap exactly when the state is reproducible and expensive exactly when it is not, and no separate term is needed to penalize a stationary vehicle's redundant reporting.
+
+Each term is normalized to $[0,1]$ before weighting. The error is normalized as $e^2/(e^2 + E_{\mathrm{ref}}^2)$, a form chosen because it does not saturate, with $E_{\mathrm{ref}}$ set to one second of travel at the network's declared speed limit so that a position error is read as an amount of elapsed ignorance. The power term is $(p - p_{\min})/(p_{\max} - p_{\min})$ over the decoder's own bounds. The congestion term is the airtime occupancy of the granted subchannel divided by an achievability ceiling of $0.60$, which was measured by saturating a single subchannel across the density grid; the raw occupancy of four subchannels carrying short frames stays far below unity even under continuous granting, so without this rescaling the congestion term would be an order of magnitude smaller than the other three and the congestion objective would effectively vanish from the reward. The redundancy indicator is $\mathbb{I}_{\mathrm{red}} = \mathbb{I}[e(t_{\mathrm{update}}) \leq \epsilon]$ with $\epsilon = 3.2$\,m, one SUMO lane width, which encodes the reading that a report is redundant when the RSU could already have predicted it to lane-level accuracy; the test is evaluated after the simulation step so that it compares the arriving report against the extrapolation that was current when the report was valid.
+
+The four weights are fixed at $w_1 = 0.5$, $w_2 = 0.2$, $w_3 = 0.2$, and $w_4 = 0.1$ and are identical for every method compared in this paper. They are treated as a property of the benchmark rather than of any method, because tuning them per method would give each compared policy its own objective and would make the resulting table a comparison of objectives rather than of policies. The values themselves place the estimation error at half of the total penalty, split the two resource terms evenly between power and occupancy, and leave the redundancy indicator as the smallest of the four, since it duplicates in a discrete form a cost that the accumulated error term already expresses continuously. A per-method weight search remains available in the implementation and is reported, if at all, as an ablation rather than as a row of the comparison table, because a table whose rows optimize different objectives does not rank policies. Section~\ref{sec:proposed} describes what is tuned instead.
+% DEFERRED DECISION -- REWARD-WEIGHT ABLATION. "if at all" in the sentence above
+% is an undecided item, not a hedge. Whether to run src/hpo.py --tune-reward-weights
+% and report the per-method weight search as an ablation has not been settled. If
+% it is dropped, delete the clause rather than leaving the paper non-committal; if
+% it is run, the ablation stays out of the main comparison table for the reason
+% given in the same sentence.
+
+% ==============================================================================
+% V. PROPOSED METHOD
+% ==============================================================================
+\section{Proposed Framework}
+\label{sec:proposed}
+
+% PROVISIONAL SCOPE. Every structural claim in this subsection (shared trunk, two
+% continuous heads, one categorical head, and which quantity each head emits)
+% describes the proposed policy, which is not yet implemented. Re-verify against
+% the final implementation. The event-driven loop and the transition tuple in the
+% second half of the subsection ARE implemented and were read from the code.
+\subsection{Hybrid Policy Architecture}
+The policy is a multi-head network over a shared trunk that consumes the 17-dimensional observation of Table~\ref{tab:state}. Two continuous heads produce the pre-activation values for $\Delta$ and $p$, which are squashed and then mapped onto their respective ranges by the geometric and linear mappings of Section~\ref{sec:problem}, and one categorical head produces the subchannel distribution. The construction follows the hybrid actor-critic pattern in which discrete and continuous heads share a critic~\cite{fan2019} over the parameterized-action formalism of~\cite{masson2016}. Keeping the trunk shared is what lets the timing decision be conditioned on the contention state that also drives the subchannel decision, since the value of a long silence depends on whether the report that ends it will survive contention. Because the training loop must ask for a decision only when a particular vehicle's interval closes, it is not expressible as a synchronous environment stepped by a single global clock; the environment advances the traffic and the physical layer, and an outer event-driven loop assembles a transition and requests a grant for each vehicle whose interval has just closed. The transition stored for vehicle $i$ at decision $k$ is $(s_k, a_k, R_k, s_{k+1}, \mathrm{done}, \Delta_k)$, where $a_k$ is the raw pre-decoding output of the policy, since the update rule needs the quantity the network actually emitted, and $\Delta_k$ is the measured elapsed time that the $\gamma^{\Delta}$ discount is applied to.
+
+\subsection{Act/Rest Dual-Model Hot-Swap and Deployment Feasibility}
+An RSU that learns online has to serve inference while training, and the two workloads compete for the same accelerator. We therefore run two copies of the model. The Act copy serves grants and writes transitions into the replay buffer; when the buffer is ready, the Rest copy trains on the accumulated transitions in the background; and when that training completes, the two exchange roles, with the outgoing Act copy finishing the decision it is serving before handing over. The mechanism is a common harness rather than a component of any single method, and all nine baselines are trained and evaluated through the identical harness, so it contributes nothing to the differences reported in Section~\ref{sec:evaluation}. Its purpose is to establish that the deployment is feasible on hardware an RSU could plausibly carry. Measured on a single GPU shared between the Act and Rest copies, inference latency averaged 1.232\,ms with a 99th percentile of 2.54\,ms, against a mean of 1.210\,ms and a 99th percentile of 2.98\,ms when the two copies were placed on separate GPUs. The single-GPU configuration is the one we claim, since a roadside cabinet is unlikely to host multiple accelerators, and the latency it delivers is two orders of magnitude below the 0.1\,s scheduling step and below the shortest interval the action space can request.
+
+\subsection{Hyperparameter Optimization}
+% PROVISIONAL SCOPE. "the nine baselines and ... the proposed policy" and "all ten
+% policies" below presuppose that the proposed policy exists. Only the nine
+% baselines currently have Optuna search spaces defined in src/hpo.py. Re-verify
+% the search space and the policy count once the proposed method is implemented.
+Model hyperparameters are tuned per method with Optuna, over search spaces defined separately for each of the nine baselines and for the proposed policy, since a learning rate or an entropy target that suits one learner does not transfer to another. Each trial trains the model and scores it on a composite objective evaluated across multiple seeds in the same environment, and the selected configuration for every method is exported so that the comparison can be reproduced. The reward weights are deliberately excluded from this search. They are held at the fixed values given in Section~\ref{sec:problem} for every trial of every method, so that hyperparameter tuning selects how well a method optimizes the benchmark objective rather than which objective it optimizes. This is a stricter protocol than the one adopted in comparable multi-objective work, which has argued against hand-fixed scalarization weights~\cite{xu20232}, and we accept the resulting loss of per-method reward shaping as the price of a comparison in which all ten policies are scored by one identical rule.
+
+\subsection{Evaluation Methodology}
+The environment is built by coupling a microscopic traffic simulator to a physical-layer model rather than by replaying a synthetic mobility trace, and this choice is methodological hygiene rather than a contribution. The argument for bidirectional coupling between road traffic and network simulation is long established, since delivery outcomes change driver behaviour, which changes topology, which in turn changes delivery~\cite{sommer2011}. SUMO supplies the mobility, the car-following and lane-changing models, and the signal programs from which the maximum red duration bounding $\Delta$ is extracted~\cite{lopez2018}, and coupling SUMO to a physical-layer or network model with ETSI-conformant message layers is the accepted validation route for V2X services~\cite{raviglione2024}. Two consequences matter for the results that follow. The traffic-signal features the policy relies on are produced by the same signal programs that hold the vehicles stationary, so the predictability the scheduler exploits is a property of the simulated traffic rather than an artefact injected into the observation, and the contention the congestion term measures arises from the granted transmissions themselves rather than from an assumed load.
+
+% ==============================================================================
+% VI. PERFORMANCE EVALUATION
+% ==============================================================================
+\section{Performance Evaluation}
+\label{sec:evaluation}
+
+\subsection{Simulation Setup}
+
+\subsubsection{Traffic and Channel Configuration}
+Traffic is generated on an urban grid carrying twenty-five signalized intersections in a five-by-five arrangement, with boundary nodes acting as sources and sinks, two lanes per direction, and per-edge speed limits drawn around a 40\,km/h mean so that the network file reports 32 to 48\,km/h across its edges. Adjacent signalized intersections are 900\,m apart, which is three times the RSU range, so the coverage disc measured in an episode never touches that of a neighbouring intersection and the contention observed at the RSU is produced entirely by the vehicles it schedules. The measured cell is centred on one signalized junction selected at the start of each episode. Each episode advances SUMO at a 0.1\,s step, and measurement begins only after a warm-up of 1200 steps, because the in-range vehicle population is still climbing well beyond the first few hundred steps and a shorter warm-up would make the density axis of the results describe how much of a filling transient each episode happened to contain rather than the density it is labelled with. Table~\ref{tab:sim_params} summarizes the parameters, all of which are read from the implementation rather than restated independently.
+
+\begin{table}[!t]
+\centering
+\caption{Simulation Parameters}
+\label{tab:sim_params}
+\begin{tabular}{lc}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Carrier frequency & 5.9\,GHz \\
+Physical layer & IEEE 802.11p / ETSI ITS-G5 \\
+Subchannel bandwidth & 10\,MHz \\
+Number of subchannels & 4 \\
+Aggregate bandwidth & 40\,MHz \\
+Operating MCS & QPSK 1/2, 6\,Mbps \\
+SINR threshold $\gamma_{\mathrm{th}}$ & 10\,dB \\
+Receiver noise figure & 9\,dB \\
+Noise floor per subchannel & $-95$\,dBm \\
+Status report payload & 300\,B (448\,\textmu s airtime) \\
+RSU communication range & 300\,m \\
+Antenna gains (Tx / Rx) & 3 / 9\,dBi \\
+Path loss exponent & 2.3 \\
+Shadowing standard deviation & 4\,dB \\
+Transmit power range & $[10, 23]$\,dBm \\
+Update interval range & $[0.1, 45.0]$\,s \\
+SUMO step length & 0.1\,s \\
+Warm-up before measurement & 1200 steps (120\,s) \\
+Training budget per method & 100 episodes $\times$ 2000 steps \\
+Vehicle density grid & 5--35\,veh/km \\
+Evaluation seeds & 5 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% DEFERRED DECISION -- BASELINE ROSTER. One of the nine is being replaced. CARLTON
+% (cohen2025) leaves the "closest formulation" category and HOORL enters it:
+%   J. Xu et al., IEEE Trans. Veh. Technol., vol. 75, no. 8, pp. 18102-18115, 2026,
+%   DOI 10.1109/TVT.2026.3675626.
+% Stated reason: CARLTON carries no AoI objective of its own, so it does not belong
+% in a category defined by closeness to this paper's formulation.
+%
+% DO NOT EDIT THE TEXT YET. The librarian is settling the porting scope and the
+% implementer is writing the code; rewriting the port description now would mean
+% writing it twice. Apply the change in one pass once both land.
+%
+% Places that must change together in that pass:
+%   1. This paragraph and the next -- the port-scope sentence for cohen2025 (its
+%      subchannel head, the mellowmax backup, the substituted observation, and the
+%      note that the AoI objective comes from our reward) is replaced wholesale by
+%      the corresponding sentence for HOORL.
+%   2. Table tab:baselines -- the CARLTON row (method name, category, reference).
+%   3. Section II-B -- the sentence introducing cohen2025 among the nine, in the
+%      paragraph that begins "The nine methods compared in Section".
+%   4. The bibliography -- drop the cohen2025 entry, add the HOORL entry, and
+%      REBUILD THE WHOLE LIST, because it is numbered in order of first citation
+%      and a substitution in the middle renumbers everything after it.
+%   5. Sanity check afterwards -- cite keys against bibitem keys, and confirm the
+%      word CARLTON and the DOI 10.1109/TWC.2024.3491035 appear nowhere.
+% Nothing else in the manuscript depends on which method occupies that slot: the
+% count of nine, the three categories, and the shared harness all stay as they are.
+\subsubsection{Baseline Methods}
+The proposed framework is compared against nine baselines, listed in Table~\ref{tab:baselines}, all of which are implemented in this environment and driven through the same hybrid action interface, the same replay buffer, and the same Act/Rest harness. Three are foundational reinforcement learning algorithms included as reference points rather than selected by literature search: proximal policy optimization~\cite{schulman2017}, soft actor-critic~\cite{haarnoja2018}, and twin delayed deterministic policy gradient~\cite{fujimoto2018}. Each is used through a wrapper that exposes a three-dimensional continuous action, with the third dimension binned into the four subchannels, and the same wrapper is used for all three so that they remain comparable to one another. For the deterministic method this binning is a known disadvantage, since exploration of the subchannel dimension has to come from action noise large enough to cross a bin boundary, and we report it as the honest reason a purely continuous learner is expected to handle the discrete decision poorly.
+
+Adapting a published method to a different environment necessarily changes it, and we state for each method what was carried over and what was not, since a comparison that hides the subtraction is not a comparison of the published method. The residual multi-agent parameterized-action learner of~\cite{li2026} is ported as its learner only: the original paper handles the V2I side by user grouping followed by convex optimization and learns the V2V side alone, and our uplink is orthogonally subchannelized with no successive interference cancellation, so the non-orthogonal multiple access stage is dropped and what remains is a parameterized-action deterministic policy gradient. The branch-split learner of~\cite{hong2026} transfers with the least modification, since its action is our action without the interval, and its continuous branch is widened from one output to two. The hybrid-action multi-agent proximal policy optimization of~\cite{chen2026} is ported without its semantic half, because we transmit mobility state rather than semantic features, so the importance evaluation module and the continuous compression-ratio action have no referent here and roughly half of the original contribution is not reproduced. The dueling double deep Q-network of~\cite{bai2024} already sits at the infrastructure side and keeps its observation, but our two continuous axes are quantized onto a fixed grid for it, and its prioritized replay is weakened to an in-batch importance reweighting because the replay buffer belongs to the pipeline and samples uniformly for every method. The channel allocation learner of~\cite{cohen2025} keeps its subchannel head, which is the paper's original action, and its mellowmax backup, but its low-dimensional per-transmitter interference observation is replaced by our RSU-side vector with the channel busy ratio and the in-range count playing that role, and since the method contributes no freshness term of its own, the objective it optimizes here is our reward rather than its own global SINR criterion. For~\cite{parvini2023}, both of the paper's contributions are inactive in our pipeline and this is the weakest of the nine ports: the task-decomposed value heads require per-term rewards in the batch and the global critic requires the observations of other agents, and the environment streams neither, so the four heads reduce to copies of one another and the global critic degenerates into a second local critic. What is compared under that name is therefore a reduced variant with both of Parvini \emph{et~al.}'s mechanisms disabled, not the published method.
+
+\begin{table}[!t]
+\centering
+\caption{Implemented Baseline Methods}
+\label{tab:baselines}
+\begin{tabular}{llc}
+\toprule
+\textbf{Method} & \textbf{Category} & \textbf{Ref.} \\
+\midrule
+PPO & Foundational & \cite{schulman2017} \\
+SAC & Foundational & \cite{haarnoja2018} \\
+TD3 & Foundational & \cite{fujimoto2018} \\
+RES-MAPDDPG & Recent hybrid-action V2X & \cite{li2026} \\
+MA2HDQN & Recent hybrid-action V2X & \cite{hong2026} \\
+I-HAMAPPO & Recent hybrid-action V2X & \cite{chen2026} \\
+SPAM-D3QN & Closest formulation & \cite{bai2024} \\
+CARLTON & Closest formulation & \cite{cohen2025} \\
+MADDPG-MT & Closest formulation & \cite{parvini2023} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Training Configuration}
+% PROVISIONAL SCOPE. "Every method" is written to include the proposed policy,
+% which is not yet implemented. Confirm that the same training budget and the same
+% density rotation apply to it unchanged once it exists.
+Every method is trained for 100 episodes of 2000 steps in the same environment, under the fixed reward weights of Section~\ref{sec:problem} and with the per-method hyperparameters selected by the search of Section~\ref{sec:proposed}. The density grid is visited in rotation across episodes so that no method is trained on a narrower range of contention than another. Training runs are monitored for divergence by a shared rule applied identically to all methods, so that a run aborted for divergence is aborted by the same criterion regardless of which learner produced it.
+
+\subsection{Evaluation Metrics}
+Policies are scored across the density grid and five evaluation seeds on five quantities. The mean estimation error is the time-averaged residual of the RSU's dead reckoning and is the primary measure of how good the awareness table actually is. Mean and peak AoI are reported alongside it, the latter as the maximum over all vehicles and all times, so that a policy which buys a low average by abandoning a few vehicles is visible. The uplink success rate measures how many granted reports were decoded, mean transmit power measures what the schedule cost in energy, and the channel busy ratio measures what it cost in occupancy. Reporting the error and the age together is deliberate, since the entire argument of this paper is that the two can diverge, and a result in which they moved identically would indicate that the scenario never produced a predictable vehicle.
+
+\subsection{Results and Discussion}
+
+% PENDING MEASUREMENT. The 200,000-step training runs are being re-executed and
+% no result is quoted here until they complete. No number in this section may be
+% written from memory or from a handover document; each must be read from the
+% results CSV produced by that run. Check before quoting that the run used the
+% accumulate reward arm, CBR_REF = 0.60, warm-up 1200, and the 5-35 veh/km grid;
+% output from a run that differs on any of these describes a different benchmark.
+% This section also carries no figures yet. Any that are added must take their
+% titles from \caption{} and must not carry a title drawn inside the image.
+\textit{(Results to be added once the training runs currently in progress have completed and been analyzed.)}
+
+\subsection{Limitations}
+
+% PENDING MEASUREMENT. Only quantities that follow from physical constants
+% appear below; each was read from src/Communications.py. The density-resolved
+% channel busy ratio and packet-loss figures are to be filled in from the results
+% CSV after the re-executed runs. The earlier density sweep recorded in
+% idea/design_spec_v2.md was taken on a retired density axis that does not match
+% the current grid, so none of its numbers may be carried into this subsection;
+% they are deliberately not repeated here so that they cannot be copied by
+% mistake. The share of each reward term is likewise off limits until remeasured.
+% The engagement threshold of decentralized congestion control is stated
+% qualitatively because the numeric value in circulation has not been verified
+% against the source standard.
+The congestion term of~\eqref{eq:reward} is measured as the true airtime occupancy of the RSU's subchannels rather than through a proxy, and that measurement makes the operating regime of this study explicit. A 300-byte cooperative awareness message at the 6\,Mbps base rate holds its subchannel for 448\,\textmu s, which is $0.448\,\%$ of a 100\,ms scheduling step, and two co-channel frames collide only when one begins within one frame duration of the other, so the vulnerable-period overlap probability between any pair of them is $2T_{\mathrm{air}}/T_{\mathrm{step}} = 0.896\,\%$. The cell studied here therefore operates in a lightly loaded regime, far below the levels at which decentralized congestion control mechanisms engage, and the packet losses it produces are governed principally by distance and transmit power rather than by collisions. Two consequences follow, and we state them rather than retuning the scenario to avoid them. The first is that the update-interval trade-off optimized in this paper is driven mainly by estimation error against transmit power and redundancy, with channel occupancy acting as a secondary term; retaining that term is nonetheless deliberate, because its purpose is to establish whether the objective responds correctly to vehicle density rather than to dominate the objective, and a scheduler that omitted it could not say what its silences cost the channel. The second is that regimes in which congestion does dominate, namely denser cells, cooperative perception payloads an order of magnitude larger than a status report, or a shared band carrying background ITS traffic, lie outside the configuration evaluated here and are left to future work.
+
+% ==============================================================================
+% VII. CONCLUSION
+% ==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+% PROVISIONAL SCOPE. This paragraph states what the proposed framework does. The
+% proposed policy is not yet implemented, so the description must be re-checked
+% against the final design before submission.
+This paper proposed a context-aware V2I uplink scheduling framework in which an RSU converts the interval over which a vehicle's state is expected to remain reproducible by dead reckoning into a silence interval granted in advance, and learns that conversion together with the subchannel and the transmit power as a single policy. The scheduling problem was formulated as an SMDP whose decision epochs are the report arrivals of individual vehicles, which is what a decision-dependent interval requires, and the policy emits a hybrid action combining the continuous interval and power with a discrete subchannel index. The reward was constructed so that the estimation error accumulates across the silence interval while power, occupancy, and redundancy are charged once per granted report, which makes a long silence inexpensive for a vehicle whose state is reproducible and expensive for one whose state is not. The observation was restricted to quantities the RSU can obtain without querying any vehicle, so that the scheduler does not consume the uplink capacity it is meant to conserve, and the deployment was measured on a single GPU to confirm that inference latency remains far below the shortest interval the action space can request. Quantitative comparison against the nine implemented baselines is reported in Section~\ref{sec:evaluation} once the training runs currently in progress have completed, and the limitations of the channel-load regime studied here, together with the extension to denser cells and larger cooperative-perception payloads, are left to that discussion and to future work.
+
+% ==============================================================================
+% REFERENCES
+% ==============================================================================
+\bibliographystyle{IEEEtran}
+% \bibliography{references}
+
+\begin{thebibliography}{99}
+
+\bibitem{cai2023} K. Cai, T. Qu, B. Gao, and H. Chen, ``Consensus-based distributed cooperative perception for connected and automated vehicles,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 24, no. 8, pp. 8188--8208, 2023.
+
+\bibitem{huang2024} Z. Huang, S. Chen, Y. Pian, Z. Sheng, S. Ahn, and D. A. Noyce, ``Toward C-V2X enabled connected transportation system: RSU-based cooperative localization framework for autonomous vehicles,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 10, pp. 13417--13431, 2024.
+
+\bibitem{zhang2024} W. Zhang, M. Feng, and M. Krunz, ``Latency estimation and computational task offloading in vehicular mobile edge computing applications,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 4, pp. 5808--5823, 2024.
+
+\bibitem{jung2025} S. Jung, J.-H. Kim, and J. Kim, ``Intelligent extra resource allocation for cooperative awareness message broadcasting in cellular-V2X networks,'' \emph{IEEE Transactions on Network and Service Management}, vol. 22, no. 2, pp. 1677--1689, 2025.
+
+\bibitem{maksimovski2026} D. Maksimovski, A. Festag, and C. Facchi, ``Adaptive message generation rules for V2X maneuver coordination service,'' \emph{IEEE Access}, vol. 14, pp. 6417--6437, 2026.
+
+\bibitem{gong2022} J. Gong, J. Zhu, X. Chen, and X. Ma, ``Sleep, sense or transmit: Energy-age tradeoff for status update with two-threshold optimal policy,'' \emph{IEEE Transactions on Wireless Communications}, vol. 21, no. 3, pp. 1751--1765, 2022.
+
+\bibitem{tang2020} H. Tang, J. Wang, L. Song, and J. Song, ``Minimizing age of information with power constraints: Multi-user opportunistic scheduling in multi-state time-varying channels,'' \emph{IEEE Journal on Selected Areas in Communications}, vol. 38, no. 5, pp. 854--868, 2020.
+
+\bibitem{kaul2012} S. Kaul, R. Yates, and M. Gruteser, ``Real-time status: How often should one update?,'' \emph{Proc. IEEE INFOCOM}, Orlando, FL, USA, pp. 2731--2735, 2012.
+
+\bibitem{kahraman2024} I. Kahraman, A. Kose, M. Koca, and E. Anarim, ``Age of information in Internet of Things: A survey,'' \emph{IEEE Internet of Things Journal}, vol. 11, no. 6, pp. 9896--9914, 2024.
+
+\bibitem{chen2020} X. Chen, C. Wu, T. Chen, H. Zhang, Z. Liu, Y. Zhang, and M. Bennis, ``Age of information aware radio resource management in vehicular networks: A proactive deep reinforcement learning perspective,'' \emph{IEEE Transactions on Wireless Communications}, vol. 19, no. 4, pp. 2268--2281, 2020.
+
+\bibitem{xie2025} X. Xie, T. Zhong, and H. Wang, ``Scheduling for maximizing the information freshness in vehicular edge computing-assisted IoT systems,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 3, pp. 4140--4151, 2025.
+
+\bibitem{tadele2026} S. B. Tadele, B. Kar, F. G. Wakgra, and M. Liyanage, ``Age-of-information aware mobility-based vehicular-fog formation using deep reinforcement learning,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 27, no. 7, pp. 8238--8251, 2026.
+
+\bibitem{maatouk2020} A. Maatouk, S. Kriouile, M. Assaad, and A. Ephremides, ``The age of incorrect information: A new performance metric for status updates,'' \emph{IEEE/ACM Transactions on Networking}, vol. 28, no. 5, pp. 2215--2228, 2020.
+
+\bibitem{rajaraman2021} N. Rajaraman, R. Vaze, and G. Reddy, ``Not just age but age and quality of information,'' \emph{IEEE Journal on Selected Areas in Communications}, vol. 39, no. 5, pp. 1325--1338, 2021.
+
+\bibitem{sun2020} Y. Sun, Y. Polyanskiy, and E. Uysal, ``Sampling of the Wiener process for remote estimation over a channel with random delay,'' \emph{IEEE Transactions on Information Theory}, vol. 66, no. 2, pp. 1118--1135, 2020.
+
+\bibitem{xu2020} L. Xu, Y. Mo, and L. Xie, ``Remote state estimation with stochastic event-triggered sensor schedule and packet drops,'' \emph{IEEE Transactions on Automatic Control}, vol. 65, no. 11, pp. 4981--4988, 2020.
+
+\bibitem{tripathi2024} V. Tripathi and E. Modiano, ``A Whittle index approach to minimizing functions of age of information,'' \emph{IEEE/ACM Transactions on Networking}, vol. 32, no. 6, pp. 5144--5158, 2024.
+
+\bibitem{jiang2021} Z. Jiang, W. Zhang, Z. Cao, S. Cao, S. Zhang, and S. Xu, ``Predictive wireless based status update for communication-agnostic sampling,'' \emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 11, pp. 6972--6986, 2021.
+
+\bibitem{costa2016} M. Costa, M. Codreanu, and A. Ephremides, ``On the age of information in status update systems with packet management,'' \emph{IEEE Transactions on Information Theory}, vol. 62, no. 4, pp. 1897--1910, 2016.
+
+\bibitem{sun2017} Y. Sun, E. Uysal-Biyikoglu, R. D. Yates, C. E. Koksal, and N. B. Shroff, ``Update or wait: How to keep your data fresh,'' \emph{IEEE Transactions on Information Theory}, vol. 63, no. 11, pp. 7492--7508, 2017.
+
+\bibitem{kadota2018} I. Kadota, A. Sinha, E. Uysal-Biyikoglu, R. Singh, and E. Modiano, ``Scheduling policies for minimizing age of information in broadcast wireless networks,'' \emph{IEEE/ACM Transactions on Networking}, vol. 26, no. 6, pp. 2637--2650, 2018.
+
+\bibitem{yates2021} R. D. Yates, Y. Sun, D. R. Brown, S. K. Kaul, E. Modiano, and S. Ulukus, ``Age of information: An introduction and survey,'' \emph{IEEE Journal on Selected Areas in Communications}, vol. 39, no. 5, pp. 1183--1210, 2021.
+
+\bibitem{han2021} B. Han, Y. Zhu, Z. Jiang, M. Sun, and H. D. Schotten, ``Fairness for freshness: Optimal age of information based OFDMA scheduling with minimal knowledge,'' \emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 12, pp. 7903--7919, 2021.
+
+\bibitem{abbas2023} Q. Abbas, S. A. Hassan, H. Jung, and M. S. Hossain, ``On minimizing the age of information in NOMA-based vehicular networks using Markov decision process,'' \emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 24, no. 12, pp. 15557--15567, 2023.
+
+\bibitem{ye2019} H. Ye, G. Y. Li, and B.-H. F. Juang, ``Deep reinforcement learning based resource allocation for V2V communications,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 68, no. 4, pp. 3163--3173, 2019.
+
+\bibitem{liang2019} L. Liang, H. Ye, and G. Y. Li, ``Spectrum sharing in vehicular networks based on multi-agent reinforcement learning,'' \emph{IEEE Journal on Selected Areas in Communications}, vol. 37, no. 10, pp. 2282--2292, 2019.
+
+\bibitem{tan2021} J. Tan, Y.-C. Liang, L. Zhang, and G. Feng, ``Deep reinforcement learning for joint channel selection and power control in D2D networks,'' \emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 2, pp. 1363--1378, 2021.
+
+\bibitem{zhang2021} T. Zhang, K. Zhu, and J. Wang, ``Energy-efficient mode selection and resource allocation for D2D-enabled heterogeneous networks: A deep reinforcement learning approach,'' \emph{IEEE Transactions on Wireless Communications}, vol. 20, no. 2, pp. 1175--1187, 2021.
+
+\bibitem{gui2024} J. Gui, L. Lin, X. Deng, and L. Cai, ``Spectrum-energy-efficient mode selection and resource allocation for heterogeneous V2X networks: A federated multi-agent deep reinforcement learning approach,'' \emph{IEEE/ACM Transactions on Networking}, vol. 32, no. 3, pp. 2689--2704, 2024.
+
+\bibitem{guo2022} S. Guo, B.-J. Hu, and Q. Wen, ``Joint resource allocation and power control for full-duplex V2I communication in high-density vehicular network,'' \emph{IEEE Transactions on Wireless Communications}, vol. 21, no. 11, pp. 9497--9508, 2022.
+
+\bibitem{xu20232} Y. Xu, K. Zhu, H. Xu, and J. Ji, ``Deep reinforcement learning for multi-objective resource allocation in multi-platoon cooperative vehicular networks,'' \emph{IEEE Transactions on Wireless Communications}, vol. 22, no. 9, pp. 6185--6198, 2023.
+
+\bibitem{saad2025} M. M. Saad, M. A. Tariq, M. Ajmal, D. Kim, and G. Srivastava, ``Federated multiagent reinforcement learning for resource allocation in NR-V2X mode 2,'' \emph{IEEE Internet of Things Journal}, vol. 12, no. 13, pp. 23402--23417, 2025.
+
+\bibitem{li2026} J. Li, Q. Leng and M. Cheng, ``Resource Allocation in NOMA-V2X Networks With Multi-Agent Parameterized Action Space Reinforcement Learning,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 7, pp. 14775--14790, 2026.
+
+\bibitem{hong2026} Z. Hong, P. Sun, Q. Si, Y. Liu and T. Qiu, ``Joint Sub-Band Allocation and Power Control for Dynamic Vehicular Networks Based on Multi-Agent Deep Reinforcement Learning,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 6, pp. 11423--11437, 2026.
+
+\bibitem{chen2026} Q. Chen, X. Song, T. Song and Y. Yang, ``Hybrid-Action DRL-Based Resource Allocation for Semantic-Aware Computation Offloading in Vehicular Edge Networks,'' \emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 6790--6805, 2026.
+
+\bibitem{bai2024} G. Bai, L. Qu, J. Liu and D. Sun, ``AoI-Aware Joint Scheduling and Power Allocation in Intelligent Transportation System: A Deep Reinforcement Learning Approach,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 4, pp. 5781--5795, 2024.
+
+\bibitem{cohen2025} Y. Cohen, T. Gafni, R. Greenberg and K. Cohen, ``SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks,'' \emph{IEEE Transactions on Wireless Communications}, vol. 24, no. 1, pp. 228--243, 2025.
+
+\bibitem{parvini2023} M. Parvini, M. R. Javan, N. Mokari, B. Abbasi and E. A. Jorswieck, ``AoI-Aware Resource Allocation for Platoon-Based C-V2X Networks via Multi-Agent Multi-Task Reinforcement Learning,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 72, no. 8, pp. 9880--9896, 2023.
+
+\bibitem{masson2016} W. Masson, P. Ranchod, and G. Konidaris, ``Reinforcement learning with parameterized actions,'' \emph{Proc. 30th AAAI Conf. Artif. Intell. (AAAI)}, Phoenix, AZ, USA, pp. 1934--1940, 2016.
+
+\bibitem{fan2019} Z. Fan, R. Su, W. Zhang, and Y. Yu, ``Hybrid actor-critic reinforcement learning in parameterized action space,'' \emph{Proc. 28th Int. Joint Conf. Artif. Intell. (IJCAI)}, Macao, China, pp. 2279--2285, 2019.
+
+\bibitem{xu2023} Y. Xu, Y. Wei, K. Jiang, L. Chen, D. Wang, and H. Deng, ``Action decoupled SAC reinforcement learning with discrete-continuous hybrid action spaces,'' \emph{Neurocomputing}, vol. 537, pp. 141--151, 2023.
+
+\bibitem{chen20262} H. Chen, H. Cui, P. Cao, Y. He, J. Li, I. W.-H. Ho, and V. C. M. Leung, ``Mobile-edge computing in SAGINs: A hybrid action space P-DDQN algorithm for joint offloading and resource allocation,'' \emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 19115--19130, 2026.
+
+\bibitem{flanigan2022} K. A. Flanigan and J. P. Lynch, ``Optimal event-based policy for remote parameter estimation in wireless sensing architectures under resource constraints,'' \emph{IEEE Transactions on Wireless Communications}, vol. 21, no. 7, pp. 5293--5304, 2022.
+
+\bibitem{pang2023} G. Pang, W. Liu, Y. Li, and B. Vucetic, ``DRL-based resource allocation in remote state estimation,'' \emph{IEEE Transactions on Wireless Communications}, vol. 22, no. 7, pp. 4434--4448, 2023.
+
+\bibitem{huang2020} K. Huang, W. Liu, M. Shirvanimoghaddam, Y. Li, and B. Vucetic, ``Real-time remote estimation with hybrid ARQ in wireless networked control,'' \emph{IEEE Transactions on Wireless Communications}, vol. 19, no. 5, pp. 3490--3504, 2020.
+
+\bibitem{perezromero2020} J. Perez-Romero and O. Sallent, ``Optimization of multitenant radio admission control through a semi-Markov decision process,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 69, no. 1, pp. 862--875, 2020.
+
+\bibitem{ding2023} Z. Ding and H. Zhao, ``Incorporating driving knowledge in deep learning based vehicle trajectory prediction: A survey,'' \emph{IEEE Transactions on Intelligent Vehicles}, vol. 8, no. 8, pp. 3996--4015, 2023.
+
+\bibitem{yao2023} H. Yao, X. Li, and X. Yang, ``Physics-aware learning-based vehicle trajectory prediction of congested traffic in a connected vehicle environment,'' \emph{IEEE Transactions on Vehicular Technology}, vol. 72, no. 1, pp. 102--112, 2023.
+
+\bibitem{sun2022} P. Sun, D. Nam, R. Jayakrishnan, and W. Jin, ``An eco-driving algorithm based on vehicle to infrastructure (V2I) communications for signalized intersections,'' \emph{Transportation Research Part C: Emerging Technologies}, vol. 144, Art. no. 103876, 2022.
+
+\bibitem{sommer2011} C. Sommer, R. German, and F. Dressler, ``Bidirectionally coupled network and road traffic simulation for improved IVC analysis,'' \emph{IEEE Transactions on Mobile Computing}, vol. 10, no. 1, pp. 3--15, 2011.
+
+\bibitem{lopez2018} P. A. Lopez, M. Behrisch, L. Bieker-Walz, J. Erdmann, Y.-P. Fl\"otter\"od, R. Hilbrich, L. L\"ucken, J. Rummel, P. Wagner, and E. Wie\ss ner, ``Microscopic traffic simulation using SUMO,'' \emph{Proc. 21st IEEE Int. Conf. Intell. Transp. Syst. (ITSC)}, Maui, HI, USA, pp. 2575--2582, 2018.
+
+\bibitem{raviglione2024} F. Raviglione, C. M. Risma Carletti, M. Malinverno, C. Casetti, and C. F. Chiasserini, ``ms-van3t: An integrated multi-stack framework for virtual validation of V2X communication and services,'' \emph{Computer Communications}, vol. 217, pp. 70--86, 2024.
+
+\bibitem{schulman2017} J. Schulman, F. Wolski, P. Dhariwal, A. Radford and O. Klimov, ``Proximal Policy Optimization Algorithms,'' \emph{arXiv preprint arXiv:1707.06347}, 2017.
+
+\bibitem{haarnoja2018} T. Haarnoja, A. Zhou, P. Abbeel and S. Levine, ``Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor,'' \emph{Proceedings of the 35th International Conference on Machine Learning (ICML)}, Stockholm, Sweden, pp. 1861--1870, 2018.
+
+\bibitem{fujimoto2018} S. Fujimoto, H. van Hoof and D. Meger, ``Addressing Function Approximation Error in Actor-Critic Methods,'' \emph{Proceedings of the 35th International Conference on Machine Learning (ICML)}, Stockholm, Sweden, pp. 1587--1596, 2018.
+
+\end{thebibliography}
+
+\end{document}

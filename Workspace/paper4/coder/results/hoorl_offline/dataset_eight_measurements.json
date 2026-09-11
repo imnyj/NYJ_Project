@@ -1,0 +1,241 @@
+{
+  "contents_manifest": {
+    "has_cell_index": true,
+    "has_raw_columns": true,
+    "note": "Derived from the arrays, not declared. `format_version` records which change was intended; this records what the file holds. They disagree for the collection of 2026-09-06 12:52, which carries version 2 with a 17-wide observation and no raw columns because the version was raised before the rest of that change landed.",
+    "optional_columns": [
+      "close_reason",
+      "cbr_used_channel",
+      "cbr_max_channel",
+      "state_raw",
+      "next_state_raw",
+      "action_raw",
+      "cell_index"
+    ],
+    "per_channel_features_are_relative_to_mean": true,
+    "raw_action_fields": [
+      "delta_s",
+      "power_dbm"
+    ],
+    "raw_observation_fields": [
+      "last_pred_err_m",
+      "vx_mps",
+      "vy_mps",
+      "speed_mps",
+      "accel_mps2",
+      "rel_x_m",
+      "rel_y_m",
+      "dist_to_rsu_m",
+      "time_to_switch_s",
+      "dist_to_stopline_m",
+      "dist_to_stopline_measured",
+      "tls_state_code",
+      "n_active",
+      "n_queue",
+      "cbr_ch0",
+      "cbr_ch1",
+      "cbr_ch2",
+      "cbr_ch3",
+      "n_neighbours"
+    ],
+    "state_dim": 21
+  },
+  "coverage_note": "Every table below is the WHOLE collection, not a sample of it: 128223 transitions over 21 features, road cycles [0, 1, 2] of the 0..14 a 100-episode training run walks. It therefore covers the roads of training episodes 0..20 and says nothing about the later ones.",
+  "dataset": "/home/imnyj/Workspace/paper4/data/hoorl_offline/hoorl_offline.npz",
+  "git": {
+    "branch": "main",
+    "commit": "f994cb7e1bca4d9c87ae75b0869c48624eaa2a04",
+    "dirty": true
+  },
+  "m1_neighbours": {
+    "cap": 192,
+    "fraction_above_16": 0.9819,
+    "fraction_above_cap": 0.0002,
+    "max": 193.0,
+    "mean_over_all": 120.73
+  },
+  "m2_spread_over_mean": {
+    "fraction_of_steps_with_no_transmission": 0.0166,
+    "overall": 1.739
+  },
+  "m3_stopline": {
+    "empty_bins_per_road_cycle": {
+      "0": [
+        [
+          300.0,
+          350.0
+        ],
+        [
+          350.0,
+          400.0
+        ],
+        [
+          400.0,
+          500.0
+        ]
+      ],
+      "1": [
+        [
+          300.0,
+          350.0
+        ],
+        [
+          350.0,
+          400.0
+        ],
+        [
+          400.0,
+          500.0
+        ]
+      ],
+      "2": [
+        [
+          300.0,
+          350.0
+        ],
+        [
+          350.0,
+          400.0
+        ],
+        [
+          400.0,
+          500.0
+        ]
+      ]
+    },
+    "fraction_beyond_rsu_range": 0.2388,
+    "fraction_no_signal": 0.0305,
+    "gap_note": "The 300-400 m gap was explained by block geometry. If that holds it recurs on every road; `empty_bins_per_road_cycle` is where to check. A gap on one cycle only would falsify the explanation and with it the case for raising the [12] bound to 900 m.",
+    "max": 900.0,
+    "p50": 173.8,
+    "p90": 769.2,
+    "rsu_range_m": 300.0
+  },
+  "m4_tls": {
+    "G": 0.30929,
+    "g": 0.12599,
+    "none": 0.03051,
+    "r": 0.50635,
+    "y": 0.02786
+  },
+  "m5_n_active": {
+    "cap": 250.0,
+    "fraction_at_or_above_cap": 0.0,
+    "max_seen": 194.0
+  },
+  "m6_all_match": true,
+  "m6_worst": {
+    "abs_error": 2.384185791015625e-07,
+    "atol": 1e-05,
+    "feature": 17
+  },
+  "m7_delta_range": {
+    "decoder_power_dbm": [
+      10.0,
+      23.0
+    ],
+    "decoder_range_s": [
+      0.1,
+      45.0
+    ],
+    "delta_after": {
+      "geomean_s": 2.220249010222475,
+      "max_s": 9.99998950958252,
+      "min_s": 0.5000292658805847,
+      "n": 128223,
+      "p50_s": 2.239339590072632,
+      "p90_s": 7.342186450958252,
+      "p99_s": 9.6636381149292
+    },
+    "delta_before": {
+      "geomean_s": 2.220249010222475,
+      "max_s": 9.99998950958252,
+      "min_s": 0.5000292658805847,
+      "n": 128223,
+      "p50_s": 2.239339590072632,
+      "p90_s": 7.342186450958252,
+      "p99_s": 9.6636381149292
+    },
+    "delta_bin_edges_s": [
+      0.5000292658805847,
+      0.6418187992391067,
+      0.8238145227985609,
+      1.0574174031337233,
+      1.357261293053792,
+      1.7421296568060056,
+      2.2361322441416775,
+      2.8702154249859606,
+      3.68410079833605,
+      4.728773517885582,
+      6.069676213407523,
+      7.790808588371158,
+      9.99998950958252
+    ],
+    "delta_hist_after": [
+      11197,
+      10663,
+      10665,
+      10568,
+      10723,
+      10240,
+      10818,
+      10811,
+      10742,
+      10969,
+      10367,
+      10460
+    ],
+    "delta_hist_before": [
+      11197,
+      10663,
+      10665,
+      10568,
+      10723,
+      10240,
+      10818,
+      10811,
+      10742,
+      10969,
+      10367,
+      10460
+    ],
+    "dropped_delta_profile": {
+      "n": 0
+    },
+    "fraction_dropped": 0.0,
+    "n_before": 128223,
+    "n_dropped": 0,
+    "note": "No threshold is applied. Read `dropped_delta_profile` against `delta_before`: a drop concentrated at one end removes that end of the Delta axis whatever the count says."
+  },
+  "m8_note": "`used_span_over_nominal` answers 'does it use the range'; `std_over_used_span` answers 'does it vary inside what it uses'. The second is the one that decides whether a feature is informative -- a narrow but varying feature carries signal, a wide but nearly constant one does not.",
+  "n_transitions": 128223,
+  "reconciliation": {
+    "constants_blocking": {},
+    "constants_moved": {
+      "DIST_TO_STOPLINE_REF_M": [
+        "not recorded (constant introduced at format 4, file is format 3)",
+        900.0
+      ],
+      "E_REF": [
+        13.33,
+        13.27
+      ],
+      "N_ACTIVE_MAX_OBS": [
+        168.0,
+        250.0
+      ],
+      "QUEUE_MAX": [
+        20.0,
+        25.0
+      ],
+      "V_MAX_OBS": [
+        15.995999999999999,
+        15.924
+      ]
+    },
+    "n_transitions": 128223,
+    "reason": "re-derived the features depending on ['DIST_TO_STOPLINE_REF_M', 'E_REF', 'N_ACTIVE_MAX_OBS', 'QUEUE_MAX', 'V_MAX_OBS'] from the raw columns; the collection itself is unchanged and still valid",
+    "renormalised": true
+  },
+  "road_seed": 42
+}

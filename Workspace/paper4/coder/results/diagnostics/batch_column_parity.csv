@@ -1,0 +1,10 @@
+model,passed,n_train_transitions,n_rollout_transitions,n_keys,training_only,rollout_only,required_missing,keys
+HOORL,0,0,81,0,,,UNVERIFIED,"OfflineDatasetMissing: No offline dataset was given and PAPER4_HOORL_OFFLINE_DATASET is unset. HOORL's first stage cannot run, and a HOORL run without it is the online-only ablation. "
+I-HAMAPPO,1,42,88,14,,,,action;action_idx;behaviour_log_prob;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+MA2HDQN,1,80,127,13,,,,action;action_idx;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+MADDPG-MT,1,68,106,12,,,,action;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+PPO,1,39,75,13,,,,action;behaviour_log_prob;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+RES-MAPDDPG,1,110,163,13,,,,action;action_idx;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+SAC,1,56,70,13,,,,action;behaviour_log_prob;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+SPAM-D3QN,1,42,46,13,,,,action;action_idx;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state
+TD3,1,84,110,12,,,,action;delta_t;discount;done;neighbour_mask;neighbour_state;next_neighbour_mask;next_neighbour_state;next_state;reward;reward_terms;state

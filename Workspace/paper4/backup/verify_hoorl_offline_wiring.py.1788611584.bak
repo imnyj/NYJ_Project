@@ -1,0 +1,496 @@
+"""Acceptance checks for HOORL's offline stage ONCE IT IS WIRED INTO A RUN.
+
+Written before the wiring exists, deliberately. The wiring is another session's
+work, so the checks that will judge it are designed here first and independently;
+a check written after seeing the implementation tends to assert what that
+implementation happens to do.
+
+Nothing here duplicates `verify_hoorl_iql.py`. That script proves the LEARNER is
+correct in isolation -- the expectile regression, the SMDP discount, the absence
+of an out-of-distribution query, that it learns a known optimum. Every one of its
+checks passes today and would keep passing if HOORL never ran its offline stage
+in a real run even once. This script asks the complementary question: does a
+REAL RUN actually use any of it?
+
+  W1  THE OFFLINE PHASE IS ENTERED AT ALL. `HOORL.offline_update` is wrapped with
+      a counter and a short real training run is executed. The count must exceed
+      zero. Today nothing under `src/` and not `run_all.py` calls `pretrain()` or
+      `set_phase()`, so a HOORL run is the online-only ablation while still being
+      named HOORL -- the defect that disqualified the baseline HOORL replaced.
+
+  W2  THE OFFLINE RESULT REACHES THE ONLINE STARTING POINT. Passing W1 is not
+      enough: a run can pretrain a model object and then hand the trainer a
+      DIFFERENT, freshly initialised one, and every symptom of that is invisible
+      -- the offline loss curve looks healthy and the online run simply starts
+      from noise. So the weights are snapshotted at the instant
+      `finish_offline_phase()` returns and compared, tensor by tensor, against
+      the weights held at the FIRST online update, before that update runs. The
+      comparison point matters and was chosen by measurement, not by taste: a
+      discarded pretraining sits near 1.8 relative drift however long the run
+      goes, while a preserved one climbs past that figure after a few hundred
+      online steps, so comparing late would fail correctly wired runs. See
+      `calibrate_hoorl_handover_drift.py`. The stage ORDER is checked too, since
+      a run that pretrained after the online stage began would satisfy every
+      count and every weight comparison and still not be the paper's method.
+      This is the check that the word "Hybrid" in the title is earned rather
+      than claimed.
+
+  W3  `offline_lr_scale` PASSES ALL THREE STAGES. Sampled by the search, accepted
+      by the constructor, and in force during a real offline update. Stage three
+      is read from the run's own log rather than re-derived: `_offline_update_iql`
+      returns `offline_actor_lr`, `offline_critic_lr` and `offline_value_lr`, so
+      the rate a real update RAN at is recorded and can be compared against
+      base * scale. Stages one and two are inapplicable until the decision to
+      search the argument is taken; they report as such rather than as failures.
+
+HOW THIS SCRIPT BEHAVES BEFORE THE WIRING LANDS. Each check first probes its own
+precondition. A missing precondition is reported as PENDING, never as PASS and
+never as FAIL: the wiring is not broken, it is absent, and a red result for
+absent work would train everyone to ignore this script. The exit status is 0
+while checks are PENDING and non-zero only when a check that COULD run did not
+pass, so this can go straight into a pipeline the day the wiring lands.
+
+Running it costs a short live SUMO episode and only once the wiring exists;
+before then it short-circuits and costs nothing. It writes only under a
+temporary directory and never touches `checkpoints/` or `logs/`.
+"""
+from __future__ import annotations
+
+import csv
+import os
+import sys
+import tempfile
+from typing import Any, Dict, List, Optional, Tuple
+
+os.environ.setdefault(
+    "PAPER4_SUMO_DIR", os.path.join(tempfile.gettempdir(), "hoorl_wiring_verify_sumo")
+)
+os.makedirs(os.environ["PAPER4_SUMO_DIR"], exist_ok=True)
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, ROOT)
+
+import torch  # noqa: E402
+
+from src.baselines.hoorl import HOORL  # noqa: E402
+
+RESULTS = os.path.join(ROOT, "results", "diagnostics", "hoorl_offline_wiring_acceptance.csv")
+
+PENDING = "PENDING"
+_rows: List[Dict[str, Any]] = []
+
+
+def record(check: str, status: str, detail: str) -> str:
+    _rows.append({"check": check, "result": status, "detail": detail})
+    print(f"[{status}] {check}: {detail}")
+    return status
+
+
+# ---------------------------------------------------------------------------
+# Precondition probe
+# ---------------------------------------------------------------------------
+def _pipeline_files() -> List[str]:
+    files = [os.path.join(ROOT, "run_all.py")]
+    for dirpath, _dirnames, filenames in os.walk(os.path.join(ROOT, "src")):
+        files.extend(os.path.join(dirpath, f) for f in filenames if f.endswith(".py"))
+    return [p for p in files if os.path.exists(p)]
+
+
+def pipeline_offline_callers() -> List[str]:
+    """Files in the shipped pipeline that enter HOORL's offline stage.
+
+    `hoorl.py` itself is excluded: `pretrain` calling `set_phase` is internal and
+    proves nothing about whether a run uses it. Diagnostic scripts under `etc/`
+    are excluded for the same reason -- this asks what the PIPELINE does.
+
+    DEFINING an offline entry point is not the same as REACHING one; see
+    `orphaned_offline_modules`.
+    """
+    found: List[str] = []
+    for path in _pipeline_files():
+        if os.path.basename(path) == "hoorl.py":
+            continue
+        try:
+            text = open(path, encoding="utf-8").read()
+        except OSError:
+            continue
+        if ".pretrain(" in text or ".set_phase(" in text:
+            found.append(os.path.relpath(path, ROOT))
+    return sorted(found)
+
+
+def orphaned_offline_modules() -> List[str]:
+    """Offline entry points that nothing else in the pipeline imports.
+
+    A module can define `pretrain_hoorl(...)` perfectly and still be dead code.
+    Then `pipeline_offline_callers()` reports it, the precondition looks
+    satisfied, and W1 goes on to drive a training run that never enters the
+    offline stage -- a false green produced by asking whether the CALL EXISTS
+    instead of whether it is REACHED.
+
+    This was not hypothetical. `src/hoorl_wiring.py` appeared on 2026-09-05
+    carrying a complete `pretrain_hoorl` and `wire_and_pretrain`, and no module
+    imported either of them; the first version of this probe reported the wiring
+    as present on the strength of that file alone.
+
+    Import detection is textual and therefore conservative: it looks for the
+    module's name in every other pipeline file. That over-reports reachability
+    rather than under-reporting it, so a module listed here is definitely an
+    orphan, while one absent from the list is only probably wired.
+    """
+    orphans: List[str] = []
+    for rel in pipeline_offline_callers():
+        stem = os.path.splitext(os.path.basename(rel))[0]
+        imported_by = []
+        for path in _pipeline_files():
+            if os.path.relpath(path, ROOT) == rel:
+                continue
+            try:
+                text = open(path, encoding="utf-8").read()
+            except OSError:
+                continue
+            if f"import {stem}" in text or f"{stem} import" in text or f"src.{stem}" in text:
+                imported_by.append(os.path.relpath(path, ROOT))
+        if not imported_by:
+            orphans.append(rel)
+    return orphans
+
+
+def offline_dataset_path() -> Optional[str]:
+    """The collected offline dataset, if one exists. W1 and W2 need real data.
+
+    BOTH plausible roots are probed, and that is not defensiveness. The collector
+    takes `--out data/hoorl_offline/hoorl_offline.npz`, a RELATIVE path resolved
+    by `os.path.abspath` against whatever directory the process was started in,
+    so the file lands under `coder/data/` or under `paper4/data/` depending only
+    on where the operator stood. Probing one of the two would report a collected
+    dataset as missing and turn this whole script PENDING for a reason that has
+    nothing to do with the wiring.
+
+    A sibling `.meta.json` is required, not merely the npz: `OfflineDataset.load`
+    refuses a dataset whose behaviour policy and observation normalisation are
+    unrecorded, so an npz without one is not a usable dataset.
+    """
+    for root in (os.path.abspath(os.path.join(ROOT, "..")), ROOT):
+        candidate = os.path.join(root, "data", "hoorl_offline", "hoorl_offline.npz")
+        meta = os.path.splitext(candidate)[0] + ".meta.json"
+        if os.path.exists(candidate) and os.path.exists(meta):
+            return candidate
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Instrumentation shared by W1 and W2
+# ---------------------------------------------------------------------------
+#: Buffers that count events rather than carry weights. Excluded from the drift
+#: statistic. `total_updates` grows without bound as the online stage runs and
+#: would report a large drift even when the pretraining was perfectly preserved;
+#: `offline_updates` reads 0 in the discarded case against several hundred in the
+#: snapshot and would report a drift of exactly 1.0 for a reason that has nothing
+#: to do with the weights. Measured in
+#: results/diagnostics/hoorl_handover_drift_calibration.csv.
+COUNTER_BUFFERS = ("total_updates", "offline_updates", "offline_pretrained")
+
+#: Above this relative drift, the online stage did not start from the offline
+#: result. NOT a guess: `etc/scripts/calibrate_hoorl_handover_drift.py` builds
+#: both cases and measures them. Compared at the FIRST online update, a preserved
+#: pretraining drifts 0.000000 and a discarded one 1.853956, so 0.5 sits in the
+#: middle of a gap with nothing in it.
+#:
+#: The first draft of this script used 1.0 and compared against a checkpoint
+#: written at the end of the episode. That was wrong in a way only measurement
+#: showed: by 500 online updates a CORRECTLY wired run has already drifted to
+#: 1.094, so the check would have failed the very thing it exists to confirm.
+#: The fix is the comparison POINT, not a larger threshold -- the discarded case
+#: sits near 1.8 no matter how long the run goes, while the preserved case climbs
+#: past it, so the two are only cleanly separable early.
+MAX_PRESERVED_DRIFT = 0.5
+
+
+def weight_drift(
+    reference: Dict[str, torch.Tensor], other: Dict[str, torch.Tensor]
+) -> Tuple[float, str]:
+    """Worst per-tensor relative drift over parameters. Counters are skipped."""
+    worst, where = 0.0, "none"
+    for key, tensor in reference.items():
+        if key in COUNTER_BUFFERS:
+            continue
+        candidate = other.get(key)
+        if not isinstance(candidate, torch.Tensor) or candidate.shape != tensor.shape:
+            return float("inf"), f"{key} missing or misshapen"
+        denom = float(tensor.abs().mean().item()) + 1e-8
+        value = float((candidate - tensor).abs().mean().item()) / denom
+        if value > worst:
+            worst, where = value, key
+    return worst, where
+
+
+class OfflineStageProbe:
+    """Counts offline updates and snapshots the weights either side of the handover.
+
+    Wraps the methods on the CLASS, so it sees whichever HOORL instance the run
+    creates -- the point of W2 is precisely that the run may not use the object
+    the caller thinks it does.
+
+    Three things are recorded and each answers a different question. The offline
+    update count answers "did the offline stage run at all". The handover
+    snapshot answers "what did it produce". The FIRST-online-update snapshot
+    answers "what did the online stage actually start from", and it is taken at
+    the first online step rather than read from a checkpoint because the two
+    cases are only cleanly separable before the online stage has moved the
+    weights; see `MAX_PRESERVED_DRIFT`.
+
+    `call_order` records the sequence of stage transitions, because a run that
+    pretrained AFTER the online stage had already begun would satisfy every
+    count and every snapshot comparison while still not being the paper's method.
+    """
+
+    def __init__(self) -> None:
+        self.offline_updates = 0
+        self.online_updates = 0
+        self.handover_snapshots: List[Dict[str, torch.Tensor]] = []
+        self.first_online_snapshot: Optional[Dict[str, torch.Tensor]] = None
+        self.call_order: List[str] = []
+        self._orig_offline: Any = None
+        self._orig_finish: Any = None
+        self._orig_online: Any = None
+
+    @staticmethod
+    def _snapshot(model: HOORL) -> Dict[str, torch.Tensor]:
+        return {k: v.detach().to("cpu").clone() for k, v in model.state_dict().items()}
+
+    def __enter__(self) -> "OfflineStageProbe":
+        probe = self
+        self._orig_offline = HOORL.offline_update
+        self._orig_finish = HOORL.finish_offline_phase
+        self._orig_online = HOORL.online_update
+
+        def counted_offline_update(model_self, batch):
+            out = probe._orig_offline(model_self, batch)
+            if probe.offline_updates == 0:
+                probe.call_order.append("first_offline_update")
+            probe.offline_updates += 1
+            return out
+
+        def snapshotting_finish(model_self):
+            out = probe._orig_finish(model_self)
+            probe.call_order.append("finish_offline_phase")
+            probe.handover_snapshots.append(probe._snapshot(model_self))
+            return out
+
+        def snapshotting_online_update(model_self, batch):
+            if probe.online_updates == 0:
+                probe.call_order.append("first_online_update")
+                # BEFORE the step, so this is what the online stage started from.
+                probe.first_online_snapshot = probe._snapshot(model_self)
+            probe.online_updates += 1
+            return probe._orig_online(model_self, batch)
+
+        HOORL.offline_update = counted_offline_update  # type: ignore[method-assign]
+        HOORL.finish_offline_phase = snapshotting_finish  # type: ignore[method-assign]
+        HOORL.online_update = snapshotting_online_update  # type: ignore[method-assign]
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        HOORL.offline_update = self._orig_offline  # type: ignore[method-assign]
+        HOORL.finish_offline_phase = self._orig_finish  # type: ignore[method-assign]
+        HOORL.online_update = self._orig_online  # type: ignore[method-assign]
+
+
+def short_training_run(sumo_dir: str, out_dir: str) -> Dict[str, Any]:
+    """The smallest real HOORL run that still exercises the wiring."""
+    from src.hot_swap_trainer import run_hot_swap_training
+
+    return run_hot_swap_training(
+        model_name="HOORL",
+        total_steps=400,
+        episodes=1,
+        density=25.0,
+        batch_size=32,
+        warmup_steps=350,
+        seed=42,
+        checkpoint_dir=os.path.join(out_dir, "checkpoints"),
+        tensorboard_dir=os.path.join(out_dir, "tb"),
+        log_dir=os.path.join(out_dir, "logs"),
+        sumo_dir=sumo_dir,
+        validate_every_episodes=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# W1 / W2
+# ---------------------------------------------------------------------------
+def check_w1_w2() -> Tuple[str, str]:
+    callers = pipeline_offline_callers()
+    orphans = orphaned_offline_modules()
+    dataset = offline_dataset_path()
+
+    if not callers:
+        reason = (
+            "no module under src/ and not run_all.py calls pretrain() or set_phase(), "
+            "so no run can enter the offline stage yet"
+        )
+        return (
+            record("W1_offline_phase_is_entered_in_a_real_run", PENDING, reason),
+            record("W2_offline_result_reaches_the_online_start", PENDING, reason),
+        )
+    if set(orphans) == set(callers):
+        reason = (
+            f"the only offline entry points are {orphans}, which nothing else in the "
+            "pipeline imports. Defining the call is not reaching it: a training run "
+            "would still never enter the offline stage."
+        )
+        return (
+            record("W1_offline_phase_is_entered_in_a_real_run", PENDING, reason),
+            record("W2_offline_result_reaches_the_online_start", PENDING, reason),
+        )
+    if dataset is None:
+        reason = "wiring is present but no collected offline dataset was found; run src/hoorl_offline.py first"
+        return (
+            record("W1_offline_phase_is_entered_in_a_real_run", PENDING, reason),
+            record("W2_offline_result_reaches_the_online_start", PENDING, reason),
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        sumo_dir = os.path.join(td, "sumo")
+        os.makedirs(sumo_dir, exist_ok=True)
+        with OfflineStageProbe() as probe:
+            try:
+                summary = short_training_run(sumo_dir, td)
+            except Exception as exc:
+                reason = f"the short training run raised {type(exc).__name__}: {exc}"
+                return (
+                    record("W1_offline_phase_is_entered_in_a_real_run", "FAIL", reason),
+                    record("W2_offline_result_reaches_the_online_start", "FAIL", reason),
+                )
+
+        w1_ok = probe.offline_updates > 0
+        w1 = record(
+            "W1_offline_phase_is_entered_in_a_real_run",
+            "PASS" if w1_ok else "FAIL",
+            f"offline_update called {probe.offline_updates} times during a 400-step run "
+            f"(callers: {callers}); a count of 0 means the run is the online-only "
+            f"ablation carrying the method's name",
+        )
+
+        if not probe.handover_snapshots:
+            w2 = record(
+                "W2_offline_result_reaches_the_online_start",
+                "FAIL",
+                "finish_offline_phase() was never called, so no offline result was ever "
+                "handed over even though offline updates ran",
+            )
+            return w1, w2
+
+        # The weights as they stood the instant the handover completed.
+        handover = probe.handover_snapshots[-1]
+        pretrained_flag = float(handover.get("offline_pretrained", torch.zeros(1)).item())
+
+        if probe.first_online_snapshot is None:
+            w2 = record(
+                "W2_offline_result_reaches_the_online_start",
+                "FAIL",
+                "the offline stage ran and handed over, but no online update ever "
+                "followed, so there is no online starting point to compare against",
+            )
+            return w1, w2
+
+        worst, where = weight_drift(handover, probe.first_online_snapshot)
+
+        # The handover must PRECEDE the first online update. A run that pretrained
+        # after the online stage was already under way would pass every count and
+        # every weight comparison and still not be the paper's method.
+        order_ok = (
+            "finish_offline_phase" in probe.call_order
+            and "first_online_update" in probe.call_order
+            and probe.call_order.index("finish_offline_phase")
+            < probe.call_order.index("first_online_update")
+        )
+
+        w2_ok = pretrained_flag == 1.0 and order_ok and worst < MAX_PRESERVED_DRIFT
+        w2 = record(
+            "W2_offline_result_reaches_the_online_start",
+            "PASS" if w2_ok else "FAIL",
+            f"offline_pretrained at handover={pretrained_flag}; stage order="
+            f"{probe.call_order} (handover before first online update={order_ok}); "
+            f"worst relative weight drift between the handover snapshot and the "
+            f"weights the online stage started from={worst:.6f} at '{where}', "
+            f"threshold {MAX_PRESERVED_DRIFT} (measured: preserved 0.000000, "
+            f"discarded 1.853956, see hoorl_handover_drift_calibration.csv)",
+        )
+        return w1, w2
+
+
+# ---------------------------------------------------------------------------
+# W3
+# ---------------------------------------------------------------------------
+def check_w3() -> str:
+    """Three stages for `offline_lr_scale`, each reported separately."""
+    try:
+        from src.hpo import _search_space_keys, assert_hparams_reach_model
+
+        sampled = set(_search_space_keys("HOORL"))
+        unreachable = assert_hparams_reach_model("HOORL")
+    except Exception as exc:  # pragma: no cover - hpo is another session's file
+        return record("W3_offline_lr_scale_passes_all_three_stages", PENDING,
+                      f"could not read the hpo.py search space: {exc}")
+
+    stage1 = "offline_lr_scale" in sampled
+    if not stage1:
+        return record(
+            "W3_offline_lr_scale_passes_all_three_stages", PENDING,
+            "stage 1 not applicable: `offline_lr_scale` is deliberately NOT in the "
+            "search space (decision of 2026-09-05, because no trial enters the offline "
+            "phase). Stage 3 is already verified in isolation by verify_hoorl_iql.py "
+            "check 13, which measures a displacement ratio of exactly 2.0000 across the "
+            "actor, the critics and the value network. Re-run this once the argument is "
+            "searched.",
+        )
+
+    stage2 = not unreachable
+    # Stage 3: the rate a REAL offline update ran at, read from its own report.
+    scale = 3.0
+    model = HOORL(hidden_dim=64, offline_algorithm="iql", phase="offline",
+                  offline_lr_scale=scale)
+    rates = model._apply_offline_lr_scale()
+    expected = 3e-4 * scale
+    stage3 = all(abs(rates[k] - expected) < 1e-12 for k in ("actor_lr", "critic_lr", "value_lr"))
+    ok = stage1 and stage2 and stage3
+    return record(
+        "W3_offline_lr_scale_passes_all_three_stages", "PASS" if ok else "FAIL",
+        f"stage 1 sampled={stage1}; stage 2 reaches the constructor={stage2} "
+        f"(unreachable {unreachable}); stage 3 in force during an offline update="
+        f"{stage3} (rates {rates}, expected {expected:.2e})",
+    )
+
+
+def main() -> int:
+    print("Preconditions:")
+    callers = pipeline_offline_callers()
+    orphans = orphaned_offline_modules()
+    print(f"  pipeline files defining an offline entry point: {callers or 'NONE'}")
+    print(f"  of those, imported by nothing (orphaned): {orphans or 'none'}")
+    print(f"  collected offline dataset: {offline_dataset_path() or 'NOT FOUND'}\n")
+
+    statuses = list(check_w1_w2())
+    statuses.append(check_w3())
+
+    os.makedirs(os.path.dirname(RESULTS), exist_ok=True)
+    with open(RESULTS, "w", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["check", "result", "detail"])
+        writer.writeheader()
+        writer.writerows(_rows)
+
+    n_pass = statuses.count("PASS")
+    n_pending = statuses.count(PENDING)
+    n_fail = statuses.count("FAIL")
+    print(f"\n{n_pass} passed, {n_pending} pending, {n_fail} failed. Written to {RESULTS}")
+    if n_fail:
+        return 1
+    if n_pending:
+        print("PENDING is not a pass. These checks are waiting on the offline wiring.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

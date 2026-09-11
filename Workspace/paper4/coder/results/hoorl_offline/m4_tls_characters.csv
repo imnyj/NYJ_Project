@@ -1,0 +1,6 @@
+tls_state_code,character,count,fraction,onehot
+0,none,3912,0.03051,ALL ZERO
+1,r,64926,0.50635,r
+2,y,3572,0.02786,y
+3,g,16155,0.12599,g
+4,G,39658,0.30929,G

@@ -1,0 +1,16 @@
+{
+  "density": 20.0,
+  "floor_detail": {
+    "energy_distance_max": 0.053702835459117255,
+    "energy_distance_mean": 0.017131099752135632,
+    "half_size": 1462,
+    "mean_normalised_w1_max": 0.014687452522321627,
+    "mean_normalised_w1_mean": 0.009542886303983873,
+    "repeats": 9
+  },
+  "n_states": 2925,
+  "note": "A drift whose mean normalised W1 sits below the split-half sampling floor is indistinguishable from the noise a finite sample already shows, so no consumer of the dataset can be affected by it.",
+  "seed": 2001,
+  "split_half_floor_mean_normalised_w1": 0.009542886303983873,
+  "steps": 1200
+}

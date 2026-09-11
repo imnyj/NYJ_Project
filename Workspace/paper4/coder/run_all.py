@@ -36,6 +36,7 @@ from src.hot_swap_trainer import (
     REWARD_ERROR_MODES,
 )  # noqa: E402
 from src.hot_swap_trainer import run_hot_swap_training  # noqa: E402
+from src.sumo.make_sumo_set import DENSITY_GRID  # noqa: E402
 
 EPISODES = 100
 STEPS_PER_EPISODE = 2000
@@ -172,6 +173,13 @@ def load_hparams_from_csv(csv_path: Optional[str]) -> Dict[str, Dict[str, Any]]:
         # the trailing `**hparams` swallows it silently -- the exact failure mode
         # that let HPO report tuned values for models training at their defaults.
         "best_trial_diverged", "n_diverged_trials",
+        # Trial-accounting columns added by `merge_hpo_results.py`. Same class as
+        # the two above and the same failure mode: they describe how the SEARCH
+        # went, not how the model should train. The 2026-09-10 main-training
+        # launch died on all nine models because these four reached the
+        # constructors; the guard caught it rather than letting them be absorbed,
+        # which is what that guard exists for.
+        "n_trials", "n_usable_trials", "n_penalised_trials", "failed_fraction",
     }) | ENV_ONLY_HPARAM_KEYS
 
     for _, row in df.iterrows():
@@ -307,9 +315,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     # in-range counts flatten at 138-142 for requests of 35 and above and go
     # non-monotone, so a larger request does not make a busier network. Training on
     # a single density and evaluating across a range would have made every
-    # reported cell but one an extrapolation.
+    # reported cell but one an extrapolation. The list itself is owned by
+    # `make_sumo_set.DENSITY_GRID`, which `evaluate.py` benchmarks over and which
+    # the feature-[13] normaliser is derived from, so the three cannot drift.
     ap.add_argument("--density", type=float, nargs="+",
-                    default=[5, 10, 15, 20, 25, 30, 35],
+                    default=[float(d) for d in DENSITY_GRID],
                     help="traffic densities to cycle through, one per episode")
     # The two reward-aggregation arms are trained separately and compared; a run
     # must say which arm it belongs to because their rewards are not on the same

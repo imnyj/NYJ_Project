@@ -5,6 +5,12 @@
     "venue_policy": "IEEE / ACM / Elsevier-ScienceDirect / Springer top-tier / Nature-family only. arXiv and MDPI excluded, except the three foundational RL papers in category 'basic'.",
     "verification_method": "Every DOI was (1) resolved through https://doi.org/ and confirmed to land on an IEEE Xplore document page, (2) cross-checked field-by-field (title, full author list, venue, volume, issue, page range, issue year) against Crossref REST API, OpenAlex API, and dblp. All three agreed on every field for every entry. Abstracts were retrieved from the Semantic Scholar Graph API and used to write the summary and implementability fields. PMLR page ranges for SAC/TD3 were read directly from proceedings.mlr.press/v80.",
     "known_caveat_early_access_year": "IEEE assigns a DOI at early-access time, so the DOI year token can precede the issue year (e.g. 10.1109/TVT.2025.3640225 appears in the June 2026 issue, vol. 75 no. 6). Citations below use the FINAL ISSUE year, which is what Crossref and dblp report and what IEEE prints on the article.",
+    "observation_dimension_authoritative": "2026-09-06 기준 이 파일 전체에서 쓰는 RSU 관측 차원은 21이며 baselines의 implementability와 porting_scope의 서술을 이 값으로 통일했다. 세 값이 각각 무엇인지 구별해 둔다. (1) 17은 2026-09-06 시점의 실제 구현 값이며 근거는 coder/src/rl_interface.py:36의 STATE_DIM이다. (2) 18은 이 파일이 2026-08-27에 처음 작성될 당시의 구현 값이며, 따라서 작성 시점에는 옳았고 이후 갱신되지 않은 것이다. 출처가 확인되었다. coder/src/rl_interface.py:31-35의 주석이 '18 -> 17 (2026-08-29, design_spec_v2 D4)'라고 적고, 손으로 합성한 stop/start_imminent 특징을 제거해서 줄었다고 밝힌다. 그 특징은 벡터가 이미 따로 담고 있는 time_to_switch와 dist_to_stopline의 산술 평균이라 신경망이 스스로 배워야 할 것을 미리 계산해 준 파생 특징이었다는 것이 제거 사유다. 같은 값이 coder/backup/redesign_20260829_184958/rl_interface.py:31에도 남아 있어 시점이 교차 확인된다. (3) 21은 2026-09-06에 확정된 값이며 아직 코드에 반영되지 않았다. 확장 내용은 서브채널별 CBR 4개를 추가하는 것이다. 확정 근거는 다음과 같다. 행동 공간에 채널 선택이 있고 보상이 선택된 개별 채널의 CBR로 벌점을 주는데, 관측에는 네 채널의 평균 하나뿐이라 정책이 채널을 고를 근거를 갖지 못한다. 즉 결정해야 하는 양을 관측이 구별해 주지 않는 상태였다. 주의할 점을 분명히 남긴다. 21은 문헌 담당이 코드에서 확인한 값이 아니라 팀 리드가 전한 결정 사항이며, 2026-09-06 시점에 코드에는 반영되어 있지 않다. 구현이 반영되면 coder/src/rl_interface.py의 STATE_DIM이 21인지 확인하고 이 항목의 '반영 전' 표시를 지워야 한다. 이 수치는 방안 선정 근거가 아니라 이식 규격의 기술이므로 어느 항목의 채택 사유에도 영향을 주지 않는다.",
+    "code_cross_check_20260906": "이 파일이 원고 작성의 입력이므로, 관측 차원에서 낡은 값이 발견된 것을 계기로 코드와 대조 가능한 수치를 전수 점검했다. 결과는 review/baseline_roster_review_20260906.md의 7절에 표로 있다. 요지는 다음과 같다. 서브채널 4개(coder/src/Communications.py:79), 전력 [10, 23] dBm(rl_interface.py:64-65), Delta 하한 0.1 s(rl_interface.py:68), RSU 통신 범위 300 m(make_sumo_set.py:94), 보상 4항과 w1..w4(rl_interface.py:987-989), SB3 공통 래퍼의 [-1,1] 3차원 Box와 등폭 구간 분할(baselines/sb3_wrapper.py:11-18), SPAM-D3QN의 K=8과 L=4(baselines/spam_d3qn.py:158-159)는 모두 이 파일의 서술과 일치한다. 불일치는 관측 차원 하나뿐이었고 위 항목에서 처리했다. Delta 상한은 아래 delta_max_provenance 항목에서 따로 다룬다.",
+    "delta_max_provenance": "이 파일이 여러 곳에서 Delta 구간을 [0.1, 45] s로 적는다. 그 45의 성격을 밝혀 둔다. 값 자체는 맞다. 구현 담당이 2026-09-06에 실측하여 임포트 시점과 시나리오 생성 후와 refresh_scenario_constants 반환값 세 경로에서 모두 DELTA_MAX = 45.0을 확인했다. 다만 이 값은 코드에 박힌 상수가 아니라 SUMO 망의 최대 적색 시간에서 파생된다(rl_interface.py:155-156). 따라서 원고나 후속 검토에서 이 값을 쓸 때는 '현 시나리오에서 45.0으로 실측되었으며 코드에서는 SUMO 망의 최대 적색 시간에서 파생된다'는 취지로 적어야 한다. 값과 그 값이 어디서 오는지를 함께 적어야 다음 사람이 시나리오를 바꿀 때 다시 재야 함을 안다. 리터럴로만 두면 시나리오가 바뀌는 순간 낡는다. 여기에 덧붙일 위험 신호가 하나 있다. get_sumo_max_red_phase_duration의 폴백 기본값도 45.0이라서 실측값과 폴백값을 구별할 수 없다. 즉 망 파일을 찾지 못해 폴백이 반환되어도 정상 동작과 똑같아 보인다. 팀 리드에 따르면 이런 형태가 이 프로젝트에서 오늘만 세 번째다. E_REF의 폴백 13.32가 실제 값과 같았던 사례와 dist_to_stopline의 기본값이 클립 상한과 같았던 사례가 앞의 둘이다. 같은 형태를 또 만나면 폴백 경로가 실제로 타지 않았는지 별도로 확인해야 한다.",
+    "similar_axis_criteria_table_for_manuscript": "2026-09-06에 팀 리드가 지시한 사항이며, 유사 축 세 문헌 전체에 관한 것이므로 개별 항목이 아니라 이 공통 자리에 둔다. 처음에는 baselines의 xu2026 항목 안에 넣었으나, 그러면 bai2024나 parvini2023 항목을 읽는 사람에게 보이지 않아 옮겼다. 유사 축 세 문헌이 각각 어느 조건을 만족하고 어느 조건을 만족하지 않는지를 원고에 표로 넣는다. 심사자가 '왜 이것이 유사 방안인가'를 물을 때의 답이 되기 때문이다. 표의 열은 네 조건, 즉 결정 주체가 하나의 인프라 노드인가, 결정 변수에 갱신 주기가 포함되는가, 목적함수가 AoI인가, 응용 도메인이 차량 통신인가로 둔다. 행별 내용은 다음과 같다. bai2024(SPAM-D3QN)는 인프라 결정 주체 충족, 갱신 주기 미충족, AoI 목적 충족, 차량 도메인 충족이다. parvini2023(MADDPG-MT)는 인프라 결정 주체 미충족(에이전트가 플래툰 리더인 분산 구조다), 갱신 주기 미충족, AoI 목적 충족, 차량 도메인 충족이다. xu2026(HOORL)은 인프라 결정 주체 충족, 갱신 주기 충족, AoI 목적 충족, 차량 도메인 미충족이다. 이 표가 드러내는 논리가 핵심이다. 유사 축은 이미 서로 다른 부분집합을 만족하는 문헌들을 담고 있으며, 네 조건 전부를 만족하는 문헌은 하나도 없다. 실제로 네 조건을 전부 요구하는 기준을 세우면 parvini2023부터 탈락한다. 따라서 xu2026에만 전부를 요구하는 것은 일관되지 않는다. HOORL의 도메인 차이를 표에서 감추지 말고 그대로 드러내야 한다. 부족한 것이 도메인 하나뿐이고 나머지 두 문헌이 그 도메인을 채운다는 구조가 보여야 선정이 자의적이지 않음이 드러나기 때문이다. 아울러 갱신 주기 열은 xu2026만 충족하므로, 그 열이 비면 침묵 구간 Delta를 대조할 상대가 사라진다는 사실도 같은 표에서 읽힌다.",
+    "code_annotation_sweep_20260906": "팀 리드의 제안으로 src/baselines/ 아홉 파일의 모듈 헤더와 클래스 독스트링에서 '원논문에 없다', '우리 것', 'NOT from the paper' 류의 서술을 모아 이 파일의 porting 항목과 대조했다. 코드가 스스로 밝힌 한계를 아무도 옮겨 적지 않는 사례가 이 프로젝트에서 반복되었기 때문이다. 결과는 review/baseline_roster_review_20260906.md의 10절에 있다. 누락이 다섯 건 발견되어 전부 반영했다. (1) hong2026의 다단계 Q 값 갱신이 재현되지 않는다. 재생 버퍼가 후속 사슬을 저장하지 않아 n단계 반환을 조립할 수 없고 1단계 SMDP 백업으로 대체되었으며, 코드가 이를 '진정한 약화'라고 적는다(ma2hdqn.py:37-45). (2) hong2026의 적응적 학습률 함수 형태와 '개선된 DDPG'의 구성이 원논문에 명시되지 않아 우리가 정했다(ma2hdqn.py:46-50, 317). 이 두 건 때문에 hong2026의 performance_direction과 manuscript_note를 다시 썼다. 이전 판이 이 항목을 '원논문 구성 요소가 가장 온전히 유지되는 항목'이라고 적었는데 사실이 아니었다. (3) xu2026의 오프라인 학습기가 암묵적 Q 학습으로 이미 정해져 있었다(hoorl.py:81, 156, 620, 693). offline_algorithm_investigation.decision_taken에 기록했다. (4) bai2024의 서브채널 축이 우리 추가다(spam_d3qn.py:45). (5) 다중 에이전트 세 종의 가변 에이전트 수 처리와 이웃 절단이다. neighbourhood_truncation_note와 세 항목의 porting A-2를 볼 것. 아울러 chen2026의 이점 추정이 근사이며 원논문의 추정량이 아니라는 서술도 확인하여(i_hamappo.py:454) 해당 항목에 적었다.",
+    "neighbourhood_truncation_note": "2026-09-06에 확인하여 추가했다. 다중 에이전트 세 종인 parvini2023(MADDPG-MT), li2026(RES-MAPDDPG), chen2026(I-HAMAPPO)에 공통으로 걸리는 이식 범위 사항이므로 세 항목이 모두 닿는 이 자리에 둔다. 세 항목의 porting에도 같은 취지를 적었다. 내용은 rl_interface.py:827-885의 NeighbourhoodView가 이웃 관측을 생산하면서 MAX_NEIGHBOURS = 16(rl_interface.py:59)으로 절단한다는 것이다. 16은 상한이지 실제 인원수가 아니다. 같은 파일의 주석이 밝히는 측정값에 따르면 통신 범위 내 차량 수가 밀도 5에서 약 22대, 밀도 35에서 약 142대이므로, 혼잡한 구간에서는 크리틱이 90여 대 가운데 가장 가까운 16대만 본다. 이 절단이 왜 원고에 들어가야 하는지가 중요하다. NeighbourhoodView의 독스트링이 스스로 '풀링과 마스킹과 절단은 우리 것'이라고 밝힌다. 세 원논문은 모두 고정된 에이전트 집단, 즉 플래툰이나 고정 차량 집합을 전제하므로 고정 폭 결합이 잘 정의되고 어느 에이전트를 남길지의 문제가 아예 발생하지 않는다. 우리 환경은 차량이 300 m 경계를 드나들어 인원수가 매 스텝 바뀌므로 패딩 규약과 유효성 마스크와 상한 규칙 세 가지를 우리가 추가했다. 절단이 세 종 모두에 걸리는 경로도 확인했다. 상한은 학습 파이프라인이 뷰를 만들 때 적용되며(hot_swap_trainer.py:4006과 4034, hpo.py:1051과 1072와 1211에서 max_neighbours=MAX_NEIGHBOURS로 생성한다) 이는 세 학습기의 상류다. li2026과 chen2026은 자체 max_agents도 MAX_NEIGHBOURS를 기본값으로 받아 한 번 더 자른다(res_mapddpg.py:151과 256, i_hamappo.py:116과 252). 여기서 바로잡을 점이 하나 있다. 2026-09-06 첫 기록에서 'li2026과 chen2026은 고정 폭 결합이 필요하고 parvini2023만 구조상 절단이 필요 없다'고 적었는데 이는 사실이 아니었다. 세 구현을 직접 읽은 결과 셋 다 패딩된 집합 위에서 순열 불변 풀링을 쓴다. res_mapddpg.py:56과 236-271이 마스크 평균 풀링, i_hamappo.py:64-65와 236-267이 마스크 평균 풀링, maddpg_mt.py:64가 마스크 평균과 최대 풀링이다. 순열 불변 풀링은 임의 폭을 받을 수 있으므로 어느 것도 16이라는 상한을 아키텍처 수준에서 요구하지 않는다. 즉 세 종이 같은 성격의 설계 절단을 받는다. 첫 기록의 오류는 rl_interface.py:46-51의 주석이 'RES-MAPDDPG와 I-HAMAPPO는 패딩된 텐서를 결합하므로 고정 폭이 필요하다'고 적은 것을 그대로 옮긴 데서 나왔다. 팀 리드가 2026-09-06에 세 파일을 대조하여 그 주석이 구현과 어긋남을 확인했고 주석 수정은 구현 세션으로 넘겼다. 같은 주석의 마지막 문단은 구현과 일치하므로 그 부분은 그대로 따른다. 아직 열려 있는 확인이 하나 있다. 세 구현이 모두 max_agents 인자를 받는데, 순열 불변 풀링이면 폭이 무관해야 하므로 그 인자가 텐서 할당에만 쓰이는지 다른 용도가 있는지를 확인 중이다. 다른 용도가 있다면 위 주석이 부분적으로 맞는 것이 되므로, 결과가 나오면 이 항목의 서술을 그에 맞추어야 한다. 성능 방향은 셋 다 불리 쪽이다. 세 논문의 기여가 모두 '액터 자신의 관측보다 넓은 것을 보는 크리틱'인데 그 시야가 혼잡 구간에서 약 6분의 1로 잘리기 때문이다.",
     "venue_concentration_note": "All three category-A picks landed in IEEE Transactions on Vehicular Technology. This was not a search artifact of one query - it is where the 2026 hybrid-action AoI/resource-allocation work is concentrated. Alternatives in TITS, IoT-J and OJCOMS were found and are listed under considered_and_rejected with their rejection reasons; implementability was the deciding factor, not venue spread."
   },
   "baselines": [
@@ -27,7 +33,7 @@
       "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11373895; title, all 3 authors, TVT vol. 75 no. 7 pp. 14775-14790, 2026 confirmed identically by Crossref, OpenAlex and dblp",
       "method_name": "RES-MAPDDPG",
       "summary": "Proposes res-MAPDDPG, a residual multi-agent parameterized-action-space DDPG in which every agent emits a discrete action together with the continuous parameters attached to that discrete choice, so subchannel/resource-block selection and transmit power are learned in one policy rather than two stages. The NOMA V2I side is handled separately by user grouping plus convex optimization, and only the V2V side is learned. Picked because the parameterized action space is structurally identical to our hybrid action (discrete ch with continuous Delta and p hanging off it) and it is the newest V2X paper that learns exactly that structure.",
-      "implementability": "IMPLEMENTABLE with one clearly-scoped subtraction. Original observation is per-agent local CSI plus interference measurements; original action is (discrete RB index, continuous power). Adaptation for us: keep only the res-MAPDDPG learner. Feed the 18-dim RSU-side observation; the discrete head chooses one of our 4 subchannels and the continuous head emits the 2-dim (Delta, p) as that subchannel's action parameters - a 1-dim to 2-dim widening of the parameter vector, no architectural change. Instantiate one shared-parameter actor per in-range vehicle, all hosted at the RSU (our setting is single-RSU centralised, so 'multi-agent' costs us nothing extra). DROP the NOMA grouping + convex-optimization V2I stage: our uplink is orthogonal-subchannel with the existing Rayleigh SINR contention model and we have no SIC receiver. Consequence to state honestly in the paper: without NOMA this degenerates to a parameterized-action DDPG baseline, which is precisely the comparison we want. No new infrastructure required.",
+      "implementability": "IMPLEMENTABLE with one clearly-scoped subtraction. Original observation is per-agent local CSI plus interference measurements; original action is (discrete RB index, continuous power). Adaptation for us: keep only the res-MAPDDPG learner. Feed the 21-dim RSU-side observation (see _meta.observation_dimension_authoritative; 21 is the decided width, not yet in code as of 2026-09-06); the discrete head chooses one of our 4 subchannels and the continuous head emits the 2-dim (Delta, p) as that subchannel's action parameters - a 1-dim to 2-dim widening of the parameter vector, no architectural change. Instantiate one shared-parameter actor per in-range vehicle, all hosted at the RSU (our setting is single-RSU centralised, so 'multi-agent' costs us nothing extra). DROP the NOMA grouping + convex-optimization V2I stage: our uplink is orthogonal-subchannel with the existing Rayleigh SINR contention model and we have no SIC receiver. Consequence to state honestly in the paper: without NOMA this degenerates to a parameterized-action DDPG baseline, which is precisely the comparison we want. No new infrastructure required.",
       "bibitem": "\\bibitem{li2026} J. Li, Q. Leng and M. Cheng, ``Resource Allocation in NOMA-V2X Networks With Multi-Agent Parameterized Action Space Reinforcement Learning,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 7, pp. 14775--14790, 2026.",
       "cited_by_count": "2",
       "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27 (Semantic Scholar agrees: 2). 2026 paper - per the coordinator's rule, NOT compared on citations against other 2026 papers."
@@ -53,13 +59,14 @@
       "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11278196; title, all 5 authors, TVT vol. 75 no. 6 pp. 11423-11437 confirmed identically by Crossref, OpenAlex and dblp. Year note: DOI token says 2025 (early access 2025-12-04) but the final issue is June 2026, so the citation year is 2026 - Crossref and dblp both report 2026.",
       "method_name": "MA2HDQN",
       "summary": "Proposes MA2HDQN, which splits the hybrid action space explicitly: a multi-agent dueling double DQN (MA-D3QN) branch handles the discrete sub-band allocation while an improved DDPG (i-DDPG) branch handles continuous power control, plus an adaptive learning-rate rule driven by recent environment feedback and multi-step Q-value updates for faster, more stable convergence. Picked because its action space (discrete sub-band + continuous power) is our action space minus Delta, making it the nearest-to-drop-in 2026 baseline and the cleanest test of whether branch-splitting beats a single parameterized policy on our problem.",
-      "implementability": "IMPLEMENTABLE - closest to drop-in of all nine. Original observation is per-link local channel and interference state; original action is (discrete sub-band, continuous power). Adaptation for us: point the D3QN branch at our 4 subchannels and widen the i-DDPG branch output from 1-dim (p) to 2-dim (Delta, p), with Delta passed through our existing geometric mapping over [0.1, 45] s. Observation is our 18-dim RSU-side vector unchanged. The multi-agent framing collapses to one shared-parameter agent instance per in-range vehicle, all executed at the RSU - identical semantics for a single-RSU scheduler. The adaptive learning rate and multi-step update are algorithm-internal and carry over verbatim. NO infrastructure gap whatsoever: no RIS, no VLC, no NOMA/SIC, no second RSU, no platoon.",
+      "implementability": "IMPLEMENTABLE - closest to drop-in of all nine. Original observation is per-link local channel and interference state; original action is (discrete sub-band, continuous power). Adaptation for us: point the D3QN branch at our 4 subchannels and widen the i-DDPG branch output from 1-dim (p) to 2-dim (Delta, p), with Delta passed through our existing geometric mapping over [0.1, 45] s. Observation is our 21-dim RSU-side vector unchanged (see _meta.observation_dimension_authoritative; 21 is the decided width, not yet in code as of 2026-09-06). The multi-agent framing collapses to one shared-parameter agent instance per in-range vehicle, all executed at the RSU - identical semantics for a single-RSU scheduler. The adaptive learning rate and multi-step update are algorithm-internal and carry over verbatim. NO infrastructure gap whatsoever: no RIS, no VLC, no NOMA/SIC, no second RSU, no platoon.",
       "bibitem": "\\bibitem{hong2026} Z. Hong, P. Sun, Q. Si, Y. Liu and T. Qiu, ``Joint Sub-Band Allocation and Power Control for Dynamic Vehicular Networks Based on Multi-Agent Deep Reinforcement Learning,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 6, pp. 11423--11437, 2026.",
       "cited_by_count": "1",
       "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27. 2026 issue (early access Dec 2025) - not compared on citations against other 2026 papers."
     },
     {
       "id": "chen2026",
+      "id_note": "2026-09-05 키 정리. related_works.json에도 chen2026이 있었으나 그 항목은 Haosheng Chen 외의 SAGIN P-DDQN 논문(DOI 10.1109/TWC.2026.3706356)으로 다른 문헌이다. SEARCH_SPEC.md의 숫자 접미사 규약에 따라 그쪽을 chen20262로 바꾸었고, 베이스라인으로 구현되어 결과 표와 그림 범례에서 반복 인용되는 이 항목이 접미사 없는 chen2026을 유지한다.",
       "category": "latest",
       "title": "Hybrid-Action DRL-Based Resource Allocation for Semantic-Aware Computation Offloading in Vehicular Edge Networks",
       "authors": [
@@ -80,7 +87,7 @@
       "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27 (Semantic Scholar agrees: 2). 2026 paper - per the coordinator's rule, NOT compared on citations against other 2026 papers.",
       "method_name": "I-HAMAPPO",
       "summary": "Proposes I-HAMAPPO, an importance-based hybrid-action multi-agent PPO that jointly optimises CONTINUOUS and DISCRETE decision variables in one policy for semantic-aware computation offloading in vehicular edge networks, evaluated on real vehicle trajectories from the highD dataset. A utility function combines task delay, energy consumption and semantic similarity, and an importance evaluation module scores semantic features so only task-relevant information is transmitted. Selected because it is the target journal (IEEE TWC), the domain is vehicular, and hybrid-action MAPPO is the closest published learner to our exact action structure.",
-      "implementability": "IMPLEMENTABLE, with the semantic half removed. Original observation is a per-vehicle view of task queue, channel and edge-server state; original action is mixed - discrete offloading/resource selection plus continuous semantic compression ratio and communication resource share. Adaptation for us: keep the I-HAMAPPO learner exactly as specified - discrete branch selects one of our 4 subchannels, continuous branch emits (Delta, p) - and feed it our 18-dim RSU-side observation. The multi-agent PPO runs one shared-parameter actor per in-range vehicle, all hosted at the RSU, matching our single-RSU centralised scheduler. DROP the importance evaluation module and the semantic compression ratio action: we transmit mobility state, not semantic features, so there is no semantic similarity term and nothing to compress. STATE HONESTLY IN THE PAPER that roughly half the original contribution (the semantic/IEM half) is not reproduced and only the hybrid-action MAPPO learner named in the title is being compared. No infrastructure gap: no RIS, no VLC, no MIMO array, no second RSU, no platoon.",
+      "implementability": "IMPLEMENTABLE, with the semantic half removed. Original observation is a per-vehicle view of task queue, channel and edge-server state; original action is mixed - discrete offloading/resource selection plus continuous semantic compression ratio and communication resource share. Adaptation for us: keep the I-HAMAPPO learner exactly as specified - discrete branch selects one of our 4 subchannels, continuous branch emits (Delta, p) - and feed it our 21-dim RSU-side observation (see _meta.observation_dimension_authoritative; 21 is the decided width, not yet in code as of 2026-09-06). The multi-agent PPO runs one shared-parameter actor per in-range vehicle, all hosted at the RSU, matching our single-RSU centralised scheduler. DROP the importance evaluation module and the semantic compression ratio action: we transmit mobility state, not semantic features, so there is no semantic similarity term and nothing to compress. STATE HONESTLY IN THE PAPER that roughly half the original contribution (the semantic/IEM half) is not reproduced and only the hybrid-action MAPPO learner named in the title is being compared. No infrastructure gap: no RIS, no VLC, no MIMO array, no second RSU, no platoon.",
       "bibitem": "\\bibitem{chen2026} Q. Chen, X. Song, T. Song and Y. Yang, ``Hybrid-Action DRL-Based Resource Allocation for Semantic-Aware Computation Offloading in Vehicular Edge Networks,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 25, pp. 6790--6805, 2026."
     },
     {
@@ -103,35 +110,44 @@
       "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10321738; title, all 4 authors, TVT vol. 73 no. 4 pp. 5781-5795, 2024 confirmed identically by Crossref, OpenAlex and dblp",
       "method_name": "SPAM-D3QN",
       "summary": "Studies vehicle data-packet scheduling and power allocation for AoI minimisation in a Manhattan-grid V2I network, modelled as a SINGLE-AGENT MDP sitting at the infrastructure side. Proposes SPAM, a Dueling Double DQN with Prioritized Experience Replay to cope with the scarcity of high-value transitions, reporting 22.6% lower average AoI than plain D3QN baselines. This is the single closest published work to our formulation - same actor (the roadside infrastructure), same two decisions (who/when to schedule and at what power), same objective (AoI), same V2I grid topology - and is exactly the comparison a reviewer will demand.",
-      "implementability": "IMPLEMENTABLE, requires only an action discretisation we control. Original observation is the infrastructure-side view of per-vehicle AoI and channel state; original action is fully discrete: (which vehicle to schedule, which power level). Adaptation for us: the agent already lives where ours lives, so the observation is our 18-dim RSU vector unchanged. Discretise our two continuous axes for the D3QN head - p into L levels over [10, 23] dBm and Delta into K levels drawn from the SAME geometric grid we use for the continuous mapping over [0.1, 45] s - and treat the subchannel as the third discrete factor. PER carries over untouched. RISK TO MANAGE: the joint action space is K x L x 4, which explodes if K and L are generous; use a factored/branching Q-head or a deliberately coarse grid (e.g. K=8, L=4) and report the grid explicitly in the paper. This baseline is scientifically valuable precisely because it is the fully-discretised reference point - it quantifies what our continuous Delta and p actually buy.",
+      "implementability": "IMPLEMENTABLE, requires only an action discretisation we control. Original observation is the infrastructure-side view of per-vehicle AoI and channel state; original action is fully discrete: (which vehicle to schedule, which power level). Adaptation for us: the agent already lives where ours lives, so the observation is our 21-dim RSU vector unchanged (see _meta.observation_dimension_authoritative; 21 is the decided width, not yet in code as of 2026-09-06). Discretise our two continuous axes for the D3QN head - p into L levels over [10, 23] dBm and Delta into K levels drawn from the SAME geometric grid we use for the continuous mapping over [0.1, 45] s - and treat the subchannel as the third discrete factor. PER carries over untouched. RISK TO MANAGE: the joint action space is K x L x 4, which explodes if K and L are generous; use a factored/branching Q-head or a deliberately coarse grid (e.g. K=8, L=4) and report the grid explicitly in the paper. This baseline is scientifically valuable precisely because it is the fully-discretised reference point - it quantifies what our continuous Delta and p actually buy.",
       "bibitem": "\\bibitem{bai2024} G. Bai, L. Qu, J. Liu and D. Sun, ``AoI-Aware Joint Scheduling and Power Allocation in Intelligent Transportation System: A Deep Reinforcement Learning Approach,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 4, pp. 5781--5795, 2024.",
       "cited_by_count": "26",
       "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27."
     },
     {
-      "id": "cohen2025",
+      "id": "xu2026",
       "category": "similar",
-      "title": "SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks",
+      "replaced": "2026-09-05에 cohen2025(CARLTON)를 이 항목으로 교체했다. 사용자 승인. 교체 사유와 후보 비교는 carlton_replacement_search 절에, 교체된 CARLTON의 배제 사유는 considered_and_rejected에 기록되어 있다.",
+      "title": "AoI and Energy-Aware Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning Framework",
       "authors": [
-        "Yaniv Cohen",
-        "Tomer Gafni",
-        "Ronen Greenberg",
-        "Kobi Cohen"
+        "Jingyi Xu",
+        "Xuying Zhou",
+        "Meiyan Song",
+        "Wei Wang",
+        "Dusit Niyato",
+        "Chau Yuen"
       ],
-      "venue": "IEEE Transactions on Wireless Communications",
+      "venue": "IEEE Transactions on Vehicular Technology",
       "venue_type": "journal",
-      "year": 2025,
-      "volume": "24",
-      "issue": "1",
-      "pages": "228--243",
-      "doi": "10.1109/TWC.2024.3491035",
-      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10750207; title, all 4 authors, IEEE TWC vol. 24 no. 1 pp. 228-243 confirmed identically by Crossref, OpenAlex and dblp. Year: Crossref and dblp report the Jan 2025 issue; OpenAlex reports 2024 from the early-access date. An arXiv preprint (2402.17773) exists but the citation used is the TWC version.",
-      "cited_by_count": "14",
-      "cited_by_count_source": "OpenAlex cited_by_count = 14, queried 2026-08-27. Semantic Scholar reports 18 for the same work (it merges the arXiv preprint's citations). Both numbers recorded; neither is fabricated.",
-      "method_name": "CARLTON",
-      "summary": "Proposes CARLTON, a multi-agent RL framework for distributed dynamic channel allocation that explicitly rejects the usual perfect-orthogonality and one-to-one user-channel assumptions, instead modelling inter-carrier interference and channel reuse across overlapping networks. It uses Centralized Training with Decentralized Execution over the DeepMellow value-based algorithm to maximise a global SINR measure subject to per-network QoS-SINR targets. Selected because our environment is literally a bandwidth split into 4 frequency-separated subchannels contended by many vehicles under a Rayleigh SINR model - the exact problem CARLTON is built for - and because it is published in our target journal.",
-      "implementability": "IMPLEMENTABLE, requires adding the two continuous axes. Original observation is each transmitter's local SINR/interference measurements; original action is purely DISCRETE - which of K channels to occupy. Adaptation for us: the SINR-aware reward and the CTDE/DeepMellow learner transfer directly onto our Rayleigh SINR contention model with K=4, and the observation becomes our 18-dim RSU-side vector. Because CARLTON has no power and no timing action, we extend it the same way bai2024 is extended: add discretised heads for p (L levels over [10,23] dBm) and Delta (K levels on our geometric grid over [0.1,45] s), keeping the value-based DeepMellow update. Agents are the in-range vehicles with centralised training at the RSU - our deployment is centralised anyway, so CTDE costs nothing. RISK TO MANAGE: like bai2024 this is a fully value-based/discretised design, so the two discretised baselines will share a failure mode; keep their grids identical so the comparison isolates the learner rather than the grid. NOTE it contributes no AoI term of its own - the AoI objective comes from our reward, and that substitution must be stated.",
-      "bibitem": "\\bibitem{cohen2025} Y. Cohen, T. Gafni, R. Greenberg and K. Cohen, ``SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks,'' \\emph{IEEE Transactions on Wireless Communications}, vol. 24, no. 1, pp. 228--243, 2025."
+      "year": 2026,
+      "volume": "75",
+      "issue": "8",
+      "pages": "18102--18115",
+      "doi": "10.1109/TVT.2026.3675626",
+      "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 6인 전원, IEEE Trans. Veh. Technol. 75(8) 18102-18115, 2026이 모두 일치했다. 2026-08-27 조사에서도 doi.org가 ieeexplore.ieee.org/document/11442965로 해석되는 것과 Crossref, OpenAlex, dblp 세 색인의 일치가 확인되어 있다. 2026년 게재분이므로 투고 직전 권과 호와 페이지를 재확인한다.",
+      "cited_by_count": "0",
+      "cited_by_count_source": "Crossref is-referenced-by-count = 0, Semantic Scholar = 1 (둘 다 2026-09-05 조회). 2026년 게재분이라 낮은 것이 정상이며 품질 신호가 아니다. 두 수치를 모두 기록하며 어느 쪽도 지어내지 않았다.",
+      "method_name": "HOORL",
+      "has_aoi_objective": "예. 초록이 'The objective is to minimize the average weighted sum of required AoI and the energy consumption of the mobile devices'라고 명시한다. AoI가 보조 지표가 아니라 최적화 대상이며, 이것이 CARLTON을 대체한 첫 번째 이유다.",
+      "summary": "엔드 유저가 엣지 서버에 상태 갱신을 요청하고 주기적으로 센싱하는 에너지 수확 이동 기기 집단이 그 갱신을 생산하는 크라우드센싱 망을 다룬다. 엣지 서버는 이기종 기기 사이의 전송을 스케줄링하는 동시에 각 기기의 센싱 주기를 사용자 요구에 맞추어 최적화해야 하며, 기기의 배터리 잔량을 서버가 직접 관측할 수 없다는 점이 핵심 난점이라 문제를 부분관측 마르코프 결정 과정으로 정식화한다. 희소 보상과 사용자 요구 대비 센싱 빈도의 불일치를 다루기 위해 오프라인 강화학습과 온라인 강화학습의 장점을 결합한 HOORL을 제안하며, 시스템 비용을 줄이면서 기기 배터리 수준을 안정적으로 유지한다고 보고한다.",
+      "implementability": "구현 가능하며 파이프라인에 오프라인 로그 수집 단계가 하나 추가된다. 사용자가 2026-09-05에 오프라인 단계를 포함하기로 결정했다. 원논문의 결정 주체인 엣지 서버가 우리 RSU에 대응하고, 전송 스케줄링이 서브채널 배정에, 각 기기의 센싱 주기가 우리 Delta에, 기기 에너지 소비가 전력 항에 대응한다. 관측은 21차원 RSU 관측 벡터를 그대로 쓴다. _meta.observation_dimension_authoritative를 볼 것이며, 21은 확정된 폭이고 2026-09-06 시점에 코드에는 아직 반영되지 않았다. 2026-09-05 판은 여기에 '부분관측 전제도 RSU가 차량 내부 상태를 직접 보지 못하는 우리 상황과 맞으므로'라는 근거를 달아 두었으나 2026-09-06에 삭제했다. 원논문이 부분관측으로 정식화한 근거는 기기 배터리 잔량이 서버에 보이지 않는다는 것인데, 배터리는 시간에 따라 단조 감소하고 행동에 의해 변하며 미래 가용성을 결정하는 은닉 상태인 반면 우리 RSU가 보지 못하는 것은 그런 성질이 아니기 때문이다. 관측을 수정하지 않는다는 결정 자체는 유지된다. 아홉 종이 같은 관측을 써야 비교가 성립한다는 것이 그 결정의 올바른 근거다. 센싱 주기 대 Delta 대응의 구체적 처리는 다음과 같다. 원논문은 각 기기의 센싱 주기를 이산 후보 집합에서 고르지만 우리 Delta는 [0.1, 45] s의 연속 변수이므로, 기존 기하 매핑을 그대로 재사용해 정책 출력이 이 구간의 Delta를 내도록 하고 그 Delta를 다음 결정 시점까지의 침묵 구간으로 해석한다. 서브채널은 이산 헤드가 4개 중 하나를 고르고 전력은 [10, 23] dBm의 연속 출력으로 둔다. 오프라인 단계의 행동 정책은 문서화된 고정 주기 휴리스틱으로 정한다. Delta를 고정값으로 두고 서브채널과 전력은 각 범위에서 균등 무작위로 뽑는 방식이며, 이 정책의 명세를 기록해 두어야 오프라인 강화학습의 전제인 행동 정책 기지성이 성립한다. 다른 베이스라인의 학습 로그를 재활용하지 않는 이유가 여기에 있다. 학습 도중 계속 변하는 정책이 만든 데이터는 분포 이동이 통제되지 않아 원논문이 상정한 조건과 다른 것을 재현하게 된다. 수집은 동일한 SUMO 시나리오에서 수행하며 GPU가 아니라 CPU 시간만 쓰므로 다른 여덟 종의 하이퍼파라미터 탐색과 병행할 수 있다. 온라인 미세조정은 오프라인에서 학습한 정책과 가치 함수를 초기값으로 삼아 우리 환경에서 이어서 학습하는 방식이며, 이 인계 지점이 원논문에서 Hybrid가 가리키는 부분이므로 생략하지 않는다. 새 하드웨어나 인프라는 필요하지 않다. RIS도 가시광 채널도 NOMA와 SIC도 플래툰도 다중 RSU도 에이전트가 제어하는 이동성도 요구하지 않는다.",
+      "domain_defense_for_manuscript": "2026-09-06에 다시 적었다. 이전 판의 둘째 논거였던 부분관측 대응을 삭제하고, 갱신 주기 대조군 논거를 맨 앞으로 올렸다. 팀 리드의 지시에 따라 원고의 비교 방안 선정 절에서 이 순서를 그대로 따르며, 도메인 차이 해명보다 먼저 설명한다. 첫째이자 가장 중요한 논거는 이 문헌이 없으면 대조할 상대가 사라진다는 것이다. 비교 방안 아홉 종 가운데 갱신 주기를 학습 대상으로 삼는 것은 이 한 편뿐이다. 최신 축 세 종은 이산 자원 선택과 연속 전력만 결정하고, 기초 축 세 종은 목적함수도 결정 변수 구조도 없는 범용 알고리즘이며, 유사 축의 SPAM-D3QN은 스케줄링과 전력을, MADDPG-MT는 서브밴드와 전력을 결정한다. 어느 쪽도 갱신 주기를 결정하지 않는다. 따라서 이 자리를 비우면 본 연구가 침묵 구간 Delta를 연속 변수로 학습한다는 기여를 대조할 상대가 하나도 남지 않고, Delta의 효과는 제안 방안 내부의 절제 실험으로만 논하게 된다. 이 비교가 답하려는 질문이 '갱신 주기를 학습하는 기존 방식과 견주어 우리 방식이 나은가'이므로, 그 질문에 답하려면 갱신 주기를 학습하는 방법이 반드시 하나는 있어야 한다. 둘째, 결정 구조가 1:1로 대응한다. 원논문에서 엣지 서버가 이기종 이동 기기의 전송을 스케줄링하면서 각 기기의 센싱 주기를 함께 정하는 구조는, 본 연구에서 RSU가 차량의 상향링크 전송을 스케줄링하면서 침묵 구간 Delta를 함께 정하는 구조와 같다. 결정 주체가 하나의 인프라 노드이고 결정 대상이 다수의 이기종 단말이며 결정 변수에 갱신 주기가 포함된다는 세 조건이 모두 일치하며, 세 조건은 모두 원논문 초록의 문면에서 직접 확인된다. 셋째, 목적함수가 같은 종류의 상충을 다룬다. 원논문은 요구 AoI와 에너지 소비의 가중합을 최소화하며, 이는 본 연구가 신선도와 전력 사이에서 다루는 상충과 같은 구조다. 넷째, 허용된 검색처 안에서 대체 문헌이 존재하지 않는다. 차량 통신 또는 그에 준하는 이동체 무선 환경일 것, AoI를 최적화 목표로 삼을 것, 갱신 시점이나 주기를 결정 변수로 다룰 것, 강화학습 기반일 것이라는 네 조건을 모두 만족하는 문헌은 2026-09-05과 2026-09-06 두 차례 조사에서 이 한 편뿐이었다. 다섯째, 비교의 목적상 도메인보다 결정 구조의 일치가 중요하다. 응용 도메인이 모바일 크라우드센싱이라는 점은 실재하는 차이이나 게재처가 IEEE Transactions on Vehicular Technology이고, 아홉 종 가운데 여섯 종이 이미 원논문과 다른 목적함수 아래에서 평가된다는 사실이 cross_cutting_note에 기록되어 있다. 도메인 차이 하나만 특별히 배제 사유로 삼으면 같은 기준을 항목마다 다르게 적용하게 된다.",
+      "similar_axis_criteria_table_moved": "이 자리에 있던 similar_axis_criteria_table_for_manuscript를 2026-09-06에 _meta로 옮겼다. 그 표는 유사 축 세 문헌 전체에 관한 것인데 HOORL 항목 안에 두면 bai2024나 parvini2023 항목을 읽는 사람에게 보이지 않기 때문이다.",
+      "delta_comparator_note_for_manuscript": "2026-09-06에 팀 리드가 지시한 사항이다. 바로 위 domain_defense_for_manuscript의 첫째 논거, 즉 갱신 주기를 결정 변수로 삼는 것이 아홉 종 중 이 한 편뿐이고 그 자리를 비우면 Delta를 대조할 상대가 사라진다는 논리를 원고의 비교 방안 선정 절에 그대로 넣는다. 이 문헌이 왜 그 자리에 있는지를 도메인 차이보다 먼저 설명해야 한다. 아울러 갱신 주기를 학습 대상으로 삼은 선행 연구가 이토록 드물다는 사실 자체가 본 연구의 신규성을 뒷받침하는 서술 근거로도 쓰인다.",
+      "weaknesses": "원고에 정직하게 밝힐 약점이 셋이다. 첫째, 응용 도메인이 V2X가 아니라 모바일 크라우드센싱이다. 게재처는 IEEE TVT이고 결정 구조가 대응하지만 도메인 차이는 실재하므로 위 domain_defense_for_manuscript의 논거를 함께 서술해야 한다. 둘째, 피인용이 Crossref 0과 Semantic Scholar 1로 낮다. 2026년 게재분이라 정상이지만 영향력을 선정 근거로 삼을 수는 없으며, 선정 근거는 방법론적 근접성이다. 셋째, 오프라인 데이터셋 생성이 선행되어야 하므로 다른 여덟 종보다 준비 시간이 더 든다. 이 부담은 CPU 시간에 한정되며 다른 종의 탐색과 병행할 수 있다는 점을 함께 적는다.",
+      "history": "이 논문은 2026-08-27 조사에서 최신 범주 2번 자리를 차지했다가 chen2026에 밀려 considered_and_rejected로 강등되었던 항목이다. 강등 사유는 게재처 등급과 도메인이었지 방법론 부적합이 아니었고, 당시 기록도 잃는 것이 갱신 간격을 학습하는 유일한 사례라고 명시해 두었다. 유사 범주는 방법론적 근접성을 우선하는 자리이므로 이 논문에 더 맞는 자리이며, 2026-09-05에 그 자리로 복귀했다.",
+      "bibitem": "\\bibitem{xu2026} J. Xu, X. Zhou, M. Song, W. Wang, D. Niyato and C. Yuen, ``AoI and Energy-Aware Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning Framework,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 75, no. 8, pp. 18102--18115, 2026."
     },
     {
       "id": "parvini2023",
@@ -151,7 +167,7 @@
       "issue": "8",
       "pages": "9880--9896",
       "doi": "10.1109/TVT.2023.3259688",
-      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10077432; title, venue, TVT vol. 72 no. 8 pp. 9880-9896, 2023 confirmed identically by Crossref, OpenAlex and dblp. Author-name caveat: Crossref and dblp both print the 4th author as 'Bijan Abbasi'; OpenAlex expands it to 'Bijan Abbasi Arand'. The 2-of-3 majority form used in the bibitem is 'B. Abbasi'.",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10077432; title, venue, TVT vol. 72 no. 8 pp. 9880-9896, 2023 confirmed identically by Crossref, OpenAlex and dblp. Author-name caveat: Crossref and dblp both print the 4th author as 'Bijan Abbasi'; OpenAlex expands it to 'Bijan Abbasi Arand'. The 2-of-3 majority form used in the bibitem is 'B. Abbasi'. 2026-09-05 추가 확인: Semantic Scholar가 이 논문의 연도를 2021로 표시한다. 초록을 받으면서 발견했다. Crossref와 OpenAlex와 dblp 세 곳이 모두 2023년 TVT 72권 8호로 일치하므로 2023이 맞으며, Semantic Scholar가 초기 공개본이나 프리프린트를 병합한 결과로 보인다. 인용 연도는 2023을 유지한다.",
       "method_name": "MADDPG-MT",
       "summary": "AoI-aware radio resource management for C-V2X platooning, solved distributedly with two novel MADDPG variants: Modified MADDPG, which trains a global critic (to induce cooperation) alongside a per-agent exclusive local critic, and Modified MADDPG with TASK DECOMPOSITION, which splits each agent's holistic reward into multiple sub-rewards and learns a task-wise value function for each. Picked because our reward is literally a weighted sum of four heterogeneous terms, so the task-decomposition idea maps onto our problem more directly than onto the paper's own.",
       "implementability": "IMPLEMENTABLE, and the reward-decomposition idea fits our reward better than most. Original observation is a per-platoon-leader local view; original action is per-link (sub-band, power) for CAM dissemination. Adaptation for us: agents become the in-range vehicles rather than platoon leaders, with all actors and critics executing at the RSU - legitimate because our scheduler is centralised at one RSU, so CTDE's 'centralised critic' is not an extra assumption but the actual deployment. The global critic consumes the concatenated RSU table, which the environment already maintains as info_others. The task-decomposed reward maps 1:1 onto our four terms: e^2 (estimation error), P_tx (power), C_freq (congestion) and I_redundant (redundant update) each get their own value head. DROP the platoon/leader-follower CAM structure - our SUMO scenario has no platoons and no intra-platoon V2V links. RISK TO MANAGE: the agent count varies as vehicles enter and leave the 300 m range, so the global critic needs fixed-size padding with a validity mask (or a permutation-invariant pooling encoder); this must be implemented, it is not in the original paper.",
@@ -235,27 +251,337 @@
       "cited_by_count_source": "OpenAlex cited_by_count for the arXiv record (10.48550/arXiv.1802.09477), queried 2026-08-27. Same split-record caveat as SAC: a separate ICML record carries 410. Reported as measured. Not a selection criterion."
     }
   ],
+  "carlton_replacement_search": {
+    "_meta": {
+      "date": "2026-09-05",
+      "trigger": "사용자 결정. 유사 범주의 cohen2025(CARLTON)를 AoI를 실제로 다루는 문헌으로 교체한다. 교체 사유는 두 가지다. 첫째, CARLTON은 SINR 기반 분산 채널 할당이라 목적함수에 AoI가 없다. 유사 범주는 본 논문과 가장 가까운 연구를 담는 자리인데 논문 주제가 AoI 인지 스케줄링이므로 어긋난다. 둘째, 구현 전수 조사에서 CARLTON이 mean 팔 200,000스텝 내내 균등 무작위 정책에 고정된 것이 확인되었고 원논문의 저차원 QoS형 관측 표현도 재현되지 않았다.",
+      "context": "최신 범주 세 종(li2026, hong2026, chen2026)은 전부 하이브리드 액션 자원 할당이며 AoI를 다루지 않는다. AoI를 실제로 다루는 것은 유사 범주의 bai2024와 parvini2023뿐이므로, CARLTON이 빠지면서 AoI 비교군이 둘로 줄지 않도록 대체 문헌도 AoI를 담고 있어야 한다.",
+      "hard_constraints": "RSU 관점 관측(2026-09-05 조사 당시 17차원, 2026-09-06에 21차원으로 확정. _meta.observation_dimension_authoritative를 볼 것), 하이브리드 액션(연속 Delta, 연속 전력, 이산 서브채널), 단일 RSU 스케줄링, SUMO와 Rayleigh SINR. RIS, 가시광 채널, NOMA와 SIC, 플래툰, 다중 RSU 연합이나 포그, 에이전트가 제어하는 UAV 및 위성 이동성, 경로 계획, 우리가 시뮬레이션하지 않는 데이터 양식을 요구하면 탈락한다.",
+      "venue_policy": "IEEE, ACM, Elsevier와 ScienceDirect, Springer 상위, Nature 계열만 허용. arXiv와 MDPI 제외.",
+      "excluded_dois": "폐기 6종 10.1109/TVT.2024.3452790, 10.1109/TITS.2022.3190799, 10.1109/OJCOMS.2026.3707734, 10.1109/TVT.2024.3392738, 10.1109/TVT.2025.3643923, 10.1109/TGCN.2025.3531902은 후보에서 제외했다.",
+      "method": "1단계로 considered_and_rejected 20건을 재평가했고, 2단계로 Crossref 서지 검색을 두 축(AoI 인지 스케줄링과 갱신 간격 및 전력, 정보 신선도와 샘플링 간격 및 서브채널)으로 수행했다. 후보의 서지는 Crossref 직접 조회로, 목적함수와 액션 구조는 Semantic Scholar로 받은 초록 전문을 읽고 판정했다."
+    },
+    "recommended": "xu2026",
+    "candidates": [
+      {
+        "id": "xu2026",
+        "rank": 1,
+        "verdict": "추천",
+        "title": "AoI and Energy-Aware Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning Framework",
+        "authors": [
+          "Jingyi Xu",
+          "Xuying Zhou",
+          "Meiyan Song",
+          "Wei Wang",
+          "Dusit Niyato",
+          "Chau Yuen"
+        ],
+        "venue": "IEEE Transactions on Vehicular Technology",
+        "volume": "75",
+        "issue": "8",
+        "pages": "18102--18115",
+        "year": 2026,
+        "doi": "10.1109/TVT.2026.3675626",
+        "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 6인 전원, IEEE Trans. Veh. Technol. 75(8) 18102-18115, 2026이 모두 일치했다.",
+        "cited_by_count": "Crossref is-referenced-by-count 0, Semantic Scholar 1 (2026-09-05 조회). 2026년 게재분이라 낮은 것이 정상이며 품질 신호가 아니다.",
+        "method_name": "HOORL",
+        "has_aoi_objective": "예. 초록이 '요구 AoI와 이동 기기 에너지 소비의 평균 가중합을 최소화하는 것이 목적'이라고 명시한다. AoI가 보조 지표가 아니라 목적함수의 항이다.",
+        "abstract_based_summary": "엔드 유저가 엣지 서버에 상태 갱신을 요청하고, 주기적으로 센싱하는 에너지 수확 이동 기기 집단이 그 갱신을 생산하는 크라우드센싱 망을 다룬다. 엣지 서버는 이기종 기기 사이의 전송을 스케줄링하는 동시에 각 기기의 센싱 주기를 사용자 요구에 맞추어 최적화해야 하며, 기기의 배터리 잔량을 직접 관측할 수 없다는 점이 핵심 난점이다. 문제를 부분관측 마르코프 결정 과정으로 두고, 희소 보상과 요구 대비 센싱 빈도의 불일치를 다루기 위해 오프라인 강화학습과 온라인 강화학습을 결합한 HOORL을 제안한다.",
+        "constraint_check": "전부 통과. RIS 없음, 가시광 없음, NOMA와 SIC 없음, 플래툰 없음, 다중 RSU나 포그 없음, 에이전트가 제어하는 이동성 없음, 경로 계획 없음. 우리가 시뮬레이션하지 않는 데이터 양식도 요구하지 않는다.",
+        "implementability": "구현 가능하며 파이프라인에 한 단계가 추가된다. 원 결정 주체인 엣지 서버가 우리 RSU에, 전송 스케줄링이 서브채널 배정에, 센싱 주기가 우리 Delta에, 기기 에너지가 전력 항에 대응한다. 관측은 21차원 RSU 벡터를 그대로 쓴다. _meta.observation_dimension_authoritative를 볼 것. 2026-09-05 조사 당시 이 자리에 적혀 있던 '부분관측 전제도 RSU가 차량 내부 상태를 직접 보지 못하는 우리 상황과 맞는다'는 근거는 2026-09-06에 삭제했다. 삭제 사유는 baselines 배열의 xu2026 항목 implementability에 적었다. 추가되는 단계는 오프라인 사전학습용 로그 수집이다. 고정 주기 휴리스틱에 무작위 채널과 전력을 섞어 동일한 SUMO 환경에서 전이를 모으고, 그 위에서 온라인 미세조정을 한다. 새 하드웨어나 인프라는 필요하지 않다.",
+        "advantage_over_carlton": "첫째, AoI가 목적함수에 실제로 들어 있어 CARLTON에서 문제가 되었던 'AoI 목적은 우리 보상에서 온다'는 대체 서술이 필요 없다. 둘째, 액션 대응 폭이 넓다. CARLTON은 이산 채널 하나뿐이라 Delta와 전력을 우리가 덧붙여야 했지만, 이 논문은 스케줄링과 갱신 주기를 원래부터 함께 결정한다. 셋째, 갱신 간격 자체를 학습 대상으로 삼은 문헌은 이번 조사 전체에서 이 한 편뿐이므로 우리 Delta의 직접 대응물이다. 넷째, 부분관측 전제가 RSU 관점과 맞아 관측 표현을 억지로 맞출 필요가 없다. CARLTON에서 재현되지 않았던 저차원 QoS형 관측 문제가 여기서는 발생하지 않는다.",
+        "slot_overlap": "없음. bai2024는 D3QN과 우선순위 재현, parvini2023은 보상 분해 MADDPG, li2026은 파라미터화 액션 DDPG, hong2026은 분기형 D3QN과 DDPG, chen2026은 하이브리드 MAPPO, 기초 3종은 SB3 구현이다. 오프라인과 온라인을 결합한 학습기는 아홉 종 어디에도 없다.",
+        "weaknesses": "정직하게 밝힐 약점이 셋 있다. 첫째, 응용 도메인이 V2X가 아니라 모바일 크라우드센싱이다. 게재처는 IEEE TVT이고 결정 구조가 우리와 대응하지만 도메인 차이는 심사에서 지적될 수 있다. 둘째, 피인용이 0에서 1로 낮다. 2026년 게재분이라 정상이지만 영향력을 근거로 삼을 수는 없다. 셋째, 오프라인 데이터셋 생성이 선행되어야 하므로 다른 여덟 종보다 준비 시간이 더 든다.",
+        "history": "이 논문은 2026-08-27 조사에서 최신 범주 2번 자리를 차지했다가 chen2026에 밀려 강등된 항목이다. 강등 사유는 게재처 등급과 도메인이었지 방법론 부적합이 아니었고, 당시 기록도 '잃는 것은 갱신 간격을 학습하는 유일한 사례'라고 명시해 두었다. 유사 범주는 방법론적 근접성을 우선하는 자리이므로 이 논문에 더 맞는 자리다."
+      },
+      {
+        "id": "reyhan2025",
+        "rank": 2,
+        "verdict": "차선. 추천하지 않음",
+        "title": "Safe Deep Reinforcement Learning for Resource Allocation With Peak Age of Information Violation Guarantees",
+        "authors": [
+          "Berire Gunes Reyhan",
+          "Sinem Coleri"
+        ],
+        "venue": "IEEE Transactions on Communications",
+        "volume": "73",
+        "issue": "12",
+        "pages": "14197--14211",
+        "year": 2025,
+        "doi": "10.1109/TCOMM.2025.3591167",
+        "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 2인, IEEE Trans. Commun. 73(12) 14197-14211, 2025가 일치했다.",
+        "cited_by_count": "Crossref is-referenced-by-count 2, Semantic Scholar 4 (2026-09-05 조회).",
+        "has_aoi_objective": "예. Peak AoI 위반 확률을 제약으로 두고 전력 소비를 최소화한다. 신선도와 전력의 상충이라는 점에서 우리 목적과 가장 가깝다.",
+        "abstract_based_summary": "무선 네트워크 제어 시스템에서 제어와 통신을 함께 설계해야 한다는 전제 아래, 최적화 이론과 안전 강화학습을 결합한 2단계 프레임워크를 제안한다. 1단계는 유한 블록길이 영역에서 최적성 조건을 유도해 변수 사이의 관계를 정리하고 문제를 분해하며, 2단계는 교사와 학생 구조의 안전 강화학습으로 학생 에이전트를 제약 안에서 학습시킨다. Peak AoI 위반 확률은 다중 센서 망에서 확률적 최대 허용 전송 간격과 최대 허용 패킷 지연을 결합해 유도한다.",
+        "constraint_check": "절대 조건 자체는 통과한다. RIS, 가시광, NOMA, 플래툰, 다중 RSU, 에이전트 제어 이동성, 경로 계획 어느 것도 요구하지 않는다.",
+        "implementability": "부분적으로만 가능하며 손실이 크다. 1단계가 유한 블록길이 영역의 해석적 채널 모델을 전제하는데, 우리 SUMO와 Rayleigh SINR 시뮬레이터는 그런 닫힌 형태를 노출하지 않는다. 최대 허용 전송 간격과 최대 허용 패킷 지연은 제어 시스템 개념이라 우리 환경에 직접 대응물이 없다. 결국 1단계를 통째로 버리고 교사와 학생 구조만 남기게 되는데, 그러면 교사가 무엇을 검사할지 우리가 새로 정의해야 한다. 전력과 간격 경계의 실현 가능성 검사 정도가 남는다.",
+        "advantage_over_carlton": "AoI가 목적에 들어 있다는 점 하나는 분명히 낫다.",
+        "why_not_recommended": "액션 대응이 CARLTON보다도 좁다. 이 논문의 결정 변수는 전력과 스케줄링이며 서브채널 선택도 갱신 간격도 없다. 즉 우리 하이브리드 액션 세 축 중 하나에만 대응한다. CARLTON을 뺀 이유의 절반이 '우리 액션 구조와 어긋나 우리가 두 축을 덧붙여야 했다'는 점이었는데, 이 논문으로 바꾸면 같은 문제가 반복된다. 게다가 원논문 기여의 절반인 최적화 이론 유도를 버려야 하므로 재현도도 떨어진다. 도메인도 차량이 아니라 무선 네트워크 제어 시스템이다.",
+        "slot_overlap": "교사와 학생 구조의 안전 강화학습은 아홉 종과 겹치지 않는다. 이 점은 장점이다."
+      },
+      {
+        "id": "zhang2025tmc",
+        "rank": "탈락",
+        "verdict": "환경 제약 위반",
+        "title": "Distributed Age-of-Information Scheduling With NOMA via Deep Reinforcement Learning",
+        "venue": "IEEE Transactions on Mobile Computing 24(1) 30-44, 2025",
+        "doi": "10.1109/TMC.2024.3459101",
+        "has_aoi_objective": "예",
+        "reason": "전송 모델이 NOMA다. 이번 조사의 절대 조건이 NOMA와 SIC를 명시적으로 배제하며, 우리 상향링크는 직교 서브채널이고 SIC 수신기가 없다. NOMA를 걷어내면 남는 것은 AoI 효율과 공정성을 담당하는 에이전트를 분리하고 상위 정책이 상충을 조정하는 구조인데, 그것은 parvini2023의 보상 분해와 같은 슬롯이다. CARLTON 자리가 비면서 슬롯 중복이 해소된다는 기대는 맞지만, 중복 이전에 채널 모델에서 걸린다. 이 논문을 쓰려면 SINR 모델을 다시 써야 한다."
+      },
+      {
+        "id": "zhang2025tcomm",
+        "rank": "탈락",
+        "verdict": "환경 제약 위반",
+        "title": "AoI Minimization Based on Deep Reinforcement Learning and Matching Game for IoT Information Collection in SAGIN",
+        "venue": "IEEE Transactions on Communications 73(8) 5950-5964, 2025",
+        "doi": "10.1109/TCOMM.2025.3525566",
+        "has_aoi_objective": "예",
+        "reason": "학습되는 액션이 UAV의 궤적과 목적지 설계, 그리고 고고도 플랫폼의 커버리지와 고도 설정이다. 에이전트가 이동성을 제어하는 구조여서 절대 조건에 정면으로 걸린다. 우리 RSU는 교차로에 고정되어 있고 차량 운동은 SUMO의 차량 추종과 신호 로직이 정한다. AoI 관련 문헌 중 피인용이 가장 높다는 점 때문에 다시 검토했으나 판단은 그대로다."
+      },
+      {
+        "id": "song2024",
+        "rank": "탈락",
+        "verdict": "액션 구조 불일치",
+        "title": "Deep-Reinforcement-Learning-Based Age-of-Information-Aware Low-Power Active Queue Management for IoT Sensor Networks",
+        "venue": "IEEE Internet of Things Journal 11(9) 16700-16709, 2024",
+        "doi": "10.1109/JIOT.2024.3355410",
+        "cited_by_count": "Semantic Scholar 22",
+        "has_aoi_objective": "예. AoI 임계를 넘지 않으면서 전력 소비를 줄인다.",
+        "reason": "신규 조사에서 나온 후보다. 목적은 우리와 닮았으나 액션이 클러스터 헤드의 큐 관리 세 가지, 즉 전달과 폐기와 보류다. 전력 제어도 서브채널 선택도 갱신 간격도 없어 우리 하이브리드 액션 어느 축과도 대응하지 않는다. 이식하면 원논문이 남지 않는다."
+      },
+      {
+        "id": "sarathchandra2025",
+        "rank": "탈락",
+        "verdict": "환경 제약 위반",
+        "title": "Age and Power Minimization via Meta-Deep Reinforcement Learning in AAV Networks",
+        "venue": "IEEE Transactions on Vehicular Technology 74(11) 16839-16849, 2025",
+        "doi": "10.1109/TVT.2025.3579626",
+        "cited_by_count": "Crossref 8, Semantic Scholar 9",
+        "has_aoi_objective": "예. AoI와 송신 전력의 조합을 최소화한다.",
+        "reason": "신규 조사에서 나온 후보이며 목적함수는 우리와 거의 같다. 그러나 초록이 '자율 비행체의 비행 궤적과 스케줄링 정책을 최적화한다'고 명시한다. 에이전트가 이동성을 제어하므로 절대 조건에 걸린다. 궤적을 빼면 DQN 스케줄러만 남아 bai2024의 약화판이 된다."
+      }
+    ],
+    "new_search_outcome": "Crossref 서지 검색을 두 축으로 수행했으나 배제 목록의 xu2026보다 나은 후보는 나오지 않았다. 검색에서 새로 확인한 AoI 관련 후보는 song2024와 sarathchandra2025 두 건이며 위와 같은 사유로 탈락했다. 나머지 결과는 전력 계통 스케줄링이나 위성 태스크 스케줄링처럼 주제가 무관하거나 MDPI 게재분이었다. 억지로 채우지 않고 이 사실을 그대로 기록한다.",
+    "applied": "2026-09-05 사용자 승인으로 반영을 마쳤다. baselines 배열의 cohen2025 자리에 xu2026을 넣었고, cohen2025는 considered_and_rejected 맨 앞으로 옮겨 강등 사유를 기록했다. considered_and_rejected에 있던 xu2026의 기존 강등 항목은 채택으로 복귀했으므로 제거하여 중복을 없앴다. baselines_v2.md의 유사 2번 항목과 요약표도 함께 갱신했다.",
+    "offline_stage_decision": "사용자가 (A) 오프라인 단계 포함으로 결정했다(2026-09-05). 온라인 부분만 구현하면 원논문 제목의 Hybrid가 가리키는 절반이 빠지므로, CARLTON을 뺀 이유였던 '원논문 구성 요소가 재현되지 않은 방법을 그 논문의 방법으로 비교표에 올린다'는 문제가 되풀이된다. 다른 베이스라인의 학습 로그로 오프라인 데이터를 대체하는 방안도 배제되었다. 오프라인 강화학습은 행동 정책이 명세되어 있다는 전제 위에 서는데, 학습 도중 계속 변하는 정책이 만든 데이터는 분포 이동이 통제되지 않아 그 전제를 만족하지 못하기 때문이다. 데이터 수집이 GPU가 아니라 CPU 시간만 쓰고 다른 여덟 종의 탐색과 병행할 수 있다는 점이 결정의 근거였다."
+  },
+  "porting_scope": {
+    "_meta": {
+      "date": "2026-09-05",
+      "purpose": "구현 담당 세션의 요청으로 아홉 종 전부의 이식 범위를 같은 형식과 같은 엄격함으로 정리한다. 새 모델에만 엄격한 재현 기준을 적용하면 비교가 공정하지 않다는 지적이 타당하므로, 기존 여덟 종도 같은 기준으로 다시 적었다.",
+      "scope_boundary": "이 절이 기술하는 것은 원논문의 구성 요소와 이식 계획이며, 근거는 각 논문의 초록이다. 실제 코드가 이 계획을 따랐는지는 문헌 담당이 판정할 수 없으므로 구현 담당이 코드와 대조해야 한다. 아래 porting 항목은 '이렇게 이식해야 한다'는 규격이지 '이렇게 구현되어 있다'는 관찰이 아니다. 팀 리드가 전한 구현 현황(SPAM-D3QN의 우선순위 재생, MADDPG-MT의 두 기여 비활성 등)은 전언으로 표시했다.",
+      "abstract_verification": "여섯 편의 초록을 2026-09-05에 Semantic Scholar Graph API로 새로 받아 직접 읽고 작성했다. li2026, hong2026, chen2026, bai2024, xu2026, parvini2023이다. 기초 3종은 보편적으로 알려진 알고리즘이라 구성 요소를 별도 확인하지 않았다.",
+      "performance_direction_legend": "재현하지 않은 요소가 그 방법의 성적에 미치는 방향을 세 등급으로 적는다. '불리'는 그 방법이 원래 갖고 있던 강점이 빠져 성적이 낮게 나온다는 뜻이고, '중립'은 우리 문제에서 그 요소가 작동할 여지가 없어 성적에 영향이 없다는 뜻이며, '유리'는 원논문이 다루던 어려움이 우리 환경에 없어 문제가 쉬워진다는 뜻이다. 결과 표의 순위를 해석하려면 이 구분이 필요하다."
+    },
+    "methods": [
+      {
+        "key": "li2026",
+        "method": "RES-MAPDDPG",
+        "original_components": [
+          "A. 파라미터화 액션 공간 위의 잔차 구조 다중 에이전트 DDPG. 이산 자원블록 선택과 그에 딸린 연속 전력을 한 정책이 낸다",
+          "B. 문제의 2단계 분해. V2I 쪽은 사용자 그룹화와 볼록 최적화로, V2V 쪽만 학습으로 푼다",
+          "C. NOMA 전송 모델과 그에 따른 SIC 수신",
+          "D. 목적함수는 전체 시스템 처리량 최대화와 V2V 링크 신뢰성 보장"
+        ],
+        "porting": [
+          "A. 유지한다. 이산 헤드가 4개 서브채널 중 하나를 고르고, 그 선택에 딸린 연속 파라미터를 1차원(전력)에서 2차원(Delta, 전력)으로 넓힌다. 파라미터 벡터를 넓히는 것이므로 구조 변경은 없다",
+          "A-2. 가변 에이전트 수 처리와 이웃 절단이 추가된다. 원논문에 없는 우리 추가이므로 원고의 이식 범위에 반드시 적는다. 원논문의 중앙집중 크리틱은 고정된 에이전트 수를 전제하는데 우리 인원수는 차량이 300 m 경계를 드나들며 매 스텝 바뀌므로, 패딩된 이웃 집합과 유효성 마스크와 순열 불변 마스크 평균 풀링을 우리가 구성했다(res_mapddpg.py:54-58, 236-271). 원논문은 인원수가 변할 때 어떻게 할지를 명시하지 않는다. 여기에 상한이 하나 더 걸린다. NeighbourhoodView가 MAX_NEIGHBOURS = 16으로 잘라내고(rl_interface.py:59, 827-885) 이 모듈의 max_agents도 같은 값을 기본값으로 받아 다시 자른다(res_mapddpg.py:151, 256). 16은 상한이지 실제 인원수가 아니며, 통신 범위 내 차량 수가 밀도 5에서 약 22대 밀도 35에서 약 142대이므로 혼잡한 구간에서는 크리틱이 90여 대 가운데 가장 가까운 16대만 본다. 이 절단은 아키텍처가 요구하는 것이 아니다. 마스크 평균 풀링이 순열 불변이라 임의 폭을 받을 수 있으므로 16은 설계 결정이다. 성능 방향은 불리다. 공통 서술은 _meta.neighbourhood_truncation_note를 볼 것",
+          "B. 제거한다. 우리에게는 V2I와 V2V의 구분이 없고 상향링크 V2I 하나뿐이라 분해할 대상이 없다",
+          "C. 제거한다. 우리 상향링크는 직교 서브채널이고 SIC 수신기가 없다",
+          "D. 우리 보상으로 교체한다"
+        ],
+        "performance_direction": "혼합. C와 B의 제거는 중립이다. NOMA는 물리계층 기법이라 학습기의 성능과 분리되고, V2I 볼록 최적화 단계는 우리 문제에 대응물이 없다. 다만 D의 교체는 이 방법에 다소 불리하다. 원논문의 학습기는 처리량과 신뢰성을 겨냥해 설계되었는데 우리는 신선도와 전력과 혼잡의 복합 보상을 준다. 즉 이 방법이 원래 최적화하도록 만들어진 대상이 아닌 것을 최적화하게 된다. 이 점은 모든 비AoI 계열 베이스라인에 공통이며, 결과 서술에서 '원논문이 보고한 이득이 재현되지 않는 것은 목적함수가 다르기 때문'이라고 밝혀야 한다.",
+        "manuscript_note": "NOMA를 걷어내면 이 방법은 파라미터화 액션 DDPG 베이스라인으로 축약된다. 그것이 우리가 원한 비교 대상이라는 점을 명시한다."
+      },
+      {
+        "key": "hong2026",
+        "method": "MA2HDQN",
+        "original_components": [
+          "A. 하이브리드 액션을 두 분기로 명시 분할. 이산 서브밴드는 다중 에이전트 듀얼링 더블 DQN이, 연속 전력은 개선된 DDPG가 담당한다",
+          "B. 적응적 학습률 갱신 전략. 최근 환경 피드백에 따라 Q 값 갱신 시점을 조절한다",
+          "C. 다단계 Q 값 갱신",
+          "D. 목적함수는 V2I 링크 용량과 V2V 링크 신뢰성"
+        ],
+        "porting": [
+          "A. 유지한다. 이산 분기를 우리 4개 서브채널에 연결하고, 연속 분기 출력을 1차원(전력)에서 2차원(Delta, 전력)으로 넓힌다. Delta는 기존 기하 매핑을 재사용한다",
+          "B. 형태를 우리가 정한다. 2026-09-06에 고쳤다. 이전 판은 '유지한다. 알고리즘 내부 구성이라 그대로 옮겨진다'고 적었으나 사실과 다르다. ma2hdqn.py:49-50과 317이 적듯 원논문은 적응적 학습률 규칙을 정성적으로만 서술하고 정확한 함수 형태를 명시하지 않으므로, 구현된 함수 형태는 우리 것이며 원고에 그렇게 밝혀야 한다",
+          "B-2. 개선된 DDPG의 '개선'이 무엇인지도 확보한 자료로는 특정되지 않는다(ma2hdqn.py:46-48). 표준적인 두 가지인 클리핑된 목표 정책 평활화와 기울기 클리핑을 구현했으며, 이것이 원논문의 명세가 아니라 우리 해석임을 원고에 밝힌다",
+          "C. 현재 미구현이며 배관 예정이다. 2026-09-06에 두 차례 고쳤다. 2026-09-05 판은 '유지한다'고 적었으나 사실이 아니었고, 같은 날 첫 정정에서 '재현 불가'로 적었으나 그것도 정확하지 않아 다시 고친다. 지금 상태와 앞으로의 계획을 나누어 적는다. 지금 상태는 이렇다. RetrospectiveReplayBuffer.sample()이 전이를 균등 무작위로 뽑고 후속 사슬을 저장하지 않아 원논문 형태의 n단계 반환을 조립할 수 없으며, ma2hdqn.py:37-45가 이를 '진정한 약화'라고 명시한다. 현재 갱신은 1단계 SMDP 백업이고 n_step_active 플래그의 기대값은 0.0이다. 대신 있는 것은 SMDP 구조로, 저장된 전이가 이미 가변 보유 시간 Delta를 가로지르고 gamma^Delta로 할인되어 그 구간의 보상을 합산한다. 이것은 시간적 집계이지 원논문의 n단계 부트스트랩이 아니며 그렇게 서술해서는 안 된다. 계획은 이렇다. 2026-09-06에 배관하기로 결정되었고 방식도 시간 기반으로 확정되었다. 누적 시간이 T를 넘을 때까지 모으는 방식이며, 근거는 우리 할인이 이미 gamma^delta_t로 시간 기반인데 n스텝만 전이 수를 세면 두 메커니즘이 다른 시간 개념을 쓰게 된다는 것, 그리고 정책이 Delta를 바꾸면 n스텝이 덮는 시간 폭도 함께 바뀌어 같은 n이 학습 초기와 후기에 다른 것을 뜻하게 된다는 것이다. 세부도 정해졌다. 경계 전이는 포함하고, 에피소드 끝에서 T를 못 채우면 남은 전이만 쓰되 그 비율을 기록하며, T는 탐색 대상에 넣는다. 배관이 끝나면 n_step_active가 1.0이 된다. 확정되지 않은 것을 분명히 구별해 둔다. 이 배관에는 재생 버퍼의 구조 변경이 선행되어야 하는데 그 변경 범위가 아직 미확정이다. 시간 기반이든 전이 수 기반이든 후속 전이가 필요하기 때문이며, 비용이 크면 배관 결정 자체가 다시 열린다. 따라서 원고를 쓰는 시점에 이 항목의 상태를 다시 확인해야 하고, 배관 전이라면 위의 '지금 상태'를 그대로 적는다",
+          "D. 우리 보상으로 교체한다"
+        ],
+        "performance_direction": "불리하며 2026-09-06에 다시 적었다. 이전 판은 '대체로 중립이며 A, B, C가 전부 유지되므로 원논문의 기여는 온전히 재현된다'고 적었으나 코드와 대조한 결과 사실이 아니다. 원논문의 네 구성 요소 가운데 현재 온전히 재현되는 것은 A뿐이다. C는 현재 미구현이다. 다단계 Q 값 갱신이 재생 버퍼의 구조 때문에 1단계 SMDP 백업으로 대체되어 있고 코드가 이를 '진정한 약화'라고 명시하며, 시간 기반 방식으로 배관하기로 결정되었으나 재생 버퍼 구조 변경이 선행되어야 하고 그 범위가 미확정이다. 배관이 완료되면 이 판정은 다시 써야 한다. B와 B-2는 원논문이 형태를 명시하지 않아 우리가 정한 것이므로, 재현되었다고도 재현되지 않았다고도 말할 수 없고 우리 해석임을 밝히는 수밖에 없다. 여기에 경미한 불리 요인이 하나 더 있다. 연속 분기가 원래 1차원 전력만 내도록 설계되었는데 2차원으로 넓히면 그 분기의 학습 부담이 커진다. 다만 이는 우리 문제가 요구하는 확장이지 축약이다. D의 교체는 li2026과 같은 성격이다.",
+        "manuscript_note": "2026-09-06에 다시 적었다. 이전 판은 이 항목을 '아홉 종 중 원논문 구성 요소가 가장 온전히 유지되는 항목'이라고 적었는데 그 서술은 폐기한다. 코드와 대조한 결과 네 구성 요소 중 현재 온전히 재현되는 것은 하나뿐이고, 하나는 미구현이며, 둘은 원논문이 형태를 명시하지 않아 우리가 정한 것이다. 이 서술을 그대로 원고에 옮겼다면 사실과 다른 주장을 하게 될 뻔했다. 이 점이 중요한 이유는 결과 해석의 근거가 되기 때문이다. '가장 온전한 항목이 이 성적을 냈다'와 '구성 요소 넷 중 하나만 재현된 항목이 이 성적을 냈다'는 완전히 다른 문장이다. 인프라 공백이 없다는 서술은 그대로 유효하다. RIS도 가시광도 NOMA와 SIC도 다중 RSU도 플래툰도 요구하지 않는다. 원고에는 적응적 학습률의 함수 형태와 개선된 DDPG의 구성이 우리 해석이라는 것을 밝히고, 다단계 갱신은 원고를 쓰는 시점의 배관 상태를 확인하여 적는다. 배관 전이면 1단계 SMDP 백업으로 대체되어 있다는 사실을, 배관 후면 시간 기반 다단계 반환을 쓰되 그 형태가 원논문의 전이 수 기반이 아니라 우리 SMDP 구조에 맞춘 것임을 적는다."
+      },
+      {
+        "key": "chen2026",
+        "method": "I-HAMAPPO",
+        "original_components": [
+          "A. 하이브리드 액션 다중 에이전트 PPO. 연속 변수와 이산 변수를 한 정책에서 함께 최적화한다",
+          "B. 중요도 평가 모듈. 시맨틱 특징을 점수화해 과제와 관련된 정보만 전송하게 한다",
+          "C. 연속 시맨틱 압축률 액션",
+          "D. 효용 함수가 과제 지연과 에너지 소비와 시맨틱 유사도를 결합한다",
+          "E. highD 실제 차량 궤적 기반 평가"
+        ],
+        "porting": [
+          "A. 유지한다. 이산 분기가 서브채널을, 연속 분기가 (Delta, 전력)을 낸다. 파라미터 공유 액터를 차량마다 두고 전부 RSU에서 실행한다",
+          "A-2. 가변 에이전트 수 처리와 이웃 절단이 추가된다. 원논문에 없는 우리 추가이므로 원고의 이식 범위에 반드시 적는다. 원논문의 결합 크리틱은 고정된 에이전트 수를 전제하는데 우리 인원수는 차량이 300 m 경계를 드나들며 매 스텝 바뀌므로, 패딩된 이웃 집합과 슬롯별 유효성 마스크와 순열 불변 마스크 평균 풀링을 우리가 구성했다(i_hamappo.py:62, 236-267). 여기에 상한이 하나 더 걸린다. NeighbourhoodView가 MAX_NEIGHBOURS = 16으로 잘라내고(rl_interface.py:59, 827-885) 이 모듈의 max_agents도 같은 값을 기본값으로 받아 다시 자른다(i_hamappo.py:116, 252). 16은 상한이지 실제 인원수가 아니며, 통신 범위 내 차량 수가 밀도 5에서 약 22대 밀도 35에서 약 142대이므로 혼잡한 구간에서는 크리틱이 90여 대 가운데 가장 가까운 16대만 본다. 이 절단은 아키텍처가 요구하는 것이 아니다. 마스크 평균 풀링이 순열 불변이라 임의 폭을 받을 수 있으므로 16은 설계 결정이다. 성능 방향은 불리다. 아울러 i_hamappo.py:454가 이점 추정에 쓰는 것이 근사이며 원논문의 추정량이 아니라고 적으므로 그 점도 원고에 밝힌다. 공통 서술은 _meta.neighbourhood_truncation_note를 볼 것",
+          "B. 제거한다. 우리는 시맨틱 특징이 아니라 이동성 상태를 전송하므로 점수화할 대상이 없다",
+          "C. 제거한다. 압축할 대상이 없다",
+          "D. 시맨틱 유사도 항을 빼고 우리 보상으로 교체한다",
+          "E. SUMO 미시 시뮬레이션으로 대체한다"
+        ],
+        "performance_direction": "중립. B와 C가 다루는 것은 전송할 내용을 고르는 문제인데 우리 문제에는 고를 내용이 없다. 즉 이 방법이 잃는 강점이 아니라 적용 대상이 없는 기능이다. 학습기 자체는 온전하므로 성적이 부당하게 낮아지지 않는다.",
+        "manuscript_note": "원논문 기여의 절반가량이 재현되지 않으므로, 결과 표와 본문에서 'I-HAMAPPO의 성능'이 아니라 '제목이 가리키는 하이브리드 액션 MAPPO 학습기의 성능'으로 서술해야 한다. 이 구분을 생략하면 원저자의 기여를 잘못 대표하게 된다."
+      },
+      {
+        "key": "bai2024",
+        "method": "SPAM-D3QN",
+        "original_components": [
+          "A. 인프라 측 단일 에이전트 MDP 정식화",
+          "B. 듀얼링 더블 심층 Q 네트워크",
+          "C. 우선순위 경험 재생. 초록이 '고가치 학습 경험을 얻기 어려운 문제를 풀기 위해 개발했다'고 명시한다",
+          "D. 완전 이산 액션. 어느 차량을 스케줄링할지와 어느 전력 레벨을 쓸지",
+          "E. 목적함수가 AoI 최소화이며 기본 D3QN 대비 평균 AoI 22.6% 개선을 보고한다"
+        ],
+        "porting": [
+          "A. 유지한다. 에이전트가 이미 우리와 같은 위치인 RSU에 있으므로 관측을 그대로 쓴다",
+          "B. 유지한다",
+          "C. 원래 형태로 유지해야 한다. 우선순위 경험 재생은 우선순위에 비례하는 확률로 전이를 비균등 추출하고 중요도 표본 가중치로 편향을 보정하는 기법이다",
+          "D. 우리 연속 축을 이산화한다. 전력은 [10, 23] dBm을 L단계로, Delta는 연속 매핑과 같은 기하 격자에서 K단계로 나누고 서브채널을 세 번째 이산 인자로 둔다. 구현된 값은 K=8과 L=4이며(spam_d3qn.py:158-159) 결합 액션 공간은 8 x 4 x 4 = 128이다. 여기서 원고에 밝힐 점이 하나 있다. 서브채널 축 자체가 우리 추가다. spam_d3qn.py:45가 원논문에는 서브채널 선택이 아예 없고 그 축은 우리 문제가 요구해서 덧붙인 것이라고 적는다. 즉 이 방법은 액션 세 축 가운데 두 축만 원논문에서 오고 한 축은 우리가 넣은 것이다",
+          "E. 유지한다"
+        ],
+        "performance_direction": "C의 처리에 따라 갈린다. 팀 리드의 전언대로 우선순위 재생이 비균등 샘플링 없이 배치 내 재가중만으로 이식되었다면 이 방법에 명백히 불리하다. 그 경우 고가치 전이를 더 자주 보는 효과가 사라지는데, 원논문이 보고한 22.6% 개선의 근거가 바로 그 효과이기 때문이다. 즉 이 방법의 핵심 기여가 빠진 채로 비교된다. 원래 형태로 구현하기를 권하며, 사정이 있어 못 한다면 결과 표에 그 사실을 각주로 밝혀야 순위 해석이 가능하다. D의 이산화는 별개 사안이며, 격자가 거칠수록 불리해지므로 K와 L의 값을 논문에 명시해야 한다.",
+        "manuscript_note": "이 항목은 완전 이산화 기준점 역할을 하므로 연속 Delta와 연속 전력이 실제로 무엇을 벌어 주는지를 정량화한다. 그 역할이 성립하려면 격자가 공정해야 하고 우선순위 재생이 원형이어야 한다. 참고로 관리할 리스크가 하나 더 있다. 결합 액션 공간이 K x L x 4로 커지므로 분기형 Q 헤드를 쓰거나 격자를 의도적으로 성기게 잡고 그 선택을 명시한다."
+      },
+      {
+        "key": "xu2026",
+        "method": "HOORL",
+        "original_components": [
+          "A. 부분관측 마르코프 결정 과정 정식화. 엣지 서버가 기기의 배터리 잔량을 직접 관측할 수 없다는 점이 근거다",
+          "B. 오프라인 강화학습과 온라인 강화학습을 결합한 HOORL. 초록은 '오프라인과 온라인 기법의 장점을 결합한다'고만 말한다",
+          "C. 전송 스케줄링과 각 기기의 센싱 주기 최적화를 함께 결정한다",
+          "D. 목적함수가 요구 AoI와 기기 에너지 소비의 평균 가중합 최소화다",
+          "E. 에너지 수확 이동 기기와 배터리 용량 제약",
+          "F. 엔드 유저가 엣지 서버에 상태 갱신을 요청하는 요청 도착 과정",
+          "G. 희소 보상 문제와 사용자 요구 대비 센싱 빈도 불일치라는 두 난점"
+        ],
+        "porting": [
+          "A. 정식화는 옮기지 않고 관측만 그대로 쓴다. 2026-09-06에 이 항목을 고쳤다. 이전 판은 'RSU도 차량 내부 상태를 직접 보지 못하므로 부분관측 전제가 그대로 성립한다'고 적었으나 그 근거는 성립하지 않는다. 원논문이 부분관측으로 정식화한 근거는 기기 배터리 잔량이 서버에 보이지 않는다는 것인데, 배터리는 시간에 따라 단조 감소하고 행동에 의해 변하며 미래 가용성을 결정하는 은닉 상태인 반면 우리 RSU가 보지 못하는 것은 그런 성질이 아니다. 관측을 수정하지 않는다는 결정은 그대로 유지하되 근거를 바꾼다. 올바른 근거는 아홉 종이 같은 관측을 써야 비교가 성립한다는 것이다. 21차원 RSU 관측을 그대로 쓰며 _meta.observation_dimension_authoritative를 볼 것",
+          "B. 유지한다. 사용자가 2026-09-05에 오프라인 단계를 포함하기로 결정했다. 다만 오프라인 쪽 학습기가 무엇인지는 원논문에서 확인하지 못했으므로 우리가 택해야 하며, 그 선택이 우리 것임을 원고에 밝혀야 한다. 조사 경로와 후보는 offline_algorithm_investigation을 볼 것",
+          "C. 유지한다. 전송 스케줄링이 서브채널 배정에, 센싱 주기가 Delta에 대응한다. 아래 action_space_mapping을 볼 것",
+          "D. 우리 보상으로 교체한다. AoI와 에너지의 상충이라는 구조는 같으므로 교체 폭이 다른 방법보다 작다",
+          "E. 제거한다. 우리 차량은 에너지를 수확하지 않고 배터리 고갈 제약도 두지 않는다. 원논문에서 배터리 안정성이 하던 역할은 우리 보상의 전력 항이 대신한다",
+          "F. 제거한다. 우리는 요청 기반이 아니라 RSU가 상시 추적하는 구조다",
+          "G. 두 난점이 모두 우리 환경에 없다. 2026-09-06에 확인한 사실이며 이전 판의 서술을 대체한다. 요구 대비 센싱 빈도 불일치는 F를 제거하면서 함께 사라지고, 희소 보상도 해당하지 않는다. 우리 보상은 결정 구간마다 -w1*e^2, -w2*P_tx, -w3*C_freq, -w4*I_redundant의 네 항이 산출되고 그 합이 구간 보상과 정확히 일치하는 조밀한 보상이기 때문이다. 근거는 coder/src/rl_interface.py:987-989의 reward_terms 규정이다. 2026-09-05 판에는 '희소 보상 문제는 우리 환경에도 있으므로 유지된다'고 적혀 있었으나 사실과 달라 폐기했다. 다만 원논문이 말하는 희소성이 통상적인 희소 보상과 같은 것을 가리키는지는 본문을 열람하지 못해 확인되지 않았다. 원논문의 보상 역시 요구 AoI와 에너지 소비의 가중합이라 조밀해 보이는데도 초록이 희소 보상을 난점으로 들었기 때문이며, 따라서 원고에서 원논문의 동기를 단정적으로 서술하지 않는다"
+        ],
+        "action_space_mapping": {
+          "continuous_delta": "원논문의 센싱 주기가 대응한다. 다만 원논문은 주기를 이산 후보 집합에서 고르고 우리 Delta는 [0.1, 45] s의 연속 변수이므로, 기존 기하 매핑을 재사용해 정책이 이 구간의 값을 내도록 하고 그 값을 다음 결정 시점까지의 침묵 구간으로 해석한다. 이산에서 연속으로 넓히는 방향이므로 표현력이 줄지 않는다.",
+          "discrete_subchannel": "원논문의 전송 스케줄링이 대응한다. 다만 정확히 같지는 않으므로 이 점을 분명히 해 둔다. 원논문에서 엣지 서버가 내리는 스케줄링 결정은 '이번 슬롯에 어느 기기가 전송하는가'라는 매체 접근 결정이고, 우리 이산 축은 '어느 서브채널을 쓰는가'라는 주파수 자원 선택이다. 둘 다 다수 단말이 유한한 전송 기회를 두고 경쟁할 때 인프라가 내리는 배타적 배정이라는 점에서 같은 역할을 하지만, 원논문에 주파수 차원의 선택이 명시되어 있는지는 초록만으로 확인되지 않는다. 구현에서는 이산 헤드가 4개 서브채널 중 하나를 고르도록 두고, 이 대응이 시간축 배정에서 주파수축 배정으로 옮겨간 것임을 원고에 밝힌다.",
+          "continuous_power": "원논문에 직접 대응물이 없다. 원논문은 기기의 에너지 소비를 목적함수의 항으로 다루지만 송신 전력을 결정 변수로 내지는 않는다. 따라서 전력 축은 우리가 추가하는 것이며, 이는 bai2024와 cohen2025에서 축을 덧붙인 것과 같은 성격의 확장이다. 원논문이 에너지를 이미 목적에 담고 있으므로 확장의 자연스러움은 다른 방법보다 높다."
+        },
+        "offline_online_relationship": "초록이 밝히는 것은 '오프라인 강화학습과 온라인 강화학습의 장점을 결합한다'는 수준까지다. 오프라인 단계의 학습 알고리즘, 온라인과의 결합 방식, 데이터 규모 세 가지를 2026-09-05에 다섯 경로로 조사했으나 모두 확인하지 못했다. 조사 경로와 후보 알고리즘 검토는 아래 offline_algorithm_investigation에 있다. 문헌 담당이 근거를 갖고 제시할 수 있는 것은 오프라인 단계의 행동 정책 규격뿐이며, 학습기 선택은 우리가 정하고 그 사실을 원고에 밝혀야 한다. 행동 정책은 문서화된 고정 주기 휴리스틱으로 정한다. Delta를 고정값으로 두고 서브채널과 전력을 각 범위에서 균등 무작위로 뽑으며, 이 명세를 기록해야 오프라인 강화학습이 전제하는 행동 정책 기지성이 성립한다. 다른 베이스라인의 학습 로그를 재활용하지 않는 이유는 학습 도중 계속 변하는 정책이 만든 데이터는 분포 이동이 통제되지 않아 원논문이 상정한 조건과 다른 것을 재현하게 되기 때문이다. 수집은 동일한 SUMO 시나리오에서 수행하며 GPU가 아니라 CPU 시간만 쓰므로 다른 여덟 종의 탐색과 병행할 수 있다.",
+        "uncertain": [
+          "오프라인 단계의 학습 알고리즘을 확인하지 못했다. 보수적 Q 학습인지, 암묵적 Q 학습인지, 이점 가중 회귀인지, 단순 행동 복제인지, 또 다른 형태인지가 확인되지 않는다. 분포 밖 행동을 어떻게 억제하는지도 확인되지 않는다.",
+          "온라인 미세조정이 오프라인 가중치를 이어받는 방식을 확인하지 못했다. 가중치를 그대로 초기값으로 삼는지, 오프라인 가치 함수를 정칙화 항으로 남기는지, 재생 버퍼에 오프라인 데이터를 섞어 두는지가 확인되지 않는다.",
+          "오프라인 데이터의 규모를 확인하지 못했다. 원논문이 전이 수를 명시했는지 여부 자체를 확인할 수 없었다.",
+          "원논문에 주파수 자원 선택 차원이 있는지 확인하지 못했다. 초록은 전송 스케줄링과 센싱 주기만 언급한다.",
+          "위 네 가지의 근거는 아래 offline_algorithm_investigation에 조사 경로와 함께 적었다. 어느 것도 지어내지 않았다."
+        ],
+      "offline_algorithm_investigation": {
+        "date": "2026-09-05",
+        "question": "구현 담당의 요청으로 오프라인 단계의 학습 알고리즘, 온라인과의 결합 방식, 오프라인 데이터 규모 세 가지를 원논문 본문에서 확인하려 했다.",
+        "result": "세 가지 모두 확인하지 못했다.",
+        "attempts": [
+          "1. Semantic Scholar Graph API로 공개 여부 조회. isOpenAccess가 false, openAccessPdf가 null, tldr도 출판사가 보류한 상태로 확인되었다.",
+          "2. Unpaywall API(v2)로 공개 사본 조회. is_oa가 false, oa_status가 closed, journal_is_oa가 false이며 oa_locations와 oa_locations_embargoed가 모두 비어 있다. 금지 출처를 제외하고도 접근 가능한 사본이 없다는 뜻이다.",
+          "3. IEEE Xplore 문서 페이지(ieeexplore.ieee.org/document/11442965) 직접 조회. 본문은 물론 절 제목도 반환되지 않았다.",
+          "4. 웹 검색으로 HOORL이라는 약칭과 논문 제목을 함께 조회. arXiv, MDPI, Scopus, ResearchGate를 차단하고 검색했으며, 반환된 결과는 전부 다른 논문이었고 이 논문을 서술한 자료는 없었다.",
+          "5. Semantic Scholar 인용 목록 조회. 이 논문을 인용한 문헌은 한 건뿐이고 가상 머신 이주에 관한 학회 논문이라 HOORL을 서술하지 않는다."
+        ],
+        "what_is_confirmed": "초록이 밝히는 범위까지만 확인되었다. 'we propose an innovative Hybrid Offline-Online Reinforcement Learning (HOORL) algorithm, which combines the strengths of offline and online RL techniques'가 오프라인 쪽에 대한 서술의 전부이며, 오프라인 학습기의 이름도 분포 밖 행동 처리 방식도 나오지 않는다. 부분관측 정식화, 목적함수, 희소 보상과 요구 대비 센싱 빈도 불일치라는 두 난점은 초록에서 확인된다.",
+        "dataset_size_note": "오프라인 데이터 규모와 관련해 한 가지 바로잡을 점이 있다. 이 문서의 2026-08-27 판 baselines_v2.md에 '약 5만 transition 수집'이라는 수치가 적혀 있었는데, 그것은 당시 조사자가 제안한 값이지 원논문에서 온 값이 아니다. 2026-09-05 갱신에서 그 수치를 뺐다. 원논문이 전이 수를 명시했는지는 확인되지 않았으므로, 우리가 정하고 그 근거를 남겨야 한다. 이 수치를 원논문 근거로 인용해서는 안 된다.",
+        "decision_taken": "2026-09-06 확인. 아래 options_for_implementer는 후보 목록이었는데, 구현이 이미 그중 하나를 택해 두었다. 오프라인 학습기는 암묵적 Q 학습(IQL)이다. 근거는 hoorl.py:81, 156, 620, 693이며, 특히 693이 '이 알고리즘은 우리 선택이지 원논문의 것이 아니다'라고 대문자로 명시하고 156이 'iql은 원논문이 이름 붙인 것이 아니라 우리 선택'이라고 적는다. hoorl.py:641은 오프라인 갱신 함수가 우리 것이며 우리 것으로 보고되어야 한다고 적고, 553은 오프라인 단계를 끄면 결과 정책이 원논문의 방법이 아니라 온라인 전용 절제라고 적는다. 즉 구현이 이 사항을 스스로 규정해 두었으므로 원고는 이를 그대로 따르면 된다. 아래 recommendation이 IQL이나 AWAC 계열을 권했던 것과 일치하는 선택이다. 원고에 반드시 들어갈 문장은 manuscript_requirement에 적은 대로이며, IQL이라는 이름을 명시하고 그것이 원논문의 선택이 아니라 우리 선택임을 밝혀야 한다.",
+        "handling_policy": "팀 리드가 처리 방침을 정했다. 우리가 합리적인 선택을 하고 그 선택이 우리 것임을 원고에 명시한다. 이는 CARLTON 사례와 성격이 다르다. CARLTON은 재현할 수 있는 것을 재현하지 않은 경우이고, 이쪽은 정보 자체를 확보하지 못한 경우다. 후자는 밝히면 되는 정직한 한계다.",
+        "options_for_implementer": {
+          "_disclaimer": "아래는 원논문의 선택이 아니라 우리가 고를 후보다. 문헌 근거가 아니라 오프라인 강화학습의 일반적 성질에 근거한 판단이므로, 무엇을 택하든 원고에 '원논문의 오프라인 학습기를 확인하지 못하여 우리가 택했다'고 밝혀야 한다. 최종 결정은 구현 담당에게 있다.",
+          "behaviour_cloning": "권하지 않는다. 우리 행동 정책이 고정 주기 휴리스틱에 균등 무작위 성분을 섞은 것이라 성능이 낮다. 행동 복제는 그 낮은 정책을 그대로 모방하므로 온라인 단계에 나쁜 초기값을 준다.",
+          "conservative_q_learning": "가능하다. 분포 밖 행동의 가치를 낮춰 과대평가를 억제하는 방식이며 널리 쓰인다. 다만 보수성이 온라인 미세조정 단계에서 탐색을 억누르는 문제가 알려져 있어, 오프라인에서 온라인으로 넘어가는 구조에는 부담이 있다.",
+          "implicit_q_learning": "권장 후보 중 하나다. 분포 밖 행동을 아예 질의하지 않고 데이터 안에서 expectile 회귀로 가치를 학습하므로, 오프라인에서 온라인으로 이어지는 전환이 비교적 매끄럽다고 알려져 있다. HOORL이 '오프라인과 온라인의 장점을 결합한다'고 밝힌 취지에 부합한다.",
+          "advantage_weighted_actor_critic": "권장 후보 중 하나다. 오프라인 사전학습 뒤의 온라인 미세조정을 명시적으로 겨냥해 설계된 계열이므로 두 단계를 잇는 구조와 목적이 일치한다.",
+          "td3_plus_bc": "우리 액션이 하이브리드라 그대로 쓰기 어렵다. 연속 액션을 전제하는 설계이므로 이산 서브채널 축을 별도로 처리해야 하고, 그러면 원형에서 멀어진다.",
+          "recommendation": "암묵적 Q 학습이나 이점 가중 회귀 계열을 권한다. 두 계열 모두 오프라인에서 온라인으로 넘어가는 전환을 겨냥해 설계되었고, 그 전환이 곧 HOORL이 결합한다고 말한 부분이기 때문이다. 다만 이는 문헌 근거가 아니라 목적 부합성에 따른 판단이다."
+        },
+        "consequences_for_hpo": "온라인 단계에서 오프라인 데이터를 계속 섞어 쓰기로 정한다면 두 데이터의 혼합 비율이 하이퍼파라미터가 되므로 탐색 공간에 넣어야 한다. 오프라인 가중치를 초기값으로만 쓰기로 정한다면 그 항목은 필요 없다. 이 선택이 탐색 공간의 형태를 바꾸므로 HPO 기동 전에 확정되어야 한다.",
+        "manuscript_requirement": "원고의 이식 범위 문단에 다음 취지가 들어가야 한다. 원논문이 오프라인 단계의 학습기를 초록 수준에서만 서술하고 본문 접근이 불가하여 확인하지 못했다는 것, 따라서 우리가 어떤 알고리즘을 택했고 왜 택했다는 것, 그리고 그 선택이 원논문의 것이 아니라 우리의 것이라는 점이다. 이 서술을 넣으면 정직한 한계로 남고, 넣지 않으면 원저자의 방법을 잘못 대표하게 된다.",
+        "manuscript_requirement_offline_stage_rationale": "2026-09-06에 사용자가 선택지 (B)로 결정하여 추가한 요구 사항이다. 오프라인 단계를 유지하되 원고에 적는 근거를 교체한다. 원고에는 다음 취지가 들어가야 한다. 원논문이 오프라인 단계를 도입한 동기는 희소 보상이고, 본 연구의 보상은 결정 구간마다 산출되는 조밀한 보상이므로 그 동기가 본 연구 환경에는 해당하지 않는다는 것, 그럼에도 원논문 방법 구성의 온전한 재현을 위해 오프라인 단계를 포함했다는 것이다. 이 문장을 결과가 나오기 전에 미리 적어야 한다. 오프라인 단계가 이득을 내지 못했을 때 같은 내용을 결과 뒤에 적으면 사후 해명으로 읽히기 때문이다. 선택지 (C)인 온라인 단계만 구현하는 방안은 배제되었다. CARLTON을 폐기한 사유가 '원논문 구성 요소가 재현되지 않은 방법을 그 논문의 방법으로 비교표에 올린다'는 것이었으므로, (C)를 택하면 같은 기준을 두 방안에 다르게 적용하게 되어 아홉 종 구성 전체의 정당성이 흔들린다. 이 결정은 구현과 오프라인 데이터 수집 계획을 바꾸지 않으며 원고 문장만 바꾼다."
+      },
+        "performance_direction": "혼합이며 2026-09-06에 다시 적었다. 문제의 난이도 쪽으로는 유리하게 작용할 수 있다. 원논문이 씨름하던 난점인 배터리 고갈 회피가 E를 제거하면서 사라지고, 사용자 요구 대비 센싱 빈도 불일치도 F를 제거하면서 사라지기 때문이다. 반면 방법의 이득 쪽으로는 불리하게 작용한다. 오프라인 단계는 희소 보상을 완화하려고 도입된 장치인데 우리 보상이 조밀하므로 그 장치가 이득을 낼 조건 자체가 우리 환경에 없다. 여기에 오프라인 데이터의 수집 조건을 원논문에서 확인하지 못했다는 불확실성이 더해진다. 따라서 결과 서술에서 지켜야 할 선은 분명하다. 이 방법이 낮은 성적을 내더라도 그것을 '오프라인과 온라인을 결합하는 접근이 열등하다'로 읽어서는 안 된다. 그 접근이 겨냥한 조건이 우리 환경에 없기 때문이며, 이는 방법의 우열이 아니라 적용 조건의 문제다. cross_cutting_note가 비AoI 계열 여섯 종에 세워 둔 해석 조건과 같은 성격의 조건이 이 항목에 하나 더 붙는 셈이다. D의 교체 폭이 다른 방법보다 작다는 점은 이 방법에 공정한 조건이다.",
+        "manuscript_note": "아래 domain_defense_for_manuscript를 함께 쓴다. 그리고 performance_direction이 규정한 해석 조건을 결과 서술에 반드시 넣는다."
+      },
+      {
+        "key": "parvini2023",
+        "method": "MADDPG-MT",
+        "original_components": [
+          "A. 다중 에이전트 DDPG 기반 분산 자원 할당. 플래툰 리더가 에이전트다",
+          "B. Modified MADDPG. 협력을 유도하는 전역 critic과 에이전트별 배타적 지역 critic 두 개를 함께 학습한다",
+          "C. Modified MADDPG with task decomposition. 각 에이전트의 통합 보상을 여러 하위 보상으로 분해하고 과제별 가치 함수를 따로 학습한다",
+          "D. 플래툰 구조와 리더 팔로워 관계, 플래툰 내 협력 인지 메시지 전파",
+          "E. 목적함수가 AoI와 협력 인지 메시지 전송 확률이다"
+        ],
+        "porting": [
+          "A. 에이전트를 플래툰 리더가 아니라 통신 범위 내 개별 차량으로 두고 액터와 크리틱을 전부 RSU에서 실행한다. 우리 스케줄러가 단일 RSU 중앙집중이므로 중앙 크리틱은 추가 가정이 아니라 실제 배치 구조 그 자체다",
+          "A-2. 이웃 절단이 추가된다. 원논문에 없는 우리 추가이므로 원고의 이식 범위에 반드시 적는다. 이웃 관측을 만드는 NeighbourhoodView가 MAX_NEIGHBOURS = 16으로 잘라내며(rl_interface.py:59, 827-885), 16은 상한이지 실제 인원수가 아니다. 통신 범위 내 차량 수가 밀도 5에서 약 22대, 밀도 35에서 약 142대이므로 혼잡한 구간에서는 전역 크리틱이 90여 대 가운데 가장 가까운 16대만 본다. 이 절단은 이 방법의 구조가 요구하는 것이 아니다. 마스크 평균 풀링은 순열 불변이고 임의 폭을 받을 수 있으므로, 16이라는 상한은 상류의 설계 결정이지 아키텍처의 제약이 아니다. 성능 방향은 불리다. 이 논문의 기여 하나가 협력을 유도하는 전역 크리틱인데 그 시야가 혼잡 구간에서 약 6분의 1로 잘리기 때문이다. 공통 서술은 _meta.neighbourhood_truncation_note를 볼 것",
+          "B. 유지해야 한다. 전역 크리틱의 입력은 환경이 이미 유지하는 RSU 테이블을 쓴다",
+          "C. 유지해야 한다. 우리 보상의 네 항인 추정 오차, 전력, 혼잡, 중복 갱신에 하위 보상이 1:1로 대응하므로 원논문보다 오히려 자연스럽게 맞는다",
+          "D. 제거한다. 우리 SUMO 시나리오는 신호 교차로의 비정형 도심 교통이라 플래툰이 없다",
+          "E. 협력 인지 메시지 전송 확률을 빼고 우리 보상으로 교체한다"
+        ],
+        "performance_direction": "심각한 불리. 팀 리드의 전언대로 B와 C가 모두 비활성이라면 이 방법에 남는 것은 평범한 MADDPG이며, B와 C가 이 논문의 기여 전부다. 즉 기여가 하나도 없는 상태로 비교표에 오르게 된다. 이 항목은 121회 피인용으로 후보 전체에서 가장 많이 인용된 연구이므로, 기여 없이 낮은 성적이 보고되면 원저자의 방법을 잘못 대표할 뿐 아니라 심사에서 가장 먼저 지적받을 지점이 된다. 아홉 종 중 가장 시급히 바로잡아야 할 항목이라고 판단한다.",
+        "manuscript_note": "구현 시 주의할 점이 하나 더 있다. 차량이 통신 범위를 드나들며 에이전트 수가 변하므로 전역 크리틱에 고정 크기 패딩과 유효성 마스크가 필요하거나 순열 불변 풀링 인코더가 필요하다. 이는 원논문에 없는 부분이므로 우리가 추가해야 하고, 그 사실을 논문에 밝혀야 한다. 2026-09-06 확인: 이 부분은 이미 구현되어 있다. rl_interface.py:827-885의 NeighbourhoodView가 생산자이고 MAX_NEIGHBOURS = 16이 상한이다. 따라서 원고에는 '구현해야 한다'가 아니라 '구현했다'로 적는다. 다만 구현되었다는 사실만 적으면 부족하다. 상한이 몇인지와 그것이 실제 인원수보다 작다는 사실이 함께 드러나야 한다. 위 porting의 A-2와 _meta.neighbourhood_truncation_note에 그 내용을 적었다."
+      },
+      {
+        "key": "schulman2017 / haarnoja2018 / fujimoto2018",
+        "method": "PPO, SAC, TD3",
+        "original_components": [
+          "A. 각 알고리즘의 표준 구성. PPO는 클리핑된 대리 목적, SAC는 최대 엔트로피 목적과 자동 온도 조절, TD3는 클리핑된 이중 Q와 지연된 정책 갱신과 목표 정책 평활화다",
+          "B. 세 알고리즘 모두 단일 유형의 행동 공간을 전제한다. 혼합 행동 공간을 위한 장치가 없다"
+        ],
+        "porting": [
+          "A. Stable-Baselines3 구현을 그대로 쓴다. 알고리즘 내부는 축약하지 않는다",
+          "B. 공통 래퍼로 우회한다. [-1, 1] 범위의 3차원 Box를 노출해 0번과 1번 차원을 Delta와 전력에 매핑하고 2번 차원을 4개 서브채널로 구간 분할한다"
+        ],
+        "performance_direction": "구간 분할 래퍼가 이산 서브채널 결정에서 세 방법 모두에 불리하게 작용하며, 특히 TD3에 더 불리하다. TD3는 결정론적 정책이라 분할된 세 번째 차원에 자체 탐색이 없고 행동 잡음에만 의존하므로, 잡음 크기가 구간 경계를 실제로 넘길 만큼 커야 한다. 이 불리함은 축약 때문이 아니라 알고리즘의 성질 때문이며, 순수 연속 기법이 이산 결정에서 하이브리드 액션 기법보다 불리한 것은 우리가 보이려는 바이기도 하다. 따라서 이 방향은 결함이 아니라 결과의 일부로 서술한다.",
+        "manuscript_note": "세 방법이 반드시 동일한 래퍼를 써야 상호 비교가 성립하며, 래퍼 방식을 논문에 명시해야 한다. SAC의 경우 Stable-Baselines3 구현이 Box 전용이라 구간 분할 래퍼가 선택이 아니라 필수이고, 행동이 3차원이 되므로 목표 엔트로피를 재조정해야 한다."
+      }
+    ],
+    "carlton_retirement_note_for_code_archive": {
+      "_purpose": "구현 담당이 carlton.py를 격리할 때 함께 둘 교체 사유 문서의 문헌 쪽 근거다. 아래 본문을 그대로 쓰거나 구현 쪽 관찰을 덧붙여 쓸 수 있다. 나중에 '왜 이 모델이 빠졌는가'를 물었을 때 코드만 남아 있으면 답할 수 없으므로 사유를 문서로 남긴다.",
+      "title": "CARLTON 베이스라인 교체 사유",
+      "body": "이 모델은 2026-09-05에 비교 베이스라인 아홉 종에서 제외되었고, 유사 범주 두 번째 자리는 HOORL(Xu 외, IEEE Transactions on Vehicular Technology 75권 8호 18102-18115쪽, 2026, DOI 10.1109/TVT.2026.3675626)이 대신한다. 사용자 결정이다.\n\n원 문헌은 Y. Cohen, T. Gafni, R. Greenberg, K. Cohen, 'SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks,' IEEE Transactions on Wireless Communications, 24권 1호 228-243쪽, 2025, DOI 10.1109/TWC.2024.3491035이다. 문헌 자체에는 결함이 없고 서지도 Crossref, OpenAlex, dblp 세 색인에서 검증되어 있다. 제외는 문헌의 품질 문제가 아니다.\n\n주된 사유는 목적함수에 정보 신선도 항이 없다는 점이다. 이 논문은 반송파 간 간섭과 채널 재사용을 모델링한 분산 동적 채널 할당으로, 망별 서비스 품질 목표 아래 전역 SINR 척도를 최대화한다. 유사 범주는 본 논문과 방법론적으로 가장 가까운 연구를 담는 자리인데 본 논문의 주제가 AoI 인지 스케줄링이므로 어긋난다. 채택 당시의 구현 가능성 서술도 이미 'AoI 항을 스스로 제공하지 않으므로 AoI 목적은 우리 보상에서 오며 그 대체 사실을 논문에 밝혀야 한다'고 적고 있었는데, 그 단서가 곧 이 자리에 맞지 않는다는 신호였다. 최신 범주 세 종도 AoI를 다루지 않으므로, 이 모델까지 남으면 AoI를 원래 목적으로 삼는 비교군이 둘로 줄어든다는 점도 함께 고려되었다.\n\n구조적 문제도 겹쳤다. 전수 조사에서 mean 팔이 200,000스텝 내내 균등 무작위 정책에 고정된 것이 확인되었고, 원논문의 저차원 서비스 품질형 관측 표현도 재현되지 않았다. 근본 원인은 탐색 온도가 backup 연산자에 묶여 있어 Q 값의 척도에 대해 불변이 아니라는 점이며, 관측 정규화가 100에서 168로 바뀌면서 이 문제가 더 불확실해졌다. 즉 원논문의 방법으로 비교표에 올릴 수 있는 상태가 아니었다.\n\n되살릴 조건은 두 가지가 함께 충족되는 경우다. 첫째, 유사 범주가 아니라 순수한 채널 할당 대조군을 따로 두기로 정하는 것이다. 둘째, 탐색 온도를 Q 값 척도에 불변이 되도록 고쳐 원논문의 거동을 재현할 수 있게 되는 것이다. 둘 중 하나만으로는 부족하다. 전자만 충족되면 재현되지 않은 구현이 남고, 후자만 충족되면 AoI 목적이 없는 방법이 여전히 유사 범주에 있게 된다.\n\n관련 기록은 librarian/baselines_v2.json의 carlton_replacement_search 절에 있다. 후보 여섯 건의 비교와 탈락 사유, 신규 조사 결과가 함께 정리되어 있다."
+    },
+    "cross_cutting_note": "아홉 종 중 여섯 종이 원논문과 다른 목적함수 아래에서 평가된다. li2026, hong2026, chen2026은 처리량이나 지연이나 효용을 겨냥해 설계되었고, 기초 3종은 목적함수가 없는 범용 알고리즘이다. AoI를 원래 목적으로 삼는 것은 bai2024, xu2026, parvini2023 셋뿐이다. 결과 표에서 순위를 논할 때 이 사실을 먼저 밝히지 않으면, 비AoI 계열이 낮게 나온 것을 방법의 열세로 오독하게 된다. 우리 실험이 답하는 질문은 '이 학습기들이 같은 조건에서 우리 보상을 얼마나 잘 최적화하는가'이지 '원논문의 주장이 재현되는가'가 아니다."
+  },
   "considered_and_rejected": [
     {
-      "title": "AoI and Energy-Aware Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning Framework",
+      "title": "SINR-Aware Deep Reinforcement Learning for Distributed Dynamic Channel Allocation in Cognitive Interference Networks",
       "authors": [
-        "Jingyi Xu",
-        "Xuying Zhou",
-        "Meiyan Song",
-        "Wei Wang",
-        "Dusit Niyato",
-        "Chau Yuen"
+        "Yaniv Cohen",
+        "Tomer Gafni",
+        "Ronen Greenberg",
+        "Kobi Cohen"
       ],
-      "venue": "IEEE Transactions on Vehicular Technology",
-      "year": 2026,
-      "volume": "75",
-      "issue": "8",
-      "pages": "18102--18115",
-      "doi": "10.1109/TVT.2026.3675626",
-      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/11442965; Crossref, OpenAlex and dblp agree on all fields",
-      "cited_by_count": "0",
-      "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27.",
-      "reason": "DEMOTED IN THE 2026-08-27 RE-SEARCH (was baseline #2 in the previous version). Displaced by chen2026. Reasons, in order: (a) VENUE - chen2026 is in IEEE TWC, the target journal, which now ranks above TVT; (b) DOMAIN - this paper's setting is mobile crowdsensing, not V2X, a weakness already flagged in the previous round, whereas chen2026 is vehicular and uses real highD vehicle trajectories; (c) PIPELINE COST - this paper needs an offline pretraining dataset generated from a documented behaviour policy, an extra step chen2026 does not require. WHAT IS LOST BY DROPPING IT: it was the only paper found in any venue that treats the SAMPLING/UPDATE INTERVAL itself as a learned decision, i.e. a direct analogue of our Delta. If the user values that analogue above venue tier, this is the entry to restore - it remains fully implementable as assessed in the previous round."
+      "venue": "IEEE Transactions on Wireless Communications",
+      "year": 2025,
+      "volume": "24",
+      "issue": "1",
+      "pages": "228--243",
+      "doi": "10.1109/TWC.2024.3491035",
+      "doi_verified": "true - resolves to ieeexplore.ieee.org/document/10750207; title, all 4 authors, IEEE TWC vol. 24 no. 1 pp. 228-243 confirmed identically by Crossref, OpenAlex and dblp. Year: Crossref and dblp report the Jan 2025 issue; OpenAlex reports 2024 from the early-access date. An arXiv preprint (2402.17773) exists but the citation used is the TWC version.",
+      "cited_by_count": "14",
+      "cited_by_count_source": "OpenAlex cited_by_count = 14, queried 2026-08-27. Semantic Scholar reports 18 for the same work (it merges the arXiv preprint's citations). Both numbers recorded; neither is fabricated.",
+      "method_name": "CARLTON",
+      "reason": "2026-09-05 사용자 결정으로 유사 범주 2번 자리에서 강등되었다. 이전에는 채택 항목이었다. 사유는 두 가지다. 첫째, 목적함수에 AoI가 없다. 이 논문은 전역 SINR 척도를 최대화하는 분산 동적 채널 할당이며 정보 신선도 항을 담지 않는다. 유사 범주는 본 논문과 방법론적으로 가장 가까운 연구를 담는 자리인데 본 논문의 주제가 AoI 인지 스케줄링이므로 어긋난다. 채택 당시의 implementability 서술도 'AoI 목적은 우리 보상에서 오며 그 대체 사실을 논문에 밝혀야 한다'고 이미 적고 있었는데, 그 단서가 곧 이 자리에 맞지 않는다는 신호였다. 둘째, 구현 쪽 문제가 겹쳤다. 전수 조사에서 mean 팔이 200,000스텝 내내 균등 무작위 정책에 고정된 것이 확인되었고, 원논문의 저차원 QoS형 관측 표현도 재현되지 않았다. 근본 원인은 탐색 온도가 backup 연산자에 묶여 있어 Q 값의 척도에 대해 불변이 아니라는 점이며, 관측 정규화가 100에서 168로 바뀌면서 이 문제가 더 불확실해졌다. 즉 원논문의 방법으로 비교표에 올릴 수 있는 상태가 아니었다. 대체 항목은 xu2026(HOORL)이며 선정 경위와 후보 비교는 carlton_replacement_search 절에 있다. 되살릴 조건: 유사 범주가 아니라 순수한 채널 할당 대조군을 따로 두기로 하고, 동시에 탐색 온도를 Q 값 척도에 불변이 되도록 고쳐 원논문 거동을 재현할 수 있게 된다면 재고할 수 있다. 문헌 자체에는 결함이 없으며 서지도 검증되어 있다."
     },
     {
       "title": "Deep Deterministic Policy Gradient to Minimize the Age of Information in Cellular V2X Communications",
@@ -272,7 +598,7 @@
       "doi_verified": "true - resolves to ieeexplore.ieee.org/document/9839316; Crossref, OpenAlex and dblp agree on all fields",
       "cited_by_count": "32",
       "cited_by_count_source": "OpenAlex cited_by_count, queried 2026-08-27.",
-      "reason": "DEMOTED IN THE 2026-08-27 RE-SEARCH (was baseline #5 in the previous version). Displaced by cohen2025. Reasons: (a) VENUE - cohen2025 is in IEEE TWC, the target journal; this is TITS, now third-priority; (b) YEAR - 2022, outside the 2025-2026 window the user has now emphasised, and it was already carrying a year flag in the previous round; (c) FIT - cohen2025's problem (K frequency-separated subchannels reused under inter-carrier interference, optimised against an explicit SINR objective) describes our contention model more literally than this paper's NOMA resource-block scheduling, which requires SIC we do not have. *** THE ONE PLACE THE CITATION CRITERION ARGUES AGAINST MY CHOICE: this paper has 32 citations versus cohen2025's 14 (OpenAlex) / 18 (Semantic Scholar). I chose venue and year over citation count because the coordinator ranked TWC placement first and citations only as a tiebreak at similar fit, and the fits are not identical. If the user weights citations more heavily than venue, restore this entry - it was fully implementable as assessed in the previous round and remains so. ***"
+      "reason": "DEMOTED IN THE 2026-08-27 RE-SEARCH (was baseline #5 in the previous version). Displaced by cohen2025. Reasons: (a) VENUE - cohen2025 is in IEEE TWC, the target journal; this is TITS, now third-priority; (b) YEAR - 2022, outside the 2025-2026 window the user has now emphasised, and it was already carrying a year flag in the previous round; (c) FIT - cohen2025's problem (K frequency-separated subchannels reused under inter-carrier interference, optimised against an explicit SINR objective) describes our contention model more literally than this paper's NOMA resource-block scheduling, which requires SIC we do not have. *** THE ONE PLACE THE CITATION CRITERION ARGUES AGAINST MY CHOICE: this paper has 32 citations versus cohen2025's 14 (OpenAlex) / 18 (Semantic Scholar). I chose venue and year over citation count because the coordinator ranked TWC placement first and citations only as a tiebreak at similar fit, and the fits are not identical. If the user weights citations more heavily than venue, restore this entry - it was fully implementable as assessed in the previous round and remains so. *** 2026-09-05 추가: 위의 되살림 제안은 더 이상 유효하지 않다. 두 가지 이유다. 첫째, 이 논문의 DOI 10.1109/TITS.2022.3190799는 SEARCH_SPEC.md:6의 폐기 6종 중 DDPG-CV2X와 같은 논문이며, 사용자가 명시적으로 폐기했고 재조사에서 재선정되지도 않았으므로 베이스라인은 물론 서론과 관련 연구에서도 인용할 수 없다. 둘째, 이 항목을 밀어낸 cohen2025 역시 2026-09-05에 강등되었고 그 자리는 xu2026이 차지했으므로, 비교 대상이 바뀌어 위 (a)와 (c)의 논거 자체가 더 이상 현재 상태를 설명하지 않는다. 이 서술은 2026-08-27 당시 판단의 기록으로만 남긴다."
     },
     {
       "title": "Distributed Age-of-Information Scheduling With NOMA via Deep Reinforcement Learning",

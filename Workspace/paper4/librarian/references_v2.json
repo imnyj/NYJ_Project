@@ -1,0 +1,503 @@
+{
+  "_meta": {
+    "generated": "2026-09-05",
+    "generated_by": "librarian agent",
+    "purpose": "writer/references.json 및 User_Request.md References 9건 중 실존하지 않는 8건을 대체하기 위한 검증 완료 서지 목록. 이 파일은 writer/references.json을 대체하지 않으며, 원고 반영은 별도 담당이 수행한다.",
+    "verification_method": "모든 항목의 DOI를 Crossref REST API(https://api.crossref.org/works/{DOI})에 직접 조회하여 제목, 저자 전원, 저널명, 권, 호, 페이지, 발행 연도를 항목별로 대조했다. 인용 적합성 판정과 3문장 요약은 Semantic Scholar Graph API로 확보한 초록 전문을 읽고 작성했으며, 초록에서 확인되지 않은 내용은 서술하지 않았다. 조회는 1건씩 순차로 수행했고 재시도가 필요한 건은 없었다.",
+    "venue_policy": "IEEE 발행물만 사용. Scopus, MDPI, arXiv는 조회 및 채택 대상에서 제외했다.",
+    "novelty_alignment": "논문의 신규성 축은 사전적 침묵 구간 환산 구조다. 즉 예측 가능성을 처음 지적했다는 주장이 아니라, 확립된 예측 가능성을 사후 임계가 아니라 앞으로 상태가 유지될 시간에 근거해 침묵 구간 길이 Delta로 환산하고, 그 환산을 서브채널 선택 및 전력 결정과 하나의 정책으로 학습한다는 구조에 무게를 싣는다. 따라서 아래 항목은 모두 문제 설정을 세우는 역할이며, 예측 가능성이나 혼합 행동 공간의 희소성을 주장하는 근거로는 사용하지 않는다.",
+    "note_on_lock_and_audit": "이 에이전트에는 Bash 도구가 없어 lock_manager.py와 audit_logger.py를 실행하지 못했다. 이 파일은 신규 생성이며 기존 파일을 하나도 수정하지 않았으므로 락 경합은 발생하지 않았다. 감사 로그는 Bash를 사용할 수 있는 에이전트가 대신 남겨야 한다."
+  },
+  "new_entries": [
+    {
+      "id": "cai2023",
+      "replaces": "구 [1][2][3] 자리 (서론 1문단, CAV/C-ITS의 실시간 이동성 데이터 필요성)",
+      "authors": "Kunyang Cai, Ting Qu, Bingzhao Gao, Hong Chen",
+      "title": "Consensus-Based Distributed Cooperative Perception for Connected and Automated Vehicles",
+      "journal": "IEEE Transactions on Intelligent Transportation Systems",
+      "venue_type": "journal",
+      "volume": "24",
+      "issue": "8",
+      "pages": "8188--8208",
+      "year": 2023,
+      "doi": "10.1109/TITS.2023.3264608",
+      "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 4인 전원, IEEE Trans. Intell. Transp. Syst. 24(8) 8188-8208, 2023이 모두 일치했다.",
+      "summary": "V2X로 교환된 정보를 결합해 비연결 대상의 검출과 추적 정확도를 높이는 합의 이론 기반 분산 협력 인지 알고리즘을 제안한다. 다중 센서 구성과 비선형 시스템 모델을 함께 다루기 위해 큐베이처 규칙 기반 비선형 형태와 다중 모델 확장을 제시한다. 초록은 협력 인지가 자율주행차의 인지 능력을 높이지만 제한된 통신 부담 안에서 연결 정보의 이득을 최대화해야 하는 새로운 과제를 제기한다고 명시한다.",
+      "supports_claim": "차량이 교환하는 실시간 상태 정보가 자율주행의 인지 성능을 좌우하는 전제이면서, 그 이득은 유한한 통신 자원 안에서 얻어야 한다.",
+      "novelty_fit": "서론 1문단이 세워야 할 긴장, 즉 정보 교환의 필요성과 통신 자원의 제약이 충돌한다는 구도를 초록이 직접 진술한다. 예측 가능성이나 갱신 주기에 대해서는 아무 주장도 하지 않으므로, 재조정된 신규성 축과 경쟁하지 않으면서 문제 설정만 제공한다. 이 점이 예측 가능성을 선점 주장으로 오해하게 만들던 기존 구 [1][2][3]과 다르다."
+    },
+    {
+      "id": "huang2024",
+      "replaces": "구 [1][2][3] 자리 (인프라 측이 차량의 실시간 상태를 보유한다는 구성의 근거)",
+      "authors": "Zilin Huang, Sikai Chen, Yuzhuang Pian, Zihao Sheng, Soyoung Ahn, David A. Noyce",
+      "title": "Toward C-V2X Enabled Connected Transportation System: RSU-Based Cooperative Localization Framework for Autonomous Vehicles",
+      "journal": "IEEE Transactions on Intelligent Transportation Systems",
+      "venue_type": "journal",
+      "volume": "25",
+      "issue": "10",
+      "pages": "13417--13431",
+      "year": 2024,
+      "doi": "10.1109/TITS.2024.3410185",
+      "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 6인 전원, IEEE Trans. Intell. Transp. Syst. 25(10) 13417-13431, 2024가 모두 일치했다.",
+      "summary": "GNSS가 가려지는 도심 협곡 환경에서 C-V2X 채널 상태 정보만으로 차선 수준의 측위를 달성하는 RSU 기반 협력 측위 프레임워크 CV2X-LOCA를 제안한다. 데이터 처리, 개략 측위, 환경 파라미터 보정, 궤적 필터링의 네 모듈로 구성되며 시뮬레이션과 실차 실험으로 검증했다. 초록은 RSU 배치가 희소하고 차량이 고속으로 이동하는 조건에서도 성능이 유지된다고 보고하며, 교통 당국의 RSU 투자 결정에 시사점을 준다고 밝힌다.",
+      "supports_claim": "노변 인프라가 C-V2X를 통해 차량의 정확한 위치 상태를 지속적으로 유지하는 구성이 실제로 성립한다.",
+      "novelty_fit": "우리 시스템 모델이 RSU 측에 차량 상태 테이블을 두고 그 테이블의 정확도를 목적 함수에 넣는 것을 정당화한다. RSU 기반 V2I가 현실적 배치라는 셋째 주장에도 함께 기여한다. 이 논문은 측위 정확도를 다룰 뿐 갱신 간격을 결정 변수로 두지 않으므로, 침묵 구간 환산이라는 기여와 겹치지 않는다."
+    },
+    {
+      "id": "jung2025",
+      "replaces": "구 [4] 자리 (고정 주기 CAM 브로드캐스트로 인한 채널 혼잡과 자원 충돌)",
+      "authors": "Soyi Jung, Jae-Hyun Kim, Joongheon Kim",
+      "title": "Intelligent Extra Resource Allocation for Cooperative Awareness Message Broadcasting in Cellular-V2X Networks",
+      "journal": "IEEE Transactions on Network and Service Management",
+      "venue_type": "journal",
+      "volume": "22",
+      "issue": "2",
+      "pages": "1677--1689",
+      "year": 2025,
+      "doi": "10.1109/TNSM.2024.3496394",
+      "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 3인 전원, IEEE Trans. Netw. Service Manag. 22(2) 1677-1689, 2025가 모두 일치했다.",
+      "summary": "C-V2X Mode 4에서 개별 차량이 센싱 기반 SPS로 분산적으로 자원을 점유하여 CAM을 브로드캐스트하는 표준 절차를 대상으로 한다. 초록은 기존 SPS 방식이 자원 스케줄링 충돌에 취약하며 그것이 성능을 명백히 저하시킨다고 서술한다. 이를 완화하기 위해 교통 밀도 변동을 실시간으로 추정해 자원을 추가 할당하는 전략과, 리아푸노프 최적화의 드리프트 플러스 페널티 구조에 근거해 전송 실패 확률을 최소화하도록 자원 수를 조절하는 방법을 제안한다.",
+      "supports_claim": "고정 주기 CAM 브로드캐스트는 교통 밀도가 높아질수록 자원 충돌을 일으켜 성능을 떨어뜨린다.",
+      "novelty_fit": "서론 2문단의 혼잡 주장을 표준 절차 수준에서 직접 뒷받침한다. 특히 이 논문의 해법이 자원을 더 할당하는 방향인 데 반해 본 연구는 전송 자체를 사전에 줄이는 방향이므로, 같은 문제에 대한 정반대 처방으로서 대비 구도가 선명하다. 존재하지 않던 구 [4]가 채우려던 자리를 실존 문헌으로 메우면서, 우리 기여를 혼잡 완화의 새로운 축으로 위치시킨다."
+    },
+    {
+      "id": "zhang2024",
+      "replaces": "구 [5] 자리 (셀룰러 경유 시 지연 병목, 근접 엣지가 현실적 대안이라는 주장). 사용자 결정에 따라 금전적 비용 주장은 제외하고 지연으로만 좁힌 형태다.",
+      "authors": "Wenhan Zhang, Mingjie Feng, Marwan Krunz",
+      "title": "Latency Estimation and Computational Task Offloading in Vehicular Mobile Edge Computing Applications",
+      "journal": "IEEE Transactions on Vehicular Technology",
+      "venue_type": "journal",
+      "volume": "73",
+      "issue": "4",
+      "pages": "5808--5823",
+      "year": 2024,
+      "doi": "10.1109/TVT.2023.3334192",
+      "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 3인 전원, IEEE Trans. Veh. Technol. 73(4) 5808-5823, 2024가 모두 일치했다. DOI 토큰의 연도는 2023이지만 최종 호는 2024년 4월호이며 Crossref의 issued와 published-print가 모두 2024년 4월이다.",
+      "summary": "차량 사용자와 엣지 서버 및 클라우드 서버 사이의 왕복 지연을 실측한 뒤, 그 측정값으로 종단 간 오프로딩 지연을 추정하는 프레임워크를 제시한다. 전파 지연을 추세를 따르는 기준 성분과 준랜덤한 잔차 성분으로 나누고, 기준 성분은 신호 세기별 군집화 후 LSTM 회귀로, 잔차 성분은 커널과 이동 평균을 결합한 통계적 방법으로 예측한다. 추정된 종단 간 지연에 근거해 오프로딩 위치를 정하는 기법이 무작위 오프로딩 대비 종단 간 지연을 약 60% 줄인다고 보고한다.",
+      "supports_claim": "차량의 계산과 정보 처리를 원격 클라우드 서버로 우회시키면 왕복 지연이 커지므로, 인근 엣지 서버를 경유하는 구성이 지연 측면에서 유리하다. 이 결론은 시뮬레이션이 아니라 실측 왕복 지연에 근거한다.",
+      "novelty_fit": "셀룰러 V2N 의존을 지연 병목으로 규정하고 RSU 기반 V2I를 현실적 대안으로 제시하는 셋째 주장에 대응하며, 실측 기반이라 과장 없이 인용할 수 있다.",
+      "caveat": "초록은 '인근 엣지 서버(nearby edge server)' 대 '원격 클라우드 서버(remote cloud server)'의 대비로 서술하며 RSU라는 단어를 쓰지 않는다. 따라서 원고에서 이 문헌을 근거로 RSU를 곧바로 등치시키지 말고, 근접 엣지 경유가 원격 경유보다 지연이 작다는 범위까지만 주장해야 한다. 아래 질의 1번 항목에서 이 표현 범위를 확인받아야 한다."
+    },
+    {
+      "id": "xie2025",
+      "replaces": "구 [9] 자리 (AoI 지향 DRL 스케줄링에서의 브랜치 네트워크와 action masking)",
+      "authors": "Xin Xie, Tao Zhong, Heng Wang",
+      "title": "Scheduling for Maximizing the Information Freshness in Vehicular Edge Computing-Assisted IoT Systems",
+      "journal": "IEEE Transactions on Intelligent Transportation Systems",
+      "venue_type": "journal",
+      "volume": "26",
+      "issue": "3",
+      "pages": "4140--4151",
+      "year": 2025,
+      "doi": "10.1109/TITS.2024.3514099",
+      "doi_verified": "true - Crossref 직접 조회(2026-09-05). 제목, 저자 3인 전원, IEEE Trans. Intell. Transp. Syst. 26(3) 4140-4151, 2025가 모두 일치했다. Crossref의 제목 표기에는 'Computing- Assisted'처럼 하이픈 뒤에 공백이 들어가 있으나 이는 색인 오기이며 bibitem에서는 정상 표기를 사용한다.",
+      "summary": "차량 엣지 컴퓨팅이 지원하는 IoT 시스템에서 장기 평균 AoI를 최소화하는 스케줄링 문제를 다루며, 링크 스케줄링과 서버 선택이 위치 제약 아래 강하게 결합되는 점을 핵심 난점으로 지목한다. 이를 풀기 위해 심층 강화학습 기반 스케줄링 전략을 설계하고, 출력층의 행동 수를 줄이는 브랜치 네트워크 구조로 신경망을 개선했다. 수렴을 가속하는 action masking 기법을 함께 도입하여 기존 기법 대비 최대 25.4%의 성능 이득을 보고한다.",
+      "supports_claim": "AoI를 목적으로 하는 DRL 스케줄링은 활발히 연구되어 왔으며, 결합된 이산 결정의 조합 폭발을 신경망 구조 수준에서 완화하는 접근이 이미 제시되어 있다.",
+      "novelty_fit": "존재하지 않던 구 [9]의 기술적 서술이 이 논문에서 변형된 것으로 보이므로, 실존 문헌으로 그대로 되돌리는 교체다. 더 중요한 것은 대비 지점이다. 이 논문은 어떤 링크를 언제 스케줄링할지 이산 결정으로 다루지만 갱신 간격 자체를 결정 변수로 두지 않으므로, 상태 유지 시간을 침묵 구간 길이로 환산하는 우리 구조가 무엇을 더하는지 이 문헌과의 차이로 진술할 수 있다."
+    }
+  ],
+  "withdrawn_entries": [
+    {
+      "id": "arani2026",
+      "doi": "10.1109/OJCOMS.2026.3707734",
+      "withdrawn_on": "2026-09-05",
+      "reason": "폐기 목록 위반이 확인되어 철회했다. 이 DOI는 SEARCH_SPEC.md:6의 폐기 6종 중 세 번째 항목인 DDPG-Resilient와 같은 논문이다. 사용자가 명시적으로 폐기했고, related_works.json 42건 대조 결과 재선정되지도 않았으므로 규칙상 인용할 수 없다. baselines_v2.json은 별도로 '기여의 절반이 우리가 제어하지 않는 차량 경로 계획'이라는 사유로 이 논문을 베이스라인에서 배제해 두었다. 즉 검토되었고 배제된 문헌이다.",
+      "note": "서지 정보 자체는 검증되어 있다. Crossref 직접 조회 결과 저자는 Atefeh Hajijamali Arani, Hamid Saeedi, Sajedeh Norouzi, Ali Nouruzi, Nizar Zorba, Halim Yanikomeroglu 6인이고 IEEE Open J. Commun. Soc. vol. 7, pp. 7420-7437, 2026이다. writer/references.json이 첫 저자를 'Amir Hossein Arani'로 적은 것은 실재하지 않는 표기였다. 이 정보는 나중에 폐기 지시가 뒤집힐 경우를 대비해 기록으로만 남기며, 현재 원고에 인용해서는 안 된다.",
+      "replacement": "구 [7] 자리가 뒷받침해야 할 주장인 'AoI 기반 DRL 스케줄링이 활발히 연구되어 왔다'는 새 문헌을 조사할 필요 없이 related_works.json의 검증된 기존 항목으로 채운다. kahraman2024, tadele2026, chen2020이 그 역할을 맡으며 신규 항목 xie2025도 같은 주장을 뒷받침한다. 자세한 배치는 reused_from_related_works를 참조한다."
+    }
+  ],
+  "reused_from_related_works": [
+    {
+      "id": "kahraman2024",
+      "doi": "10.1109/JIOT.2023.3324879",
+      "role": "철회된 arani2026을 대신하는 구 [7] 자리의 주력. IEEE Internet of Things Journal의 AoI 서베이로 분석 모델, 최적화 기법, 학습 기반 접근을 두루 다루고 차량 및 모바일 IoT 배치를 별도 절로 둔다. 'AoI 기반 DRL 스케줄링이 활발히 연구되어 왔다'는 주장을 문헌을 일일이 나열하지 않고 한 번에 뒷받침하기에 가장 적합하다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다. DOI가 폐기 6종 어디에도 해당하지 않음을 대조로 확인했다."
+    },
+    {
+      "id": "tadele2026",
+      "doi": "10.1109/TITS.2026.3667859",
+      "role": "구 [7] 자리의 최신성 담당. 2026년 IEEE TITS 게재분으로 AoI와 DRL을 차량 환경에서 결합하며, 결정을 차량의 이동성 상태에 조건화한다. 최근에도 이 방향이 활발하다는 사실과, 이동성 조건화가 현재 진행형 흐름이라는 사실을 함께 보인다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다. baselines_v2.json은 다중 RSU 인프라를 요구한다는 이유로 이 논문을 베이스라인에서 배제했으나, SEARCH_SPEC.md:120이 관련 연구의 서사 맥락으로는 유효하다고 명시해 두었다. 폐기 6종과 무관하다."
+    },
+    {
+      "id": "chen2020",
+      "doi": "10.1109/TWC.2019.2963667",
+      "role": "구 [7] 자리의 구조적 선례. RSU가 다수 차량의 전송을 AoI 기준으로 스케줄링하는 가장 가까운 선행 구조이며, 우리가 대비를 세울 지점도 분명하다. 이 논문은 주파수 대역만 배정하는 반면 본 연구는 침묵 구간, 전력, 서브채널을 하나의 정책으로 낸다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다. 폐기 6종과 무관하다."
+    },
+    {
+      "id": "maksimovski2026",
+      "role": "구 [4] 자리 보강. 변화 기반 메시지 생성 규칙이 채널 부하를 줄인다는 표준 지향 근거로, 고정 주기 브로드캐스트의 비효율을 잘라 말할 수 있게 한다. jung2025가 충돌 문제를 진술하고 이 문헌이 억제 방향의 선행 처방을 제공한다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재하므로 서지 정보를 여기에 중복 기재하지 않는다."
+    },
+    {
+      "id": "gong2022",
+      "role": "구 [6][8] 자리 대체. 상태 갱신에서 에너지와 나이의 상충을 다루고 최적 정책이 명시적인 대기 동작을 포함함을 증명하므로, 무분별한 주기 전송이 전력을 낭비한다는 주장의 근거로 존재하지 않던 구 [6]보다 강하다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    },
+    {
+      "id": "tang2020",
+      "role": "구 [6][8] 자리 보강. 전력 제약 아래 AoI를 최소화하면 스케줄이 채널 기회주의적이고 임계 구조를 갖게 됨을 보이므로, 전력을 갱신 결정과 함께 최적화해야 한다는 주장을 뒷받침한다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    },
+    {
+      "id": "maatouk2020",
+      "role": "전제의 보증인. 오래되었으나 여전히 옳은 정보에는 벌점이 없어야 한다는 Age of Incorrect Information의 정의를 제공한다. 반박 대상이 아니라 사전적 환산이 딛고 서는 전제를 확립한 문헌으로 인용한다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    },
+    {
+      "id": "sun2020",
+      "role": "전제의 보증인. 원격 추정에서 평균 제곱 오차 최적 샘플러가 신호를 인지하는 임계 형태이며 나이 최적 샘플러보다 엄밀히 우수함을 증명하므로, 갱신 시점이 비주기적이고 상태 의존적이어야 한다는 전제를 보증한다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    },
+    {
+      "id": "rajaraman2021",
+      "role": "전제의 보증인. 갱신마다 정보 가치가 다를 때 나이만 최소화하는 것은 잘못된 목적임을 논증하여, 정지 차량에 대한 갱신을 억제하는 근거를 제공한다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    },
+    {
+      "id": "xu2020",
+      "role": "전제의 보증인. 이벤트 트리거 센서 스케줄에서 전송하지 않는 것 자체가 정보를 담으며 전송률을 크게 낮춰도 추정 품질이 유지됨을 보인다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    },
+    {
+      "id": "tripathi2024",
+      "role": "전제의 보증인이자 대조군. 나이의 임의 비감소 함수로 Whittle 인덱스 스케줄링을 일반화한 최신 분석적 접근으로, 명시적 나이 비용 함수를 요구하는 인덱스 정책과 학습된 정책의 차이를 드러낸다.",
+      "note": "librarian/related_works.json에 검증 완료 상태로 존재한다."
+    }
+  ],
+  "bibitems": [
+    "\\bibitem{cai2023} K. Cai, T. Qu, B. Gao, and H. Chen, ``Consensus-based distributed cooperative perception for connected and automated vehicles,'' \\emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 24, no. 8, pp. 8188--8208, 2023.",
+    "\\bibitem{huang2024} Z. Huang, S. Chen, Y. Pian, Z. Sheng, S. Ahn, and D. A. Noyce, ``Toward C-V2X enabled connected transportation system: RSU-based cooperative localization framework for autonomous vehicles,'' \\emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 25, no. 10, pp. 13417--13431, 2024.",
+    "\\bibitem{jung2025} S. Jung, J.-H. Kim, and J. Kim, ``Intelligent extra resource allocation for cooperative awareness message broadcasting in cellular-V2X networks,'' \\emph{IEEE Transactions on Network and Service Management}, vol. 22, no. 2, pp. 1677--1689, 2025.",
+    "\\bibitem{zhang2024} W. Zhang, M. Feng, and M. Krunz, ``Latency estimation and computational task offloading in vehicular mobile edge computing applications,'' \\emph{IEEE Transactions on Vehicular Technology}, vol. 73, no. 4, pp. 5808--5823, 2024.",
+    "\\bibitem{xie2025} X. Xie, T. Zhong, and H. Wang, ``Scheduling for maximizing the information freshness in vehicular edge computing-assisted IoT systems,'' \\emph{IEEE Transactions on Intelligent Transportation Systems}, vol. 26, no. 3, pp. 4140--4151, 2025."
+  ],
+  "discarded_placeholders": [
+    {
+      "old_id": "al-khasawneh2026uav",
+      "old_doi": "10.1109/TITS.2025.3512345",
+      "status": "실존하지 않음. Crossref 404이며 동일 제목 논문도 없다. cai2023과 huang2024로 대체한다."
+    },
+    {
+      "old_id": "zhang2025small",
+      "old_doi": "10.1109/MWC.2024.3412321",
+      "status": "실존하지 않음. Crossref 404이며 동일 제목 논문도 없다. cai2023과 huang2024로 대체한다."
+    },
+    {
+      "old_id": "li2025next",
+      "old_doi": "10.1109/TIV.2024.3389012",
+      "status": "실존하지 않음. Crossref 404. 유사 제목의 SSRN 프리프린트가 있으나 저자와 게재처가 전혀 다르고 프리프린트라 정책상 사용할 수 없다. cai2023과 huang2024로 대체한다."
+    },
+    {
+      "old_id": "park2025adaptive",
+      "old_doi": "10.1109/TVT.2024.3394567",
+      "status": "실존하지 않음. Crossref 404이며 동일 제목 논문도 없다. jung2025로 대체하고 maksimovski2026으로 보강한다."
+    },
+    {
+      "old_id": "sun2025overcoming",
+      "old_doi": "10.1109/JIOT.2024.3401234",
+      "status": "실존하지 않음. Crossref 404이며 동일 제목 논문도 없다. zhang2024로 대체하되 주장 범위를 지연으로 좁혀야 한다."
+    },
+    {
+      "old_id": "duan2026energy",
+      "old_doi": "10.1109/TMC.2025.3423456",
+      "status": "실존하지 않음. Crossref 404이며 동일 제목 논문도 없다. 이미 검증된 gong2022로 대체하고 tang2020으로 보강한다."
+    },
+    {
+      "old_id": "ning2025age",
+      "old_doi": "10.1109/TVT.2024.3456789",
+      "status": "실존하지 않음. Crossref 404. 제목이 매우 유사한 실존 논문(Sarathchandra 외, 'Age and Power Minimization via Meta-Deep Reinforcement Learning in AAV Networks', IEEE TVT 74(11) 16839-16849, 2025, DOI 10.1109/TVT.2025.3579626)이 있으나 대상이 무인 항공기라 차량 엣지 컴퓨팅 주장의 근거로 부적합하다. gong2022로 대체한다."
+    },
+    {
+      "old_id": "cui2025scheduling",
+      "old_doi": "10.1109/TITS.2024.3478901",
+      "status": "실존하지 않음. Crossref 404. 기재되어 있던 브랜치 네트워크와 action masking 서술이 xie2025의 초록과 일치하므로, 이 항목은 xie2025가 변형된 결과로 판단된다. xie2025로 교체한다."
+    }
+  ],
+  "key_collision_resolution": {
+    "problem": "librarian/related_works.json의 chen2026(Haosheng Chen, SAGIN P-DDQN, IEEE TWC vol. 25, pp. 19115-19130, 2026, DOI 10.1109/TWC.2026.3706356)과 librarian/baselines_v2.json의 chen2026(Quan Chen, 시맨틱 인지 오프로딩, IEEE TWC vol. 25, pp. 6790-6805, 2026, DOI 10.1109/TWC.2025.3626670)이 서로 다른 논문인데 같은 키를 쓴다. 두 논문 모두 실존하며 서지 정보 자체는 정확하다. 두 JSON을 하나의 참고문헌 목록으로 병합하면 한쪽 인용이 조용히 다른 논문을 가리킨다.",
+    "status": "확정 및 반영 완료(2026-09-05). 팀 리드가 아래 recommended 안을 승인했고, librarian/related_works.json, librarian/related_works.md, librarian/baselines_v2.json, librarian/baselines_v2.md에 반영했다. writer/main.tex는 수정 금지 대상이므로 manuscript_change_list에 항목으로 넘긴다.",
+    "recommended": {
+      "scheme": "숫자 접미사 (SEARCH_SPEC.md 규약)",
+      "assignment": {
+        "chen2026": "Quan Chen 외, Hybrid-Action DRL-Based Resource Allocation for Semantic-Aware Computation Offloading in Vehicular Edge Networks, DOI 10.1109/TWC.2025.3626670",
+        "chen20262": "Haosheng Chen 외, Mobile-Edge Computing in SAGINs: A Hybrid Action Space P-DDQN Algorithm for Joint Offloading and Resource Allocation, DOI 10.1109/TWC.2026.3706356"
+      },
+      "rationale": "SEARCH_SPEC.md의 인용 형식 규약이 '제1저자 성 + 년도, 중복 시 숫자 접미사'를 명시하고 있고, 같은 프로젝트에서 이미 xu2023(Yahao Xu)과 xu20232(Yuanyuan Xu)가 이 방식으로 처리되어 있다. 접미사 없는 키를 Quan Chen 논문에 주는 이유는 그 논문이 베이스라인으로 구현되어 본문, 결과 표, 그림 범례에서 반복 인용되기 때문이다. 인용 빈도가 높은 쪽에 짧고 단순한 키를 주면 원고 작성과 교정에서 혼동이 줄어든다."
+    },
+    "alternative": {
+      "scheme": "이름 이니셜 반영",
+      "assignment": {
+        "chenq2026": "Quan Chen 외",
+        "chenh2026": "Haosheng Chen 외"
+      },
+      "tradeoff": "키만 보고 어느 논문인지 알 수 있어 가독성이 높다. 다만 SEARCH_SPEC.md 규약을 벗어나고, 이미 숫자 접미사로 처리된 xu2023 및 xu20232와 명명 방식이 갈려 규약이 두 갈래가 된다."
+    },
+    "propagation_done": "librarian/related_works.json(id 및 bibitem), librarian/related_works.md(bibitem 및 피인용 서술), librarian/baselines_v2.json(id_note 추가)에 반영을 마쳤다. 각 파일에 변경 사유를 주석 필드로 남겨 두었으므로 나중에 이유를 다시 추적할 수 있다. writer/main.tex에는 현재 chen2026도 chen20262도 등장하지 않으므로 즉시 고칠 표기가 없다. 참고로 chen2020(Xianfu Chen)이 이미 존재하지만 연도가 달라 충돌하지 않는다.",
+    "other_keys_checked": "이 파일이 새로 도입하는 cai2023, huang2024, jung2025, zhang2024, xie2025는 related_works.json 42건 및 baselines_v2.json 9건의 기존 키와 대조한 결과 충돌이 없다. huang2020(Kang Huang)과 zhang2021(Tao Zhang)이 존재하지만 연도가 달라 구분된다. arani2026은 2026-09-05에 철회되었으므로 키 목록에서 제외한다. 자세한 사유는 withdrawn_entries를 참조한다."
+  },
+  "bibliographic_corrections": {
+    "_note": "팀 리드가 지시한 서지 오류 네 건을 2026-09-05에 Crossref 및 PMLR 원문으로 재대조한 결과다. 네 건 모두 writer/main.tex에만 존재하는 오류이며 librarian 디렉터리의 JSON은 이미 올바른 값을 갖고 있다. main.tex는 수정 금지 대상이므로 정정 내용을 manuscript_change_list로 넘긴다.",
+    "items": [
+      {
+        "manuscript_key": "kaul2012real",
+        "field": "pages",
+        "recorded_in_main_tex": "2187--2195",
+        "verified_value": "2731--2735",
+        "verification": "Crossref 직접 조회 10.1109/INFCOM.2012.6195689. 제목 'Real-time status: How often should one update?', 저자 Sanjit Kaul, Roy Yates, Marco Gruteser, 2012 Proceedings IEEE INFOCOM, pp. 2731-2735, 2012. 학회 개최지는 Orlando, FL, USA, 2012년 3월 25-30일로 함께 확인했다.",
+        "librarian_file_status": "related_works.json의 kaul2012는 이미 2731--2735로 올바르다. 다만 키가 kaul2012real이 아니라 kaul2012이므로 키 변경도 함께 필요하다."
+      },
+      {
+        "manuscript_key": "qi2025deep",
+        "field": "pages",
+        "recorded_in_main_tex": "누락",
+        "verified_value": "1365--1378",
+        "verification": "Crossref 직접 조회 10.1109/TVT.2024.3452790. 제목 'Deep-Reinforcement-Learning-Based AoI-Aware Resource Allocation for RIS-Aided IoV Networks', 저자 7인(Kangwei Qi, Qiong Wu, Pingyi Fan, Nan Cheng, Wen Chen, Jiangzhou Wang, Khaled B. Letaief), IEEE Trans. Veh. Technol. 74(1) 1365-1378, 2025.",
+        "librarian_file_status": "baselines_v2.json의 considered_and_rejected에 올바른 값으로 기록되어 있다. 다만 2026-09-05 결정에 따라 이 문헌은 폐기 6종에 해당하여 원고에서 완전히 제거되므로, 아래 정정값은 실제로 적용할 일이 없다. 나중에 폐기 지시가 뒤집힐 경우를 대비한 기록으로만 남긴다.",
+        "action": "정정이 아니라 제거"
+      },
+      {
+        "manuscript_key": "lin2025optimization",
+        "field": "year",
+        "recorded_in_main_tex": "2025",
+        "verified_value": "2026",
+        "verification": "Crossref 직접 조회 10.1109/TVT.2025.3643923. 제목 'Optimization of Spectrum Resource Allocation for Vehicle Platoon in V2X Networks Based on Deep Reinforcement Learning', 저자 3인(Zhicong Lin, Hengwei Pan, Yonghua Wang), IEEE Trans. Veh. Technol. 75(6) 11512-11527. issued와 published-print가 모두 2026년 6월이다. DOI 토큰의 2025는 early access 시점이다.",
+        "librarian_file_status": "baselines_v2.json이 이미 2026으로 기록하고 있다. 다만 2026-09-05 결정에 따라 이 문헌은 폐기 6종에 해당하여 원고에서 완전히 제거되므로, 아래 정정값은 실제로 적용할 일이 없다. 나중에 폐기 지시가 뒤집힐 경우를 대비한 기록으로만 남긴다.",
+        "action": "정정이 아니라 제거"
+      },
+      {
+        "manuscript_key": "sac",
+        "field": "pages",
+        "recorded_in_main_tex": "1856--1865",
+        "verified_value": "1861--1870",
+        "verification": "proceedings.mlr.press/v80/haarnoja18b.html 원문 확인. 인용 줄이 'Proceedings of the 35th International Conference on Machine Learning, PMLR 80:1861-1870, 2018'이며 저자 4인(Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, Sergey Levine)이 일치한다. main.tex의 1856-1865는 dblp가 보관하는 인쇄본 페이지네이션이며, 관례적으로 인용되는 값은 PMLR 표기다.",
+        "librarian_file_status": "baselines_v2.json이 1861--1870을 쓰고 있어 PMLR 표기로 통일하면 두 파일이 일치한다. 키도 sac에서 haarnoja2018로 바꾼다."
+      },
+      {
+        "manuscript_key": "td3",
+        "field": "pages",
+        "recorded_in_main_tex": "누락",
+        "verified_value": "1587--1596",
+        "verification": "proceedings.mlr.press/v80/fujimoto18a.html 원문 확인. 인용 줄이 'Proceedings of the 35th International Conference on Machine Learning, PMLR 80:1587-1596, 2018'이며 저자 3인(Scott Fujimoto, Herke van Hoof, David Meger)이 일치한다.",
+        "librarian_file_status": "baselines_v2.json이 이미 1587--1596을 쓰고 있다. 키도 td3에서 fujimoto2018로 바꾼다."
+      }
+    ]
+  },
+  "manuscript_change_list": {
+    "_note": "writer/main.tex에 적용할 변경 목록이다. 이 파일을 만든 librarian은 main.tex를 수정하지 않았다. 원고 담당이 이 목록을 받아 진행한다. 행 번호는 2026-09-05 시점 기준이며 수정을 진행하면 밀린다.",
+    "citation_key_replacements": [
+      {
+        "line": 69,
+        "old": "\\cite{al-khasawneh2026uav}",
+        "new": "\\cite{cai2023}",
+        "reason": "구 [1]은 실존하지 않는 문헌이다. cai2023이 V2X 협력 인지의 필요성과 통신 부담의 제약을 초록에서 함께 진술한다."
+      },
+      {
+        "line": 69,
+        "old": "\\cite{zhang2025small, li2025next}",
+        "new": "\\cite{huang2024}",
+        "reason": "구 [2][3]은 실존하지 않는 문헌이다. huang2024가 RSU 측이 차량의 정확한 상태를 유지하는 구성을 실차 실험까지 포함해 보인다."
+      },
+      {
+        "line": 71,
+        "old": "\\cite{sun2025overcoming}",
+        "new": "\\cite{zhang2024}",
+        "reason": "구 [5]는 실존하지 않는 문헌이다. zhang2024가 실측 왕복 지연으로 근접 엣지 경유의 지연 이득을 보인다.",
+        "text_change_required": "같은 문장의 'incurs prohibitive monetary costs and suffers from backhaul latency bottlenecks'에서 금전적 비용 주장을 삭제하고 백홀 지연으로만 좁혀야 한다. zhang2024의 초록은 비용을 다루지 않으므로 그 문헌으로 비용을 주장하면 근거 없는 인용이 다시 생긴다."
+      },
+      {
+        "line": 71,
+        "old": "\\cite{park2025adaptive}",
+        "new": "\\cite{jung2025, maksimovski2026}",
+        "reason": "구 [4]는 실존하지 않는 문헌이다. jung2025가 C-V2X Mode 4 SPS의 CAM 전송 충돌을 직접 진술하고, maksimovski2026이 변화 기반 생성 규칙으로 채널 부하를 줄이는 선행 처방을 제공한다."
+      },
+      {
+        "line": 71,
+        "old": "\\cite{duan2026energy}",
+        "new": "\\cite{gong2022, tang2020}",
+        "reason": "구 [6]은 실존하지 않는 문헌이다. gong2022가 에너지와 나이의 상충에서 최적 정책이 명시적 대기 동작을 포함함을 증명하고, tang2020이 전력 제약 아래 AoI 최소화의 임계 구조를 보인다."
+      },
+      {
+        "line": 74,
+        "old": "\\cite{mlika2022deep, qi2025deep, zhang2025drl}",
+        "new": "\\cite{xie2025, tripathi2024}",
+        "reason": "기존 세 문헌은 전부 폐기 목록이며, 동시에 모두 다차원 공동 최적화를 수행하므로 '이진 선택 또는 단일 차원 최적화'라는 서술을 뒷받침하지도 않는다. 두 가지 이유로 교체가 필요하다.",
+        "text_change_required": "선행 연구를 이진 선택이나 단일 차원 최적화로 규정하는 주장은 유지할 수 없다. 재조정된 신규성 축에 맞추어, 선행 연구가 갱신 결정을 사후에 관측된 나이나 임계 초과에 근거해 내린다는 점으로 다시 서술하고, 우리 기여를 앞으로 상태가 유지될 시간을 침묵 구간 길이로 사전에 환산하는 구조로 진술한다. xie2025는 링크 스케줄링과 서버 선택을 결합하지만 갱신 간격을 결정 변수로 두지 않고, tripathi2024는 나이의 함수를 명시적으로 정의한 뒤 그 인덱스로 스케줄링하므로 둘 다 사후 관측된 나이에 근거한다."
+      },
+      {
+        "line": 100,
+        "old": "\\cite{kaul2012real}",
+        "new": "\\cite{kaul2012}",
+        "reason": "SEARCH_SPEC.md의 키 규약은 제1저자 성과 연도다. bibitem의 페이지도 2731--2735로 정정한다."
+      },
+      {
+        "line": "102-105, 108-109",
+        "old": "Mlika and Cherkaoui~\\cite{mlika2022deep} / Qi et al.~\\cite{qi2025deep} / Arani et al.~\\cite{arani2026resilient} / Zhang et al.~\\cite{zhang2025drl} / Azizi et al.~\\cite{azizi2024efficient} / Lin et al.~\\cite{lin2025optimization} 여섯 문장",
+        "new": "여섯 문장 전부 삭제하고 아래 related_work_section_map에 따라 2장을 재구성한다.",
+        "reason": "여섯 문장이 인용하는 문헌이 SEARCH_SPEC.md:6의 폐기 6종과 정확히 일치한다. 팀 리드가 related_works.json 42건을 DOI로 대조한 결과 여섯 종 중 재선정된 것이 하나도 없음이 확인되었으므로, 규칙에 따라 인용 자체가 금지된다. arani2026resilient도 여기에 포함된다. 이 문헌의 DOI 10.1109/OJCOMS.2026.3707734가 폐기 목록 세 번째 항목과 같은 논문이며, 서지 정정으로 살리려던 앞선 판단을 철회한다."
+      },
+      {
+        "line": 282,
+        "old": "PPO~\\cite{ppo}, SAC~\\cite{sac}, TD3~\\cite{td3}",
+        "new": "PPO~\\cite{schulman2017}, SAC~\\cite{haarnoja2018}, TD3~\\cite{fujimoto2018}",
+        "reason": "키 규약 정리. sac의 페이지를 1861--1870으로 통일하고 td3에 1587--1596을 채운다."
+      },
+      {
+        "line": 283,
+        "old": "SAC-RIS~\\cite{qi2025deep}, DDPG-CV2X~\\cite{mlika2022deep}, DDPG-Resilient~\\cite{arani2026resilient}, MARL-VLC~\\cite{azizi2024efficient}, Platoon-DRL~\\cite{lin2025optimization}, DRL-IoV~\\cite{zhang2025drl}",
+        "new": "RES-MAPDDPG~\\cite{li2026}, I-HAMAPPO~\\cite{chen2026}, MA2HDQN~\\cite{hong2026}, SPAM-D3QN~\\cite{bai2024}, CARLTON~\\cite{cohen2025}, MADDPG-MT~\\cite{parvini2023}",
+        "reason": "현재 목록 여섯 종은 사용자가 폐기 지시한 구 목록이며 코드 레지스트리에 구현되어 있지 않다. baselines_v2.json이 확정한 여섯 종으로 교체해야 실행된 베이스라인과 원고가 일치한다. 이 항목이 이번 변경 중 가장 중요하다. 실행하지 않은 비교군을 원고에 남기면 앞선 문헌 날조와 같은 종류의 결함이 된다."
+      }
+    ],
+    "bibitems_to_add": [
+      "cai2023",
+      "huang2024",
+      "jung2025",
+      "zhang2024",
+      "xie2025",
+      "kahraman2024, tadele2026, chen2020 (related_works.json에서 가져옴. 철회된 arani2026을 대신하여 구 [7] 자리의 주장을 맡는다)",
+      "maksimovski2026 (related_works.json에서 가져옴)",
+      "gong2022 (related_works.json에서 가져옴)",
+      "tang2020 (related_works.json에서 가져옴)",
+      "2장 재구성에 필요한 나머지 항목은 related_work_section_map 참조",
+      "li2026, chen2026, hong2026, bai2024, cohen2025, parvini2023 (baselines_v2.json에서 가져옴)",
+      "schulman2017, haarnoja2018, fujimoto2018 (baselines_v2.json에서 가져옴, 기존 ppo/sac/td3 키를 대체)",
+      "kaul2012 (기존 kaul2012real을 페이지 2731--2735로 정정하여 교체)"
+    ],
+    "bibitems_to_remove": [
+      "al-khasawneh2026uav, zhang2025small, li2025next, sun2025overcoming, park2025adaptive, duan2026energy — 실존하지 않는 문헌이며 main.tex 69행과 71행이 본문에서 인용한다. 이 여섯 키는 thebibliography 블록에 bibitem이 아예 없어 현재 상태로 컴파일하면 미정의 인용이 된다. 따라서 제거할 bibitem은 없고 본문 인용만 위 표대로 교체하면 된다.",
+      "ning2025age, cui2025scheduling — 실존하지 않는 문헌이지만 main.tex에는 등장하지 않고 writer/references.json에만 있다. main.tex 쪽에서 할 일은 없으며, writer/references.json 정리는 별도 담당이 처리한다.",
+      "qi2025deep, azizi2024efficient, lin2025optimization, zhang2025drl, mlika2022deep, arani2026resilient — 실존하지만 사용자가 폐기 지시한 6종이며 재조사에서 재선정되지 않았다. 2026-09-05 팀 리드 결정에 따라 베이스라인 목록과 관련 연구 서술 양쪽에서 완전히 제거한다. 이 여섯 키의 bibitem은 thebibliography 블록에 실제로 존재하므로 삭제해야 한다. 서지 정정은 필요하지 않다. 인용하지 않을 문헌이기 때문이다."
+    ],
+    "introduction_citation_map": [
+      {
+        "claim": "차량 상태 정보의 실시간 수집이 안전 필수 응용의 전제다",
+        "position": "서론 1문단",
+        "cite": "cai2023, huang2024"
+      },
+      {
+        "claim": "고정 주기 브로드캐스트가 고밀도에서 채널 혼잡을 낳는다",
+        "position": "서론 2문단",
+        "cite": "jung2025, maksimovski2026"
+      },
+      {
+        "claim": "고정 주기 브로드캐스트가 전력을 낭비한다",
+        "position": "서론 2문단",
+        "cite": "gong2022, tang2020"
+      },
+      {
+        "claim": "셀룰러 V2N 의존이 백홀 지연 병목을 유발하므로 RSU 기반 V2I가 현실적 대안이다",
+        "position": "서론 2문단",
+        "cite": "zhang2024(지연 이득), huang2024(RSU 기반 구성의 현실성)",
+        "constraint": "금전적 비용 주장은 넣지 않는다. zhang2024로 지연까지만 말하고, RSU라는 표현은 huang2024가 받친다."
+      },
+      {
+        "claim": "AoI 기반 DRL 스케줄링이 활발히 연구되어 왔다",
+        "position": "서론 2문단 끝 또는 3문단",
+        "cite": "kahraman2024(서베이), xie2025, tadele2026, chen2020",
+        "constraint": "철회된 arani2026을 쓰지 않는다. 폐기 6종에 해당한다."
+      },
+      {
+        "claim": "오래되었으나 여전히 옳은 정보에는 벌점이 없어야 하며, 갱신 시점은 상태 의존적이어야 한다",
+        "position": "서론 3문단, 전제의 보증인",
+        "cite": "maatouk2020, sun2020, rajaraman2021, xu2020",
+        "constraint": "반박 대상이 아니라 전제를 확립한 문헌으로 인용한다."
+      }
+    ]
+  },
+  "discarded_six_doi_audit": {
+    "_note": "팀 리드 지시로 폐기 6종을 DOI 기준으로 전수 점검했다. 키 이름은 파일마다 다를 수 있으므로 키가 아니라 DOI로 대조했다. 점검 대상은 references_v2.json 전체와 manuscript_change_list다. 점검일 2026-09-05.",
+    "results": [
+      {
+        "doi": "10.1109/TVT.2024.3452790",
+        "label": "SAC-RIS (Qi 외, RIS-Aided IoV)",
+        "found_in_references_v2": "bibliographic_corrections에 대조 기록으로만 존재하며, action 필드에 '정정이 아니라 제거'로 명시했다. 인용 후보로는 어디에도 없다.",
+        "found_in_change_list": "citation_key_replacements의 삭제 대상으로만 등장한다. 신규 인용으로 제안된 곳은 없다.",
+        "verdict": "안전"
+      },
+      {
+        "doi": "10.1109/TITS.2022.3190799",
+        "label": "DDPG-CV2X (Mlika, Cherkaoui)",
+        "found_in_references_v2": "없음",
+        "found_in_change_list": "삭제 대상으로만 등장한다.",
+        "verdict": "안전"
+      },
+      {
+        "doi": "10.1109/OJCOMS.2026.3707734",
+        "label": "DDPG-Resilient (Arani 외)",
+        "found_in_references_v2": "withdrawn_entries에 철회 기록으로만 존재한다. 2026-09-05 이전 판에서는 new_entries의 인용 후보였으나 이번에 제거했다.",
+        "found_in_change_list": "삭제 대상으로만 등장한다. 74행과 introduction_citation_map에서 이 문헌을 인용하도록 제안했던 부분을 모두 다른 문헌으로 바꾸었다.",
+        "verdict": "제거 완료. 이 건이 이번 점검에서 실제로 걸러진 유일한 항목이다"
+      },
+      {
+        "doi": "10.1109/TVT.2024.3392738",
+        "label": "MARL-VLC (Azizi 외)",
+        "found_in_references_v2": "없음",
+        "found_in_change_list": "삭제 대상으로만 등장한다.",
+        "verdict": "안전"
+      },
+      {
+        "doi": "10.1109/TVT.2025.3643923",
+        "label": "Platoon-DRL (Lin 외)",
+        "found_in_references_v2": "bibliographic_corrections에 대조 기록으로만 존재하며 action 필드에 '정정이 아니라 제거'로 명시했다.",
+        "found_in_change_list": "삭제 대상으로만 등장한다.",
+        "verdict": "안전"
+      },
+      {
+        "doi": "10.1109/TGCN.2025.3531902",
+        "label": "DRL-IoV (Zhang 외)",
+        "found_in_references_v2": "없음",
+        "found_in_change_list": "삭제 대상으로만 등장한다.",
+        "verdict": "안전"
+      }
+    ],
+    "cross_checked_new_and_reused": "신규 항목 5건(cai2023 10.1109/TITS.2023.3264608, huang2024 10.1109/TITS.2024.3410185, jung2025 10.1109/TNSM.2024.3496394, zhang2024 10.1109/TVT.2023.3334192, xie2025 10.1109/TITS.2024.3514099)과 재활용 항목 11건(kahraman2024 10.1109/JIOT.2023.3324879, tadele2026 10.1109/TITS.2026.3667859, chen2020 10.1109/TWC.2019.2963667, maksimovski2026 10.1109/ACCESS.2026.3652364, gong2022 10.1109/TWC.2021.3106395, tang2020 10.1109/JSAC.2020.2980911, maatouk2020 10.1109/TNET.2020.3005549, sun2020 10.1109/TIT.2019.2937336, rajaraman2021 10.1109/JSAC.2021.3065061, xu2020 10.1109/TAC.2020.3004328, tripathi2024 10.1109/TNET.2024.3452006)의 DOI를 폐기 6종과 대조한 결과 겹치는 항목이 없다."
+  },
+  "related_work_section_map": {
+    "_note": "팀 리드가 (A) 방침을 확정함에 따라, 폐기 6종을 걷어낸 자리에 related_works.json의 검증된 42건을 배치하는 대응표다. 현재 main.tex의 2장은 세 소절이며 갈래 5(이벤트 트리거와 가변 간격)와 갈래 6(이동성 예측)이 들어갈 자리가 없다. 신규성 축이 사전적 침묵 구간 환산이므로 이 두 갈래가 핵심 근거를 담당한다. 따라서 소절 두 개를 추가하기를 권한다. 갈래 7(SUMO 평가 방법론)은 2장이 아니라 5장 실험 설정에 배치한다.",
+    "II-A": {
+      "title": "Age of Information in Vehicular Networks (기존 소절 유지)",
+      "opening": "kaul2012 (AoI 개념의 도입. bibitem 페이지를 2731--2735로 정정)",
+      "theory": "costa2016(peak AoI), sun2017(대기가 최적일 수 있음), kadota2018(다중 사용자 스케줄링), yates2021(서베이), tang2020(전력 제약 하 AoI), han2021(AoI 기반 OFDMA 서브채널 배정), tripathi2024(나이 함수 일반화 Whittle 인덱스, 분석적 최신 기준점)",
+      "premise_guarantors": "maatouk2020(Age of Incorrect Information), rajaraman2021(나이와 정보 품질). 반박 대상이 아니라 전제를 확립한 문헌으로 배치한다. 오래되었으나 여전히 옳은 정보에 벌점이 없어야 한다는 명제와, 갱신마다 정보 가치가 다르다는 명제가 사전적 환산이 딛고 서는 토대다.",
+      "vehicular": "chen2020(RSU 측 AoI 기반 DRL 스케줄링의 구조적 선례), abbas2023(차량 AoI를 순차 결정으로 다룬 MDP), kahraman2024(응용 AoI 서베이), tadele2026(2026년 이동성 조건화), xie2025(브랜치 네트워크와 action masking)",
+      "removed": "mlika2022deep, qi2025deep, arani2026resilient, zhang2025drl 네 문장을 삭제한다."
+    },
+    "II-B": {
+      "title": "Resource Allocation in V2X Networks (기존 소절 유지)",
+      "foundations": "ye2019(V2X 스펙트럼과 전력 DRL의 출발점), liang2019(다중 에이전트 정식화와 보상 스칼라화의 선례)",
+      "action_pair": "tan2021(이산 채널과 연속 전력 학습의 최다 피인용 TWC 선례), zhang2021(이산 모드 선택과 연속 자원 배분의 동시 학습), gui2024(혼합 이산 연속이 V2X의 기본 형태임을 보이는 최상위 게재분)",
+      "density_and_objectives": "guo2022(고밀도 V2I 혼잡, 밀도 스윕 평가의 근거), xu20232(가중치를 손으로 고정하는 방식의 약점, 보상 가중치를 탐색 공간에 둔 우리 결정의 근거), saad2025(NR-V2X Mode 2 분산 스케줄링, 우리 중앙집중 설계의 대비항)",
+      "baselines": "li2026, hong2026, chen2026, bai2024, cohen2025, parvini2023. 6장 비교 대상과 이 소절의 서술이 일치해야 한다.",
+      "removed": "azizi2024efficient, lin2025optimization 두 문장을 삭제한다."
+    },
+    "II-C": {
+      "title": "Hybrid Action Spaces in DRL (기존 소절 유지, 서술 재작성 필요)",
+      "cite": "masson2016(PAMDP 정의), fan2019(H-PPO, 우리 정책 구조의 직접 선행), xu2023(혼합 공간에서 엔트로피 처리 문제), li2026(V2X에서 파라미터화 액션이 현재 표준임을 보임), chen20262(목표 저널이 파라미터화 액션 계열을 직접 게재한다는 근거)",
+      "text_change_required": "112행의 '선행 연구는 대체로 완전 연속 또는 완전 이산 행동 공간을 채택한다'는 주장은 유지할 수 없다. 위 다섯 문헌이 모두 혼합 행동 공간을 다루기 때문이다. 기여를 혼합 행동 공간 자체가 아니라, 침묵 구간 길이 Delta라는 시간축 결정을 그 공간에 넣고 서브채널 및 전력과 한 정책으로 학습한 점으로 다시 서술해야 한다. 이 소절은 현재 인용이 하나도 없어 심사에서 가장 먼저 지적받을 부분이다."
+    },
+    "II-D": {
+      "title": "Event-Triggered and Variable-Interval Status Updates (신설 권고)",
+      "rationale": "Delta가 연속 변수라는 사실이 문제를 semi-Markov로 만들고, 주기적 샘플링이 최적이 아니라는 근거가 여기 모인다. 신규성 축이 사전적 침묵 구간 환산이므로 이 소절이 기여의 직접적 배경이다. 현재 원고에는 이 소절이 없다.",
+      "cite": "sun2020(추정 오차 기반 샘플러가 나이 기반보다 엄밀히 우수함), xu2020(전송하지 않는 것 자체가 정보를 담음), perezromero2020(무선 자원 관리에서의 SMDP 정식화 템플릿), huang2020(전송 실패가 추정 오차로 되먹임되는 경로), jiang2021(예측에 근거해 갱신 필요 여부를 정하는 가장 가까운 선행), flanigan2022(목표 저널 안에서의 이벤트 기반 정책), pang2023(추정 오차를 보상으로 삼는 DRL 자원 할당)",
+      "note": "jiang2021이 우리 메커니즘과 가장 가까우므로, 이 문헌을 명시적 선행으로 밝히고 우리 차이를 함께 진술해야 한다. 우리는 실제 SUMO 미시 시뮬레이션의 신호 및 대기열 맥락에서 예측하고, 그 결과를 혼합 행동 공간 위에서 침묵 구간으로 환산한다."
+    },
+    "II-E": {
+      "title": "Mobility Prediction and Stationarity Exploitation (신설 권고)",
+      "rationale": "예측 가능성 자체는 이미 확립된 사실이라는 재조정 방침을 지키려면, 그 확립을 보여 주는 문헌이 본문에 있어야 한다. 이 소절이 그 역할을 한다.",
+      "cite": "ding2023(맥락에서 미래 상태를 예측할 수 있다는 서베이 근거), yao2023(정체 구간에서 물리 기반 예측의 정확도), sun2022(신호 상태와 정지선 거리, 대기열로 정지와 재출발을 예측할 수 있음), maksimovski2026(변화 기반 생성 규칙이라는 규칙 기반 비교 대상)",
+      "note": "sun2022가 우리 18차원 관측의 tls_state, tls_dist, n_queue 항목을 직접 정당화한다. maksimovski2026은 우리가 학습으로 넘어야 할 규칙 기반 기준선이므로, 여기서 언급해 두면 5장 비교가 자연스럽다."
+    },
+    "section_V": {
+      "title": "2장이 아니라 실험 설정에 배치할 항목",
+      "cite": "sommer2011(교통과 통신을 양방향 결합해야 한다는 방법론적 근거), lopez2018(SUMO 인용), raviglione2024(SUMO와 물리 계층 결합이 V2X 평가의 표준임을 보이는 최근 근거)"
+    },
+    "fallback_if_no_new_subsections": {
+      "_note": "원고 담당이 소절 신설 없이 기존 세 소절 구조를 유지하기로 정할 경우의 흡수 방안이다. 소절을 늘리지 않아도 문헌을 빠뜨리지 않도록 대응을 미리 적어 둔다.",
+      "II-D를 II-A에 흡수": "sun2020, xu2020, jiang2021, flanigan2022, pang2023를 II-A의 후반부에 이벤트 기반 갱신 문단으로 묶는다. perezromero2020과 huang2020은 2장에서 빼고 3장 SMDP 정식화와 오차 동역학 정의 지점에서 직접 인용한다. 이 경우 II-A가 길어지므로 문단을 둘로 나누는 편이 읽기 좋다.",
+      "II-E를 II-A에 흡수": "ding2023와 sun2022만 II-A 도입부에 예측 가능성 확립 근거로 넣고, yao2023는 3장 RSU 추정기 서술로, maksimovski2026은 5장 규칙 기반 비교 대상 소개로 옮긴다.",
+      "risk": "흡수를 택하면 사전적 침묵 구간 환산이라는 기여의 배경이 한 소절에 응축되어, 심사자가 기여의 위치를 파악하기 어려워질 수 있다. 신규성 축이 바로 이 지점이므로 소절 신설을 권한다."
+    }
+  }
+}

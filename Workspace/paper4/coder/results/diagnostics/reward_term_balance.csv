@@ -1,0 +1,4 @@
+density,n_intervals,mean_penalty,w1_error_mean_abs,w1_error_share,w2_power_mean_abs,w2_power_share,w3_congestion_mean_abs,w3_congestion_share,w4_redundant_mean_abs,w4_redundant_share
+5.0,202,0.274145,0.059006,0.21524,0.092992,0.33921,0.045909,0.16746,0.076238,0.27809
+20.0,734,0.312914,0.068182,0.21789,0.098188,0.31379,0.066162,0.21144,0.080381,0.25688
+35.0,1168,0.326388,0.056508,0.17313,0.097283,0.29806,0.089892,0.27541,0.082705,0.2534

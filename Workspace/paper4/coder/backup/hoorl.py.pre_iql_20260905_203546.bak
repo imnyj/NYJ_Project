@@ -1,0 +1,640 @@
+# src/baselines/hoorl.py
+# ============================================================================
+# HOORL -- Hybrid Offline-Online Reinforcement Learning for AoI- and
+#          Energy-Aware Resource Scheduling
+#
+# J. Xu, X. Zhou, M. Song, W. Wang, D. Niyato and C. Yuen, "AoI and Energy-Aware
+# Resource Scheduling for Crowdsensing: A Hybrid Reinforcement Learning
+# Framework," IEEE Transactions on Vehicular Technology, vol. 75, no. 8,
+# pp. 18102--18115, 2026. DOI: 10.1109/TVT.2026.3675626
+#
+# Replaces CARLTON in the "similar" category on 2026-09-05. The reason for the
+# replacement is recorded in backup/carlton_replaced_20260905/WHY_REPLACED.md.
+#
+# ---------------------------------------------------------------------------
+# WHAT THE ORIGINAL PAPER DOES
+# ---------------------------------------------------------------------------
+# An edge server schedules transmissions among heterogeneous energy-harvesting
+# mobile devices in a crowdsensing network AND sets each device's sensing period,
+# so that end users receive status updates fresh enough for their requirements.
+# The server cannot observe a device's battery level, so the problem is stated as
+# a partially observable MDP. The objective is to minimise the weighted sum of
+# the required AoI and the devices' energy consumption -- AoI is the optimisation
+# target, not a reported side metric. The proposed method, HOORL, combines
+# OFFLINE reinforcement learning on a previously collected dataset with ONLINE
+# reinforcement learning that continues from it, which is what "Hybrid" names in
+# the title. The offline stage is what lets the method cope with the sparse
+# reward and with the mismatch between the sensing frequency and what users ask
+# for; the online stage adapts the resulting policy to the live system.
+#
+# ---------------------------------------------------------------------------
+# THE CORRESPONDENCE TO THIS PIPELINE
+# ---------------------------------------------------------------------------
+#   edge server                 -> our RSU (a single centralised decision maker)
+#   heterogeneous devices       -> the in-range vehicles
+#   transmission scheduling     -> the subchannel assignment
+#   per-device sensing period   -> our silence interval Delta
+#   device energy consumption   -> the transmit power term of our reward
+#   unobservable battery level  -> the vehicle-internal state the RSU cannot see
+#
+# The last row is why the observation is NOT modified: the paper's partial
+# observability comes from the server being unable to see inside a device, which
+# is the same reason our RSU cannot see inside a vehicle. The 17-dimensional RSU
+# observation vector is therefore used verbatim, exactly as every other baseline
+# does. See librarian/baselines_v2.json, entry `xu2026`, for the full mapping and
+# for the argument this comparison rests on.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS REIMPLEMENTATION KEEPS
+# ---------------------------------------------------------------------------
+# * THE TWO-STAGE STRUCTURE. `phase` is either "offline" or "online" and
+#   `update()` dispatches on it, so one model object carries both stages and the
+#   handover happens inside it (`finish_offline_phase`). Implementing only the
+#   online half would discard half of the paper's contribution, which is the very
+#   thing that disqualified the method this baseline replaced.
+# * The joint decision over (update period, transmission resource, energy), which
+#   here is (Delta, subchannel, transmit power).
+# * The AoI-and-energy objective, which our four-term interval reward already is.
+#   Unlike the replaced baseline, no objective substitution is needed.
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS REIMPLEMENTATION CHANGES, AND WHY  (OUR EXTENSIONS)
+# ---------------------------------------------------------------------------
+# * CONTINUOUS Delta INSTEAD OF A DISCRETE PERIOD SET. The paper picks each
+#   device's sensing period from a discrete candidate set; our Delta is
+#   continuous over [0.1, 45] s. We reuse the pipeline's own geometric mapping
+#   (`ActionDecoder.delta_from_unit`) so the policy emits a Delta in that range
+#   directly, and read it as the silence interval until the next decision epoch.
+#   The subchannel stays discrete (one of `num_channels`) and the power is
+#   continuous over [10, 23] dBm.
+# * A HYBRID MAXIMUM-ENTROPY ACTOR-CRITIC IS THE ONLINE LEARNER. The entry in
+#   librarian/baselines_v2.json fixes the two-stage structure and the action
+#   correspondence but does not name the online algorithm. An off-policy
+#   actor-critic is the only family that can BOTH consume this pipeline's
+#   uniformly sampled SMDP replay buffer AND be initialised from an offline
+#   policy-plus-value pair, which is what the handover requires, so the choice is
+#   forced by the interface rather than picked freely. It is nonetheless our
+#   choice and must be reported as such.
+#   The discrete factor is handled in expectation rather than by sampling: the
+#   critic emits one Q value PER SUBCHANNEL given (state, continuous action), so
+#   the channel expectation is exact and no Gumbel relaxation is involved.
+# * THE OFFLINE LEARNER IS NOT IMPLEMENTED YET. See the next section. This is
+#   deliberate and `offline_update()` raises rather than silently substituting
+#   something.
+#
+# ---------------------------------------------------------------------------
+# THE OPEN POINT -- READ BEFORE USING THE OFFLINE STAGE
+# ---------------------------------------------------------------------------
+# WHICH offline reinforcement learning algorithm the original paper uses is not
+# recorded in the specification this module was written from. Conservative Q
+# learning, implicit Q learning and behaviour cloning would all fit the two-stage
+# story and would all produce DIFFERENT results, so choosing one here would put a
+# method in the comparison table under a name it does not have. The scaffolding
+# is therefore complete and the algorithm is a hole:
+#
+#   * `offline_update()` raises `OfflineAlgorithmNotSelected` unless
+#     `offline_algorithm` names an implemented one, and none is implemented yet.
+#   * `finish_offline_phase()` and the checkpoint metadata already record which
+#     algorithm produced the initialisation, so a run cannot later be mistaken
+#     for a differently pretrained one.
+#   * Everything else -- the dataset format, the collection policy, the online
+#     learner, the handover -- does not depend on the answer and is finished.
+#
+# When the answer arrives, implement it as a method named `_offline_update_<key>`
+# and add the key to `IMPLEMENTED_OFFLINE_ALGORITHMS`. Nothing else has to move.
+# ============================================================================
+
+from __future__ import annotations
+
+import copy
+import logging
+import math
+from typing import Any, Dict, Optional, Tuple, Union
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+
+from src.baselines.base_agent import BaseRLModel
+from src.rl_interface import STATE_DIM
+
+logger = logging.getLogger(__name__)
+
+#: The two stages of the paper's framework, in the order they run.
+PHASES: Tuple[str, str] = ("offline", "online")
+
+#: Offline algorithms this module can actually run. EMPTY ON PURPOSE -- see the
+#: module header. Adding a key here without adding the matching
+#: `_offline_update_<key>` method makes `offline_update` fail with an
+#: AttributeError, which is why membership is checked against the method too.
+IMPLEMENTED_OFFLINE_ALGORITHMS: Tuple[str, ...] = ()
+
+#: Numerical floor/ceiling for the tanh inverse. tanh saturates in float32 well
+#: before |z| = 10, so a stored unit coordinate of exactly 0 or 1 would invert to
+#: +-inf without this.
+_ATANH_LIMIT: float = 1.0 - 1e-6
+
+
+class OfflineAlgorithmNotSelected(NotImplementedError):
+    """Raised when the offline stage runs before its algorithm has been fixed.
+
+    A distinct type rather than a bare NotImplementedError so a caller can tell
+    "the literature question is still open" apart from "this method is abstract".
+    """
+
+
+class HOORL(BaseRLModel):
+    """
+    Two-stage (offline then online) hybrid-action scheduler.
+
+    Action representation. The actor emits a pre-squash Gaussian sample
+    `z = (z_delta, z_power)` and `num_channels` channel logits. The unit
+    coordinates are `u = (tanh(z) + 1) / 2`, which the decoder maps to the grant:
+    Delta geometrically via `ActionDecoder.delta_from_unit`, power linearly over
+    [p_min, p_max]. `raw_action` is serialised with `ActionDecoder.encode_action`,
+    so any consumer that decodes it recovers exactly the grant that was issued,
+    and `update()` inverts it with `BaseRLModel.raw_units` -- the canonical
+    inversion, never re-derived here.
+
+    Contract notes that matter to the trainer:
+      * `select_action` reports BOTH `action_idx` (the subchannel the discrete
+        head chose) and `log_prob` (the joint behaviour log-probability at
+        selection time), so `HotSwapRLScheduler.decide_grant` stores them and the
+        replay batch carries both columns.
+      * `update()` accepts exactly the batch `RetrospectiveReplayBuffer.sample`
+        emits and reads no key outside it.
+    """
+
+    def __init__(
+        self,
+        state_dim: int = STATE_DIM,
+        num_channels: int = 4,
+        hidden_dim: int = 128,
+        actor_lr: float = 3e-4,
+        critic_lr: float = 3e-4,
+        gamma: float = 0.99,
+        tau: float = 0.005,
+        alpha: float = 0.05,
+        offline_lr_scale: float = 1.0,
+        offline_algorithm: Optional[str] = None,
+        phase: str = "online",
+        grad_clip: float = 0.5,
+        log_std_min: float = -5.0,
+        log_std_max: float = 2.0,
+        **hparams: Any,
+    ) -> None:
+        super().__init__(state_dim=state_dim, num_channels=num_channels, **hparams)
+        self.gamma = float(gamma)
+        self.tau = float(tau)
+        #: Temperature of the maximum-entropy term, shared by the continuous and
+        #: the discrete factor. One scalar rather than two because the two
+        #: entropies enter the same objective and a second free temperature would
+        #: only be identifiable from data the offline stage does not have.
+        self.alpha = float(alpha)
+        self.grad_clip = float(grad_clip)
+        self.log_std_min = float(log_std_min)
+        self.log_std_max = float(log_std_max)
+        #: Learning-rate multiplier applied while `phase == "offline"`. The
+        #: offline stage sees a fixed dataset and typically wants a gentler step
+        #: than the online stage; 1.0 leaves the two identical.
+        self.offline_lr_scale = float(offline_lr_scale)
+        self._actor_lr = float(actor_lr)
+        self._critic_lr = float(critic_lr)
+
+        self.offline_algorithm = None if offline_algorithm is None else str(offline_algorithm)
+        if phase not in PHASES:
+            raise ValueError(f"phase must be one of {PHASES}, got {phase!r}")
+        self.phase = str(phase)
+
+        # Buffers, not plain ints: the hot-swap manager copies parameters and
+        # buffers only, `update()` runs on the Rest model, and a plain counter
+        # would neither cross a swap nor survive a checkpoint reload.
+        self.register_buffer("total_updates", torch.zeros(1))
+        self.register_buffer("offline_updates", torch.zeros(1))
+        #: 1.0 once `finish_offline_phase()` has run. Recorded in the checkpoint
+        #: so an online run started from scratch can never be mistaken for one
+        #: that inherited an offline initialisation.
+        self.register_buffer("offline_pretrained", torch.zeros(1))
+
+        # ------------------------------------------------------------------
+        # Actor: shared trunk, a Gaussian head over the two continuous factors
+        # and a categorical head over the subchannel.
+        # ------------------------------------------------------------------
+        self.actor_trunk = nn.Sequential(
+            nn.Linear(self.state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+        )
+        self.mean_head = nn.Linear(hidden_dim, 2)
+        self.log_std_head = nn.Linear(hidden_dim, 2)
+        self.channel_head = nn.Linear(hidden_dim, self.num_channels)
+
+        # ------------------------------------------------------------------
+        # Twin critics. Input is (state, u_delta, u_power); output is one Q per
+        # subchannel, so the expectation over the discrete factor is exact.
+        # ------------------------------------------------------------------
+        self.critic_1 = self._build_critic(hidden_dim)
+        self.critic_2 = self._build_critic(hidden_dim)
+        self.critic_1_target = copy.deepcopy(self.critic_1)
+        self.critic_2_target = copy.deepcopy(self.critic_2)
+        for module in (self.critic_1_target, self.critic_2_target):
+            for p in module.parameters():
+                p.requires_grad = False
+
+        self._actor_params = (
+            list(self.actor_trunk.parameters())
+            + list(self.mean_head.parameters())
+            + list(self.log_std_head.parameters())
+            + list(self.channel_head.parameters())
+        )
+        self._critic_params = list(self.critic_1.parameters()) + list(self.critic_2.parameters())
+        self._build_optimizers()
+
+    # ----------------------------------------------------------------------
+    # Construction helpers
+    # ----------------------------------------------------------------------
+    def _build_critic(self, hidden_dim: int) -> nn.Module:
+        return nn.Sequential(
+            nn.Linear(self.state_dim + 2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, self.num_channels),
+        )
+
+    def _build_optimizers(self) -> None:
+        """(Re)create the optimisers at the learning rate the current phase wants.
+
+        Called at construction and again at the offline -> online handover. The
+        moment estimates are deliberately NOT carried across the handover: they
+        were accumulated on a fixed dataset under a different objective, and
+        reusing them would let the offline gradient statistics steer the first
+        online steps.
+        """
+        scale = self.offline_lr_scale if self.phase == "offline" else 1.0
+        self.actor_optimizer = optim.Adam(self._actor_params, lr=self._actor_lr * scale)
+        self.critic_optimizer = optim.Adam(self._critic_params, lr=self._critic_lr * scale)
+        #: Alias so generic tooling that expects a single `optimizer` still works.
+        self.optimizer = self.critic_optimizer
+
+    # ----------------------------------------------------------------------
+    # Policy
+    # ----------------------------------------------------------------------
+    def _policy(self, states: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """states -> (mean, log_std, channel logits), all pre-squash."""
+        h = self.actor_trunk(states)
+        mean = self.mean_head(h)
+        log_std = self.log_std_head(h).clamp(self.log_std_min, self.log_std_max)
+        return mean, log_std, self.channel_head(h)
+
+    @staticmethod
+    def _gaussian_log_prob(z: torch.Tensor, mean: torch.Tensor, log_std: torch.Tensor) -> torch.Tensor:
+        """log N(z; mean, exp(log_std)), summed over the continuous factors."""
+        var = torch.exp(2.0 * log_std)
+        lp = -0.5 * ((z - mean) ** 2 / var + 2.0 * log_std + math.log(2.0 * math.pi))
+        return lp.sum(dim=-1, keepdim=True)
+
+    @staticmethod
+    def _squash_correction(z: torch.Tensor) -> torch.Tensor:
+        """Log absolute Jacobian of z -> u = (tanh(z) + 1) / 2, summed.
+
+        d u / d z = (1 - tanh(z)^2) / 2, so the correction subtracted from the
+        Gaussian log density is sum(log(1 - tanh(z)^2) - log 2). Written through
+        `softplus` in the numerically stable form
+        log(1 - tanh(z)^2) = 2 * (log 2 - z - softplus(-2z)).
+        """
+        stable = 2.0 * (math.log(2.0) - z - F.softplus(-2.0 * z))
+        return (stable - math.log(2.0)).sum(dim=-1, keepdim=True)
+
+    def _continuous_log_prob(
+        self, z: torch.Tensor, mean: torch.Tensor, log_std: torch.Tensor
+    ) -> torch.Tensor:
+        """log density of the SQUASHED continuous action u, given its pre-squash z."""
+        return self._gaussian_log_prob(z, mean, log_std) - self._squash_correction(z)
+
+    @staticmethod
+    def _units_from_z(z: torch.Tensor) -> torch.Tensor:
+        """Pre-squash sample -> unit coordinates in (0, 1)."""
+        return 0.5 * (torch.tanh(z) + 1.0)
+
+    @staticmethod
+    def _z_from_units(u: torch.Tensor) -> torch.Tensor:
+        """Unit coordinates -> pre-squash value. Exact inverse of `_units_from_z`.
+
+        Used to recover the pre-squash sample of a REPLAYED action, whose raw
+        form stores only the unit coordinate. The clamp is what keeps a stored
+        0.0 or 1.0 -- produced by `ActionDecoder`'s own 1e-6 logit clamp -- from
+        inverting to an infinity that would poison the whole batch.
+        """
+        return torch.atanh((2.0 * u.clamp(0.0, 1.0) - 1.0).clamp(-_ATANH_LIMIT, _ATANH_LIMIT))
+
+    def _sample_policy(
+        self, states: torch.Tensor, deterministic: bool = False
+    ) -> Dict[str, torch.Tensor]:
+        """One reparameterised draw of the hybrid policy at `states`.
+
+        Returns the continuous unit action, its log density, the channel
+        log-probabilities and the channel distribution's entropy. The discrete
+        factor is NOT sampled here: the caller takes its expectation against
+        `channel_probs`, which is exact and lower-variance than a sample.
+        """
+        mean, log_std, ch_logits = self._policy(states)
+        if deterministic:
+            z = mean
+        else:
+            z = mean + torch.randn_like(mean) * torch.exp(log_std)
+        return {
+            "u": self._units_from_z(z),
+            "z": z,
+            "cont_log_prob": self._continuous_log_prob(z, mean, log_std),
+            "channel_log_probs": F.log_softmax(ch_logits, dim=-1),
+            "channel_probs": F.softmax(ch_logits, dim=-1),
+            "channel_logits": ch_logits,
+        }
+
+    # ----------------------------------------------------------------------
+    # Batch helpers
+    # ----------------------------------------------------------------------
+    def _resolve_channel_indices(
+        self, batch: Dict[str, torch.Tensor], device: torch.device
+    ) -> torch.Tensor:
+        """
+        Discrete credit assignment. Preferred path: the verbatim "action_idx" the
+        replay buffer carries. Fallback for transitions that predate it:
+        `raw_action[1]`, which stores the same subchannel index, so the fallback
+        is exact rather than lossy. Identical in form to I-HAMAPPO's, on purpose:
+        the two must not disagree about what `action_idx` means.
+        """
+        if "action_idx" in batch:
+            idx = batch["action_idx"].to(device=device).long().reshape(-1)
+        else:
+            idx = batch["action"][:, 1].to(device=device).round().long().reshape(-1)
+        return ((idx % self.num_channels) + self.num_channels) % self.num_channels
+
+    def _replay_units(self, actions: torch.Tensor) -> torch.Tensor:
+        """Raw replay actions (N, 3) -> the critic's continuous input (N, 2).
+
+        Goes through `BaseRLModel.raw_units`, the canonical inverse of
+        `ActionDecoder.encode_action`. Three baselines once inverted the Delta
+        field linearly and conditioned their critics on an action the actor had
+        never taken; that algebra exists in exactly one place and this is not it.
+        """
+        u_delta, u_power = self.raw_units(actions)
+        return torch.stack([u_delta, u_power], dim=1)
+
+    def _q_values(
+        self, states: torch.Tensor, units: torch.Tensor, use_target: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """(B, state) x (B, 2) -> two (B, num_channels) Q tables."""
+        x = torch.cat([states, units], dim=1)
+        if use_target:
+            return self.critic_1_target(x), self.critic_2_target(x)
+        return self.critic_1(x), self.critic_2(x)
+
+    # ----------------------------------------------------------------------
+    # Phase control -- the "hybrid" of the paper's title lives here
+    # ----------------------------------------------------------------------
+    def set_phase(self, phase: str) -> None:
+        """Switch the stage `update()` dispatches to, rebuilding the optimisers."""
+        if phase not in PHASES:
+            raise ValueError(f"phase must be one of {PHASES}, got {phase!r}")
+        if phase == self.phase:
+            return
+        self.phase = str(phase)
+        self._build_optimizers()
+
+    def finish_offline_phase(self) -> Dict[str, float]:
+        """Hand the offline result over to the online stage.
+
+        This is the join the paper's "Hybrid" refers to, so it is one explicit
+        call rather than an implicit side effect. Three things happen and each
+        matters:
+
+          1. The target critics are synchronised HARD with the online critics, so
+             the online stage bootstraps from the values the offline stage
+             actually learned rather than from a Polyak average that still
+             carries the random initialisation.
+          2. The optimisers are rebuilt at the online learning rate WITHOUT the
+             offline moment estimates (see `_build_optimizers`).
+          3. `offline_pretrained` is set, so a checkpoint records that this policy
+             inherited an offline initialisation and from which algorithm.
+
+        Returns a small summary for the run log. Calling it having done no
+        offline update at all is allowed but warned about, because that produces
+        a model that IS the online-only ablation while still being named HOORL.
+        """
+        if float(self.offline_updates.item()) <= 0.0:
+            logger.warning(
+                "HOORL.finish_offline_phase() called after 0 offline updates. The "
+                "resulting policy is the online-only ablation, not the paper's "
+                "hybrid method; do not report it under the method's name."
+            )
+        with torch.no_grad():
+            self.critic_1_target.load_state_dict(self.critic_1.state_dict())
+            self.critic_2_target.load_state_dict(self.critic_2.state_dict())
+            self.offline_pretrained.fill_(1.0)
+        self.phase = "online"
+        self._build_optimizers()
+        return {
+            "offline_updates": float(self.offline_updates.item()),
+            "offline_pretrained": float(self.offline_pretrained.item()),
+        }
+
+    # ----------------------------------------------------------------------
+    # BaseRLModel contract
+    # ----------------------------------------------------------------------
+    def select_action(
+        self,
+        state: Union[np.ndarray, torch.Tensor],
+        deterministic: bool = False,
+    ) -> Tuple[Tuple[float, int, float], np.ndarray, Dict[str, Any]]:
+        state_t = self._prepare_state_tensor(state)
+        with torch.no_grad():
+            out = self._sample_policy(state_t, deterministic=bool(deterministic))
+            u = out["u"][0]
+            ch_log_probs = out["channel_log_probs"][0]
+            if deterministic:
+                ch = int(torch.argmax(ch_log_probs).item())
+            else:
+                ch = int(torch.multinomial(ch_log_probs.exp(), 1).item())
+            # Joint behaviour log-probability of the action actually emitted:
+            # the squashed-Gaussian density of the continuous factors plus the
+            # categorical log-probability of the chosen subchannel. This is the
+            # denominator every importance ratio downstream needs, and it is
+            # knowable only here.
+            log_prob = float(out["cont_log_prob"][0].item() + ch_log_probs[ch].item())
+
+        u_delta, u_power = float(u[0].item()), float(u[1].item())
+        delta = float(self.decoder.delta_from_unit(u_delta))
+        power = float(self.decoder.p_min + u_power * (self.decoder.p_max - self.decoder.p_min))
+        raw_action = self.decoder.encode_action(delta, ch, power)
+
+        info: Dict[str, Any] = {
+            "action_idx": int(ch),
+            "channel_idx": int(ch),
+            "u_delta": u_delta,
+            "u_power": u_power,
+            "log_prob": log_prob,
+            "phase": self.phase,
+            "raw_action": raw_action,
+        }
+        return (delta, int(ch), power), raw_action, info
+
+    def update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        """Dispatch one gradient step to the stage this model is currently in."""
+        if self.phase == "offline":
+            return self.offline_update(batch)
+        return self.online_update(batch)
+
+    # ----------------------------------------------------------------------
+    # Offline stage -- INTERFACE ONLY. See the module header.
+    # ----------------------------------------------------------------------
+    def offline_update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        """One offline gradient step on a batch drawn from the logged dataset.
+
+        Not implemented, and deliberately so: which offline reinforcement
+        learning algorithm the original paper uses is not recorded in the
+        specification this module was written from, and conservative Q learning,
+        implicit Q learning and behaviour cloning would each produce a different
+        method under the same name. Substituting one would put a result in the
+        comparison table that the cited paper does not claim.
+
+        Everything the chosen algorithm will need is already here: the twin
+        critics with their targets, the hybrid actor and its exact log
+        density, `batch["behaviour_log_prob"]` for the logging policy's own
+        density, and `smdp_discounts` for the variable-interval discount.
+        """
+        key = self.offline_algorithm
+        method = getattr(self, f"_offline_update_{key}", None) if key else None
+        if key is None or key not in IMPLEMENTED_OFFLINE_ALGORITHMS or method is None:
+            raise OfflineAlgorithmNotSelected(
+                "HOORL's offline stage has no algorithm yet: the source paper's "
+                f"offline learner is not recorded in the specification (offline_algorithm="
+                f"{key!r}, implemented={list(IMPLEMENTED_OFFLINE_ALGORITHMS)}). The dataset "
+                "format, the collection policy, the online learner and the handover are "
+                "finished and do not depend on the answer; only this method does. See the "
+                "module header for how to add one."
+            )
+        out = method(batch)
+        self.offline_updates.add_(1.0)
+        return out
+
+    def pretrain(
+        self,
+        dataset: Any,
+        num_updates: int,
+        batch_size: int = 256,
+        log_every: int = 0,
+    ) -> Dict[str, float]:
+        """Run the offline stage over `dataset`, then hand over to the online one.
+
+        `dataset` only has to expose `sample(batch_size) -> dict` with the same
+        keys `RetrospectiveReplayBuffer.sample` emits;
+        `src.hoorl_offline.OfflineDataset` does. The loop is written here rather
+        than in the collection module so that the phase bookkeeping and the
+        handover stay inside the model that owns them.
+
+        Raises `OfflineAlgorithmNotSelected` on the first batch until the offline
+        algorithm is fixed. That is the intended behaviour: a silent no-op would
+        produce a checkpoint that claims a pretraining that never happened.
+        """
+        self.set_phase("offline")
+        last: Dict[str, float] = {}
+        for step in range(int(num_updates)):
+            last = self.offline_update(dataset.sample(int(batch_size)))
+            if log_every and (step + 1) % int(log_every) == 0:
+                logger.info("HOORL offline update %d/%d: %s", step + 1, num_updates, last)
+        summary = self.finish_offline_phase()
+        summary.update({f"final_{k}": v for k, v in last.items()})
+        return summary
+
+    # ----------------------------------------------------------------------
+    # Online stage -- hybrid maximum-entropy actor-critic
+    # ----------------------------------------------------------------------
+    def online_update(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
+        device = next(self.parameters()).device
+        states = batch["state"].to(device).float()
+        next_states = batch["next_state"].to(device).float()
+        rewards = batch["reward"].to(device).float()
+        dones = batch["done"].to(device).float()
+
+        # SMDP discount from THIS model's gamma (see BaseRLModel.smdp_discounts).
+        discounts = self.smdp_discounts(batch, rewards)
+
+        units = self._replay_units(batch["action"].to(device))
+        channels = self._resolve_channel_indices(batch, device)
+
+        # -- Critic target -----------------------------------------------------
+        with torch.no_grad():
+            nxt = self._sample_policy(next_states, deterministic=False)
+            q1_t, q2_t = self._q_values(next_states, nxt["u"], use_target=True)
+            q_t = torch.min(q1_t, q2_t)
+            ch_probs = nxt["channel_probs"]
+            ch_log_probs = nxt["channel_log_probs"]
+            # Exact expectation over the discrete factor, minus its entropy
+            # bonus; then the continuous factor's entropy bonus, which does not
+            # depend on the channel and so leaves the expectation.
+            v_next = (ch_probs * (q_t - self.alpha * ch_log_probs)).sum(dim=1, keepdim=True)
+            v_next = v_next - self.alpha * nxt["cont_log_prob"]
+            y = rewards + (1.0 - dones) * discounts * v_next
+
+        q1, q2 = self._q_values(states, units, use_target=False)
+        idx = channels.reshape(-1, 1)
+        q1_taken = q1.gather(1, idx)
+        q2_taken = q2.gather(1, idx)
+        critic_loss = F.mse_loss(q1_taken, y) + F.mse_loss(q2_taken, y)
+
+        self.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        nn.utils.clip_grad_norm_(self._critic_params, self.grad_clip)
+        self.critic_optimizer.step()
+
+        # -- Actor update ------------------------------------------------------
+        cur = self._sample_policy(states, deterministic=False)
+        q1_pi, q2_pi = self._q_values(states, cur["u"], use_target=False)
+        q_pi = torch.min(q1_pi, q2_pi)
+        ch_probs = cur["channel_probs"]
+        ch_log_probs = cur["channel_log_probs"]
+        actor_objective = (ch_probs * (q_pi - self.alpha * ch_log_probs)).sum(dim=1, keepdim=True)
+        actor_objective = actor_objective - self.alpha * cur["cont_log_prob"]
+        actor_loss = -actor_objective.mean()
+
+        self.actor_optimizer.zero_grad()
+        actor_loss.backward()
+        nn.utils.clip_grad_norm_(self._actor_params, self.grad_clip)
+        self.actor_optimizer.step()
+
+        # -- Polyak target update ---------------------------------------------
+        with torch.no_grad():
+            for online, target in (
+                (self.critic_1, self.critic_1_target),
+                (self.critic_2, self.critic_2_target),
+            ):
+                for p, pt in zip(online.parameters(), target.parameters()):
+                    pt.data.copy_(self.tau * p.data + (1.0 - self.tau) * pt.data)
+
+        self.total_updates.add_(1.0)
+
+        with torch.no_grad():
+            ch_entropy = -(ch_probs * ch_log_probs).sum(dim=1).mean()
+            normalised_entropy = float(ch_entropy.item() / math.log(max(2, self.num_channels)))
+            stored_logp = self.stored_behaviour_log_prob(batch, rewards)
+
+        return {
+            "loss": float(critic_loss.item() + actor_loss.item()),
+            "critic_loss": float(critic_loss.item()),
+            "actor_loss": float(actor_loss.item()),
+            "mean_q": float(q1_taken.mean().item()),
+            "target_mean": float(y.mean().item()),
+            "cont_log_prob": float(cur["cont_log_prob"].mean().item()),
+            # Normalised so 1.0 is uniform over subchannels and 0.0 is a collapse.
+            # This policy has no epsilon-greedy fallback, so a collapse has to be
+            # visible in the log rather than inferred afterwards.
+            "channel_entropy": normalised_entropy,
+            "behaviour_logp_stored": float(stored_logp is not None),
+            "offline_pretrained": float(self.offline_pretrained.item()),
+            "phase_offline": 0.0,
+        }

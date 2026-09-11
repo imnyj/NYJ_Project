@@ -1,0 +1,1512 @@
+#!/usr/bin/env python3
+"""Gate that must pass before the nine-model HPO re-search is allowed to start.
+
+The run costs about nine hours on four GPUs. Every check below exists because
+something in that window has already been lost once, and each failure was only
+visible after the fact -- in a CSV of penalty scores, or in a directory that had
+been quietly overwritten. The point of this script is to move those discoveries
+to the front, where they cost a second instead of a night.
+
+What is checked, and why:
+
+  1. N_ACTIVE_MAX_OBS == 168.0. The contention feature normalised against 100.0
+     saturated at exactly 1.0 for densities 25, 30 and 35, so three of the seven
+     training densities showed the model an identical congestion signal. Any HPO
+     started against the old ceiling tunes for observations the main training run
+     will never see.
+
+  2. The composite objective reads `packet_loss_rate`. It used to read a key that
+     the rollout filled with a constant, which made that whole term a fixed
+     offset and left the search ranking models on three terms instead of four.
+
+  3. The discount search range no longer carries its undecided upper bound. The
+     placeholder 0.999 has an effective horizon of 1000 decisions against 50 to
+     54 s of measured RSU dwell, and the bound is being settled by a separate
+     experiment. The check also requires all nine models to search the same
+     range, because the other way this week went wrong was a change reaching two
+     of three code paths.
+
+  4. The groups between them schedule each of the nine baselines exactly once.
+     The lists are hand-maintained strings that get rearranged whenever the cost
+     balance is revisited, and a model dropped in that edit is invisible until
+     the merge refuses, twelve hours later.
+
+  5. Every scenario on disk carries flows long enough to outlast warm-up plus the
+     measured window. On 2026-09-05 the shared `coder/src/sumo/` held flows ending
+     at 131 s against the 530 s a rollout needs, so the road would have begun
+     draining while the measurement ran. Both the signature and the rou.xml are
+     read, because they were observed disagreeing (51 s against 138 s) and either
+     one alone looks consistent.
+
+  6. The scenario directories sit OUTSIDE the git work tree. `.gitignore` is no
+     defence: `git clean -fdx` deletes ignored files by design, and even without
+     -x a plain `git clean -nd Workspace/paper4` lists 175 entries on this tree.
+     Containment is the test, because `git check-ignore` cannot answer it.
+
+  7. Each group gets its OWN SUMO directory, PAPER4_SUMO_DIR actually redirects
+     the scenario path, and the generation lock creates its parent directory. On
+     2026-09-04 the g1 group's scenario directory vanished mid-run; the lock
+     opened its file with O_CREAT into a directory that no longer existed, and
+     the 62 remaining rollouts died on FileNotFoundError. SAC lost all 45 of its
+     rollouts, I-HAMAPPO lost 15 of 45.
+
+  8. The four GPUs are free. The box is shared. Starting on someone's device
+     either evicts them or dies at the first allocation.
+
+  9. The output and log destinations are empty or new. `results/hpo_parallel/` is
+     the control group for this comparison; a run that writes into it destroys
+     the thing it is being compared against, and does so silently.
+
+ 10. Which code files differ from the commit about to be recorded. This one warns
+     rather than blocks: several sessions edit this tree at once, so requiring a
+     clean tree would stop everything, and the point is that the operator knows.
+     `etc/write_run_metadata.py` records the same list beside the results.
+
+Usage:
+    etc/preflight_hpo.py --output-root results/hpo_parallel_v2 \\
+        --log-root /home/imnyj/Workspace/paper4/logs/hpo_parallel_v2 \\
+        --sumo-dirs results/hpo_parallel_v2/g0/sumo ... --gpus 0 1 2 3 \\
+        --group-models "PPO MADDPG-MT" "I-HAMAPPO SAC" ...
+
+Exit code is 0 when every check passes and 1 otherwise. The launcher refuses to
+start on a non-zero exit; run it by hand to see the same report.
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import inspect
+import json
+import os
+import shutil
+import subprocess
+import sys
+import textwrap
+import tempfile
+import xml.etree.ElementTree as ET
+from typing import Any, Callable, Dict, List, Tuple
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+#: The ceiling the observation normaliser must be using. Derived in
+#: `rl_interface.get_n_active_max_obs` as max(DENSITY_GRID) * rsu_coverage_lane_km()
+#: = 35 * 4.8; restated here so a silent change to either factor is caught rather
+#: than accommodated.
+EXPECTED_N_ACTIVE_MAX_OBS = 168.0
+
+#: Files whose presence means a directory already holds results. `sumo/` is
+#: excluded on purpose: it is a scratch scenario directory, not an artefact.
+RESULT_GLOB_MARKERS = ("optuna_", "hpo_failed_models.csv", ".log")
+
+#: The discount upper bound that has NOT been decided yet. A separate experiment
+#: is choosing it; until then this is the value every model would search up to,
+#: and its presence is what the gamma check refuses. It is written as "the
+#: placeholder that must be gone" rather than "the answer must equal X" so the
+#: gate does not have to be edited the moment the decision lands, and so it never
+#: asserts a number nobody has agreed to.
+UNRESOLVED_GAMMA_HI = 0.999
+
+#: Seconds a vehicle spends inside RSU coverage, measured on this scenario. Used
+#: only to state what a discount horizon means in the terms of the problem.
+RSU_DWELL_S = (50.0, 54.0)
+
+#: Repository root. The coder tree is a subdirectory of it, so the git state has
+#: to be read from here rather than from `ROOT`.
+GIT_REPO_DIR = "/home/imnyj"
+
+#: Uncommitted changes under these prefixes change what a run computes, as opposed
+#: to changing notes or logs. Relative to GIT_REPO_DIR, matching git's own output.
+WATCHED_CODE_PATHS = ("Workspace/paper4/coder/src/", "Workspace/paper4/coder/etc/")
+
+
+class CheckResult:
+    """One named check, its verdict, and the lines a human needs to act on it.
+
+    `blocking` separates the two kinds of bad news this gate reports. Most checks
+    describe a condition under which the run's numbers would be wrong, so they
+    stop it. The working-tree check describes a condition under which the numbers
+    are merely unattributable later, and several sessions are editing this tree
+    right now, so demanding a clean tree would mean nothing could ever start. It
+    reports and lets the operator decide.
+    """
+
+    def __init__(self, name: str, passed: bool, detail: List[str],
+                 blocking: bool = True) -> None:
+        self.name = name
+        self.passed = passed
+        self.detail = detail
+        self.blocking = blocking
+
+    @property
+    def stops_launch(self) -> bool:
+        return self.blocking and not self.passed
+
+    def render(self) -> str:
+        if self.passed:
+            mark = "PASS"
+        else:
+            mark = "FAIL" if self.blocking else "WARN"
+        head = f"[{mark}] {self.name}"
+        body = "\n".join(f"       {line}" for line in self.detail)
+        return f"{head}\n{body}" if body else head
+
+
+# --------------------------------------------------------------------------
+# 1. observation normaliser
+# --------------------------------------------------------------------------
+def check_n_active_max_obs() -> CheckResult:
+    try:
+        from src.rl_interface import N_ACTIVE_MAX_OBS
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(
+            "observation normaliser N_ACTIVE_MAX_OBS",
+            False,
+            [f"could not import src.rl_interface: {type(exc).__name__}: {exc}"],
+        )
+
+    value = float(N_ACTIVE_MAX_OBS)
+    ok = abs(value - EXPECTED_N_ACTIVE_MAX_OBS) < 1e-9
+    detail = [f"N_ACTIVE_MAX_OBS = {value}  (expected {EXPECTED_N_ACTIVE_MAX_OBS})"]
+    if ok:
+        # Show the three densities that used to saturate, so the report says what
+        # the number buys rather than only that it matches.
+        for density in (25.0, 30.0, 35.0):
+            measured = {25.0: 123.0, 30.0: 138.3, 35.0: 141.7}[density]
+            detail.append(
+                f"density {density:>4.0f}: n_active {measured:>5.1f} -> "
+                f"feature {measured / value:.4f} (was 1.0000 at ceiling 100.0)"
+            )
+    else:
+        detail.append(
+            "the contention feature saturates at densities 25, 30 and 35 with the "
+            "old ceiling; HPO run now would tune against observations the main "
+            "training run will not produce."
+        )
+        detail.append(
+            "fix: src/rl_interface.py get_n_active_max_obs(), and check "
+            "src/sumo/make_sumo_set.py DENSITY_GRID and rsu_coverage_lane_km()."
+        )
+    return CheckResult("observation normaliser N_ACTIVE_MAX_OBS", ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 2. objective function
+# --------------------------------------------------------------------------
+def _body_without_docstring(fn: ast.AST) -> List[ast.stmt]:
+    body = list(getattr(fn, "body", []))
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        return body[1:]
+    return body
+
+
+def _reachable_code_literals(func: Callable[..., Any], max_depth: int = 4) -> Tuple[set, List[str]]:
+    """String literals reachable from a function, following calls within its module.
+
+    Two reasons this is not a single-function read. Comments and docstrings must
+    be excluded, because the docstring here argues at length about the very metric
+    keys being looked for and a text search cannot tell the argument from the code.
+    And the arithmetic does not have to stay in the entry function: on 2026-09-05
+    the body of `compute_composite_objective` was reduced to
+    `sum(composite_objective_terms(...).values())`, at which point a reader that
+    stopped at the entry function would report the key as absent from a file that
+    still uses it correctly. Following the calls one module deep tracks that kind
+    of refactor instead of mistaking it for a regression.
+
+    Returns the literal set and the names of the functions that were read, so the
+    report can say where it looked.
+    """
+    module = inspect.getmodule(func)
+    try:
+        tree = ast.parse(inspect.getsource(module))
+        defs = {n.name: n for n in ast.walk(tree)
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    except (OSError, TypeError, SyntaxError):
+        # Fall back to the entry function alone rather than reporting nothing.
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+        defs = {func.__name__: tree.body[0]}
+
+    literals: set = set()
+    visited: List[str] = []
+    frontier = [(func.__name__, 0)]
+    while frontier:
+        name, depth = frontier.pop()
+        if name in visited or name not in defs or depth > max_depth:
+            continue
+        visited.append(name)
+        for stmt in _body_without_docstring(defs[name]):
+            for node in ast.walk(stmt):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    literals.add(node.value)
+                elif isinstance(node, ast.Call):
+                    callee = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                    if callee and callee in defs:
+                        frontier.append((callee, depth + 1))
+    return literals, visited
+
+
+def check_objective_reads_packet_loss() -> CheckResult:
+    name = "HPO objective reads packet_loss_rate"
+    try:
+        from src.hpo import compute_composite_objective
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, [f"could not import src.hpo: {type(exc).__name__}: {exc}"])
+
+    detail: List[str] = []
+
+    # Read the literals out of the AST rather than grepping the text. The
+    # function's docstring explains at length why the `outage_rate` fallback was
+    # removed, and a substring search cannot tell that explanation apart from the
+    # code it describes. The AST drops comments outright and the docstring is
+    # discarded below, so what is left is what actually executes.
+    reads_key, reads_alias = False, False
+    try:
+        literals, visited = _reachable_code_literals(compute_composite_objective)
+        reads_key = "packet_loss_rate" in literals
+        reads_alias = "outage_rate" in literals
+        detail.append(f"read {' -> '.join(visited)}")
+        detail.append(f"executable code references 'packet_loss_rate': {reads_key}")
+    except (OSError, SyntaxError, TypeError) as exc:
+        return CheckResult(name, False, detail + [f"could not read the source: {type(exc).__name__}: {exc}"])
+    if reads_alias:
+        detail.append(
+            "executable code still references 'outage_rate'; that alias carries a "
+            "constant, so a fallback onto it would put the constant back in the objective."
+        )
+
+    # Static reading is not proof. Score two metric dicts that differ only in the
+    # loss term and require the objective to move.
+    base: Dict[str, float] = {
+        "mean_error": 1.0, "mean_aoi": 1.0, "avg_power_norm": 0.5,
+        "packet_loss_rate": 0.0,
+    }
+    high = dict(base, packet_loss_rate=0.30)
+    try:
+        v_low = float(compute_composite_objective(base))
+        v_high = float(compute_composite_objective(high))
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, detail + [f"scoring raised {type(exc).__name__}: {exc}"])
+
+    responds = v_high > v_low
+    detail.append(
+        f"packet_loss_rate 0.00 -> objective {v_low:.6f}; "
+        f"0.30 -> {v_high:.6f}; delta {v_high - v_low:+.6f}"
+    )
+    if not responds:
+        detail.append(
+            "the objective does not increase with packet loss, so the loss term is "
+            "constant or absent. fix: src/hpo.py compute_composite_objective()."
+        )
+    ok = reads_key and responds and not reads_alias
+    if reads_alias and reads_key and responds:
+        detail.append("blocked on the lingering 'outage_rate' mention above; inspect it before launching.")
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 3. discount factor search range
+# --------------------------------------------------------------------------
+def _module_constants(tree: ast.Module) -> Dict[str, Any]:
+    """Module-level `NAME = <literal>` bindings, so a refactor stays readable.
+
+    The bounds are literals in the call today. If someone lifts them to a named
+    constant, a literal-only reader would report 'cannot tell' on a file that is
+    perfectly clear, so names are resolved one level.
+    """
+    consts: Dict[str, Any] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    consts[tgt.id] = node.value.value
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Constant) \
+                and isinstance(node.target, ast.Name):
+            consts[node.target.id] = node.value.value
+    return consts
+
+
+def _gamma_ranges(path: str) -> List[Tuple[str, Any, Any]]:
+    """Every `suggest_float("gamma", lo, hi)` in a file, with its enclosing function.
+
+    Read from the AST of the file on disk rather than by importing it: this must
+    describe the source the launcher is about to run, and it must work while
+    another session has the module in an unimportable intermediate state.
+    """
+    with open(path) as fh:
+        tree = ast.parse(fh.read())
+    consts = _module_constants(tree)
+
+    def literal(node: ast.AST) -> Any:
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in consts:
+            return consts[node.id]
+        if isinstance(node, ast.Attribute):
+            return f"<{node.attr}>"
+        return None
+
+    found: List[Tuple[str, Any, Any]] = []
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            if name not in ("suggest_float", "suggest_uniform", "suggest_loguniform"):
+                continue
+            args = list(node.args)
+            if not args or not isinstance(args[0], ast.Constant) or args[0].value != "gamma":
+                continue
+            lo = literal(args[1]) if len(args) > 1 else None
+            hi = literal(args[2]) if len(args) > 2 else None
+            found.append((fn.name, lo, hi))
+    return found
+
+
+def check_gamma_range(hpo_path: str, unresolved_hi: float,
+                      dwell_s: Tuple[float, float]) -> CheckResult:
+    """Refuse to launch while the discount range still carries its placeholder top.
+
+    The upper bound is being decided by a separate experiment. Until that lands,
+    every model searches up to `unresolved_hi`, whose effective horizon 1/(1-gamma)
+    is 1000 decisions -- against a measured 50 to 54 s of RSU dwell, a scheduler
+    optimising a return it can never collect. This gate does not assert the answer,
+    which nobody has yet; it asserts that the placeholder is gone, so a decision
+    taken in discussion cannot fail to reach the code before nine hours start.
+
+    It also requires all models to agree. The other way this week's runs went
+    wrong was a change applied to two of three paths, which is invisible in any
+    single-site check but obvious the moment the sites are compared.
+    """
+    name = "discount factor search range is resolved"
+    detail: List[str] = []
+    try:
+        ranges = _gamma_ranges(hpo_path)
+    except (OSError, SyntaxError) as exc:
+        return CheckResult(name, False, [f"could not parse {hpo_path}: {type(exc).__name__}: {exc}"])
+
+    if not ranges:
+        return CheckResult(name, False, [
+            f"no gamma search range found in {os.path.basename(hpo_path)}.",
+            "expected suggest_float('gamma', lo, hi) inside sample_hparams; if the "
+            "search moved elsewhere this check is looking at the wrong place and "
+            "must be pointed at the new site rather than deleted.",
+        ])
+
+    sites = {fn for fn, _, _ in ranges}
+    bounds = {(lo, hi) for _, lo, hi in ranges}
+    detail.append(
+        f"{len(ranges)} gamma range(s) in {os.path.basename(hpo_path)}, "
+        f"declared in: {', '.join(sorted(sites))}"
+    )
+
+    ok = True
+    if len(bounds) > 1:
+        ok = False
+        detail.append("the models do NOT all search the same range:")
+        for lo, hi in sorted(bounds, key=str):
+            models = [fn for fn, l, h in ranges if (l, h) == (lo, hi)]
+            detail.append(f"  ({lo}, {hi}) at {len(models)} site(s)")
+        detail.append(
+            "a bound changed at some sites and not others makes the nine studies "
+            "incomparable. Apply it everywhere or nowhere."
+        )
+    else:
+        lo, hi = next(iter(bounds))
+        detail.append(f"all sites search gamma in ({lo}, {hi})")
+        if isinstance(hi, (int, float)):
+            horizon = 1.0 / (1.0 - float(hi)) if float(hi) < 1.0 else float("inf")
+            detail.append(
+                f"upper bound {hi} -> effective horizon 1/(1-gamma) = {horizon:.0f} decisions; "
+                f"measured RSU dwell is {dwell_s[0]:.0f} to {dwell_s[1]:.0f} s"
+            )
+        if isinstance(hi, (int, float)) and abs(float(hi) - unresolved_hi) < 1e-12:
+            ok = False
+            detail.append(
+                f"this is still the UNRESOLVED placeholder {unresolved_hi}. The upper "
+                f"bound is under active investigation and has not been decided."
+            )
+            detail.append(
+                "launching now spends nine hours tuning against a horizon roughly "
+                "nineteen times the time a vehicle is in range."
+            )
+            detail.append(
+                "fix: set the decided bound at the gamma entry in sample_hparams "
+                "(src/hpo.py), then run this gate again. Lower this script's "
+                "UNRESOLVED_GAMMA_HI only if the decision is to keep 0.999."
+            )
+        elif isinstance(hi, (int, float)):
+            detail.append(f"placeholder {unresolved_hi} is gone; the bound has been decided")
+        else:
+            ok = False
+            detail.append(
+                f"the upper bound is not a literal this check can read (got {hi!r}); "
+                f"it cannot confirm the placeholder is gone."
+            )
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 4. model coverage
+# --------------------------------------------------------------------------
+def check_model_coverage(groups: List[str]) -> CheckResult:
+    """The four groups between them must run each of the nine baselines once.
+
+    The group lists are hand-maintained strings in the launcher, and they get
+    rearranged whenever the cost balance is revisited -- MA2HDQN moved from g2 to
+    g3 on 2026-09-05. A model dropped or duplicated in that edit produces no
+    error: the run starts, four logs look healthy, and it surfaces twelve hours
+    later when `merge_hpo_results.py` refuses because nothing produced it. Same
+    check, moved to the front.
+
+    Checked against `src.baselines.ALL_BASELINES` rather than a list retyped here,
+    so adding a tenth baseline makes this fail until the groups are updated.
+    """
+    name = "the groups cover all nine baselines exactly once"
+    try:
+        from src.baselines import ALL_BASELINES
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, [f"could not import src.baselines: {type(exc).__name__}: {exc}"])
+
+    scheduled: List[str] = []
+    for spec in groups:
+        scheduled.extend(spec.split())
+
+    registry = list(ALL_BASELINES)
+    missing = [m for m in registry if m not in scheduled]
+    unknown = [m for m in scheduled if m not in registry]
+    duplicated = sorted({m for m in scheduled if scheduled.count(m) > 1})
+
+    detail = [f"{len(groups)} group(s), {len(scheduled)} model slot(s), "
+              f"registry has {len(registry)}"]
+    for i, spec in enumerate(groups):
+        detail.append(f"  g{i}: {spec}")
+
+    ok = True
+    if missing:
+        ok = False
+        detail.append(f"NOT scheduled by any group: {', '.join(missing)}")
+        detail.append("the run would finish with a baseline absent, and the merge "
+                      "would refuse afterwards rather than now.")
+    if duplicated:
+        ok = False
+        detail.append(f"scheduled more than once: {', '.join(duplicated)}")
+        detail.append("two groups would each write a best-params row for it and "
+                      "the merge cannot tell which answer to keep.")
+    if unknown:
+        ok = False
+        detail.append(f"not in the registry: {', '.join(unknown)}")
+        detail.append("a typo here starts a study for a model that does not exist.")
+    if ok:
+        detail.append("every baseline scheduled exactly once")
+    return CheckResult(name, ok, detail)
+
+
+#: Below this many sampled keys, a model is being tuned on the generic fallback
+#: rather than on its own search space. NOT a guess: the fallback branch of
+#: `sample_hparams` offers exactly `lr`, `hidden_dim` and `gamma`, so three is the
+#: fallback's own width and anything at or below it is indistinguishable from
+#: having no tailored space at all. Every model that HAS a space defines strictly
+#: more, which is what makes the threshold discriminate.
+MIN_SEARCH_SPACE_KEYS = 4
+
+
+def check_search_space_reaches_every_group_model(groups: List[str]) -> CheckResult:
+    """Each scheduled name must draw its OWN search space, not the fallback.
+
+    THE FAILURE THIS CATCHES IS SILENT AND PRODUCES A COMPLETE-LOOKING STUDY.
+    `normalize_model_name` maps an alias to a canonical name by stripping `-` and
+    `_` and lowercasing. It does not strip whitespace, and it does not reject a
+    name it fails to resolve -- it returns the string unchanged. So a group entry
+    with a stray space, or a name that has been retired from the registry, falls
+    through every explicit branch of `sample_hparams` into the generic fallback,
+    and the study runs fifteen trials over three hyper-parameters instead of the
+    seven that model needs. Measured 2026-09-06:
+
+        'MA2HDQN'  -> 7 keys
+        'MA2HDQN ' -> 3 keys
+
+    Nothing in the logs distinguishes the two. The trials complete, the CSV has a
+    best-params row, and the result is a model tuned on a fraction of its space.
+
+    WHY THIS DUPLICATES A FIX BEING MADE ELSEWHERE, DELIBERATELY. The normaliser
+    is being taught to strip whitespace and to raise on an unknown name in
+    `src/hpo.py`. This check asks the same question from the other side, by
+    SAMPLING the space rather than by reasoning about the name, so the two fail
+    independently: if the normaliser fix regresses, or resolves a name in a way
+    that still misses its branch, this still reports it. A gate that shares its
+    implementation with the thing it gates cannot do that.
+
+    It reads `_search_space_keys`, which drives `sample_hparams` with a recording
+    stand-in for the Optuna trial. No study is created and nothing is sampled for
+    real, so the check costs milliseconds.
+    """
+    name = "every scheduled model draws its own search space, not the fallback"
+    try:
+        from src.hpo import _search_space_keys, normalize_model_name
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False,
+                           [f"could not import src.hpo: {type(exc).__name__}: {exc}"])
+
+    scheduled: List[str] = []
+    for spec in groups:
+        scheduled.extend(spec.split())
+    if not scheduled:
+        return CheckResult(name, False, ["no group models given; nothing to check"])
+
+    detail: List[str] = []
+    ok = True
+    for raw in scheduled:
+        canonical = normalize_model_name(raw)
+        try:
+            keys = _search_space_keys(canonical)
+        except Exception as exc:  # noqa: BLE001
+            ok = False
+            detail.append(f"  {raw!r}: sampling raised {type(exc).__name__}: {exc}")
+            continue
+        n = len(keys)
+        flag = ""
+        if canonical != raw:
+            flag += f" (normalised from {raw!r})"
+        if n < MIN_SEARCH_SPACE_KEYS:
+            ok = False
+            flag += ("  <-- FALLBACK. This model is being tuned on the generic "
+                     "three-key space, not its own.")
+        detail.append(f"  {canonical}: {n} key(s){flag} -> {sorted(keys)}")
+
+    # The whitespace case is probed directly rather than waited for, because the
+    # group lists are hand-edited strings and a trailing space is invisible in a
+    # diff. If a future normaliser stops being fooled by it this reports so and
+    # the check can be simplified; until then it is a live hazard.
+    probe = scheduled[0]
+    padded_keys = _search_space_keys(normalize_model_name(probe + " "))
+    clean_keys = _search_space_keys(normalize_model_name(probe))
+    if len(padded_keys) != len(clean_keys):
+        detail.append(
+            f"HAZARD: {probe + ' '!r} resolves to a {len(padded_keys)}-key space "
+            f"while {probe!r} resolves to {len(clean_keys)}. A trailing space in "
+            "the group list would silently shrink the search space; it is "
+            "invisible in a diff and produces a complete-looking study."
+        )
+    else:
+        detail.append(f"whitespace is tolerated by the normaliser (probed with {probe!r})")
+
+    if ok:
+        detail.insert(0, f"all {len(scheduled)} scheduled model(s) draw "
+                         f"{MIN_SEARCH_SPACE_KEYS}+ keys")
+    return CheckResult(name, ok, detail)
+
+
+def check_hpo_prepares_scenario_before_models() -> CheckResult:
+    """The search must generate its scenario BEFORE it constructs a model.
+
+    THE CONTRACT. `prepare_scenario`'s own docstring states it: "Must run BEFORE
+    any model is constructed. `ActionDecoder` and `StateVectorizer` read
+    `DELTA_MAX` / `V_MAX_OBS` / `E_REF`, and those describe the network on disk."
+    A model built before the scenario exists carries a decoder whose Delta range
+    describes a network that was never simulated.
+
+    WHY THE SEARCH IS THE PATH THAT BREAKS IT. `run_hot_swap_training` honours the
+    contract at line 3736. `src/hpo.py` contained no call to `prepare_scenario` at
+    all, and `run_hpo_parallel.sh` hands every group an EMPTY scenario directory,
+    so the first trial in each process built its model against the import-time
+    fallback constants. For HOORL that is fatal rather than subtle: loading the
+    offline dataset compares its stored `V_MAX_OBS` of 15.912 against the fallback
+    13.32, a 19.5 % difference, and refuses. `hpo.py` catches the exception and
+    records `FAILED_RUN_PENALTY`, which in the trial CSV is indistinguishable from
+    a genuinely poor trial.
+
+    WHY IT HAS NOT SHOWN UP. Group g3 lists `SPAM-D3QN HOORL MA2HDQN`, so
+    SPAM-D3QN runs first and generates the scenario on HOORL's behalf. The run is
+    correct today because of the ORDER OF A HAND-EDITED STRING. Reordering that
+    list, or running HOORL alone, loses all fifteen trials -- and loses them
+    silently, because a trial that dies before reaching `evaluate_model_in_env`
+    never generates the scenario the next trial would have needed either.
+
+    HOW THIS IS CHECKED WITHOUT DEPENDING ON THAT ORDER. Two stages. The first is
+    static and cheap: `src/hpo.py` must contain a `prepare_scenario` call at all,
+    which is what was missing. The second runs the study entry point in a
+    genuinely EMPTY scenario directory with the model listed alone, and records
+    whether `refresh_scenario_constants` fired before the first model was
+    constructed. Running the model alone is the point: it removes the neighbour
+    that currently masks the defect, so the check measures the entry point rather
+    than the group list.
+    """
+    name = "the HPO entry point prepares its scenario before constructing a model"
+    hpo_path = os.path.join(ROOT, "src", "hpo.py")
+    try:
+        text = open(hpo_path, encoding="utf-8").read()
+    except OSError as exc:
+        return CheckResult(name, False, [f"could not read {hpo_path}: {exc}"])
+
+    if "prepare_scenario(" not in text:
+        return CheckResult(name, False, [
+            "src/hpo.py contains no call to prepare_scenario().",
+            "Every group process is handed an EMPTY scenario directory by "
+            "run_hpo_parallel.sh, so the first trial builds its model against the "
+            "import-time fallback constants (V_MAX_OBS 13.32 against a real "
+            "15.9x). For HOORL the offline dataset is then refused as incompatible "
+            "and the trial is recorded as FAILED_RUN_PENALTY, which looks like a "
+            "bad trial rather than a broken run.",
+            "It does not fail today only because SPAM-D3QN precedes HOORL in g3 "
+            "and generates the scenario first. That is the order of a hand-edited "
+            "string, not a guarantee.",
+        ])
+
+    # Stage two: does it actually happen, and in the right order?
+    import tempfile as _tempfile
+
+    detail = ["src/hpo.py calls prepare_scenario()"]
+    scratch = _tempfile.mkdtemp(prefix="preflight_hpo_order_")
+    empty_sumo = os.path.join(scratch, "sumo")
+    os.makedirs(empty_sumo, exist_ok=True)
+    previous = os.environ.get("PAPER4_SUMO_DIR")
+    os.environ["PAPER4_SUMO_DIR"] = empty_sumo
+    order: List[str] = []
+    try:
+        import src.hot_swap_trainer as hst
+        import src.rl_interface as rli
+        from src.baselines import get_baseline
+        from src.hpo import run_hpo_study
+
+        original_refresh = rli.refresh_scenario_constants
+        model_cls = get_baseline("SPAM-D3QN")
+        original_init = model_cls.__init__
+
+        def recording_refresh(*a, **k):
+            order.append("refresh_scenario_constants")
+            return original_refresh(*a, **k)
+
+        def recording_init(self, *a, **k):
+            order.append("model_constructed")
+            return original_init(self, *a, **k)
+
+        rli.refresh_scenario_constants = recording_refresh
+        hst.refresh_scenario_constants = recording_refresh
+        model_cls.__init__ = recording_init
+        try:
+            run_hpo_study(model_name="SPAM-D3QN", model_cls=model_cls,
+                          n_trials=1, seeds=[42], n_steps=10)
+        finally:
+            rli.refresh_scenario_constants = original_refresh
+            hst.refresh_scenario_constants = original_refresh
+            model_cls.__init__ = original_init
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, detail + [
+            f"the one-trial probe raised {type(exc).__name__}: {exc}"])
+    finally:
+        if previous is None:
+            os.environ.pop("PAPER4_SUMO_DIR", None)
+        else:
+            os.environ["PAPER4_SUMO_DIR"] = previous
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    if "model_constructed" not in order:
+        return CheckResult(name, False, detail + [
+            f"the probe never constructed a model; call order was {order}"])
+    if "refresh_scenario_constants" not in order:
+        return CheckResult(name, False, detail + [
+            "the scenario constants were never refreshed during a trial, so the "
+            f"model was built against import-time values. Call order: {order}"])
+    ok = order.index("refresh_scenario_constants") < order.index("model_constructed")
+    detail.append(
+        f"first three calls in an EMPTY scenario directory: {order[:3]} "
+        f"(refresh before model construction = {ok})"
+    )
+    if not ok:
+        detail.append(
+            "The model was constructed first, so its ActionDecoder describes a "
+            "network that did not exist yet. Move the prepare_scenario call above "
+            "the model construction in evaluate_trial_multiseed."
+        )
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 5. scenario horizon
+# --------------------------------------------------------------------------
+def _rou_flow_end(path: str) -> Any:
+    """The latest `end=` on any <flow> in a rou.xml, in seconds.
+
+    The flows are what put vehicles on the road. Once the last one ends the
+    network drains, and everything measured after that is measured on a road that
+    is emptying for reasons nothing in the experiment controls.
+    """
+    tree = ET.parse(path)
+    ends = []
+    for flow in tree.getroot().iter("flow"):
+        value = flow.get("end")
+        if value is not None:
+            try:
+                ends.append(float(value))
+            except ValueError:
+                pass
+    return max(ends) if ends else None
+
+
+def _scenario_horizon(directory: str) -> Dict[str, Any]:
+    """What a scenario directory claims, and what it actually contains.
+
+    Both are read because they have been observed to disagree: on 2026-09-05 the
+    signature in `coder/src/sumo/` said FLOW_END_S 51.0 while the rou.xml beside
+    it carried end="138.0". A check that trusted either one alone would have
+    reported a consistent scenario.
+    """
+    out: Dict[str, Any] = {"dir": directory, "exists": os.path.isdir(directory)}
+    sig_path = os.path.join(directory, ".sumo_gen_signature.json")
+    rou_path = os.path.join(directory, "generated.rou.xml")
+    out["has_scenario"] = os.path.isfile(rou_path)
+
+    if os.path.isfile(sig_path):
+        try:
+            with open(sig_path) as fh:
+                out["signature_flow_end_s"] = float(json.load(fh).get("FLOW_END_S"))
+        except (OSError, ValueError, TypeError):
+            out["signature_flow_end_s"] = None
+    else:
+        out["signature_flow_end_s"] = None
+
+    if out["has_scenario"]:
+        try:
+            out["rou_flow_end_s"] = _rou_flow_end(rou_path)
+        except (OSError, ET.ParseError):
+            out["rou_flow_end_s"] = None
+    else:
+        out["rou_flow_end_s"] = None
+    return out
+
+
+def check_scenario_horizon(directories: List[str]) -> CheckResult:
+    """Every scenario on disk must outlast warm-up plus the measured window.
+
+    The warm-up was raised from 350 to 1200 steps so that what gets measured is a
+    settled network. At a 0.1 s step that is 120 s of warm-up before the first
+    measurement, and an HPO rollout adds 4000 steps on top. A scenario whose flows
+    stop at 131 s therefore begins draining while the measurement is still running,
+    and the density axis the whole study is defined over stops meaning anything --
+    silently, because a short scenario raises no error, it just runs out of cars.
+
+    Directories are checked, not constants, because `prepare_scenario` overwrites
+    `ss.FLOW_END_S` per run and the value in `make_sumo_set.py` is only the
+    default a run starts from. What matters is what is on disk where the run will
+    read it. The shared `coder/src/sumo/` is always included: any process that
+    does not set PAPER4_SUMO_DIR falls back to it.
+    """
+    name = "scenario flows outlast warm-up plus the measured window"
+    detail: List[str] = []
+    try:
+        import src.sumo.make_sumo_set as ss
+        from src.hot_swap_trainer import DEFAULT_WARMUP_STEPS
+        from src.hpo import DEFAULT_HPO_N_STEPS
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, [f"could not read the run constants: {type(exc).__name__}: {exc}"])
+
+    step = float(ss.STEP_LENGTH)
+    # The same arithmetic `prepare_scenario` uses, so the requirement is the one
+    # the run will itself generate against rather than a second opinion.
+    required = (int(DEFAULT_HPO_N_STEPS) + int(DEFAULT_WARMUP_STEPS) + 100) * step
+    detail.append(
+        f"need >= {required:.1f} s = ({DEFAULT_HPO_N_STEPS} rollout + "
+        f"{DEFAULT_WARMUP_STEPS} warm-up + 100) x {step} s"
+    )
+    detail.append(f"make_sumo_set.FLOW_END_S default is {float(ss.FLOW_END_S):.1f} s")
+
+    ok = True
+    if float(ss.FLOW_END_S) < required:
+        ok = False
+        detail.append(
+            f"the module default itself is shorter than one rollout; any run that "
+            f"does not override it generates a scenario that drains mid-measurement."
+        )
+
+    seen = []
+    for d in directories:
+        info = _scenario_horizon(d)
+        if not info["has_scenario"]:
+            detail.append(f"{d}: no scenario yet; the run will generate one")
+            continue
+        seen.append(info)
+        sig, rou = info["signature_flow_end_s"], info["rou_flow_end_s"]
+        detail.append(f"{d}: signature {sig} s, rou.xml flows end {rou} s")
+        if sig is None or rou is None:
+            ok = False
+            detail.append("  could not read one of the two; treat the scenario as unknown")
+            continue
+        if abs(sig - rou) > 1e-6:
+            ok = False
+            detail.append(
+                "  the signature and the file DISAGREE. The signature is what "
+                "`generation_signature_matches` consults to decide whether to "
+                "regenerate, so a run can skip regeneration and then drive a "
+                "network built for different parameters."
+            )
+        if min(sig, rou) < required:
+            ok = False
+            detail.append(
+                f"  shorter than the {required:.1f} s the run needs; vehicles stop "
+                f"being inserted {required - min(sig, rou):.1f} s before the "
+                f"measurement window closes."
+            )
+    if ok and seen:
+        detail.append("every scenario on disk covers the full run")
+    if not ok:
+        detail.append(
+            "fix: regenerate with the canonical parameters, e.g. "
+            "`make_sumo_files(force_regenerate=True)` with FLOW_END_S left at its "
+            "module default, and check that the signature and rou.xml then agree."
+        )
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 6. scenario directories outside the git work tree
+# --------------------------------------------------------------------------
+def check_scenario_outside_worktree(directories: List[str]) -> CheckResult:
+    """A scenario directory inside the work tree is one `git clean` from gone.
+
+    `.gitignore` is not a defence. `git clean -fdx` deletes ignored files by
+    design -- being ignored is what `-x` targets -- and `git check-ignore` will
+    happily report a directory as ignored right up until it is deleted, so it
+    cannot answer this question. Nor is `-x` the whole risk: measured on this
+    tree, `git clean -nd Workspace/paper4` alone lists 175 entries, of which only
+    37 need `-x`. The rest are merely untracked, which a fresh scenario directory
+    always is.
+
+    This is not hypothetical. On 2026-09-04 the g1 group's scenario directory
+    disappeared two and a half hours into its run and every remaining rollout
+    died; 62 rollouts and the entire SAC study went with it.
+
+    The test is containment, not ignore status: anything at or below
+    `git rev-parse --show-toplevel` is reachable. That top level is /home/imnyj
+    here, so every path under Workspace/ qualifies and the scenarios have to live
+    somewhere else entirely.
+    """
+    name = "scenario directories are outside the git work tree"
+    if not directories:
+        return CheckResult(name, False, ["no scenario directories given; nothing to check"])
+    try:
+        top = subprocess.run(
+            ["git", "-C", GIT_REPO_DIR, "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=60, check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError) as exc:
+        return CheckResult(name, False, [
+            f"could not locate the work tree: {type(exc).__name__}: {exc}",
+            "without it there is no way to tell whether the scenarios are exposed.",
+        ])
+
+    top_real = os.path.realpath(top)
+    detail = [f"work tree top level: {top_real}"]
+    inside: List[str] = []
+    for d in directories:
+        # realpath, so a symlink pointing back into the tree is not a way past this.
+        real = os.path.realpath(os.path.abspath(d))
+        exposed = real == top_real or (real + os.sep).startswith(top_real + os.sep)
+        detail.append(f"  {'INSIDE ' if exposed else 'outside'}  {real}")
+        if exposed:
+            inside.append(real)
+
+    if inside:
+        detail.append(
+            f"{len(inside)} scenario directory(ies) sit inside the work tree. A "
+            f"`git clean` run by anyone, with or without -x, removes them mid-run "
+            f"and every subsequent rollout dies on a missing network."
+        )
+        detail.append(
+            "fix: pass --sumo-root pointing outside the tree, e.g. /var/tmp/paper4_sumo."
+        )
+        return CheckResult(name, False, detail)
+
+    detail.append("no scenario directory is reachable by a git clean in this repository")
+    detail.append(
+        "note: this only covers the directories this run will use. The shared "
+        "coder/src/sumo/ is inside the tree by construction and stays exposed."
+    )
+    return CheckResult(name, True, detail)
+
+
+# --------------------------------------------------------------------------
+# 7. SUMO isolation and the generation lock
+# --------------------------------------------------------------------------
+def check_sumo_isolation(sumo_dirs: List[str]) -> CheckResult:
+    name = "SUMO scenario directories isolated and self-healing"
+    detail: List[str] = []
+    ok = True
+
+    if not sumo_dirs:
+        return CheckResult(name, False, ["no --sumo-dirs given; nothing to check"])
+
+    # (a) the group directories must be distinct paths.
+    resolved = [os.path.realpath(os.path.abspath(d)) for d in sumo_dirs]
+    duplicates = {p for p in resolved if resolved.count(p) > 1}
+    if duplicates:
+        ok = False
+        detail.append("group SUMO directories are NOT distinct; these repeat:")
+        for p in sorted(duplicates):
+            detail.append(f"  {p}")
+        detail.append(
+            "two processes sharing one directory regenerate the same "
+            "generated.net.xml and silently read a network they did not ask for."
+        )
+    else:
+        detail.append(f"{len(resolved)} group directories, all distinct:")
+        for p in resolved:
+            detail.append(f"  {p}")
+
+    # (b) none of them may sit inside another, which would share a lock file.
+    for i, a in enumerate(resolved):
+        for j, b in enumerate(resolved):
+            if i != j and (a + os.sep).startswith(b + os.sep):
+                ok = False
+                detail.append(f"{a} is nested inside {b}; they would share generated files")
+
+    # (c) PAPER4_SUMO_DIR must actually redirect BASE_PATH. Checked in a
+    #     subprocess because the constant is read at import time.
+    probe_dir = tempfile.mkdtemp(prefix="preflight_sumo_")
+    target = os.path.join(probe_dir, "redirected")
+    env = dict(os.environ, PAPER4_SUMO_DIR=target, PYTHONPATH=ROOT)
+    try:
+        out = subprocess.run(
+            [sys.executable, "-c",
+             "import src.sumo.make_sumo_set as ss; print(ss.BASE_PATH)"],
+            capture_output=True, text=True, timeout=180, env=env, cwd=ROOT,
+        )
+        got = out.stdout.strip().splitlines()[-1] if out.stdout.strip() else ""
+        if os.path.realpath(got) == os.path.realpath(target):
+            detail.append(f"PAPER4_SUMO_DIR redirects BASE_PATH -> {got}")
+        else:
+            ok = False
+            detail.append(f"PAPER4_SUMO_DIR did NOT redirect BASE_PATH: got {got!r}, wanted {target!r}")
+            if out.stderr.strip():
+                detail.append(f"stderr tail: {out.stderr.strip().splitlines()[-1]}")
+    except (OSError, subprocess.SubprocessError) as exc:
+        ok = False
+        detail.append(f"probing PAPER4_SUMO_DIR failed: {type(exc).__name__}: {exc}")
+    finally:
+        shutil.rmtree(probe_dir, ignore_errors=True)
+
+    # (d) the generation lock must create its own parent directory. This is the
+    #     exact failure that killed the g1 group: the directory disappeared under
+    #     a running process and every later rollout raised FileNotFoundError.
+    lock_dir = tempfile.mkdtemp(prefix="preflight_lock_")
+    missing = os.path.join(lock_dir, "vanished", "sumo")
+    try:
+        import src.sumo.make_sumo_set as ss
+        with ss._generation_lock(missing):
+            created = os.path.isdir(missing)
+            has_lock = os.path.exists(os.path.join(missing, ss.GENERATION_LOCK_FILE))
+        if created and has_lock:
+            detail.append("generation lock recreated an absent parent directory and took its flock")
+        else:
+            ok = False
+            detail.append(
+                f"generation lock did not restore the directory "
+                f"(dir={created}, lockfile={has_lock}); a directory lost mid-run "
+                f"would kill every remaining rollout."
+            )
+    except Exception as exc:  # noqa: BLE001
+        ok = False
+        detail.append(
+            f"generation lock raised {type(exc).__name__}: {exc} on an absent "
+            f"parent directory. fix: src/sumo/make_sumo_set.py _generation_lock()."
+        )
+    finally:
+        shutil.rmtree(lock_dir, ignore_errors=True)
+
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 8. GPUs
+# --------------------------------------------------------------------------
+def check_gpus(wanted: List[int]) -> CheckResult:
+    name = "requested GPUs are free"
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "etc"))
+        from gpu_alloc import MAX_UTIL_PCT, MIN_FREE_MIB, probe
+    except Exception as exc:  # noqa: BLE001
+        return CheckResult(name, False, [f"could not import etc/gpu_alloc.py: {type(exc).__name__}: {exc}"])
+
+    gpus = probe()
+    if not gpus:
+        return CheckResult(name, False, ["nvidia-smi returned nothing; no driver, or the query failed"])
+
+    by_index = {g["index"]: g for g in gpus}
+    detail = [f"thresholds: >= {MIN_FREE_MIB} MiB free and <= {MAX_UTIL_PCT}% utilised"]
+    ok = True
+    for idx in wanted:
+        g = by_index.get(idx)
+        if g is None:
+            ok = False
+            detail.append(f"GPU {idx}: not present on this machine")
+            continue
+        state = "idle" if g["usable"] else g["reason"]
+        detail.append(
+            f"GPU {idx}: {g['memory_used_mib']:>6} / {g['memory_total_mib']} MiB used, "
+            f"{g['utilization_pct']:>3}% util -> {state}"
+        )
+        if not g["usable"]:
+            ok = False
+    if not ok:
+        detail.append(
+            "someone else is on at least one device. Starting anyway either evicts "
+            "their job or dies at the first allocation, hours in."
+        )
+    return CheckResult(name, ok, detail)
+
+
+# --------------------------------------------------------------------------
+# 9. destinations
+# --------------------------------------------------------------------------
+def _existing_artefacts(path: str) -> List[str]:
+    """Files under `path` that look like results, ignoring scratch SUMO dirs."""
+    found: List[str] = []
+    if not os.path.isdir(path):
+        return found
+    for dirpath, dirnames, filenames in os.walk(path):
+        dirnames[:] = [d for d in dirnames if d != "sumo"]
+        for fn in filenames:
+            if any(m in fn for m in RESULT_GLOB_MARKERS):
+                found.append(os.path.relpath(os.path.join(dirpath, fn), path))
+    return sorted(found)
+
+
+def check_destination(path: str, label: str, protect: List[str]) -> CheckResult:
+    name = f"{label} is empty or new"
+    abs_path = os.path.abspath(path)
+    detail = [f"path: {abs_path}"]
+
+    for guarded in protect:
+        g = os.path.abspath(guarded)
+        if abs_path == g or (abs_path + os.sep).startswith(g + os.sep):
+            detail.append(
+                f"this is inside the protected control directory {g}. Those results "
+                f"are the comparison baseline for the new normaliser; writing here "
+                f"destroys what the new run is supposed to be measured against."
+            )
+            detail.append("choose a different --output-root, e.g. results/hpo_parallel_v2.")
+            return CheckResult(name, False, detail)
+
+    if not os.path.exists(abs_path):
+        detail.append("does not exist yet; the launcher will create it")
+        return CheckResult(name, True, detail)
+
+    artefacts = _existing_artefacts(abs_path)
+    if artefacts:
+        detail.append(f"already holds {len(artefacts)} result file(s); the run would overwrite them:")
+        for a in artefacts[:12]:
+            detail.append(f"  {a}")
+        if len(artefacts) > 12:
+            detail.append(f"  ... and {len(artefacts) - 12} more")
+        detail.append("move them aside, or point --output-root/--log-root somewhere new.")
+        return CheckResult(name, False, detail)
+
+    detail.append("exists and holds no result files")
+    return CheckResult(name, True, detail)
+
+
+# --------------------------------------------------------------------------
+# 10. provenance
+# --------------------------------------------------------------------------
+def check_working_tree(watched: List[str]) -> CheckResult:
+    """Report, without blocking, which code differs from the commit being recorded.
+
+    Not blocking, deliberately. Two sessions are editing this tree, so a clean-tree
+    requirement would mean nothing could ever launch. What it buys is that the
+    operator knows before starting, and `run_metadata.json` records the same list
+    beside the results. The failure this addresses was not a dirty tree; it was a
+    run whose outputs could not later be attributed to any particular code at all
+    -- the previous main training finished four hours before the divergence guard
+    it was credited with even existed, and no artefact said so.
+    """
+    name = "working tree matches the commit that will be recorded"
+    try:
+        head = subprocess.run(
+            ["git", "-C", GIT_REPO_DIR, "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=60, check=True,
+        ).stdout.strip()
+        porcelain = subprocess.run(
+            ["git", "-C", GIT_REPO_DIR, "status", "--porcelain"],
+            capture_output=True, text=True, timeout=120, check=True,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        return CheckResult(name, False, [
+            f"could not read git state: {type(exc).__name__}: {exc}",
+            "the run would be recorded with no commit at all.",
+        ], blocking=False)
+
+    entries = [ln for ln in porcelain.splitlines() if ln.strip()]
+    dirty_code = [ln for ln in entries if any(ln[3:].startswith(p) for p in watched)]
+
+    detail = [f"HEAD is {head}", f"{len(entries)} uncommitted path(s) in the repository"]
+    if not dirty_code:
+        detail.append("none of them are under the watched code paths:")
+        for p in watched:
+            detail.append(f"  {p}")
+        detail.append("the recorded commit describes the code that will run")
+        return CheckResult(name, True, detail, blocking=False)
+
+    detail.append(f"{len(dirty_code)} of them ARE code this run executes:")
+    for ln in dirty_code[:15]:
+        detail.append(f"  {ln}")
+    if len(dirty_code) > 15:
+        detail.append(f"  ... and {len(dirty_code) - 15} more")
+    detail.append(
+        f"commit {head} therefore does NOT describe what will run. The same list is "
+        f"written to run_metadata.json in every group directory, so the results stay "
+        f"attributable, but check that these edits are the ones you intend to measure."
+    )
+    detail.append("not blocking: concurrent sessions make a clean tree impractical right now.")
+    return CheckResult(name, False, detail, blocking=False)
+
+
+# --------------------------------------------------------------------------
+# 11. scenario-isolation bypasses
+# --------------------------------------------------------------------------
+#: Directories scanned for isolation bypasses. `etc/` and `tests/` are excluded
+#: on purpose: this gate and the test suite handle the shared scenario directory
+#: deliberately, and flagging them would train the reader to ignore the check.
+ISOLATION_SCAN_ROOTS = ("src",)
+
+#: A literal containing this is a hardcoded route to the package scenario
+#: directory, which no isolation mechanism can redirect.
+SHARED_SCENARIO_MARKER = "src/sumo"
+
+#: Scenario files. A literal naming one is fine when it is joined to a resolved
+#: base; it is a bypass when it is handed straight to a file-opening call, where
+#: it resolves against the process's working directory instead.
+SCENARIO_FILE_MARKER = "generated."
+
+#: Calls that open a path. The first positional argument of each is the one that
+#: has to have been resolved against the run's own scenario directory.
+PATH_OPENING_CALLS = ("open", "parse", "iterparse", "read_text", "read_bytes")
+
+
+def _docstring_nodes(tree: ast.AST) -> set:
+    """Every docstring Constant node, so a literal in prose is not a finding.
+
+    Docstrings survive parsing as ordinary string constants, which is exactly the
+    false-positive source that pushed the objective check off plain text search;
+    a module that merely *describes* `src/sumo` must not be reported as reaching
+    for it.
+    """
+    out = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+            continue
+        body = getattr(node, "body", None)
+        if body and isinstance(body[0], ast.Expr) \
+                and isinstance(body[0].value, ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            out.add(id(body[0].value))
+    return out
+
+
+def _scan_isolation_bypasses(path: str) -> Tuple[List[str], List[str]]:
+    """(blocking findings, advisory findings) for one file. Syntax tree only."""
+    with open(path, "r", encoding="utf-8") as fh:
+        source = fh.read()
+    tree = ast.parse(source, filename=path)
+    docstrings = _docstring_nodes(tree)
+    blocking: List[str] = []
+    advisory: List[str] = []
+    is_generator = os.path.basename(path) == "make_sumo_set.py"
+
+    for node in ast.walk(tree):
+        # (a) a hardcoded route to the package scenario directory.
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                and id(node) not in docstrings \
+                and SHARED_SCENARIO_MARKER in node.value:
+            blocking.append(
+                f"line {node.lineno}: literal {node.value!r} hardcodes the shared "
+                f"scenario directory; no isolation can redirect it"
+            )
+
+        # (b) a scenario file handed straight to a path-opening call, i.e. resolved
+        # against the working directory rather than against the run's own
+        # directory. `os.path.join(base, "generated.nod.xml")` is not this and is
+        # deliberately not reported.
+        if isinstance(node, ast.Call):
+            fname = node.func.attr if isinstance(node.func, ast.Attribute) else \
+                (node.func.id if isinstance(node.func, ast.Name) else "")
+            if fname in PATH_OPENING_CALLS and node.args:
+                first = node.args[0]
+                if isinstance(first, ast.Constant) and isinstance(first.value, str) \
+                        and (SCENARIO_FILE_MARKER in first.value
+                             or SHARED_SCENARIO_MARKER in first.value):
+                    blocking.append(
+                        f"line {node.lineno}: {fname}({first.value!r}) resolves against "
+                        f"the working directory, not the run's scenario directory"
+                    )
+
+        # (c) BASE_PATH read directly. Correct under PAPER4_SUMO_DIR, wrong under
+        # argument isolation; see the check's docstring for why it warns.
+        if isinstance(node, ast.Attribute) and node.attr == "BASE_PATH" \
+                and not is_generator:
+            advisory.append(
+                f"line {node.lineno}: reads make_sumo_set.BASE_PATH, the process-wide "
+                f"default; a caller isolating by `sumo_dir=` argument is not honoured"
+            )
+    return blocking, advisory
+
+
+def check_scenario_isolation_bypasses(roots: List[str]) -> CheckResult:
+    """Find code that reaches the shared scenario directory around the isolation.
+
+    Four of these have been found by hand, the most recent being `AoiV2IEnv.reset`
+    parsing `"src/sumo/generated.nod.xml"` immediately after `_init_sumo` had
+    resolved the real directory. Each was found only because somebody happened to
+    run from the wrong working directory. Nothing guaranteed there was not a
+    fifth, which is what this replaces.
+
+    Read from the syntax tree, not from text: a plain search reports every comment
+    and docstring that merely names the path, and a check whose output is mostly
+    noise gets skipped. The objective check in this same file was moved off text
+    search for that reason.
+
+    Two severities, and the split is the judgement this check makes:
+
+      * BLOCKING for a hardcoded `src/sumo` literal and for a scenario filename
+        passed straight to `open`/`ET.parse`. Neither can be redirected by any
+        isolation mechanism, so both are wrong under every way of running.
+      * ADVISORY for reading `make_sumo_set.BASE_PATH`. That value is resolved
+        from `PAPER4_SUMO_DIR` at import, so it is correct whenever isolation is
+        by environment variable and wrong only when the caller isolates by passing
+        `sumo_dir=`. Blocking it would condemn the legitimate majority of its uses;
+        reporting it tells the reader where to look when the two disagree.
+    """
+    name = "no code bypasses scenario isolation"
+    files: List[str] = []
+    for root in roots:
+        base = root if os.path.isabs(root) else os.path.join(ROOT, root)
+        for dirpath, _dirnames, filenames in os.walk(base):
+            if "__pycache__" in dirpath:
+                continue
+            files.extend(os.path.join(dirpath, f)
+                         for f in filenames if f.endswith(".py"))
+    if not files:
+        return CheckResult(name, False, [f"no python files found under {roots}"])
+
+    blocking: List[str] = []
+    advisory: List[str] = []
+    unreadable: List[str] = []
+    for path in sorted(files):
+        try:
+            b, a = _scan_isolation_bypasses(path)
+        except (OSError, SyntaxError) as exc:
+            unreadable.append(f"{os.path.relpath(path, ROOT)}: "
+                              f"{type(exc).__name__}: {exc}")
+            continue
+        rel = os.path.relpath(path, ROOT)
+        blocking.extend(f"{rel}, {line}" for line in b)
+        advisory.extend(f"{rel}, {line}" for line in a)
+
+    detail = [f"scanned {len(files)} file(s) under {', '.join(roots)}"]
+    if unreadable:
+        detail.append(f"{len(unreadable)} file(s) could not be parsed:")
+        detail.extend(f"  {u}" for u in unreadable[:5])
+    if advisory:
+        detail.append(f"{len(advisory)} advisory finding(s), not blocking:")
+        detail.extend(f"  ~ {a}" for a in advisory[:10])
+        if len(advisory) > 10:
+            detail.append(f"  ~ ... and {len(advisory) - 10} more")
+    if blocking:
+        detail.append(f"{len(blocking)} BLOCKING finding(s):")
+        detail.extend(f"  - {b}" for b in blocking[:15])
+        if len(blocking) > 15:
+            detail.append(f"  - ... and {len(blocking) - 15} more")
+        detail.append(
+            "each of these reads the shared scenario directory whatever the run was "
+            "told to use, so an isolated run silently mixes two scenarios."
+        )
+        return CheckResult(name, False, detail)
+
+    detail.append("no hardcoded shared-scenario path and no working-directory-relative "
+                  "scenario open remains")
+    return CheckResult(name, True, detail)
+
+
+# --------------------------------------------------------------------------
+# 12. HOORL two-stage wiring
+# --------------------------------------------------------------------------
+def check_hoorl_offline_wiring() -> CheckResult:
+    """HOORL must reach its offline stage, in the search and in training alike.
+
+    Checked by CONSTRUCTING a model through the wiring helper and reading the
+    attribute back, not by looking for the word in the source. HOORL spent this
+    whole project's history running its online half only while every piece of the
+    offline half was present and correct, and a source-level check would have been
+    satisfied by exactly that state.
+
+    The second half of the check is that both call sites reach the helper. A
+    search that skips pretraining while training performs it tunes against a
+    different method than the one that runs, which this project has already paid
+    for twice.
+    """
+    name = "HOORL reaches its offline stage"
+    detail: List[str] = []
+    try:
+        from src.baselines import get_baseline
+        from src.hoorl_wiring import (
+            DEFAULT_OFFLINE_ALGORITHM, is_hoorl, offline_hparams,
+        )
+        from src.rl_interface import STATE_DIM
+    except ImportError as exc:
+        return CheckResult(name, False, [f"could not import the wiring: "
+                                         f"{type(exc).__name__}: {exc}"])
+
+    HOORL = get_baseline("HOORL")
+    hp = offline_hparams(HOORL, {"hidden_dim": 64})
+    try:
+        model = HOORL(state_dim=STATE_DIM, num_channels=4, **hp)
+    except Exception as exc:  # noqa: BLE001 - any failure here stops the launch
+        return CheckResult(name, False, [
+            f"constructing HOORL through the wiring raised "
+            f"{type(exc).__name__}: {exc}"])
+
+    got = getattr(model, "offline_algorithm", None)
+    ok_model = is_hoorl(model) and got == DEFAULT_OFFLINE_ALGORITHM
+    detail.append(f"a model built through offline_hparams reports "
+                  f"offline_algorithm={got!r} (want {DEFAULT_OFFLINE_ALGORITHM!r})")
+
+    # Both construction sites must route through the helper. Read from the syntax
+    # tree so a mention in a comment does not satisfy it.
+    sites = {
+        "src/hpo.py": False,
+        "src/hot_swap_trainer.py": False,
+    }
+    for rel in list(sites):
+        path = os.path.join(ROOT, rel)
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=path)
+        except (OSError, SyntaxError) as exc:
+            detail.append(f"{rel}: could not parse ({type(exc).__name__}: {exc})")
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").endswith(
+                    "hoorl_wiring"):
+                sites[rel] = True
+            elif isinstance(node, ast.Import) and any(
+                    a.name.endswith("hoorl_wiring") for a in node.names):
+                sites[rel] = True
+
+    for rel, wired in sites.items():
+        detail.append(f"{rel}: {'imports' if wired else 'DOES NOT import'} "
+                      f"src.hoorl_wiring")
+
+    unwired = [rel for rel, wired in sites.items() if not wired]
+    if not ok_model:
+        detail.append("the wiring helper did not put the offline learner on the model.")
+        return CheckResult(name, False, detail)
+    if unwired:
+        detail.append(
+            "HOORL would construct correctly but never enter its offline stage from "
+            f"{', '.join(unwired)}, so it would run as the online-only ablation while "
+            "being reported under the method's name."
+        )
+        return CheckResult(name, False, detail)
+
+    detail.append("both the search and the training path route model construction "
+                  "through the wiring")
+    return CheckResult(name, True, detail)
+
+
+# --------------------------------------------------------------------------
+def run_checks(args: argparse.Namespace) -> Tuple[List[CheckResult], bool]:
+    checks: List[Callable[[], CheckResult]] = [
+        check_n_active_max_obs,
+        check_objective_reads_packet_loss,
+        lambda: check_gamma_range(args.hpo_path, UNRESOLVED_GAMMA_HI, RSU_DWELL_S),
+        lambda: check_model_coverage(args.group_models),
+        lambda: check_search_space_reaches_every_group_model(args.group_models),
+        check_hpo_prepares_scenario_before_models,
+        # The shared directory is always checked, whatever this run points at:
+        # anything that does not set PAPER4_SUMO_DIR falls back to it, and that is
+        # how it came to hold a 131 s scenario in the first place.
+        lambda: check_scenario_horizon(
+            [os.path.join(ROOT, "src", "sumo")] + list(args.sumo_dirs)),
+        lambda: check_scenario_outside_worktree(args.sumo_dirs),
+        lambda: check_sumo_isolation(args.sumo_dirs),
+        lambda: check_gpus(args.gpus),
+        lambda: check_destination(args.output_root, "output root", args.protect),
+        lambda: check_destination(args.log_root, "log root", args.protect),
+        lambda: check_scenario_isolation_bypasses(list(args.isolation_scan_roots)),
+        check_hoorl_offline_wiring,
+        lambda: check_working_tree(args.watch_paths),
+    ]
+    results = [c() for c in checks]
+    return results, not any(r.stops_launch for r in results)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--output-root", required=True, help="where the group result directories will be written")
+    ap.add_argument("--log-root", required=True, help="where the per-group launcher logs will be written")
+    ap.add_argument("--sumo-dirs", nargs="*", default=[],
+                    help="the PAPER4_SUMO_DIR each group will be given")
+    ap.add_argument("--gpus", nargs="*", type=int, default=[0, 1, 2, 3],
+                    help="GPU indices the run will occupy")
+    ap.add_argument("--protect", nargs="*",
+                    default=["/home/imnyj/Workspace/paper4/coder/results/hpo_parallel",
+                             "/home/imnyj/Workspace/paper4/coder/results/hpo"],
+                    help="directories that must never be written into")
+    ap.add_argument("--group-models", nargs="*", default=[],
+                    help="one space-separated model list per group, as the launcher will pass them")
+    ap.add_argument("--hpo-path", default=os.path.join(ROOT, "src", "hpo.py"),
+                    help="the file whose gamma search range is checked")
+    ap.add_argument("--watch-paths", nargs="*", default=list(WATCHED_CODE_PATHS),
+                    help="repo-relative prefixes whose uncommitted state is reported")
+    ap.add_argument("--isolation-scan-roots", nargs="*", default=list(ISOLATION_SCAN_ROOTS),
+                    help="directories scanned for scenario-isolation bypasses; "
+                         "etc/ and tests/ are excluded on purpose")
+    ap.add_argument("--skip", nargs="*", default=[],
+                    help="check names to report but not enforce (substring match)")
+    args = ap.parse_args()
+
+    results, _ = run_checks(args)
+
+    print("=" * 78)
+    print("HPO pre-flight")
+    print("=" * 78)
+    failed: List[CheckResult] = []
+    warned: List[CheckResult] = []
+    for r in results:
+        skipped = any(s.lower() in r.name.lower() for s in args.skip)
+        if skipped and not r.passed:
+            print(r.render().replace("[FAIL]", "[WARN]", 1))
+            print("       not enforced (--skip)")
+            warned.append(r)
+        else:
+            print(r.render())
+            if r.stops_launch:
+                failed.append(r)
+            elif not r.passed:
+                warned.append(r)
+        print()
+
+    print("-" * 78)
+    if warned:
+        print(f"{len(warned)} warning(s), which do not stop the launch:")
+        for r in warned:
+            print(f"  ~ {r.name}")
+    if failed:
+        print(f"BLOCKED: {len(failed)} of {len(results)} checks failed. Do not launch.")
+        for r in failed:
+            print(f"  - {r.name}")
+        print("-" * 78)
+        return 1
+
+    print(f"CLEAR: {len(results) - len(warned)} of {len(results)} checks passed"
+          f"{', the rest are warnings' if warned else ''}. Safe to launch.")
+    print("-" * 78)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

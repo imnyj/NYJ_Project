@@ -1,0 +1,35 @@
+{
+  "behaviour_policy": {
+    "delta_band": [
+      0.5000000000000001,
+      9.999999999999998
+    ],
+    "delta_component_defined": true,
+    "delta_fixed": 2.23606797749979,
+    "delta_fixed_is": "the geometric CENTRE of delta_band, not a value any transition took. delta_band = [delta_fixed*exp(-delta_jitter), delta_fixed*exp(+delta_jitter)] clipped to the decoder range. Consumers should read delta_band.",
+    "delta_jitter": 1.4978661367769954,
+    "kind": "fixed_period_uniform_channel_power",
+    "note": "Delta is deterministic when delta_jitter == 0, so the stored behaviour_log_prob covers the channel factor only and the Delta axis has zero coverage. With delta_jitter > 0 Delta is log-uniform inside delta_band and its (finite) log density is included.",
+    "num_channels": 4,
+    "p_max": 23.0,
+    "p_min": 10.0
+  },
+  "criterion": "99th percentile of per-step per-subchannel occupancy, pooled over the seven training densities; fixed before this measurement ran",
+  "criterion_file": "results/diagnostics/cbr_ref_criterion.md",
+  "current_CBR_REF": 0.6,
+  "fraction_clipped_at_that_value": 0.00286,
+  "n_pooled_samples": 11200,
+  "pooled": {
+    "p100": 0.03136,
+    "p50": 0.0,
+    "p90": 0.00896,
+    "p95": 0.00896,
+    "p99": 0.01792,
+    "p99.9": 0.0224
+  },
+  "pooled_mean": 0.003028,
+  "rounded_up_to_2dp": 0.02,
+  "steps_per_density": 400,
+  "value_selected_by_the_rule": 0.01792,
+  "warmup_steps": 1200
+}

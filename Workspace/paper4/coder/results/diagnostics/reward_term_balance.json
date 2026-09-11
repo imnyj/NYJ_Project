@@ -1,0 +1,24 @@
+{
+  "CBR_REF": 0.02,
+  "n_intervals": 2104,
+  "pooled_mean_abs": {
+    "w1_error": 0.06082,
+    "w2_power": 0.097187,
+    "w3_congestion": 0.077391,
+    "w4_redundant": 0.081274
+  },
+  "pooled_share_of_total_penalty": {
+    "w1_error": 0.19206,
+    "w2_power": 0.3069,
+    "w3_congestion": 0.24439,
+    "w4_redundant": 0.25665
+  },
+  "reading": "share is each term's contribution to the summed magnitude of the four, so it says how much of the gradient each one can account for. A weight is what a term is multiplied BY; a share is what it amounts to.",
+  "weights": {
+    "w1": 0.5,
+    "w2": 0.2,
+    "w3": 0.2,
+    "w4": 0.1
+  },
+  "weights_are_fixed": "0.5/0.2/0.2/0.1 for this run by decision; all nine baselines must be scored against one objective"
+}

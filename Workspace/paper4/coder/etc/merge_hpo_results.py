@@ -6,14 +6,23 @@ writes its own `optuna_best_params.csv` holding only the models it ran. This
 puts them back together so the rest of the pipeline -- `run_all.py`, which reads
 one master CSV -- sees exactly what a serial run would have produced.
 
-The merge refuses rather than guesses in two cases: a model that no group
-produced, and a model that two groups both claim. Silently accepting either
-would hand training a CSV that is missing a baseline or holds an arbitrary one
-of two answers, and neither failure announces itself later.
+The merge refuses rather than guesses in three cases: a model that no group
+produced, a model that two groups both claim, and a model whose `best_value` is
+the HPO failure penalty. Silently accepting any of them would hand training a CSV
+that is missing a baseline, holds an arbitrary one of two answers, or holds the
+hyperparameters of a study in which nothing was measured, and none of the three
+announces itself later.
 
 Usage:
     python etc/merge_hpo_results.py            # merge, refuse on any problem
     python etc/merge_hpo_results.py --dry-run  # report what would be merged
+    python etc/merge_hpo_results.py --input-root results/hpo_parallel_v2
+
+`--input-root` exists because `run_hpo_parallel.sh` now takes its output root as
+an argument: `results/hpo_parallel/` holds the studies run under the old
+observation normaliser and is kept as the control group, so a re-search writes
+elsewhere. Merging without pointing this at the same directory would quietly
+rebuild the master CSV from the superseded run.
 """
 from __future__ import annotations
 
@@ -26,6 +35,8 @@ import sys
 import pandas as pd
 
 CODER_DIR = "/home/imnyj/Workspace/paper4/coder"
+#: Default input root, kept at the historical location so an invocation without
+#: `--input-root` behaves exactly as it did before the flag existed.
 PARALLEL_ROOT = os.path.join(CODER_DIR, "results", "hpo_parallel")
 TARGET_DIR = os.path.join(CODER_DIR, "results", "hpo")
 BACKUP_ROOT = "/home/imnyj/Workspace/paper4/backup"
@@ -34,17 +45,50 @@ BACKUP_ROOT = "/home/imnyj/Workspace/paper4/backup"
 #: than retyped so a change to the registry cannot silently shrink this check.
 sys.path.insert(0, CODER_DIR)
 from src.baselines import ALL_BASELINES  # noqa: E402
+#: The failure score and the predicate that recognises it, imported from the file
+#: that assigns it so the two cannot drift apart.
+from src.hpo import FAILED_RUN_PENALTY, is_penalty_score  # noqa: E402
+
+
+def penalty_rows(merged: "pd.DataFrame") -> list[str]:
+    """Models whose recorded best is the failure penalty, with the group that wrote them.
+
+    `src/hpo.py` no longer writes such a row, but this file is the last gate in
+    front of the master CSV and it has to hold for the results already on disk:
+    `results/hpo_parallel/g1/optuna_best_params.csv` records SAC at best_value
+    100.0 because all 15 of its trials lost their rollouts on 2026-09-04. Merging
+    that row would send a 200,000-step training run off with hyperparameters no
+    rollout ever scored.
+    """
+    if "best_value" not in merged.columns:
+        return [
+            "every row (the group CSVs have no best_value column, so no row can "
+            "be checked against the failure penalty)"
+        ]
+    offenders = []
+    for _, row in merged.iterrows():
+        if is_penalty_score(row["best_value"]):
+            group = row.get("_group", "?")
+            offenders.append(f"{row['model_name']} (best_value {row['best_value']}, from {group})")
+    return offenders
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--input-root", default=PARALLEL_ROOT,
+                    help="root holding the per-group directories (default: %(default)s)")
     args = ap.parse_args()
 
-    group_csvs = sorted(glob.glob(os.path.join(PARALLEL_ROOT, "*", "optuna_best_params.csv")))
+    parallel_root = args.input_root
+    if not os.path.isabs(parallel_root):
+        parallel_root = os.path.join(CODER_DIR, parallel_root)
+
+    group_csvs = sorted(glob.glob(os.path.join(parallel_root, "*", "optuna_best_params.csv")))
     if not group_csvs:
-        print(f"no group results under {PARALLEL_ROOT}", file=sys.stderr)
+        print(f"no group results under {parallel_root}", file=sys.stderr)
         return 1
+    print(f"input root: {parallel_root}")
 
     frames = []
     origin: dict[str, str] = {}
@@ -56,6 +100,7 @@ def main() -> int:
             if name in origin:
                 duplicates.append(f"{name}: {origin[name]} and {group}")
             origin[name] = group
+        df["_group"] = group
         frames.append(df)
         print(f"{group}: {len(df)} model(s) -- {', '.join(map(str, df['model_name']))}")
 
@@ -72,12 +117,23 @@ def main() -> int:
               "that crashed leaves the others looking complete.", file=sys.stderr)
         return 1
 
+    penalties = penalty_rows(merged)
+    if penalties:
+        print(f"\nREFUSING: these rows record the {FAILED_RUN_PENALTY:.0f} failure "
+              "penalty, not a tuning result. Every trial of that study failed, so its "
+              "hyperparameters were never scored by any rollout:", file=sys.stderr)
+        for p in penalties:
+            print(f"  {p}", file=sys.stderr)
+        print("  Re-run those studies (see hpo_failed_models.csv in the group "
+              "directory) before merging.", file=sys.stderr)
+        return 1
+
     # Order the rows the way the registry orders the baselines, so the master CSV
     # reads the same regardless of which group finished first.
     merged["_order"] = merged["model_name"].map({n: i for i, n in enumerate(ALL_BASELINES)})
-    merged = merged.sort_values("_order").drop(columns="_order")
+    merged = merged.sort_values("_order").drop(columns=["_order", "_group"])
 
-    trial_csvs = sorted(glob.glob(os.path.join(PARALLEL_ROOT, "*", "optuna_trials_*.csv")))
+    trial_csvs = sorted(glob.glob(os.path.join(parallel_root, "*", "optuna_trials_*.csv")))
     print(f"\nmerged: {len(merged)} models, {len(trial_csvs)} trial file(s)")
 
     if args.dry_run:

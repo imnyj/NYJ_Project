@@ -1,0 +1,672 @@
+# src/hoorl_offline_stats.py
+# ============================================================================
+# State-distribution statistics and distribution-distance measures for HOORL's
+# offline stage.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS MODULE EXISTS
+# ---------------------------------------------------------------------------
+# Offline reinforcement learning fails in exactly one characteristic way: the
+# value function is queried at state-action pairs the dataset never contained,
+# the bootstrapped target there is unconstrained, and the error propagates back
+# into the states that WERE covered. Every remedy in the literature is a way of
+# keeping the learned policy inside the data's support. None of them can be
+# assessed, and no result from the offline stage can be interpreted, without an
+# actual measurement of what the data covers and how far the online policy
+# eventually strays from it.
+#
+# This module produces that measurement. It does not train anything, does not
+# build an observation, and does not touch the environment; it consumes state
+# matrices that `AoiV2IEnv` already emitted through `StateVectorizer`, which
+# remains the single place an observation is constructed.
+#
+# ---------------------------------------------------------------------------
+# WHICH DISTANCE, AND WHY IT IS WRITTEN DOWN
+# ---------------------------------------------------------------------------
+# A "distribution distance" is meaningless until the metric is named, because
+# different metrics disagree by orders of magnitude on the same pair of samples.
+# `DISTANCE_SPEC` states the definition of every number this module emits and is
+# copied verbatim into every output file, so a value can never be read later
+# without the definition that produced it.
+#
+# The primary measure is the mean, over the 17 observation features, of the
+# one-dimensional Wasserstein-1 distance between the two samples, after each
+# feature has been rescaled by its own nominal range so the mean is over
+# commensurable quantities. Reasons for that choice, in order of weight:
+#
+#   * it needs no density estimate, no bandwidth and no bin width, so it cannot
+#     be tuned into whichever answer the reader wants;
+#   * it stays finite when the two samples have disjoint support, which
+#     Kullback-Leibler does not, and disjoint support is precisely the case of
+#     interest here;
+#   * three of the seventeen features are one-hot indicators with a two-point
+#     support, where every kernel- or histogram-based estimator needs a special
+#     case and Wasserstein-1 reduces exactly to the difference in class
+#     frequency;
+#   * it is reported per feature as well as averaged, so "the distribution moved"
+#     can always be resolved into WHICH feature moved.
+#
+# Its blind spot is stated rather than hidden: a mean of marginals is invariant
+# to correlation, so two samples with identical marginals and opposite
+# dependence structure score zero. `energy_distance` covers that case on the
+# joint distribution and is reported alongside, never instead.
+#
+# ---------------------------------------------------------------------------
+# WHY A CONTROL IS MANDATORY AND NOT OPTIONAL
+# ---------------------------------------------------------------------------
+# The absolute value of any of these numbers means nothing. Two controls turn it
+# into a statement:
+#
+#   * the SAMPLING FLOOR -- the distance between two halves of one sample, which
+#     is what a finite sample scores against itself. Any measured distance below
+#     this floor is indistinguishable from noise. `split_half_floor` computes it
+#     at the same sample size as the comparison, because the floor grows as the
+#     sample shrinks.
+#   * a REFERENCE SHIFT of known meaning -- the distance between the same policy
+#     at the lowest and the highest traffic density in the benchmark grid. That
+#     is the largest covariate shift the experiment itself already contains and
+#     already handles, so it is the natural unit: "the offline-to-online shift is
+#     1.8 times the density-5-to-density-35 shift" is a claim a reader can act on,
+#     while "the offline-to-online shift is 0.031" is not.
+# ============================================================================
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import logging
+import os
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+import numpy as np
+
+from src.rl_interface import STATE_DIM
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# The 17 features, named
+# ---------------------------------------------------------------------------
+#: (short name, nominal low, nominal high, meaning). The names and the meanings
+#: are transcribed from `StateVectorizer`'s own feature list in
+#: `src/rl_interface.py`; that docstring is the definition and this is a
+#: presentation layer over it. The nominal bounds are the clip bounds the
+#: vectoriser applies, and they are what each feature is rescaled by before the
+#: per-feature distances are averaged -- without that rescaling the average
+#: would silently weight the [-1, 1] features twice as heavily as the [0, 1]
+#: ones.
+FEATURE_SPEC: Tuple[Tuple[str, float, float, str], ...] = (
+    ("last_pred_err_norm", 0.0, 1.0, "normalised squared dead-reckoning error at the last update"),
+    ("vx_norm", -1.0, 1.0, "velocity x / V_MAX_OBS"),
+    ("vy_norm", -1.0, 1.0, "velocity y / V_MAX_OBS"),
+    ("speed_norm", 0.0, 1.0, "speed / V_MAX_OBS"),
+    ("accel_norm", -1.0, 1.0, "acceleration / a_max"),
+    ("rel_x_norm", -1.0, 1.0, "(x - x_rsu) / RSU_RANGE"),
+    ("rel_y_norm", -1.0, 1.0, "(y - y_rsu) / RSU_RANGE"),
+    ("dist_norm", 0.0, 1.0, "distance to RSU / RSU_RANGE"),
+    ("tls_red", 0.0, 1.0, "traffic light red indicator"),
+    ("tls_yellow", 0.0, 1.0, "traffic light yellow indicator"),
+    ("tls_green", 0.0, 1.0, "traffic light green indicator"),
+    ("phase_remaining_norm", 0.0, 1.0, "time to the next signal switch / 60 s"),
+    ("dist_to_stopline_norm", 0.0, 1.0, "distance to the stop line / RSU_RANGE"),
+    ("n_active_norm", 0.0, 1.0, "vehicles in coverage / N_ACTIVE_MAX_OBS"),
+    ("cbr", 0.0, 1.0, "channel busy ratio"),
+    ("n_queue_norm", 0.0, 1.0, "vehicles queued ahead in lane / queue_max"),
+    ("heading_cos", -1.0, 1.0, "cosine of the approach angle to the RSU"),
+)
+
+#: Features whose spread governs the choice of Delta directly. The signal phase
+#: tells the scheduler how long the vehicle is about to stay predictable and the
+#: queue tells it whether it is about to stop at all, so a dataset that pins
+#: these into a narrow band cannot teach an offline learner anything about the
+#: Delta decision even where its coverage of the rest of the space is good.
+DELTA_CRITICAL_FEATURES: Tuple[str, ...] = (
+    "tls_red", "tls_yellow", "tls_green", "phase_remaining_norm",
+    "dist_to_stopline_norm", "n_queue_norm", "speed_norm",
+)
+
+FEATURE_NAMES: Tuple[str, ...] = tuple(spec[0] for spec in FEATURE_SPEC)
+FEATURE_LOW: np.ndarray = np.array([spec[1] for spec in FEATURE_SPEC], dtype=np.float64)
+FEATURE_HIGH: np.ndarray = np.array([spec[2] for spec in FEATURE_SPEC], dtype=np.float64)
+FEATURE_RANGE: np.ndarray = np.maximum(FEATURE_HIGH - FEATURE_LOW, 1e-12)
+
+if len(FEATURE_SPEC) != STATE_DIM:  # pragma: no cover - guards a silent drift
+    raise RuntimeError(
+        f"FEATURE_SPEC lists {len(FEATURE_SPEC)} features but STATE_DIM is {STATE_DIM}. "
+        "The observation layout changed in src/rl_interface.py and this table was not "
+        "updated; every statistic below would be mislabelled."
+    )
+
+
+#: Copied verbatim into every artefact this module writes. A distance without
+#: its definition attached is a number nobody can check later.
+DISTANCE_SPEC: Dict[str, Any] = {
+    "primary": {
+        "name": "mean_normalised_w1",
+        "definition": (
+            "mean over the 17 observation features of the 1-D Wasserstein-1 distance "
+            "between the two empirical marginals, each feature first divided by its "
+            "nominal clip range so the average is over commensurable quantities"
+        ),
+        "units": "fraction of a feature's nominal range",
+        "range": "[0, 1]; 1 means every feature is at opposite ends of its range",
+        "blind_spot": "invariant to correlation structure; see the joint measure",
+    },
+    "per_feature": {
+        "name": "w1_<feature>",
+        "definition": "the same 1-D Wasserstein-1 distance, per feature, normalised",
+        "why": "identifies WHICH feature moved; the mean alone cannot",
+    },
+    "joint": {
+        "name": "energy_distance",
+        "definition": (
+            "sqrt(2*E||X-Y|| - E||X-X'|| - E||Y-Y'||) over the range-normalised "
+            "17-dim vectors, Euclidean norm, estimated on a random subsample"
+        ),
+        "why": "sensitive to correlation shift that identical marginals would hide",
+        "note": "subsampled, so it carries Monte Carlo error; the floor quantifies it",
+    },
+    "controls": {
+        "sampling_floor": (
+            "the same statistic between two disjoint halves of ONE sample, at the "
+            "sample size used for the comparison. A measured distance at or below "
+            "the floor is not distinguishable from finite-sample noise."
+        ),
+        "reference_shift": (
+            "the same statistic between the lowest and the highest density in the "
+            "benchmark grid under one policy: the largest covariate shift the "
+            "experiment already contains, used as the unit of comparison."
+        ),
+    },
+}
+
+
+def feature_index(name: str) -> int:
+    """Column index of a named feature. Raises rather than returning -1."""
+    try:
+        return FEATURE_NAMES.index(name)
+    except ValueError as exc:  # pragma: no cover - programmer error
+        raise KeyError(f"{name!r} is not an observation feature; have {FEATURE_NAMES}") from exc
+
+
+# ---------------------------------------------------------------------------
+# Marginal statistics
+# ---------------------------------------------------------------------------
+def _as_states(states: Any) -> np.ndarray:
+    arr = np.asarray(states, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[1] != STATE_DIM:
+        raise ValueError(
+            f"expected a (n, {STATE_DIM}) state matrix, got shape {arr.shape}"
+        )
+    if arr.shape[0] == 0:
+        raise ValueError("state matrix is empty; there is nothing to describe")
+    return arr
+
+
+def describe_states(states: Any) -> List[Dict[str, Any]]:
+    """One row per observation feature, named by what the feature means.
+
+    Beyond the five moments a reader expects, three columns exist because they
+    are what actually diagnoses a coverage failure:
+
+      * `frac_at_low` / `frac_at_high` -- the share of samples sitting exactly on
+        the vectoriser's clip bound. A feature that is clipped in a large share
+        of samples has been compressed to a constant over that share and carries
+        no gradient there. This is the failure that `N_ACTIVE_MAX_OBS` and
+        `V_MAX_OBS` were introduced to remove, and it recurs silently.
+      * `n_unique` -- a feature with one unique value is a constant input. The
+        normalised-age slot was exactly that before it was replaced, and nothing
+        in a mean or a standard deviation makes it obvious.
+      * `iqr_over_range` -- the share of the feature's nominal range that the
+        middle half of the data occupies, which is the compact statement of
+        "this feature is narrowly distributed".
+    """
+    arr = _as_states(states)
+    n = int(arr.shape[0])
+    rows: List[Dict[str, Any]] = []
+    for j, (name, lo, hi, meaning) in enumerate(FEATURE_SPEC):
+        col = arr[:, j]
+        q = np.percentile(col, [1.0, 25.0, 50.0, 75.0, 99.0])
+        rows.append({
+            "index": j,
+            "feature": name,
+            "meaning": meaning,
+            "nominal_low": float(lo),
+            "nominal_high": float(hi),
+            "n": n,
+            "min": float(np.min(col)),
+            "p01": float(q[0]),
+            "q1": float(q[1]),
+            "median": float(q[2]),
+            "q3": float(q[3]),
+            "p99": float(q[4]),
+            "max": float(np.max(col)),
+            "mean": float(np.mean(col)),
+            "std": float(np.std(col, ddof=1)) if n > 1 else 0.0,
+            "iqr": float(q[3] - q[1]),
+            "iqr_over_range": float((q[3] - q[1]) / FEATURE_RANGE[j]),
+            "span_over_range": float((np.max(col) - np.min(col)) / FEATURE_RANGE[j]),
+            "frac_at_low": float(np.mean(np.isclose(col, lo, atol=1e-6))),
+            "frac_at_high": float(np.mean(np.isclose(col, hi, atol=1e-6))),
+            "n_unique": int(np.unique(np.round(col, 6)).size),
+            "delta_critical": bool(name in DELTA_CRITICAL_FEATURES),
+        })
+    return rows
+
+
+def coverage_warnings(rows: Sequence[Dict[str, Any]],
+                      narrow_iqr: float = 0.05,
+                      heavy_clip: float = 0.10) -> List[str]:
+    """Plain-language complaints about the coverage the rows describe.
+
+    Thresholds are arguments, not constants buried in the body, because they are
+    judgement calls and a reader has to be able to move them.
+    """
+    out: List[str] = []
+    for r in rows:
+        tag = "Delta-critical " if r["delta_critical"] else ""
+        if r["n_unique"] <= 1:
+            out.append(f"{tag}{r['feature']}: constant ({r['min']:.4g}); carries no signal")
+            continue
+        if r["iqr_over_range"] < narrow_iqr:
+            out.append(
+                f"{tag}{r['feature']}: middle half of the data spans only "
+                f"{100 * r['iqr_over_range']:.1f}% of the feature's range"
+            )
+        if r["frac_at_high"] >= heavy_clip:
+            out.append(
+                f"{tag}{r['feature']}: {100 * r['frac_at_high']:.1f}% of samples sit "
+                f"exactly on the upper clip bound {r['nominal_high']:.4g}"
+            )
+        if r["frac_at_low"] >= heavy_clip and r["nominal_low"] != 0.0:
+            out.append(
+                f"{tag}{r['feature']}: {100 * r['frac_at_low']:.1f}% of samples sit "
+                f"exactly on the lower clip bound {r['nominal_low']:.4g}"
+            )
+    return out
+
+
+def write_state_distribution_csv(states: Any, path: str,
+                                 extra_columns: Optional[Dict[str, Any]] = None) -> str:
+    """Write one row per feature. Returns the absolute path."""
+    rows = describe_states(states)
+    extra = dict(extra_columns or {})
+    for r in rows:
+        r.update(extra)
+    path = os.path.abspath(path)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Distances
+# ---------------------------------------------------------------------------
+def wasserstein1_1d(a: np.ndarray, b: np.ndarray) -> float:
+    """Exact 1-D Wasserstein-1 distance between two empirical samples.
+
+    Computed as the integral of |F_a - F_b| over the pooled support, which is the
+    textbook identity for the one-dimensional case and is exact for unequal
+    sample sizes. Implemented here rather than taken from scipy because scipy is
+    not a dependency of this project and a fifteen-line exact routine is not
+    worth acquiring one for.
+    """
+    a = np.sort(np.asarray(a, dtype=np.float64).ravel())
+    b = np.sort(np.asarray(b, dtype=np.float64).ravel())
+    if a.size == 0 or b.size == 0:
+        raise ValueError("Wasserstein-1 is undefined for an empty sample")
+    grid = np.concatenate([a, b])
+    grid.sort(kind="mergesort")
+    deltas = np.diff(grid)
+    if deltas.size == 0:
+        return 0.0
+    # CDF of each sample, evaluated on the left edge of every interval.
+    cdf_a = np.searchsorted(a, grid[:-1], side="right") / a.size
+    cdf_b = np.searchsorted(b, grid[:-1], side="right") / b.size
+    return float(np.sum(np.abs(cdf_a - cdf_b) * deltas))
+
+
+def normalise_states(states: Any) -> np.ndarray:
+    """Rescale every feature to a unit range using its nominal clip bounds.
+
+    Not a z-score: a z-score is computed FROM the sample, so two samples would be
+    standardised by two different transforms and the distance between them would
+    depend on which sample it was measured against. The nominal range is a fixed
+    property of the vectoriser and gives both samples the same coordinates.
+    """
+    return (_as_states(states) - FEATURE_LOW) / FEATURE_RANGE
+
+
+def per_feature_w1(states_a: Any, states_b: Any, normalised: bool = True) -> np.ndarray:
+    """Per-feature Wasserstein-1 distance, length `STATE_DIM`."""
+    a = normalise_states(states_a) if normalised else _as_states(states_a)
+    b = normalise_states(states_b) if normalised else _as_states(states_b)
+    return np.array(
+        [wasserstein1_1d(a[:, j], b[:, j]) for j in range(STATE_DIM)], dtype=np.float64
+    )
+
+
+def mean_normalised_w1(states_a: Any, states_b: Any) -> float:
+    """The primary scalar. See `DISTANCE_SPEC['primary']`."""
+    return float(np.mean(per_feature_w1(states_a, states_b, normalised=True)))
+
+
+def energy_distance(states_a: Any, states_b: Any,
+                    max_samples: int = 2000,
+                    seed: int = 0) -> float:
+    """Joint-distribution distance on the range-normalised vectors.
+
+    sqrt(2*E||X-Y|| - E||X-X'|| - E||Y-Y'||), which is zero if and only if the two
+    distributions coincide and is a proper metric. Subsampled to `max_samples`
+    per side because the estimator is quadratic in the sample size; the Monte
+    Carlo error that introduces is exactly what `split_half_floor` measures, so
+    the two are always reported together.
+    """
+    rng = np.random.default_rng(int(seed))
+    a = normalise_states(states_a)
+    b = normalise_states(states_b)
+    if a.shape[0] > max_samples:
+        a = a[rng.choice(a.shape[0], max_samples, replace=False)]
+    if b.shape[0] > max_samples:
+        b = b[rng.choice(b.shape[0], max_samples, replace=False)]
+
+    def _mean_pdist(x: np.ndarray, y: np.ndarray, same: bool) -> float:
+        d = np.linalg.norm(x[:, None, :] - y[None, :, :], axis=-1)
+        if same:
+            n = d.shape[0]
+            if n < 2:
+                return 0.0
+            return float((d.sum() - np.trace(d)) / (n * (n - 1)))
+        return float(d.mean())
+
+    cross = _mean_pdist(a, b, same=False)
+    within_a = _mean_pdist(a, a, same=True)
+    within_b = _mean_pdist(b, b, same=True)
+    val = 2.0 * cross - within_a - within_b
+    return float(np.sqrt(max(val, 0.0)))
+
+
+def distance_pair(states_a: Any, states_b: Any,
+                  max_samples: int = 2000, seed: int = 0) -> Dict[str, Any]:
+    """Every measure this module defines, for one ordered pair of samples."""
+    per_feat = per_feature_w1(states_a, states_b, normalised=True)
+    out: Dict[str, Any] = {
+        "n_a": int(np.asarray(states_a).shape[0]),
+        "n_b": int(np.asarray(states_b).shape[0]),
+        "mean_normalised_w1": float(np.mean(per_feat)),
+        "max_normalised_w1": float(np.max(per_feat)),
+        "argmax_feature": FEATURE_NAMES[int(np.argmax(per_feat))],
+        "mean_w1_delta_critical": float(
+            np.mean([per_feat[feature_index(f)] for f in DELTA_CRITICAL_FEATURES])
+        ),
+        "energy_distance": energy_distance(states_a, states_b,
+                                           max_samples=max_samples, seed=seed),
+    }
+    for name, val in zip(FEATURE_NAMES, per_feat):
+        out[f"w1_{name}"] = float(val)
+    return out
+
+
+def split_half_floor(states: Any, repeats: int = 5,
+                     subsample: Optional[int] = None,
+                     max_samples: int = 2000, seed: int = 0) -> Dict[str, Any]:
+    """The distance a sample scores against itself. The noise floor.
+
+    One sample is shuffled and cut in two, and the usual measures are taken
+    between the halves. Repeated `repeats` times with different shuffles, and the
+    mean and the maximum are both reported: a comparison must clear the maximum
+    of the floor before it means anything at all.
+
+    `subsample` sets the size of EACH half, so the floor can be measured at the
+    same size as the comparison it is meant to calibrate. The floor shrinks as
+    the sample grows, and a floor taken at a different size calibrates nothing.
+    """
+    arr = _as_states(states)
+    rng = np.random.default_rng(int(seed))
+    means: List[float] = []
+    energies: List[float] = []
+    for r in range(int(repeats)):
+        perm = rng.permutation(arr.shape[0])
+        half = arr.shape[0] // 2
+        if subsample is not None:
+            half = min(half, int(subsample))
+        if half < 2:
+            raise ValueError("not enough samples to split in half")
+        a, b = arr[perm[:half]], arr[perm[half:2 * half]]
+        means.append(mean_normalised_w1(a, b))
+        energies.append(energy_distance(a, b, max_samples=max_samples, seed=seed + r))
+    return {
+        "repeats": int(repeats),
+        "half_size": int(half),
+        "mean_normalised_w1_mean": float(np.mean(means)),
+        "mean_normalised_w1_max": float(np.max(means)),
+        "energy_distance_mean": float(np.mean(energies)),
+        "energy_distance_max": float(np.max(energies)),
+    }
+
+
+def comparison_report(samples: Dict[str, np.ndarray],
+                      pairs: Sequence[Tuple[str, str]],
+                      reference_pair: Optional[Tuple[str, str]] = None,
+                      floor_on: Optional[str] = None,
+                      max_samples: int = 2000,
+                      seed: int = 0) -> Dict[str, Any]:
+    """Distances for the requested pairs, expressed in units of the controls.
+
+    `reference_pair` names the pair used as the unit; `floor_on` names the sample
+    whose split-half distance is the noise floor. Both are optional only so the
+    function stays usable on a single sample, and their absence is recorded in
+    the output rather than passed over, because a distance reported without them
+    is not interpretable.
+    """
+    for name, arr in samples.items():
+        _as_states(arr)
+
+    floor: Optional[Dict[str, Any]] = None
+    if floor_on is not None:
+        smallest = min(int(np.asarray(samples[a]).shape[0]) for pair in pairs for a in pair)
+        floor = split_half_floor(samples[floor_on], repeats=5,
+                                 subsample=max(2, smallest // 2),
+                                 max_samples=max_samples, seed=seed)
+        floor["measured_on"] = floor_on
+
+    rows: List[Dict[str, Any]] = []
+    for a, b in pairs:
+        row = {"sample_a": a, "sample_b": b}
+        row.update(distance_pair(samples[a], samples[b],
+                                 max_samples=max_samples, seed=seed))
+        rows.append(row)
+
+    ref_row = None
+    if reference_pair is not None:
+        for row in rows:
+            if (row["sample_a"], row["sample_b"]) == tuple(reference_pair):
+                ref_row = row
+                break
+        if ref_row is None:
+            ref_row = {"sample_a": reference_pair[0], "sample_b": reference_pair[1]}
+            ref_row.update(distance_pair(samples[reference_pair[0]],
+                                         samples[reference_pair[1]],
+                                         max_samples=max_samples, seed=seed))
+            rows.append(ref_row)
+
+    for row in rows:
+        if floor is not None:
+            f = floor["mean_normalised_w1_max"]
+            row["w1_over_sampling_floor"] = (
+                float(row["mean_normalised_w1"] / f) if f > 0 else float("inf")
+            )
+            fe = floor["energy_distance_max"]
+            row["energy_over_sampling_floor"] = (
+                float(row["energy_distance"] / fe) if fe > 0 else float("inf")
+            )
+        else:
+            row["w1_over_sampling_floor"] = None
+            row["energy_over_sampling_floor"] = None
+        if ref_row is not None and ref_row["mean_normalised_w1"] > 0:
+            row["w1_over_reference_shift"] = float(
+                row["mean_normalised_w1"] / ref_row["mean_normalised_w1"]
+            )
+            row["energy_over_reference_shift"] = (
+                float(row["energy_distance"] / ref_row["energy_distance"])
+                if ref_row["energy_distance"] > 0 else None
+            )
+        else:
+            row["w1_over_reference_shift"] = None
+            row["energy_over_reference_shift"] = None
+
+    return {
+        "distance_spec": DISTANCE_SPEC,
+        "sampling_floor": floor,
+        "reference_pair": None if reference_pair is None else list(reference_pair),
+        "reference_shift_value": None if ref_row is None else ref_row["mean_normalised_w1"],
+        "interpretability_note": (
+            "Absolute values are not interpretable. Read the ..._over_sampling_floor "
+            "and ..._over_reference_shift columns: below 1.0 on the floor means the "
+            "shift is indistinguishable from sampling noise, and above 1.0 on the "
+            "reference means the shift exceeds the density-grid span the benchmark "
+            "already covers."
+        ) if (floor is not None and ref_row is not None) else (
+            "NO CONTROL WAS SUPPLIED. The distances below are absolute numbers with "
+            "no scale attached and no conclusion may be drawn from their magnitude."
+        ),
+        "rows": rows,
+    }
+
+
+def write_comparison_report(report: Dict[str, Any], csv_path: str,
+                            json_path: Optional[str] = None) -> Tuple[str, Optional[str]]:
+    """Rows to CSV, the whole report including the metric definition to JSON."""
+    csv_path = os.path.abspath(csv_path)
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    rows = report["rows"]
+    with open(csv_path, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+    if json_path is None:
+        json_path = os.path.splitext(csv_path)[0] + ".json"
+    json_path = os.path.abspath(json_path)
+    with open(json_path, "w") as fh:
+        json.dump(report, fh, indent=2, sort_keys=True)
+        fh.flush()
+        os.fsync(fh.fileno())
+    return csv_path, json_path
+
+
+# ---------------------------------------------------------------------------
+# Loading
+# ---------------------------------------------------------------------------
+def states_from_npz(path: str, key: str = "state") -> np.ndarray:
+    """Read a state matrix out of an npz. Works on an offline dataset unchanged."""
+    with np.load(path) as data:
+        if key not in data:
+            raise KeyError(f"{path} has no array {key!r}; it holds {list(data.keys())}")
+        return np.asarray(data[key], dtype=np.float64)
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description="State-distribution statistics and distribution distances for "
+                    "the HOORL offline dataset.",
+    )
+    p.add_argument(
+        "--sample", action="append", default=[], metavar="NAME=PATH.npz",
+        help="a named state sample; repeat the flag for each one. The npz may be "
+             "an offline dataset (its 'state' array is used).",
+    )
+    p.add_argument("--state-key", type=str, default="state")
+    p.add_argument(
+        "--pair", action="append", default=[], metavar="NAME_A:NAME_B",
+        help="a pair to measure; repeat the flag. Omit to measure every pair.",
+    )
+    p.add_argument(
+        "--reference-pair", type=str, default=None, metavar="NAME_A:NAME_B",
+        help="the pair used as the unit of comparison, e.g. the lowest against the "
+             "highest density under one policy.",
+    )
+    p.add_argument(
+        "--floor-on", type=str, default=None, metavar="NAME",
+        help="the sample whose split-half distance is taken as the noise floor.",
+    )
+    p.add_argument("--max-samples", type=int, default=2000,
+                   help="subsample size per side for the joint (energy) distance")
+    p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--out-dir", type=str, default="results/hoorl_offline")
+    p.add_argument("--tag", type=str, default="offline")
+    p.add_argument("--log-level", type=str, default="INFO")
+    return p
+
+
+def _parse_named(items: Sequence[str], sep: str) -> List[Tuple[str, str]]:
+    out = []
+    for item in items:
+        if sep not in item:
+            raise SystemExit(f"expected NAME{sep}VALUE, got {item!r}")
+        a, b = item.split(sep, 1)
+        out.append((a.strip(), b.strip()))
+    return out
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    logging.basicConfig(
+        level=getattr(logging, str(args.log_level).upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    if not args.sample:
+        raise SystemExit("at least one --sample NAME=PATH.npz is required")
+
+    samples: Dict[str, np.ndarray] = {}
+    for name, path in _parse_named(args.sample, "="):
+        samples[name] = states_from_npz(path, key=args.state_key)
+        logger.info("loaded %s: %d states from %s", name, samples[name].shape[0], path)
+
+    out_dir = os.path.abspath(args.out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+
+    for name, arr in samples.items():
+        path = write_state_distribution_csv(
+            arr, os.path.join(out_dir, f"state_distribution_{args.tag}_{name}.csv"),
+            extra_columns={"sample": name},
+        )
+        logger.info("wrote %s", path)
+        for line in coverage_warnings(describe_states(arr)):
+            logger.warning("coverage, %s: %s", name, line)
+
+    if len(samples) >= 2:
+        if args.pair:
+            pairs = [tuple(x) for x in _parse_named(args.pair, ":")]
+        else:
+            names = list(samples)
+            pairs = [(names[i], names[j])
+                     for i in range(len(names)) for j in range(i + 1, len(names))]
+        ref = None
+        if args.reference_pair:
+            ref = tuple(_parse_named([args.reference_pair], ":")[0])
+        report = comparison_report(samples, pairs, reference_pair=ref,
+                                   floor_on=args.floor_on,
+                                   max_samples=int(args.max_samples),
+                                   seed=int(args.seed))
+        csv_path, json_path = write_comparison_report(
+            report, os.path.join(out_dir, f"state_distance_{args.tag}.csv")
+        )
+        logger.info("wrote %s and %s", csv_path, json_path)
+        if report["sampling_floor"] is None or ref is None:
+            logger.warning(
+                "no control was supplied; the distances have no scale attached and "
+                "no conclusion may be drawn from their magnitude"
+            )
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())

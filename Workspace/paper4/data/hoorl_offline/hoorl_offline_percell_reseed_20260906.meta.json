@@ -1,0 +1,276 @@
+{
+  "behaviour_policy": {
+    "delta_band": [
+      0.5000000000000001,
+      9.999999999999998
+    ],
+    "delta_component_defined": true,
+    "delta_fixed": 2.23606797749979,
+    "delta_jitter": 1.4978661367769954,
+    "kind": "fixed_period_uniform_channel_power",
+    "note": "Delta is deterministic when delta_jitter == 0, so the stored behaviour_log_prob covers the channel factor only and the Delta axis has zero coverage. With delta_jitter > 0 Delta is log-uniform inside delta_band and its (finite) log density is included.",
+    "num_channels": 4,
+    "p_max": 23.0,
+    "p_min": 10.0
+  },
+  "cells_truncated_by_per_cell_cap": 0,
+  "collected_at": "2026-09-06T07:00:16+0900",
+  "coverage_complete": true,
+  "densities_covered": [
+    5.0,
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0,
+    35.0
+  ],
+  "densities_requested": [
+    5.0,
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0,
+    35.0
+  ],
+  "error_mode": "accumulate",
+  "format_version": 1,
+  "gamma_for_stored_discount": 0.99,
+  "git": {
+    "branch": "main",
+    "commit": "f994cb7e1bca4d9c87ae75b0869c48624eaa2a04",
+    "dirty": true
+  },
+  "max_transitions_requested": null,
+  "method": "HOORL",
+  "n_transitions": 133405,
+  "num_channels": 4,
+  "num_threads": 2,
+  "observation_constant_drift_between_cells": [],
+  "observation_constant_origin": {
+    "A_MAX": "code",
+    "DELTA_MAX": "code",
+    "DELTA_MIN": "code",
+    "E_REF": "scenario",
+    "N_ACTIVE_MAX_OBS": "code",
+    "PHASE_REMAINING_REF_S": "code",
+    "QUEUE_MAX": "code",
+    "RSU_RANGE": "code",
+    "V_MAX_OBS": "scenario"
+  },
+  "observation_constants": {
+    "A_MAX": 5.0,
+    "DELTA_MAX": 45.0,
+    "DELTA_MIN": 0.1,
+    "E_REF": 13.26,
+    "N_ACTIVE_MAX_OBS": 168.0,
+    "PHASE_REMAINING_REF_S": 59.99999687075631,
+    "QUEUE_MAX": 20.0,
+    "RSU_RANGE": 300.0,
+    "V_MAX_OBS": 15.911999999999999
+  },
+  "per_cell_transition_cap": null,
+  "per_episode": [
+    {
+      "density": 5.0,
+      "mean_aoi": 2.6717,
+      "mean_update_error": 2.6471,
+      "seed": 2001,
+      "transitions": 1323,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 5.0,
+      "mean_aoi": 2.6045,
+      "mean_update_error": 2.1455,
+      "seed": 2002,
+      "transitions": 1390,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 5.0,
+      "mean_aoi": 2.7218,
+      "mean_update_error": 2.6272,
+      "seed": 2003,
+      "transitions": 1598,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 10.0,
+      "mean_aoi": 2.6863,
+      "mean_update_error": 2.4726,
+      "seed": 2001,
+      "transitions": 2962,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 10.0,
+      "mean_aoi": 2.6745,
+      "mean_update_error": 2.466,
+      "seed": 2002,
+      "transitions": 2927,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 10.0,
+      "mean_aoi": 2.73,
+      "mean_update_error": 2.9581,
+      "seed": 2003,
+      "transitions": 3429,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 15.0,
+      "mean_aoi": 2.6837,
+      "mean_update_error": 2.5009,
+      "seed": 2001,
+      "transitions": 4445,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 15.0,
+      "mean_aoi": 2.672,
+      "mean_update_error": 2.2253,
+      "seed": 2002,
+      "transitions": 5146,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 15.0,
+      "mean_aoi": 2.7385,
+      "mean_update_error": 2.4765,
+      "seed": 2003,
+      "transitions": 6231,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 20.0,
+      "mean_aoi": 2.6936,
+      "mean_update_error": 2.5987,
+      "seed": 2001,
+      "transitions": 6311,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 20.0,
+      "mean_aoi": 2.7076,
+      "mean_update_error": 2.3961,
+      "seed": 2002,
+      "transitions": 7021,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 20.0,
+      "mean_aoi": 2.7344,
+      "mean_update_error": 2.4362,
+      "seed": 2003,
+      "transitions": 8427,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 25.0,
+      "mean_aoi": 2.7125,
+      "mean_update_error": 2.6544,
+      "seed": 2001,
+      "transitions": 8339,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 25.0,
+      "mean_aoi": 2.7238,
+      "mean_update_error": 2.4218,
+      "seed": 2002,
+      "transitions": 8370,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 25.0,
+      "mean_aoi": 2.725,
+      "mean_update_error": 2.4441,
+      "seed": 2003,
+      "transitions": 8935,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 30.0,
+      "mean_aoi": 2.7213,
+      "mean_update_error": 2.2439,
+      "seed": 2001,
+      "transitions": 9444,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 30.0,
+      "mean_aoi": 2.7345,
+      "mean_update_error": 2.2496,
+      "seed": 2002,
+      "transitions": 9455,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 30.0,
+      "mean_aoi": 2.7273,
+      "mean_update_error": 2.2277,
+      "seed": 2003,
+      "transitions": 9431,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 35.0,
+      "mean_aoi": 2.7255,
+      "mean_update_error": 2.1694,
+      "seed": 2001,
+      "transitions": 9299,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 35.0,
+      "mean_aoi": 2.7275,
+      "mean_update_error": 2.2454,
+      "seed": 2002,
+      "transitions": 9364,
+      "truncated_by_per_cell_cap": false
+    },
+    {
+      "density": 35.0,
+      "mean_aoi": 2.7323,
+      "mean_update_error": 2.204,
+      "seed": 2003,
+      "transitions": 9558,
+      "truncated_by_per_cell_cap": false
+    }
+  ],
+  "reference_doi": "10.1109/TVT.2026.3675626",
+  "scenario_constant_rel_tol": 0.02,
+  "scenario_provenance": {
+    "network_path": "/tmp/claude-1001/-home-imnyj/3b462830-f472-4351-a6b3-bd5ebd3a999d/scratchpad/sumo_collect/generated.net.xml",
+    "network_present": true,
+    "scenario_dir": "/tmp/claude-1001/-home-imnyj/3b462830-f472-4351-a6b3-bd5ebd3a999d/scratchpad/sumo_collect"
+  },
+  "seeds": [
+    2001,
+    2002,
+    2003
+  ],
+  "seeds_covered": [
+    2001,
+    2002,
+    2003
+  ],
+  "state_dim": 17,
+  "steps_per_episode": 2000,
+  "sumo_dir": "/tmp/claude-1001/-home-imnyj/3b462830-f472-4351-a6b3-bd5ebd3a999d/scratchpad/sumo_collect",
+  "transitions_by_density": {
+    "10": 9318,
+    "15": 15822,
+    "20": 21759,
+    "25": 25644,
+    "30": 28330,
+    "35": 28221,
+    "5": 4311
+  },
+  "truncated_by_max_transitions": false,
+  "wall_clock_s": 1451.09,
+  "warmup_steps": 1200
+}

@@ -21,6 +21,7 @@ import torch  # noqa: E402
 
 from src.baselines import get_baseline  # noqa: E402
 from src.hot_swap_trainer import run_hot_swap_training  # noqa: E402
+from src.rl_interface import MAX_NEIGHBOURS, STATE_DIM  # noqa: E402
 
 MODEL = sys.argv[1] if len(sys.argv) > 1 else "TD3"
 STEPS = int(sys.argv[2]) if len(sys.argv) > 2 else 600
@@ -36,6 +37,11 @@ def run(tag: str, act: str, rest: str) -> dict:
         seed=42,
         act_device=act,
         rest_device=rest,
+        # This script measures throughput and serving latency. A held-out
+        # validation episode adds wall clock without adding to `global_step`, so
+        # leaving it on would depress the reported steps/s by roughly the
+        # validation's share of the run.
+        validate_every_episodes=0,
         checkpoint_dir="/home/imnyj/Workspace/paper4/coder/etc/temp/hwfeas_ckpt",
         tensorboard_dir="/home/imnyj/Workspace/paper4/coder/etc/temp/hwfeas_tb",
         log_csv_path=f"/home/imnyj/Workspace/paper4/coder/etc/temp/hwfeas_{tag}.csv",
@@ -81,8 +87,23 @@ def main() -> int:
         print(f"{key:>14} {a:>12.4f} {b:>12.4f} {d:>12}")
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    # The conditions are recorded WITH the number, because the number is only
+    # comparable to another one measured the same way. The 2026-09-04 figure the
+    # manuscript quoted was TD3, 600 steps, a 17-dimensional observation and a
+    # neighbour cap of 16, and none of those four facts was in the file; the
+    # reader had to know which day it came from to know what it described.
     with open(OUT, "w") as fh:
-        json.dump({"model": MODEL, "steps": STEPS, "runs": results}, fh, indent=2)
+        json.dump({
+            "model": MODEL,
+            "steps": STEPS,
+            "state_dim": int(STATE_DIM),
+            "max_neighbours": int(MAX_NEIGHBOURS),
+            "gpus": [torch.cuda.get_device_name(i)
+                     for i in range(torch.cuda.device_count())],
+            "torch_version": torch.__version__,
+            "sumo_dir": os.environ.get("PAPER4_SUMO_DIR", "(shared default)"),
+            "runs": results,
+        }, fh, indent=2)
     print(f"\nwritten: {OUT}")
     return 0
 

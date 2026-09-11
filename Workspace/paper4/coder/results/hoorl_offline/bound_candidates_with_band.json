@@ -1,0 +1,16 @@
+{
+  "constants_that_clip_at_their_current_value": [
+    "N_ACTIVE_MAX_OBS",
+    "QUEUE_MAX"
+  ],
+  "constants_with_no_clipping_at_their_current_value": [
+    "A_MAX",
+    "DIST_TO_STOPLINE_REF_M",
+    "PHASE_REMAINING_REF_S",
+    "RSU_RANGE"
+  ],
+  "e_ref_caveat": "E_REF is NOT a free normalisation knob. `norm_sq_error` is used by the REWARD as well as by feature [0], so moving it changes what the agent is optimising, not merely how the observation is scaled. Its row is informational only.",
+  "magnitude_feature_std_median": 0.299,
+  "magnitude_feature_std_q1": 0.2447,
+  "note": "Only three of the eight normalising constants clip anything at their current value. The other five were swept for the same reason the three were: 'assumed not to clip' is the judgement that has failed most often here. The negative result is the point of running them."
+}

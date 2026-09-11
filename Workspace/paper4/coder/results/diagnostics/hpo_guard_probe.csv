@@ -1,0 +1,11 @@
+code_version,probe,observed,guard_present
+pre_fix,generation_lock_creates_missing_dir,FileNotFoundError: [Errno 2] No such file or directory: '/tmp/probe_lock_79iydok6/never_created/sumo/.sumo_gen.lock',False
+pre_fix,failed_model_excluded_from_master_csv,"rows=[('I-HAMAPPO', 8.9292), ('SAC', 100.0)]",False
+pre_fix,failed_models_reported_to_caller,attrs['failed_models']=None,False
+pre_fix,exit_code_nonzero_when_a_model_failed,main() -> None,False
+pre_fix,merge_refuses_penalty_row,"main() -> 0, master CSV written=True",False
+fixed,generation_lock_creates_missing_dir,"lock acquired, dir exists=True",True
+fixed,failed_model_excluded_from_master_csv,"rows=[('I-HAMAPPO', 8.9292)]",True
+fixed,failed_models_reported_to_caller,"attrs['failed_models']=[{'model_name': 'SAC', 'reason': 'every trial scored the failure penalty', 'detail': '[SAC] 0/2 trial(s) usable; 2 scored the 100 failure penalty and 0 never completed (100.0 % lost)', 'n_trials': 2, 'n_completed_trials': 2, 'n_incomplete_trials': 0, 'n_penalised_trials': 2, 'n_usable_trials': 0, 'failed_fraction': 1.0}]",True
+fixed,exit_code_nonzero_when_a_model_failed,main() -> 1,True
+fixed,merge_refuses_penalty_row,"main() -> 1, master CSV written=False",True

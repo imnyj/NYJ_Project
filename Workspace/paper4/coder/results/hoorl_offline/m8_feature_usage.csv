@@ -1,0 +1,22 @@
+index,feature,nominal_low,nominal_high,observed_min,observed_max,used_span_over_nominal,std,std_over_used_span,std_over_nominal,n_unique,frac_at_observed_min,frac_at_observed_max,meaning
+0,last_pred_err_norm,0.0,1.0,0.0,0.992432,0.9924,0.167859,0.1691,0.167859,33358,0.1444,0.0,normalised squared dead-reckoning error at the last update
+1,vx_norm,-1.0,1.0,-0.988468,0.984762,0.9866,0.316238,0.1603,0.158119,50827,0.0,0.0,velocity x / V_MAX_OBS
+2,vy_norm,-1.0,1.0,-0.956115,0.96638,0.9612,0.325012,0.1691,0.162506,50098,0.0,0.0,velocity y / V_MAX_OBS
+3,speed_norm,0.0,1.0,0.0,0.988468,0.9885,0.298009,0.3015,0.298009,92234,0.123,0.0,speed / V_MAX_OBS
+4,accel_norm,-1.0,1.0,-1.0,0.52,0.76,0.153627,0.1011,0.076814,91098,0.0,0.0008,acceleration / a_max
+5,rel_x_norm,-1.0,1.0,-0.999978,0.999978,1.0,0.395962,0.198,0.197981,53093,0.0,0.0,(x - x_rsu) / RSU_RANGE
+6,rel_y_norm,-1.0,1.0,-0.999983,0.999983,1.0,0.386835,0.1934,0.193418,51976,0.0,0.0,(y - y_rsu) / RSU_RANGE
+7,dist_norm,0.0,1.0,0.005334,0.999999,0.9947,0.300887,0.3025,0.300887,98219,0.0,0.0,distance to RSU / RSU_RANGE
+8,tls_red,0.0,1.0,0.0,1.0,1.0,0.49996,0.5,0.49996,2,0.4936,0.5064,traffic light red indicator
+9,tls_yellow,0.0,1.0,0.0,1.0,1.0,0.164565,0.1646,0.164565,2,0.9721,0.0279,traffic light yellow indicator
+10,tls_green,0.0,1.0,0.0,1.0,1.0,0.495794,0.4958,0.495794,2,0.5647,0.4353,traffic light green indicator
+11,phase_remaining_norm,0.0,1.0,0.0,0.698333,0.6983,0.220552,0.3158,0.220552,420,0.0355,0.0023,time to the next signal switch / 60 s
+12,dist_to_stopline_norm,0.0,1.0,0.0,0.999972,1.0,0.307657,0.3077,0.307657,87877,0.0305,0.0,"distance to the stop line / DIST_TO_STOPLINE_REF_M (900 m, not RSU_RANGE)"
+13,n_active_norm,0.0,1.0,0.0,0.776,0.776,0.174892,0.2254,0.174892,184,0.0144,0.0002,vehicles in coverage / N_ACTIVE_MAX_OBS
+14,cbr_mean_channels,0.0,1.0,0.0,0.01792,0.0179,0.002763,0.1542,0.002763,17,0.0166,0.0001,MEAN busy ratio over the subchannels; the absolute congestion level
+15,n_queue_norm,0.0,1.0,0.0,1.0,1.0,0.221106,0.2211,0.221106,26,0.2616,0.0111,vehicles queued ahead in lane / queue_max
+16,heading_cos,-1.0,1.0,-0.999986,1.0,1.0,0.850325,0.4252,0.425163,15639,0.0002,0.0,cosine of the approach angle to the RSU
+17,cbr_ch0_rel,0.0,4.0,0.0,4.0,1.0,0.904841,0.2262,0.22621,48,0.2888,0.0223,subchannel 0 busy ratio / mean over subchannels
+18,cbr_ch1_rel,0.0,4.0,0.0,4.0,1.0,0.907703,0.2269,0.226926,47,0.2896,0.0236,subchannel 1 busy ratio / mean over subchannels
+19,cbr_ch2_rel,0.0,4.0,0.0,4.0,1.0,0.905199,0.2263,0.2263,47,0.294,0.0221,subchannel 2 busy ratio / mean over subchannels
+20,cbr_ch3_rel,0.0,4.0,0.0,4.0,1.0,0.913691,0.2284,0.228423,46,0.2921,0.0235,subchannel 3 busy ratio / mean over subchannels

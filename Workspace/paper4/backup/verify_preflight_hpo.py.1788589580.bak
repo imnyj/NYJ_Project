@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Prove that each pre-flight check fails when its own condition is violated.
+
+A gate reports PASS on a healthy tree whether or not it is looking at anything.
+The only way to know `etc/preflight_hpo.py` would have stopped the nine-hour run
+is to break each condition on purpose and watch the corresponding check turn red.
+Every case below reproduces a specific accident:
+
+  * the observation ceiling back at 100.0 (the saturated contention feature),
+  * an objective that ignores packet loss (the constant term),
+  * an objective whose arithmetic moved into a helper (must still PASS -- a
+    refactor is not a regression, and this one really happened on 2026-09-05),
+  * the undecided discount bound 0.999 still in place,
+  * a discount bound changed at some sites and not others (the partial edit),
+  * two groups sharing one SUMO directory (the network one group did not ask for),
+  * a group directory nested in another (they would share a generation lock),
+  * a GPU that is not free,
+  * a destination holding results, and the protected control directory itself,
+  * a dirty working tree, which must report without stopping the launch.
+
+Writes `etc/verification/preflight_hpo_verification.csv`. Exit 0 only if every
+case behaves as expected, in both directions.
+"""
+from __future__ import annotations
+
+import csv
+import os
+import sys
+import tempfile
+import types
+from typing import List, Tuple
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.join(ROOT, "etc"))
+
+import preflight_hpo as pf  # noqa: E402
+
+CONTROL_DIR = os.path.join(ROOT, "results", "hpo_parallel")
+OUT_CSV = os.path.join(ROOT, "etc", "verification", "preflight_hpo_verification.csv")
+
+Row = Tuple[str, str, bool, bool, str]  # check, scenario, expected_pass, got_pass, note
+
+
+def _broken_objective_module() -> types.ModuleType:
+    """A src.hpo stand-in whose objective never looks at the loss term.
+
+    Defined in a real file because the check reads the function's source; a lambda
+    or an exec'd string would defeat `inspect.getsource` and make the check fail
+    for the wrong reason.
+    """
+    tmp = tempfile.mkdtemp(prefix="verify_pf_obj_")
+    path = os.path.join(tmp, "fake_hpo.py")
+    with open(path, "w") as fh:
+        fh.write(
+            "def compute_composite_objective(metrics, **kw):\n"
+            "    '''Scores three terms and pretends the fourth is a constant.'''\n"
+            "    return (1.0 * metrics.get('mean_error', 0.0)\n"
+            "            + 0.5 * metrics.get('mean_aoi', 0.0)\n"
+            "            + 2.0 * 0.05\n"
+            "            + 0.2 * metrics.get('avg_power_norm', 0.5))\n"
+        )
+    sys.path.insert(0, tmp)
+    import fake_hpo  # noqa: PLC0415
+    return fake_hpo
+
+
+def _delegating_objective_module() -> types.ModuleType:
+    """A src.hpo stand-in whose entry function delegates the arithmetic.
+
+    This is the shape `src/hpo.py` actually took on 2026-09-05, when the sum moved
+    into `composite_objective_terms`. A reader that stops at the entry function
+    calls this a regression; it is not one, and the check must say so.
+    """
+    tmp = tempfile.mkdtemp(prefix="verify_pf_delegate_")
+    path = os.path.join(tmp, "delegating_hpo.py")
+    with open(path, "w") as fh:
+        fh.write(
+            "def composite_objective_terms(metrics, **kw):\n"
+            "    return {'error': 1.0 * metrics.get('mean_error', 0.0),\n"
+            "            'aoi': 0.5 * metrics.get('mean_aoi', 0.0),\n"
+            "            'loss': 2.0 * metrics.get('packet_loss_rate', 0.0),\n"
+            "            'power': 0.2 * metrics.get('avg_power_norm', 0.5)}\n"
+            "\n"
+            "def compute_composite_objective(metrics, **kw):\n"
+            "    '''Sums the terms; mentions packet_loss_rate only in prose.'''\n"
+            "    return float(sum(composite_objective_terms(metrics, **kw).values()))\n"
+        )
+    sys.path.insert(0, tmp)
+    import delegating_hpo  # noqa: PLC0415
+    return delegating_hpo
+
+
+def _alias_objective_module() -> types.ModuleType:
+    """A src.hpo stand-in that falls back onto the constant-carrying alias."""
+    tmp = tempfile.mkdtemp(prefix="verify_pf_alias_")
+    path = os.path.join(tmp, "alias_hpo.py")
+    with open(path, "w") as fh:
+        fh.write(
+            "def compute_composite_objective(metrics, **kw):\n"
+            "    loss = metrics.get('packet_loss_rate', metrics.get('outage_rate', 0.0))\n"
+            "    return (1.0 * metrics.get('mean_error', 0.0)\n"
+            "            + 0.5 * metrics.get('mean_aoi', 0.0)\n"
+            "            + 2.0 * loss\n"
+            "            + 0.2 * metrics.get('avg_power_norm', 0.5))\n"
+        )
+    sys.path.insert(0, tmp)
+    import alias_hpo  # noqa: PLC0415
+    return alias_hpo
+
+
+def run() -> List[Row]:
+    rows: List[Row] = []
+
+    # ---- 1. observation normaliser -------------------------------------
+    import src.rl_interface as rli
+    rows.append(("N_ACTIVE_MAX_OBS", "as shipped", True,
+                 pf.check_n_active_max_obs().passed, "healthy tree"))
+
+    original = rli.N_ACTIVE_MAX_OBS
+    try:
+        rli.N_ACTIVE_MAX_OBS = 100.0
+        res = pf.check_n_active_max_obs()
+        rows.append(("N_ACTIVE_MAX_OBS", "ceiling forced back to 100.0", False,
+                     res.passed, "the saturated-contention regression"))
+    finally:
+        rli.N_ACTIVE_MAX_OBS = original
+
+    # ---- 2. objective --------------------------------------------------
+    import src.hpo as real_hpo
+    rows.append(("objective", "as shipped", True,
+                 pf.check_objective_reads_packet_loss().passed, "healthy tree"))
+
+    real_fn = real_hpo.compute_composite_objective
+    try:
+        real_hpo.compute_composite_objective = _broken_objective_module().compute_composite_objective
+        res = pf.check_objective_reads_packet_loss()
+        rows.append(("objective", "loss term replaced by a constant", False,
+                     res.passed, "the term the search could not see"))
+
+        real_hpo.compute_composite_objective = _alias_objective_module().compute_composite_objective
+        res = pf.check_objective_reads_packet_loss()
+        rows.append(("objective", "falls back onto outage_rate alias", False,
+                     res.passed, "alias reintroduces the constant"))
+
+        real_hpo.compute_composite_objective = _delegating_objective_module().compute_composite_objective
+        res = pf.check_objective_reads_packet_loss()
+        rows.append(("objective", "arithmetic delegated to a helper", True,
+                     res.passed, "refactor of 2026-09-05; must not read as a regression"))
+    finally:
+        real_hpo.compute_composite_objective = real_fn
+
+    # ---- 2b. discount factor range ---------------------------------------
+    real_hpo_path = os.path.join(ROOT, "src", "hpo.py")
+    dwell = pf.RSU_DWELL_S
+    placeholder = pf.UNRESOLVED_GAMMA_HI
+
+    rows.append(("gamma range", "src/hpo.py as it stands", False,
+                 pf.check_gamma_range(real_hpo_path, placeholder, dwell).passed,
+                 f"placeholder {placeholder} still present"))
+
+    gdir = tempfile.mkdtemp(prefix="verify_pf_gamma_")
+
+    def gamma_file(name: str, body: str) -> str:
+        p = os.path.join(gdir, name)
+        with open(p, "w") as fh:
+            fh.write(body)
+        return p
+
+    decided = gamma_file("decided.py",
+        "def sample_hparams(trial, model):\n"
+        "    a = trial.suggest_float('gamma', 0.95, 0.99)\n"
+        "    b = trial.suggest_float('gamma', 0.95, 0.99)\n"
+        "    return a, b\n")
+    rows.append(("gamma range", "every site decided at 0.99", True,
+                 pf.check_gamma_range(decided, placeholder, dwell).passed,
+                 "placeholder gone and sites agree"))
+
+    partial = gamma_file("partial.py",
+        "def sample_hparams(trial, model):\n"
+        "    a = trial.suggest_float('gamma', 0.95, 0.99)\n"
+        "    b = trial.suggest_float('gamma', 0.95, 0.999)\n"
+        "    return a, b\n")
+    rows.append(("gamma range", "bound changed at one site of two", False,
+                 pf.check_gamma_range(partial, placeholder, dwell).passed,
+                 "the partial-application failure mode"))
+
+    disagree = gamma_file("disagree.py",
+        "def sample_hparams(trial, model):\n"
+        "    a = trial.suggest_float('gamma', 0.95, 0.99)\n"
+        "    b = trial.suggest_float('gamma', 0.95, 0.98)\n"
+        "    return a, b\n")
+    rows.append(("gamma range", "two decided bounds that disagree", False,
+                 pf.check_gamma_range(disagree, placeholder, dwell).passed,
+                 "studies would not be comparable"))
+
+    named = gamma_file("named.py",
+        "GAMMA_LO = 0.95\n"
+        "GAMMA_HI = 0.99\n"
+        "def sample_hparams(trial, model):\n"
+        "    return trial.suggest_float('gamma', GAMMA_LO, GAMMA_HI)\n")
+    rows.append(("gamma range", "bounds lifted to named constants", True,
+                 pf.check_gamma_range(named, placeholder, dwell).passed,
+                 "a refactor must stay readable"))
+
+    named_placeholder = gamma_file("named_placeholder.py",
+        "GAMMA_HI = 0.999\n"
+        "def sample_hparams(trial, model):\n"
+        "    return trial.suggest_float('gamma', 0.95, GAMMA_HI)\n")
+    rows.append(("gamma range", "placeholder hidden behind a constant name", False,
+                 pf.check_gamma_range(named_placeholder, placeholder, dwell).passed,
+                 "renaming it does not decide it"))
+
+    absent = gamma_file("absent.py",
+        "def sample_hparams(trial, model):\n"
+        "    return trial.suggest_float('learning_rate', 1e-5, 1e-3)\n")
+    rows.append(("gamma range", "no gamma range in the file at all", False,
+                 pf.check_gamma_range(absent, placeholder, dwell).passed,
+                 "the check must not pass by finding nothing"))
+
+    # ---- 3. SUMO isolation ---------------------------------------------
+    base = tempfile.mkdtemp(prefix="verify_pf_sumo_")
+    good = [os.path.join(base, f"g{i}", "sumo") for i in range(4)]
+    rows.append(("sumo isolation", "four distinct group directories", True,
+                 pf.check_sumo_isolation(good).passed, "healthy layout"))
+
+    shared = [os.path.join(base, "shared", "sumo")] * 4
+    rows.append(("sumo isolation", "all four groups share one directory", False,
+                 pf.check_sumo_isolation(shared).passed, "one net.xml for four processes"))
+
+    nested = [os.path.join(base, "g0", "sumo"), os.path.join(base, "g0", "sumo", "inner")]
+    rows.append(("sumo isolation", "one group nested inside another", False,
+                 pf.check_sumo_isolation(nested).passed, "shared generated files"))
+
+    rows.append(("sumo isolation", "no directories given", False,
+                 pf.check_sumo_isolation([]).passed, "nothing to check is not a pass"))
+
+    # ---- 4. GPUs --------------------------------------------------------
+    rows.append(("gpus", "the four devices this run wants", True,
+                 pf.check_gpus([0, 1, 2, 3]).passed, "live nvidia-smi read"))
+    rows.append(("gpus", "a device that does not exist", False,
+                 pf.check_gpus([99]).passed, "absent device must not pass"))
+
+    # ---- 5. destinations ------------------------------------------------
+    fresh = os.path.join(base, "brand_new_root")
+    rows.append(("destination", "path does not exist yet", True,
+                 pf.check_destination(fresh, "output root", [CONTROL_DIR]).passed,
+                 "launcher will create it"))
+
+    empty = tempfile.mkdtemp(prefix="verify_pf_empty_")
+    rows.append(("destination", "exists but holds no results", True,
+                 pf.check_destination(empty, "output root", [CONTROL_DIR]).passed,
+                 "re-runnable"))
+
+    occupied = tempfile.mkdtemp(prefix="verify_pf_used_")
+    os.makedirs(os.path.join(occupied, "g0"), exist_ok=True)
+    with open(os.path.join(occupied, "g0", "optuna_best_params.csv"), "w") as fh:
+        fh.write("model_name,best_value\nPPO,1.0\n")
+    rows.append(("destination", "already holds optuna results", False,
+                 pf.check_destination(occupied, "output root", [CONTROL_DIR]).passed,
+                 "would overwrite a finished study"))
+
+    # A sumo scratch directory alone must NOT block: it is regenerated anyway.
+    sumo_only = tempfile.mkdtemp(prefix="verify_pf_sumo_only_")
+    os.makedirs(os.path.join(sumo_only, "g0", "sumo"), exist_ok=True)
+    with open(os.path.join(sumo_only, "g0", "sumo", "generated.net.xml"), "w") as fh:
+        fh.write("<net/>")
+    rows.append(("destination", "holds only a sumo scratch directory", True,
+                 pf.check_destination(sumo_only, "output root", [CONTROL_DIR]).passed,
+                 "scenario files are not results"))
+
+    rows.append(("destination", "the protected control directory itself", False,
+                 pf.check_destination(CONTROL_DIR, "output root", [CONTROL_DIR]).passed,
+                 "control group for the new normaliser"))
+    rows.append(("destination", "a subdirectory of the control directory", False,
+                 pf.check_destination(os.path.join(CONTROL_DIR, "rerun"), "output root",
+                                      [CONTROL_DIR]).passed,
+                 "same destruction, one level down"))
+
+    # ---- 6. provenance ---------------------------------------------------
+    # This one is graded on `stops_launch`, not on `passed`. Its whole point is
+    # that it reports a dirty tree without halting a run, because two sessions
+    # are editing this tree and a clean-tree requirement would halt everything.
+    live = pf.check_working_tree(list(pf.WATCHED_CODE_PATHS))
+    rows.append(("working tree", "live repository, whatever its state", True,
+                 not live.stops_launch,
+                 f"reported {'dirty' if not live.passed else 'clean'}; must never block"))
+
+    nothing_watched = pf.check_working_tree(["Workspace/paper4/coder/does_not_exist/"])
+    rows.append(("working tree", "no watched path is dirty", True,
+                 nothing_watched.passed,
+                 "clean under the watched prefixes"))
+    rows.append(("working tree", "and it still does not block", True,
+                 not nothing_watched.stops_launch,
+                 "non-blocking regardless of verdict"))
+
+    # A blocking check must behave the other way round, or the two states are the
+    # same thing wearing different labels.
+    blocking = pf.check_destination(CONTROL_DIR, "output root", [CONTROL_DIR])
+    rows.append(("severity", "a blocking check that failed does stop the launch", True,
+                 blocking.stops_launch,
+                 "confirms warn and fail are not interchangeable"))
+
+    return rows
+
+
+def main() -> int:
+    rows = run()
+    os.makedirs(os.path.dirname(OUT_CSV), exist_ok=True)
+    with open(OUT_CSV, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["check", "scenario", "expected_pass", "observed_pass", "correct", "note"])
+        for check, scenario, expected, got, note in rows:
+            w.writerow([check, scenario, expected, got, expected == got, note])
+
+    width = max(len(r[1]) for r in rows)
+    wrong = 0
+    for check, scenario, expected, got, note in rows:
+        correct = expected == got
+        wrong += 0 if correct else 1
+        verdict = "ok" if correct else "WRONG"
+        print(f"  {check:<16} {scenario:<{width}}  expected={'PASS' if expected else 'FAIL'} "
+              f"got={'PASS' if got else 'FAIL'}  {verdict}")
+
+    print(f"\nwrote {OUT_CSV}")
+    if wrong:
+        print(f"VERDICT: FAIL -- {wrong} of {len(rows)} cases behaved incorrectly")
+        return 1
+    print(f"VERDICT: PASS -- all {len(rows)} cases behaved as expected")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

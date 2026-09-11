@@ -1,0 +1,5 @@
+device,hidden_dim,n_transitions,load_s,pretrain_s,per_seed_s,per_trial_3seeds_s,offline_updates
+cpu,64,133405,0.08,14.83,14.91,44.7,2000.0
+cpu,256,133405,0.07,20.88,20.96,62.9,2000.0
+cuda:0,64,133405,0.08,16.28,16.36,49.1,2000.0
+cuda:0,256,133405,0.07,15.54,15.61,46.8,2000.0

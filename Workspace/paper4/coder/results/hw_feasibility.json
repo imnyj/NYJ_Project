@@ -1,33 +1,43 @@
 {
-  "model": "TD3",
+  "model": "I-HAMAPPO",
   "steps": 600,
+  "state_dim": 21,
+  "max_neighbours": 192,
+  "gpus": [
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090",
+    "NVIDIA GeForce RTX 3090"
+  ],
+  "torch_version": "2.11.0+cu130",
+  "sumo_dir": "/tmp/claude-1001/-home-imnyj/3b462830-f472-4351-a6b3-bd5ebd3a999d/scratchpad/sumo_hw",
   "runs": [
     {
       "tag": "isolated",
       "act_device": "cuda:0",
       "rest_device": "cuda:1",
-      "training_steps": 1620,
-      "throughput_steps_per_sec": 21.18,
-      "swap_count": 82,
+      "training_steps": 215,
+      "throughput_steps_per_sec": 21.48,
+      "swap_count": 10,
       "inference_latency": {
-        "mean_latency_ms": 1.2097,
-        "p50_latency_ms": 1.0789,
-        "p95_latency_ms": 1.7016,
-        "p99_latency_ms": 2.9801
+        "mean_latency_ms": 2.6123,
+        "p50_latency_ms": 2.229,
+        "p95_latency_ms": 3.4445,
+        "p99_latency_ms": 6.4533
       }
     },
     {
       "tag": "shared",
       "act_device": "cuda:0",
       "rest_device": "cuda:0",
-      "training_steps": 1658,
-      "throughput_steps_per_sec": 21.1,
-      "swap_count": 83,
+      "training_steps": 211,
+      "throughput_steps_per_sec": 21.75,
+      "swap_count": 10,
       "inference_latency": {
-        "mean_latency_ms": 1.232,
-        "p50_latency_ms": 1.1209,
-        "p95_latency_ms": 1.728,
-        "p99_latency_ms": 2.5447
+        "mean_latency_ms": 2.5541,
+        "p50_latency_ms": 2.4736,
+        "p95_latency_ms": 3.4629,
+        "p99_latency_ms": 4.737
       }
     }
   ]

@@ -1,0 +1,21 @@
+{
+  "cap_exceeded": false,
+  "current_N_ACTIVE_MAX_OBS": 168.0,
+  "densities": [
+    5.0,
+    10.0,
+    15.0,
+    20.0,
+    25.0,
+    30.0,
+    35.0
+  ],
+  "max_observed_over_all_cells": 167.0,
+  "note": "Counts read from AoiV2IEnv._count_active_vehicles() BEFORE the clip, so unlike observation feature [13] they are not censored at the cap. No policy is involved. The constant is NOT changed here.",
+  "road_seed": 42,
+  "seeds": [
+    2001
+  ],
+  "steps": 600,
+  "warmup_steps": 1200
+}

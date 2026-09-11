@@ -1,0 +1,10 @@
+name,in_registry,times_scheduled,normalized,search_space_size,note
+HOORL,True,1,HOORL,6,
+I-HAMAPPO,True,1,I-HAMAPPO,7,
+MA2HDQN,True,1,MA2HDQN,7,
+MADDPG-MT,True,1,MADDPG-MT,7,
+PPO,True,1,PPO,7,
+RES-MAPDDPG,True,1,RES-MAPDDPG,7,
+SAC,True,1,SAC,5,
+SPAM-D3QN,True,1,SPAM-D3QN,6,
+TD3,True,1,TD3,7,

@@ -1,0 +1,4 @@
+arm,gamma,seed,n_updates,value_loss_first,value_loss_mean,value_loss_max,value_loss_growth,total_loss_mean,nonfinite_updates,divergence_verdict
+without_neighbourhood,0.99,42,200,0.189774,1.35269,5.46461,0.6604,0.595836,0,no abort
+with_neighbourhood,0.99,42,200,0.190459,1.31546,5.49195,0.5279,0.570557,0,no abort
+comparison,0.99,42,200,,scale_ratio=0.9725,,0.6604->0.5279,,,growth above 1.0 means climbing

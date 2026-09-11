@@ -1,0 +1,25 @@
+{
+  "model_name": "IHAMAPPO",
+  "status": "completed",
+  "episodes_requested": 1,
+  "episodes_completed": 1,
+  "error_mode": "accumulate",
+  "seed": 44,
+  "log_csv_path": "/home/imnyj/Workspace/paper4/coder/etc/temp/capcmp_192_shared_2.csv",
+  "finished_at": "2026-09-07T06:08:23",
+  "training_steps": 197,
+  "mean_recent_loss": 1.1436,
+  "zero_update_episodes": 0,
+  "divergence_monitor": {
+    "episodes_seen": 1,
+    "baseline_loss": null,
+    "loss_threshold": 1000.0,
+    "high_loss_streak": 0,
+    "zero_update_streak": 0,
+    "warmup_episodes": 5,
+    "loss_ratio": 1000.0,
+    "loss_abs_floor": 1000.0,
+    "loss_patience": 3,
+    "max_zero_update_episodes": 3
+  }
+}

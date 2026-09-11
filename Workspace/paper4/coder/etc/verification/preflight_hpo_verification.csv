@@ -1,0 +1,52 @@
+check,scenario,expected_pass,observed_pass,correct,note
+N_ACTIVE_MAX_OBS,as shipped,True,True,True,healthy tree
+N_ACTIVE_MAX_OBS,ceiling forced back to 100.0,False,False,True,the saturated-contention regression
+normalisation clipping,as shipped,True,True,True,no bound clips more than its recorded allowance
+normalisation clipping,a bound lowered until it clips,False,False,True,"found from the data, with no expected value written down"
+vacuous pass,a check that examined nothing,False,False,True,an empty iteration establishes no property
+vacuous pass,a check that examined something,True,True,True,and the rule does not fire otherwise
+objective,as shipped,True,True,True,healthy tree
+objective,loss term replaced by a constant,False,False,True,the term the search could not see
+objective,falls back onto outage_rate alias,False,False,True,alias reintroduces the constant
+objective,arithmetic delegated to a helper,True,True,True,refactor of 2026-09-05; must not read as a regression
+gamma range,src/hpo.py as it stands,True,True,True,live upper bound 0.99; verdict must match the file
+gamma range,every site decided at 0.99,True,True,True,placeholder gone and sites agree
+gamma range,bound changed at one site of two,False,False,True,the partial-application failure mode
+gamma range,two decided bounds that disagree,False,False,True,studies would not be comparable
+gamma range,bounds lifted to named constants,True,True,True,a refactor must stay readable
+gamma range,placeholder hidden behind a constant name,False,False,True,renaming it does not decide it
+gamma range,no gamma range in the file at all,False,False,True,the check must not pass by finding nothing
+model coverage,the four groups as the launcher has them,True,True,True,"nine baselines, once each"
+model coverage,one model dropped while rebalancing,False,False,True,merge would refuse twelve hours later
+model coverage,one model left in both groups,False,False,True,"two best-params rows, no way to choose"
+model coverage,a typo in a model name,False,False,True,starts a study for a model that does not exist
+scenario horizon,the shared coder/src/sumo as it stands,True,True,True,restored to FLOW_END_S 3600.0 on 2026-09-05
+scenario horizon,flows end at 131 s (the polluted state),False,False,True,road drains during the measured window
+scenario horizon,signature 51 s but rou.xml 138 s,False,False,True,observed on 2026-09-05; either alone looks consistent
+scenario horizon,consistent and long enough,True,True,True,covers warm-up plus rollout
+scenario horizon,exactly at the 530 s requirement,True,True,True,the boundary must not be off by one
+scenario horizon,one second short of the requirement,False,False,True,the boundary must actually bite
+scenario horizon,directory with no scenario yet,True,True,True,the run generates its own; nothing to judge
+scenario horizon,rou.xml present but no signature,False,False,True,half-readable is not readable
+worktree exposure,the /var/tmp roots the launcher now uses,True,True,True,"outside /home/imnyj, so no git clean reaches them"
+worktree exposure,the old <output-root>/<group>/sumo layout,False,False,True,how g1 lost its scenario on 2026-09-04
+worktree exposure,one of four still inside the tree,False,False,True,a partial move is still a lost group
+worktree exposure,the shared coder/src/sumo,False,False,True,inside by construction; stays exposed
+worktree exposure,a symlink pointing back into the tree,False,False,True,"resolved with realpath, not taken at face value"
+worktree exposure,no directories given,False,False,True,nothing to check is not a pass
+sumo isolation,four distinct group directories,True,True,True,healthy layout
+sumo isolation,all four groups share one directory,False,False,True,one net.xml for four processes
+sumo isolation,one group nested inside another,False,False,True,shared generated files
+sumo isolation,no directories given,False,False,True,nothing to check is not a pass
+gpus,the four devices this run wants,True,True,True,live nvidia-smi read
+gpus,a device that does not exist,False,False,True,absent device must not pass
+destination,path does not exist yet,True,True,True,launcher will create it
+destination,exists but holds no results,True,True,True,re-runnable
+destination,already holds optuna results,False,False,True,would overwrite a finished study
+destination,holds only a sumo scratch directory,True,True,True,scenario files are not results
+destination,the protected control directory itself,False,False,True,control group for the new normaliser
+destination,a subdirectory of the control directory,False,False,True,"same destruction, one level down"
+working tree,"live repository, whatever its state",True,True,True,reported dirty; must never block
+working tree,no watched path is dirty,True,True,True,clean under the watched prefixes
+working tree,and it still does not block,True,True,True,non-blocking regardless of verdict
+severity,a blocking check that failed does stop the launch,True,True,True,confirms warn and fail are not interchangeable

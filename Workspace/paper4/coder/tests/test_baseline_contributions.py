@@ -1,0 +1,693 @@
+# tests/test_baseline_contributions.py
+# ============================================================================
+# Two published contributions were present in the model code and absent from the
+# training run, because the pipeline never carried the data they need. This file
+# is the regression guard for both, and for the condition that makes the repair
+# admissible: the other eight baselines must be unchanged.
+#
+#   1. MADDPG-MT (Parvini et al., IEEE TVT 72(8), 2023) -- task decomposition and
+#      the global/local dual critic. Both were inert: `reward_terms` and the
+#      neighbour observations existed nowhere in src/, so the four value heads
+#      trained on shares of one scalar and the global critic pooled a zero
+#      context. I-HAMAPPO and RES-MAPDDPG read the same neighbour keys and were
+#      inert for the same reason.
+#   2. SPAM-D3QN (Bai et al., IEEE TVT 73(4), 2024) -- prioritized experience
+#      replay. Only the loss re-weighting was implemented; the non-uniform DRAW,
+#      which is the half the paper credits for its AoI gain, was missing because
+#      the shared buffer samples uniformly for every model.
+# ============================================================================
+
+import numpy as np
+import pytest
+import torch
+
+from src.baselines import ALL_BASELINES, get_baseline
+from src.baselines.base_agent import BaseRLModel
+from src.baselines.maddpg_mt import MADDPGMT, TASK_NAMES
+from src.baselines.spam_d3qn import SPAMD3QN
+from src.rl_interface import (
+    FEATURE_REL_X,
+    FEATURE_REL_Y,
+    MAX_NEIGHBOURS,
+    STATE_DIM,
+    NeighbourhoodView,
+    RetrospectiveReplayBuffer,
+)
+
+LEGACY_BATCH_KEYS = {
+    "state", "action", "reward", "next_state", "done", "delta_t", "discount",
+}
+
+
+def _obs(rel_x: float, rel_y: float, tag: float = 0.0) -> np.ndarray:
+    v = np.zeros(STATE_DIM, dtype=np.float32)
+    v[FEATURE_REL_X] = rel_x
+    v[FEATURE_REL_Y] = rel_y
+    v[0] = tag
+    return v
+
+
+def _push(buffer, i: int, *, with_extras: bool = True, n: int = MAX_NEIGHBOURS):
+    rng = np.random.default_rng(i)
+    kw = {}
+    if with_extras:
+        terms = rng.normal(size=4).astype(np.float32)
+        kw = {
+            "reward_terms": terms,
+            "neighbour_state": rng.normal(size=(n, STATE_DIM)).astype(np.float32),
+            "neighbour_mask": np.ones(n, dtype=np.float32),
+            "next_neighbour_state": rng.normal(size=(n, STATE_DIM)).astype(np.float32),
+            "next_neighbour_mask": np.ones(n, dtype=np.float32),
+        }
+        reward = float(terms.sum())
+    else:
+        reward = float(rng.normal())
+    buffer.push(
+        state=rng.normal(size=STATE_DIM).astype(np.float32),
+        action=np.array([0.3, 1.0, 0.7], dtype=np.float32),
+        reward=reward,
+        next_state=rng.normal(size=STATE_DIM).astype(np.float32),
+        done=False,
+        delta_t=0.5,
+        action_idx=i % 4,
+        **kw,
+    )
+
+
+# ===========================================================================
+# 1. NeighbourhoodView -- the producer that did not exist
+# ===========================================================================
+class TestNeighbourhoodView:
+    def test_empty_and_singleton_give_an_all_zero_mask(self):
+        for obs in ({}, {"a": _obs(0.0, 0.0)}):
+            rows, mask = NeighbourhoodView(obs).view("a")
+            assert rows.shape == (MAX_NEIGHBOURS, STATE_DIM)
+            assert mask.shape == (MAX_NEIGHBOURS,)
+            assert mask.sum() == 0.0
+            assert np.all(rows == 0.0)
+
+    def test_unknown_vehicle_gets_an_all_zero_mask(self):
+        obs = {"a": _obs(0.0, 0.0), "b": _obs(0.1, 0.0)}
+        _, mask = NeighbourhoodView(obs).view("nobody")
+        assert mask.sum() == 0.0
+
+    def test_neighbours_come_out_nearest_first(self):
+        obs = {
+            "ego": _obs(0.0, 0.0, tag=0.0),
+            "far": _obs(0.9, 0.0, tag=3.0),
+            "near": _obs(0.1, 0.0, tag=1.0),
+            "mid": _obs(0.4, 0.0, tag=2.0),
+        }
+        rows, mask = NeighbourhoodView(obs).view("ego")
+        assert mask[:3].tolist() == [1.0, 1.0, 1.0]
+        assert mask[3:].sum() == 0.0
+        assert [float(rows[k, 0]) for k in range(3)] == [1.0, 2.0, 3.0]
+        assert np.all(rows[3:] == 0.0), "padding rows must stay zero"
+
+    def test_a_vehicle_is_never_its_own_neighbour(self):
+        obs = {f"v{i}": _obs(i * 0.1, 0.0, tag=float(i)) for i in range(5)}
+        view = NeighbourhoodView(obs)
+        for i, vid in enumerate(sorted(obs)):
+            rows, mask = view.view(vid)
+            tags = [float(rows[k, 0]) for k in range(int(mask.sum()))]
+            assert float(i) not in tags
+
+    def test_cap_keeps_exactly_the_nearest_k(self):
+        """The population is sized FROM the cap, not fixed at 40.
+
+        It was fixed at 40, which asserted the property only while the cap
+        happened to be smaller than that; when `MAX_NEIGHBOURS` went to 192 on
+        2026-09-07 the test failed on a population of 39 rather than on anything
+        about the cap. A cap can only be shown to bind by giving it more than it
+        will take.
+        """
+        population = MAX_NEIGHBOURS + 8
+        obs = {f"v{i:04d}": _obs(i * 0.01, 0.0, tag=float(i))
+               for i in range(population + 1)}
+        rows, mask = NeighbourhoodView(obs).view("v0000")
+        assert mask.sum() == MAX_NEIGHBOURS
+        assert [float(rows[k, 0]) for k in range(MAX_NEIGHBOURS)] == [
+            float(i) for i in range(1, MAX_NEIGHBOURS + 1)
+        ]
+
+    def test_result_does_not_depend_on_dict_order(self):
+        obs = {f"v{i:03d}": _obs(i * 0.01, 0.0, tag=float(i)) for i in range(40)}
+        a = NeighbourhoodView(obs).view("v000")
+        b = NeighbourhoodView(dict(reversed(list(obs.items())))).view("v000")
+        assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
+
+    def test_distance_ties_resolve_deterministically(self):
+        tie = {"ego": _obs(0.0, 0.0, 0.0), "b": _obs(0.0, 0.5, 2.0), "a": _obs(0.5, 0.0, 1.0)}
+        r1, _ = NeighbourhoodView(tie).view("ego")
+        r2, _ = NeighbourhoodView(dict(reversed(list(tie.items())))).view("ego")
+        assert np.array_equal(r1, r2)
+        assert [float(r1[k, 0]) for k in range(2)] == [1.0, 2.0]
+
+    def test_rows_are_the_observations_verbatim(self):
+        """No re-derivation: a neighbour row IS that neighbour's observation.
+
+        If this ever stops holding, the critic is being shown a quantity that no
+        transition in the buffer agrees with.
+        """
+        obs = {"ego": _obs(0.0, 0.0, 0.0), "n": _obs(0.2, 0.1, 7.0)}
+        rows, mask = NeighbourhoodView(obs).view("ego")
+        assert mask[0] == 1.0
+        assert np.array_equal(rows[0], obs["n"])
+
+
+# ===========================================================================
+# 2. The buffer carries the two payloads, all-or-nothing
+# ===========================================================================
+class TestBufferCarriesContributionData:
+    def test_keys_and_shapes_when_every_transition_has_them(self):
+        buf = RetrospectiveReplayBuffer(capacity=64)
+        for i in range(32):
+            _push(buf, i, with_extras=True)
+        batch = buf.sample(8)
+        assert batch["reward_terms"].shape == (8, len(TASK_NAMES))
+        assert batch["neighbour_state"].shape == (8, MAX_NEIGHBOURS, STATE_DIM)
+        assert batch["neighbour_mask"].shape == (8, MAX_NEIGHBOURS)
+        assert batch["next_neighbour_state"].shape == (8, MAX_NEIGHBOURS, STATE_DIM)
+        assert batch["next_neighbour_mask"].shape == (8, MAX_NEIGHBOURS)
+
+    def test_legacy_pushes_still_produce_exactly_the_legacy_key_set(self):
+        """The eight other baselines must not see a batch they did not see before."""
+        buf = RetrospectiveReplayBuffer(capacity=64)
+        for i in range(32):
+            buf.push(
+                state=np.zeros(STATE_DIM, dtype=np.float32),
+                action=np.zeros(3, dtype=np.float32),
+                reward=-1.0,
+                next_state=np.zeros(STATE_DIM, dtype=np.float32),
+                done=False,
+                delta_t=0.1,
+            )
+        assert set(buf.sample(8).keys()) == LEGACY_BATCH_KEYS
+
+    def test_a_partially_populated_batch_omits_the_keys(self):
+        """Half-known is not "empty neighbourhood"; it is unknown, so withhold it.
+
+        An all-zero mask is a POSITIVE claim that the vehicle was alone in range.
+        Manufacturing that for the rows that happen to lack the column would feed
+        the critic a fact that was never observed.
+        """
+        buf = RetrospectiveReplayBuffer(capacity=64)
+        for i in range(16):
+            _push(buf, i, with_extras=True)
+        for i in range(16, 32):
+            _push(buf, i, with_extras=False)
+        seen_without = False
+        for _ in range(40):
+            batch = buf.sample(16)
+            if "reward_terms" not in batch:
+                seen_without = True
+                assert "neighbour_state" not in batch
+        assert seen_without, "a mixed buffer must be able to yield a batch without the keys"
+
+
+# ===========================================================================
+# 3. MADDPG-MT: both contributions become live, and are reported as such
+# ===========================================================================
+class TestMADDPGMTContributions:
+    def _batch(self, n=16, *, terms=True, neighbours=True):
+        rng = np.random.default_rng(7)
+        batch = {
+            "state": torch.from_numpy(rng.normal(size=(n, STATE_DIM)).astype(np.float32)),
+            "action": torch.from_numpy(
+                np.stack([np.array([0.3, float(i % 4), 0.6], dtype=np.float32) for i in range(n)])
+            ),
+            "reward": torch.zeros(n, 1),
+            "next_state": torch.from_numpy(rng.normal(size=(n, STATE_DIM)).astype(np.float32)),
+            "done": torch.zeros(n, 1),
+            "delta_t": torch.full((n, 1), 0.5),
+        }
+        if terms:
+            t = rng.normal(size=(n, len(TASK_NAMES))).astype(np.float32)
+            batch["reward_terms"] = torch.from_numpy(t)
+            batch["reward"] = torch.from_numpy(t.sum(axis=1, keepdims=True))
+        if neighbours:
+            batch["neighbour_state"] = torch.from_numpy(
+                rng.normal(size=(n, MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32)
+            )
+            batch["neighbour_mask"] = torch.ones(n, MAX_NEIGHBOURS)
+        return batch
+
+    def test_task_decomposition_is_reported_off_without_the_column(self):
+        m = MADDPGMT()
+        out = m.update(self._batch(terms=False, neighbours=False))
+        assert out["task_decomposed"] == 0.0
+        assert out["global_critic_cooperative"] == 0.0
+
+    def test_both_contributions_are_reported_on_with_the_columns(self):
+        m = MADDPGMT()
+        out = m.update(self._batch(terms=True, neighbours=True))
+        assert out["task_decomposed"] == 1.0
+        assert out["global_critic_cooperative"] == 1.0
+
+    def test_the_pipeline_key_name_reaches_the_global_critic(self):
+        """The buffer emits `neighbour_state`; this module's own name is `others`.
+
+        One plumbing job feeds three baselines only if both names work.
+        """
+        m = MADDPGMT()
+        b = self._batch(terms=True, neighbours=True)
+        b["others"] = b.pop("neighbour_state")
+        b["others_mask"] = b.pop("neighbour_mask")
+        assert m.update(b)["global_critic_cooperative"] == 1.0
+
+    def test_the_four_heads_stop_being_copies_of_one_another(self):
+        """The point of task decomposition, stated as a measurable difference.
+
+        Under the inert fallback each head is trained on the SAME scalar times a
+        constant, so the four head outputs stay proportional to one another. With
+        genuine per-term rewards they are trained on four different targets and
+        their spread grows.
+        """
+        torch.manual_seed(0)
+        inert = MADDPGMT()
+        torch.manual_seed(0)
+        live = MADDPGMT()
+
+        inert_batch = self._batch(terms=False, neighbours=False)
+        live_batch = self._batch(terms=True, neighbours=False)
+        # Same scalar reward in both, so the only difference is the decomposition.
+        inert_batch["reward"] = live_batch["reward"].clone()
+
+        for _ in range(60):
+            inert.update(inert_batch)
+            live.update(live_batch)
+
+        probe = live_batch["state"]
+        with torch.no_grad():
+            a = inert._actor_action(probe)
+            q_inert = inert.local_critic(torch.cat([probe, a], dim=1))
+            b = live._actor_action(probe)
+            q_live = live.local_critic(torch.cat([probe, b], dim=1))
+
+        # Head-to-head spread, relative to the overall scale, so the comparison is
+        # not just "one model has larger numbers".
+        def spread(q):
+            return float(q.std(dim=1).mean() / (q.abs().mean() + 1e-8))
+
+        assert spread(q_live) > spread(q_inert), (spread(q_live), spread(q_inert))
+
+    def test_the_global_critic_actually_reads_the_neighbourhood(self):
+        """Two different neighbourhoods must give two different values.
+
+        With the zero context they were identical, which is what "the global
+        critic degenerates to a second local critic" means in practice.
+        """
+        torch.manual_seed(1)
+        m = MADDPGMT()
+        b = self._batch(terms=True, neighbours=True)
+        m.update(b)  # move the encoder off its init
+        rng = np.random.default_rng(11)
+
+        def q_global(nb):
+            states = b["state"]
+            actions = m._decode_batch_actions(b["action"])
+            ctx = m._encode_others(nb, torch.ones(states.shape[0], MAX_NEIGHBOURS),
+                                   states.shape[0], states.device)
+            with torch.no_grad():
+                return m.global_critic(torch.cat([states, actions, ctx], dim=1))
+
+        n1 = torch.from_numpy(rng.normal(size=(16, MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32))
+        n2 = torch.from_numpy(rng.normal(size=(16, MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32))
+        assert not torch.allclose(q_global(n1), q_global(n2))
+        # ... and the empty neighbourhood is a third, distinct answer.
+        assert not torch.allclose(q_global(n1), q_global(torch.zeros_like(n1)))
+
+
+# ===========================================================================
+# 4. The same plumbing revives the other two joint critics
+# ===========================================================================
+@pytest.mark.parametrize("name", ["I-HAMAPPO", "RES-MAPDDPG"])
+def test_joint_critics_consume_the_neighbourhood(name):
+    rng = np.random.default_rng(3)
+    n = 16
+    base = {
+        "state": torch.from_numpy(rng.normal(size=(n, STATE_DIM)).astype(np.float32)),
+        "action": torch.from_numpy(
+            np.stack([np.array([0.2, float(i % 4), 0.5], dtype=np.float32) for i in range(n)])
+        ),
+        "reward": torch.from_numpy(rng.normal(size=(n, 1)).astype(np.float32)),
+        "next_state": torch.from_numpy(rng.normal(size=(n, STATE_DIM)).astype(np.float32)),
+        "done": torch.zeros(n, 1),
+        "delta_t": torch.full((n, 1), 0.5),
+        "action_idx": torch.arange(n) % 4,
+    }
+    nb = torch.from_numpy(rng.normal(size=(n, MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32))
+
+    torch.manual_seed(5)
+    without = get_baseline(name)()
+    torch.manual_seed(5)
+    with_nb = get_baseline(name)()
+
+    loss_without = without.update(dict(base))
+    with_batch = dict(base)
+    with_batch["neighbour_state"] = nb
+    with_batch["neighbour_mask"] = torch.ones(n, MAX_NEIGHBOURS)
+    loss_with = with_nb.update(with_batch)
+
+    assert loss_without["loss"] != loss_with["loss"], (
+        f"{name}: the neighbourhood made no difference to the update, so the "
+        "joint critic is still reading a zero context"
+    )
+
+
+# ===========================================================================
+# 5. SPAM-D3QN: the non-uniform draw is restored
+# ===========================================================================
+class TestPrioritizedReplay:
+    def test_only_spam_d3qn_overrides_the_sampler(self):
+        """The absolute condition on this repair, asserted directly.
+
+        Eight of the nine must resolve `sample_batch` to the base implementation,
+        which is `buffer.sample(batch_size)` -- the exact line the trainer used to
+        call. If a second model ever overrides it, this comparison is no longer
+        run under one replay distribution and the test says so.
+        """
+        overriding = [
+            name for name in sorted(set(ALL_BASELINES))
+            if get_baseline(name).sample_batch is not BaseRLModel.sample_batch
+        ]
+        assert overriding == ["SPAM-D3QN"], overriding
+
+    def test_high_priority_transitions_are_drawn_more_often(self):
+        buf = RetrospectiveReplayBuffer(capacity=100)
+        for i in range(100):
+            _push(buf, i, with_extras=False)
+        buf.update_priorities(np.arange(10), np.full(10, 10.0))
+        buf.update_priorities(np.arange(10, 100), np.full(90, 1.0))
+
+        np.random.seed(0)
+        drawn = np.concatenate([
+            buf.sample_prioritized(32, alpha=0.6, beta=0.4)["indices"].numpy()
+            for _ in range(500)
+        ])
+        share = float(np.mean(drawn < 10))
+        # p_i ~ 10^0.6 for the ten favoured slots against 1 for the other ninety.
+        expected = 10 * 10 ** 0.6 / (10 * 10 ** 0.6 + 90)
+        assert abs(share - expected) < 0.02, (share, expected)
+        assert share > 2.5 * 0.10, "uniform replay would show them 10 % of the time"
+
+    def test_importance_weights_compensate_for_the_over_draw(self):
+        buf = RetrospectiveReplayBuffer(capacity=100)
+        for i in range(100):
+            _push(buf, i, with_extras=False)
+        buf.update_priorities(np.arange(10), np.full(10, 10.0))
+        buf.update_priorities(np.arange(10, 100), np.full(90, 1.0))
+        np.random.seed(1)
+        b = buf.sample_prioritized(4096, alpha=0.6, beta=1.0)
+        idx = b["indices"].numpy()
+        w = b["weights"].numpy()
+        ratio = float(w[idx >= 10].mean() / w[idx < 10].mean())
+        assert abs(ratio - 10 ** 0.6) < 0.1, ratio
+
+    def test_the_prioritized_batch_is_otherwise_the_uniform_batch(self):
+        buf = RetrospectiveReplayBuffer(capacity=64)
+        for i in range(32):
+            _push(buf, i, with_extras=True)
+        uni = buf.sample(8)
+        pri = buf.sample_prioritized(8)
+        assert set(pri) - set(uni) == {"weights", "indices"}
+        for key in uni:
+            assert pri[key].shape == uni[key].shape, key
+
+    def test_priorities_are_written_back_and_change_the_next_draw(self):
+        torch.manual_seed(0)
+        model = SPAMD3QN()
+        buf = RetrospectiveReplayBuffer(capacity=64)
+        for i in range(32):
+            _push(buf, i, with_extras=False)
+        before = buf._priorities[:32].copy()
+        batch = model.sample_batch(buf, 16)
+        assert "weights" in batch and "indices" in batch
+        out = model.update(batch)
+        assert out["per_sampled"] == 1.0
+        model.commit_priorities(buf, batch)
+        after = buf._priorities[:32]
+        touched = np.unique(batch["indices"].numpy())
+        assert not np.allclose(before[touched], after[touched])
+        untouched = np.setdiff1d(np.arange(32), touched)
+        assert np.allclose(before[untouched], after[untouched])
+
+    def test_a_plain_buffer_falls_back_to_the_uniform_draw(self):
+        """The HPO rollout builds its own small buffer; it must not crash there."""
+        class Plain:
+            def sample(self, n):
+                return {"marker": n}
+
+        model = SPAMD3QN()
+        assert model.sample_batch(Plain(), 4) == {"marker": 4}
+
+    def test_alpha_is_applied_once(self):
+        """The model stores RAW |TD| + eps; the sampler owns the exponent.
+
+        Applying alpha in both places would raise it to alpha^2 and quietly
+        flatten the priority distribution.
+        """
+        torch.manual_seed(0)
+        model = SPAMD3QN(per_alpha=0.6, per_eps=1e-6)
+        buf = RetrospectiveReplayBuffer(capacity=32)
+        for i in range(16):
+            _push(buf, i, with_extras=False)
+        batch = buf.sample(16)
+        model.update(batch)
+        assert model.last_priorities.min() >= 1e-6
+        # A raw priority is |TD| + eps, so it tracks the TD error linearly. Under
+        # a double-applied alpha the spread would be visibly compressed.
+        assert model.last_priorities.max() > model.last_priorities.min()
+
+# ===========================================================================
+# 6. The absolute condition: the other eight are untouched
+# ===========================================================================
+class TestTheOtherEightAreUnchanged:
+    """A repair that alters the other baselines' training is not admissible.
+
+    The plumbing adds keys to every batch, whichever model is learning, because
+    the training loop does not know which model it is filling the buffer for. The
+    claim that this is harmless is checked directly rather than argued from
+    "nothing reads them": two instances of the same model, seeded identically,
+    are given the same batch with and without the extra keys, and their weights
+    after the update must be bit-identical.
+    """
+
+    def _batch(self, n=16, *, extras: bool):
+        rng = np.random.default_rng(19)
+        batch = {
+            "state": torch.from_numpy(rng.normal(size=(n, STATE_DIM)).astype(np.float32)),
+            "action": torch.from_numpy(
+                np.stack([np.array([0.25, float(i % 4), 0.55], dtype=np.float32) for i in range(n)])
+            ),
+            "reward": torch.from_numpy(rng.normal(size=(n, 1)).astype(np.float32)),
+            "next_state": torch.from_numpy(rng.normal(size=(n, STATE_DIM)).astype(np.float32)),
+            "done": torch.zeros(n, 1),
+            "delta_t": torch.full((n, 1), 0.5),
+            "discount": torch.full((n, 1), 0.99 ** 0.5),
+            "action_idx": torch.arange(n) % 4,
+            "behaviour_log_prob": torch.full((n, 1), -1.5),
+        }
+        if extras:
+            batch["reward_terms"] = torch.from_numpy(
+                rng.normal(size=(n, len(TASK_NAMES))).astype(np.float32)
+            )
+            batch["neighbour_state"] = torch.from_numpy(
+                rng.normal(size=(n, MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32)
+            )
+            batch["neighbour_mask"] = torch.ones(n, MAX_NEIGHBOURS)
+            batch["next_neighbour_state"] = torch.from_numpy(
+                rng.normal(size=(n, MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32)
+            )
+            batch["next_neighbour_mask"] = torch.ones(n, MAX_NEIGHBOURS)
+        return batch
+
+    #: The three multi-agent baselines are SUPPOSED to change -- that is the
+    #: repair. The other six must not, and neither must SPAM-D3QN on a batch it
+    #: did not draw itself.
+    UNAFFECTED = tuple(
+        n for n in sorted(set(ALL_BASELINES))
+        if n not in ("MADDPG-MT", "I-HAMAPPO", "RES-MAPDDPG")
+    )
+
+    @pytest.mark.parametrize("name", UNAFFECTED)
+    def test_the_extra_batch_keys_change_nothing(self, name):
+        torch.manual_seed(31)
+        np.random.seed(31)
+        plain = get_baseline(name)()
+        torch.manual_seed(31)
+        np.random.seed(31)
+        enriched = get_baseline(name)()
+
+        torch.manual_seed(97)
+        np.random.seed(97)
+        plain.update(self._batch(extras=False))
+        torch.manual_seed(97)
+        np.random.seed(97)
+        enriched.update(self._batch(extras=True))
+
+        a = plain.state_dict()
+        b = enriched.state_dict()
+        assert set(a) == set(b)
+        differing = [k for k in a if not torch.equal(a[k].float(), b[k].float())]
+        assert not differing, (
+            f"{name}: the extra batch keys moved {len(differing)} tensor(s) "
+            f"({differing[:3]}), so this baseline is not being trained under the "
+            "conditions it was before"
+        )
+
+
+# ===========================================================================
+# 7. The two rollout loops must build the same batch
+# ===========================================================================
+class TestTrainingAndSearchAgreeOnTheBatch:
+    """`run_hot_swap_training` and `hpo.evaluate_model_in_env` are separate
+    implementations of the same event-driven SMDP rollout, and every column ever
+    added to the replay buffer has had to be added to both.
+
+    It has already gone wrong once. `behaviour_log_prob` and `action_idx` were
+    plumbed into the training path and missed in the rollout, so the search would
+    have tuned every model under conditions the training run does not reproduce
+    -- and it was found only because somebody compared the batch key sets. The
+    reward decomposition and the neighbourhood re-open the identical trap.
+
+    These tests are cheap and structural on purpose: they are the guard that
+    runs on every commit. The runtime evidence, a real SUMO episode down both
+    paths for each of the nine baselines, is in
+    `results/diagnostics/verify_batch_column_parity.py` and its CSV.
+    """
+
+    #: The columns that must reach the buffer on both paths. Asserting these
+    #: explicitly is what stops the comparison from passing on two empty sets --
+    #: the failure mode of a parity check that has quietly lost its subject.
+    REQUIRED_COLUMNS = (
+        "state", "action", "reward", "next_state", "done", "delta_t",
+        "action_idx", "behaviour_log_prob", "reward_terms",
+        "neighbour_state", "neighbour_mask",
+        "next_neighbour_state", "next_neighbour_mask",
+    )
+
+    @staticmethod
+    def _params(func):
+        import inspect
+        return [p for p in inspect.signature(func).parameters if p != "self"]
+
+    @staticmethod
+    def _supplied_indices(call, params):
+        """Which parameter POSITIONS a call site supplies.
+
+        Compared by position rather than by name because the hops rename one
+        argument on the way through (`raw_action` at the scheduler, `action` at
+        the buffer). A name-based comparison would report a difference that is
+        not one, and would then be relaxed until it reported nothing.
+        """
+        idx = set(range(len(call.args)))
+        for kw in call.keywords:
+            if kw.arg is None:  # **kwargs: cannot be resolved statically
+                raise AssertionError("a push call site uses **kwargs; parity is unverifiable")
+            assert kw.arg in params, f"{kw.arg!r} is not a parameter of the callee"
+            idx.add(params.index(kw.arg))
+        return frozenset(idx)
+
+    def _call_sites(self, path, func_name, attr_name, params):
+        import ast
+        tree = ast.parse(open(path, encoding="utf-8").read())
+        target = next(
+            n for n in ast.walk(tree)
+            if isinstance(n, ast.FunctionDef) and n.name == func_name
+        )
+        return [
+            self._supplied_indices(n, params)
+            for n in ast.walk(target)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == attr_name
+        ]
+
+    def test_the_forwarding_chain_carries_every_column(self):
+        """scheduler -> streamer -> buffer must not drop a column on the way.
+
+        The three hops have three separate signatures. A column added to the
+        buffer and forgotten at the streamer would be silently dropped, which is
+        precisely how `action_idx` never reached a batch for any of the nine.
+        """
+        import inspect
+        from src.hot_swap_trainer import HotSwapRLScheduler, TransitionStreamer
+
+        buf_params = self._params(RetrospectiveReplayBuffer.push)
+        stream_params = self._params(TransitionStreamer.push)
+        sched_params = self._params(HotSwapRLScheduler.push_transition)
+
+        assert len(buf_params) == len(stream_params) == len(sched_params), (
+            f"the hops disagree on how many columns exist: buffer {len(buf_params)}, "
+            f"streamer {len(stream_params)}, scheduler {len(sched_params)}"
+        )
+        for want in self.REQUIRED_COLUMNS:
+            assert want in buf_params, f"the buffer lost {want!r}"
+            assert want in stream_params, f"the streamer cannot carry {want!r}"
+
+        # ... and the values really arrive, not merely the parameter names.
+        streamer = TransitionStreamer(maxsize=64)
+        buffer = RetrospectiveReplayBuffer(capacity=64)
+        rng = np.random.default_rng(4)
+        for i in range(8):
+            streamer.push(
+                state=rng.normal(size=STATE_DIM).astype(np.float32),
+                action=np.array([0.4, 2.0, 0.6], dtype=np.float32),
+                reward=-1.0,
+                next_state=rng.normal(size=STATE_DIM).astype(np.float32),
+                done=False,
+                delta_t=0.3,
+                action_idx=i % 4,
+                behaviour_log_prob=-1.1,
+                reward_terms=np.array([-0.1, -0.2, -0.3, -0.4], dtype=np.float32),
+                neighbour_state=rng.normal(size=(MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32),
+                neighbour_mask=np.ones(MAX_NEIGHBOURS, dtype=np.float32),
+                next_neighbour_state=rng.normal(size=(MAX_NEIGHBOURS, STATE_DIM)).astype(np.float32),
+                next_neighbour_mask=np.ones(MAX_NEIGHBOURS, dtype=np.float32),
+            )
+        assert streamer.push_to_buffer(buffer) == 8
+        batch = buffer.sample(8)
+        missing = [c for c in self.REQUIRED_COLUMNS if c not in batch]
+        assert not missing, f"the chain dropped {missing}"
+
+    def test_both_loops_supply_the_same_columns(self):
+        """The parity check itself, over the real call sites in both files."""
+        import inspect
+        import src.hpo as hpo_mod
+        import src.hot_swap_trainer as hst_mod
+        from src.hot_swap_trainer import HotSwapRLScheduler
+
+        sched_params = self._params(HotSwapRLScheduler.push_transition)
+        buf_params = self._params(RetrospectiveReplayBuffer.push)
+
+        training = self._call_sites(
+            inspect.getsourcefile(hst_mod), "run_hot_swap_training",
+            "push_transition", sched_params,
+        )
+        rollout = self._call_sites(
+            inspect.getsourcefile(hpo_mod), "evaluate_model_in_env",
+            "push", buf_params,
+        )
+
+        # Non-vacuity: if either loop stops pushing, this test must fail rather
+        # than compare two empty lists and pass.
+        assert len(training) >= 2, (
+            f"expected the training loop to push at both the in-episode and the "
+            f"end-of-episode close; found {len(training)} call site(s)"
+        )
+        assert len(rollout) >= 1, "the HPO rollout no longer pushes to a buffer"
+
+        supplied = set(training) | set(rollout)
+        assert len(supplied) == 1, (
+            "the training loop and the HPO rollout supply different columns, so "
+            "the search would tune models under conditions the run does not "
+            f"reproduce. Training sites: {[sorted(s) for s in training]}, "
+            f"rollout sites: {[sorted(s) for s in rollout]}"
+        )
+
+        # And what they agree on is the whole set, not a shared subset of two.
+        indices = next(iter(supplied))
+        names = {buf_params[i] for i in indices}
+        missing = [c for c in self.REQUIRED_COLUMNS if c not in names | {"raw_action"}]
+        assert not missing, f"both loops agree, but both omit {missing}"

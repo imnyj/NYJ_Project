@@ -1,0 +1,324 @@
+{
+  "STATE_DIM": 17,
+  "ARRAY_KEYS": [
+    "state",
+    "action",
+    "reward",
+    "next_state",
+    "done",
+    "delta_t",
+    "action_idx",
+    "behaviour_log_prob"
+  ],
+  "full": {
+    "with_optional": true,
+    "buffer_keys": [
+      "action",
+      "action_idx",
+      "behaviour_log_prob",
+      "delta_t",
+      "discount",
+      "done",
+      "next_state",
+      "reward",
+      "state"
+    ],
+    "dataset_keys": [
+      "action",
+      "action_idx",
+      "behaviour_log_prob",
+      "delta_t",
+      "discount",
+      "done",
+      "next_state",
+      "reward",
+      "state"
+    ],
+    "only_in_buffer": [],
+    "only_in_dataset": [],
+    "shape_or_dtype_mismatch": {},
+    "buffer_desc": {
+      "state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "action": {
+        "shape": [
+          32,
+          3
+        ],
+        "dtype": "torch.float32"
+      },
+      "reward": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "next_state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "done": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "delta_t": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "discount": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "action_idx": {
+        "shape": [
+          32
+        ],
+        "dtype": "torch.int64"
+      },
+      "behaviour_log_prob": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "dataset_desc": {
+      "state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "action": {
+        "shape": [
+          32,
+          3
+        ],
+        "dtype": "torch.float32"
+      },
+      "reward": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "next_state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "done": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "delta_t": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "discount": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "action_idx": {
+        "shape": [
+          32
+        ],
+        "dtype": "torch.int64"
+      },
+      "behaviour_log_prob": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      }
+    }
+  },
+  "without_optional_fields_in_buffer": {
+    "with_optional": false,
+    "buffer_keys": [
+      "action",
+      "delta_t",
+      "discount",
+      "done",
+      "next_state",
+      "reward",
+      "state"
+    ],
+    "dataset_keys": [
+      "action",
+      "action_idx",
+      "behaviour_log_prob",
+      "delta_t",
+      "discount",
+      "done",
+      "next_state",
+      "reward",
+      "state"
+    ],
+    "only_in_buffer": [],
+    "only_in_dataset": [
+      "action_idx",
+      "behaviour_log_prob"
+    ],
+    "shape_or_dtype_mismatch": {},
+    "buffer_desc": {
+      "state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "action": {
+        "shape": [
+          32,
+          3
+        ],
+        "dtype": "torch.float32"
+      },
+      "reward": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "next_state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "done": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "delta_t": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "discount": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      }
+    },
+    "dataset_desc": {
+      "state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "action": {
+        "shape": [
+          32,
+          3
+        ],
+        "dtype": "torch.float32"
+      },
+      "reward": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "next_state": {
+        "shape": [
+          32,
+          17
+        ],
+        "dtype": "torch.float32"
+      },
+      "done": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "delta_t": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "discount": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      },
+      "action_idx": {
+        "shape": [
+          32
+        ],
+        "dtype": "torch.int64"
+      },
+      "behaviour_log_prob": {
+        "shape": [
+          32,
+          1
+        ],
+        "dtype": "torch.float32"
+      }
+    }
+  },
+  "discount": {
+    "buffer_discount_is_gamma_pow_delta_t": true,
+    "dataset_discount_is_gamma_pow_delta_t": true
+  },
+  "size_clamp": {
+    "buffer_batch_when_asked_100_of_8": 8,
+    "dataset_batch_when_asked_100_of_8": 8
+  }
+}
+
+VERDICT (both containers carrying action_idx and behaviour_log_prob): IDENTICAL contract
+VERDICT (buffer filled WITHOUT the optional fields): CONTRACTS DIFFER; dataset-only keys ['action_idx', 'behaviour_log_prob']

@@ -1,0 +1,32 @@
+{
+  "band_source": "recomputed from the reconciled states of this same dataset for every candidate, not read from a stored m8 table",
+  "constants_in_force": {
+    "A_MAX": 5.0,
+    "DELTA_MAX": 45.0,
+    "DELTA_MIN": 0.1,
+    "DIST_TO_STOPLINE_REF_M": 900.0,
+    "E_REF": 13.33,
+    "N_ACTIVE_MAX_OBS": 250.0,
+    "PHASE_REMAINING_REF_S": 60.0,
+    "QUEUE_MAX": 25.0,
+    "RSU_RANGE": 300.0,
+    "V_MAX_OBS": 15.995999999999999
+  },
+  "dataset": "/home/imnyj/Workspace/paper4/data/hoorl_offline/hoorl_offline.npz",
+  "magnitude_features": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    11,
+    12,
+    13,
+    15
+  ],
+  "n_transitions": 128223,
+  "percentile_convention": "percentile_below counts features with a strictly smaller std; percentile_inclusive counts the feature itself"
+}

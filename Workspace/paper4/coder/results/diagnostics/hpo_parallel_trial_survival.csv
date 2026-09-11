@@ -1,0 +1,10 @@
+group,model,n_trials,n_penalised,n_usable,failed_fraction,best_value,all_trials_failed
+g0,MADDPG-MT,15,0,15,0.0,8.6998,False
+g0,PPO,15,0,15,0.0,23.3378,False
+g1,I-HAMAPPO,15,5,10,0.3333,8.9292,False
+g1,SAC,15,15,0,1.0,100.0,True
+g2,MA2HDQN,15,0,15,0.0,5.6106,False
+g2,RES-MAPDDPG,15,0,15,0.0,9.7869,False
+g2,TD3,15,0,15,0.0,1.2396,False
+g3,CARLTON,15,0,15,0.0,10.9243,False
+g3,SPAM-D3QN,15,0,15,0.0,10.9528,False

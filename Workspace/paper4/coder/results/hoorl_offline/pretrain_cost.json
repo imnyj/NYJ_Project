@@ -1,0 +1,144 @@
+{
+  "rollout_reference": {
+    "TD3": {
+      "source": "results/hpo_parallel/g2/optuna_trials_TD3.csv",
+      "n_trials": 15,
+      "seeds_per_trial": 3,
+      "steps_per_rollout": 4000,
+      "trial_mean_s": 1149.4,
+      "trial_median_s": 1119.9,
+      "per_seed_rollout_s": 383.1
+    },
+    "MADDPG-MT": {
+      "source": "results/hpo_parallel/g0/optuna_trials_MADDPG-MT.csv",
+      "n_trials": 15,
+      "seeds_per_trial": 3,
+      "steps_per_rollout": 4000,
+      "trial_mean_s": 1272.5,
+      "trial_median_s": 1206.4,
+      "per_seed_rollout_s": 424.2
+    }
+  },
+  "rollout_reference_note": "SAC is architecturally closest to HOORL but every SAC trial in the 4000-step parallel search failed with a zero duration, so TD3 and MADDPG-MT (twin-critic actor-critics, 15/15 trials completed) are used instead.",
+  "pretrain_dataset": "SYNTHETIC; the offline loop's cost does not depend on batch contents",
+  "settings": {
+    "transitions": 200000,
+    "updates": [
+      2000
+    ],
+    "batch_size": 256,
+    "hidden_dims": [
+      64,
+      128,
+      256
+    ],
+    "n_trials": 15,
+    "n_models": 9,
+    "seeds_per_trial": 3,
+    "out_dir": "/home/imnyj/Workspace/paper4/coder/results/hoorl_offline"
+  },
+  "rows": [
+    {
+      "device": "cpu",
+      "hidden_dim": 64,
+      "n_transitions": 200000,
+      "num_updates": 2000,
+      "batch_size": 256,
+      "pretrain_s": 19.0,
+      "ms_per_update": 9.5,
+      "offline_updates": 2005.0,
+      "pretrain_per_trial_s": 57.0,
+      "rollout_reference_s": 403.6,
+      "pct_of_one_rollout": 4.71,
+      "pct_of_one_trial": 4.71,
+      "added_s_for_15_trials": 855.0,
+      "added_min_for_15_trials": 14.2,
+      "nine_model_search_multiplier": 1.0052
+    },
+    {
+      "device": "cpu",
+      "hidden_dim": 128,
+      "n_transitions": 200000,
+      "num_updates": 2000,
+      "batch_size": 256,
+      "pretrain_s": 24.81,
+      "ms_per_update": 12.403,
+      "offline_updates": 2005.0,
+      "pretrain_per_trial_s": 74.4,
+      "rollout_reference_s": 403.6,
+      "pct_of_one_rollout": 6.15,
+      "pct_of_one_trial": 6.14,
+      "added_s_for_15_trials": 1116.0,
+      "added_min_for_15_trials": 18.6,
+      "nine_model_search_multiplier": 1.0068
+    },
+    {
+      "device": "cpu",
+      "hidden_dim": 256,
+      "n_transitions": 200000,
+      "num_updates": 2000,
+      "batch_size": 256,
+      "pretrain_s": 26.49,
+      "ms_per_update": 13.245,
+      "offline_updates": 2005.0,
+      "pretrain_per_trial_s": 79.5,
+      "rollout_reference_s": 403.6,
+      "pct_of_one_rollout": 6.56,
+      "pct_of_one_trial": 6.57,
+      "added_s_for_15_trials": 1192.5,
+      "added_min_for_15_trials": 19.9,
+      "nine_model_search_multiplier": 1.0073
+    },
+    {
+      "device": "cuda:0",
+      "hidden_dim": 64,
+      "n_transitions": 200000,
+      "num_updates": 2000,
+      "batch_size": 256,
+      "pretrain_s": 17.85,
+      "ms_per_update": 8.925,
+      "offline_updates": 2005.0,
+      "pretrain_per_trial_s": 53.6,
+      "rollout_reference_s": 403.6,
+      "pct_of_one_rollout": 4.42,
+      "pct_of_one_trial": 4.43,
+      "added_s_for_15_trials": 804.0,
+      "added_min_for_15_trials": 13.4,
+      "nine_model_search_multiplier": 1.0049
+    },
+    {
+      "device": "cuda:0",
+      "hidden_dim": 128,
+      "n_transitions": 200000,
+      "num_updates": 2000,
+      "batch_size": 256,
+      "pretrain_s": 18.07,
+      "ms_per_update": 9.033,
+      "offline_updates": 2005.0,
+      "pretrain_per_trial_s": 54.2,
+      "rollout_reference_s": 403.6,
+      "pct_of_one_rollout": 4.48,
+      "pct_of_one_trial": 4.48,
+      "added_s_for_15_trials": 813.0,
+      "added_min_for_15_trials": 13.6,
+      "nine_model_search_multiplier": 1.005
+    },
+    {
+      "device": "cuda:0",
+      "hidden_dim": 256,
+      "n_transitions": 200000,
+      "num_updates": 2000,
+      "batch_size": 256,
+      "pretrain_s": 17.77,
+      "ms_per_update": 8.884,
+      "offline_updates": 2005.0,
+      "pretrain_per_trial_s": 53.3,
+      "rollout_reference_s": 403.6,
+      "pct_of_one_rollout": 4.4,
+      "pct_of_one_trial": 4.4,
+      "added_s_for_15_trials": 799.5,
+      "added_min_for_15_trials": 13.3,
+      "nine_model_search_multiplier": 1.0049
+    }
+  ]
+}
